@@ -116,6 +116,65 @@ function emitCloudDraftSaved(detail: {
   window.dispatchEvent(new CustomEvent('unison:project-draft-saved', { detail }));
 }
 
+/** True for network-level/transient failures worth a single automatic retry. */
+function isTransientSaveError(error: unknown): boolean {
+  const candidate = error as { message?: string; code?: string; status?: number } | null;
+  const message = (candidate?.message || '').toLowerCase();
+  if (candidate?.status && candidate.status >= 500) return true;
+  return (
+    message.includes('failed to fetch') ||
+    message.includes('network') ||
+    message.includes('timeout') ||
+    message.includes('load failed') ||
+    candidate?.code === 'PGRST301' // Postgrest: JWT expired mid-request race, worth one retry after refresh
+  );
+}
+
+/** True when a Postgres foreign-key violation is on the business_id column. */
+function isBusinessIdForeignKeyViolation(error: unknown): boolean {
+  const candidate = error as { code?: string; message?: string; details?: string } | null;
+  if (candidate?.code !== '23503') return false;
+  const haystack = `${candidate?.message || ''} ${candidate?.details || ''}`.toLowerCase();
+  return haystack.includes('business_id');
+}
+
+async function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Runs a builder_drafts write (insert/update) with hardening:
+ *  - retries transient/network failures with backoff (up to 3 attempts total)
+ *  - if a stale/invalid business_id causes a foreign-key violation, drops it
+ *    and retries once rather than failing the whole save
+ * `payload` is mutated in place when the business_id fallback kicks in, so
+ * callers building metadata from it afterwards see the corrected value.
+ */
+async function executeDraftWrite<T>(
+  payload: Record<string, unknown>,
+  run: (payload: Record<string, unknown>) => PromiseLike<{ data: T | null; error: unknown }>,
+): Promise<{ data: T | null; error: unknown }> {
+  let attempt = 0;
+  let lastError: unknown = null;
+  while (attempt < 3) {
+    attempt += 1;
+    const { data, error } = await run(payload);
+    if (!error) return { data, error: null };
+    lastError = error;
+    if (isBusinessIdForeignKeyViolation(error) && payload.business_id !== null && payload.business_id !== undefined) {
+      console.warn('[useTemplateFiles] business_id FK violation on write — retrying without it:', error);
+      payload.business_id = null;
+      continue;
+    }
+    if (isTransientSaveError(error) && attempt < 3) {
+      await delay(300 * attempt);
+      continue;
+    }
+    break;
+  }
+  return { data: null, error: lastError };
+}
+
 /** Build the v2 canvas_data envelope. Always includes the legacy fields for fallback rendering. */
 const buildCanvasData = (code: string, payload?: SaveProjectPayload): TemplateData => ({
   version: 2,
@@ -270,30 +329,37 @@ export function useTemplateFiles() {
         };
         if (payload?.businessId !== undefined) updatePayload.business_id = payload.businessId;
         if (payload?.projectId !== undefined) updatePayload.project_id = payload.projectId;
-        const { data: updated, error: updateError } = await supabase
-          .from("builder_drafts")
-          .update(updatePayload)
-          .eq("id", existingDraftId)
-          .eq("user_id", user.id)
-          .select("id, project_id, business_id")
-          .single();
+        const { data: updated, error: updateError } = await executeDraftWrite<{ id: string; project_id?: string | null; business_id?: string | null }>(
+          updatePayload,
+          (p) => supabase
+            .from("builder_drafts")
+            .update(p)
+            .eq("id", existingDraftId)
+            .eq("user_id", user.id)
+            .select("id, project_id, business_id")
+            .single(),
+        );
         if (updateError) throw updateError;
         data = updated as { id: string; project_id?: string | null };
       } else {
-        const { data: inserted, error: insertError } = await supabase
-          .from("builder_drafts")
-          .insert({
-            name: trimmedName,
-            user_id: user.id,
-            business_id: payload?.businessId ?? null,
-            project_id: effectiveProjectId,
-            code,
-            editor_code: code,
-            vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
-            metadata,
-          })
-          .select("id, project_id, business_id")
-          .single();
+        const insertPayload: Record<string, unknown> = {
+          name: trimmedName,
+          user_id: user.id,
+          business_id: payload?.businessId ?? null,
+          project_id: effectiveProjectId,
+          code,
+          editor_code: code,
+          vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
+          metadata,
+        };
+        const { data: inserted, error: insertError } = await executeDraftWrite<{ id: string; project_id?: string | null; business_id?: string | null }>(
+          insertPayload,
+          (p) => supabase
+            .from("builder_drafts")
+            .insert(p)
+            .select("id, project_id, business_id")
+            .single(),
+        );
         if (insertError) throw insertError;
         data = inserted as { id: string; project_id?: string | null };
       }
@@ -323,7 +389,13 @@ export function useTemplateFiles() {
       return data.id;
     } catch (error) {
       console.error("Error saving project:", error);
-      toast.error("Failed to save project");
+      if (isTransientSaveError(error)) {
+        toast.error("Network issue while saving", {
+          description: "Check your connection and try Save again.",
+        });
+      } else {
+        toast.error("Failed to save project");
+      }
       return null;
     } finally {
       setLoading(false);
@@ -351,6 +423,16 @@ export function useTemplateFiles() {
           return true;
         }
         throw new Error("Project not found");
+      }
+
+      // Hardening: verify there is an active, authenticated session before
+      // attempting a cloud write. Previously this call relied entirely on
+      // RLS to reject unauthenticated/expired-session updates, which surfaced
+      // as a confusing "Draft ... access or linkage is invalid" error with
+      // no indication that the fix is simply signing in again.
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error("SESSION_EXPIRED");
       }
 
       // Read existing metadata so we can merge name/description.
@@ -398,17 +480,28 @@ export function useTemplateFiles() {
       if (payload?.businessId !== undefined) updatePatch.business_id = payload.businessId;
       if (payload?.projectId !== undefined) updatePatch.project_id = payload.projectId;
 
-      const { data: updatedDraft, error } = await supabase
-        .from("builder_drafts")
-        .update(updatePatch)
-        .eq("id", id)
-        .select("id, project_id, business_id")
-        .maybeSingle();
+      // Hardening: retry on transient network errors, and drop business_id
+      // if it turns out to reference a business row that no longer exists
+      // (e.g. a stale/local preview id was persisted by an older bug) — a
+      // save should never be blocked by a broken secondary linkage when the
+      // code itself is safe to persist.
+      const { data: updatedDraft, error: lastError } = await executeDraftWrite<{ id: string; project_id: string | null; business_id: string | null }>(
+        updatePatch,
+        (p) => supabase
+          .from("builder_drafts")
+          .update(p)
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select("id, project_id, business_id")
+          .maybeSingle(),
+      );
 
-      if (error) {
-        throw error;
+      if (lastError) {
+        throw lastError;
       }
-      if (!updatedDraft) throw new Error(`Draft ${id} was not updated; access or linkage is invalid.`);
+      if (!updatedDraft) {
+        throw new Error(`Draft ${id} was not updated; access or linkage is invalid.`);
+      }
       setCurrentProjectId(updatedDraft.project_id ?? payload?.projectId ?? null);
       await syncCanonicalComponentGraph({
         projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
@@ -424,7 +517,21 @@ export function useTemplateFiles() {
       return true;
     } catch (error) {
       console.error("Error updating project:", error);
-      toast.error("Failed to update project");
+      if (error instanceof Error && error.message === "SESSION_EXPIRED") {
+        toast.error("Your session has expired", {
+          description: "Please sign in again, then click Update to save your changes.",
+        });
+      } else if (error instanceof Error && error.message.includes('access or linkage is invalid')) {
+        toast.error("Couldn't reconnect to this project", {
+          description: "Reload the page to relink your workspace, then try Update again.",
+        });
+      } else if (isTransientSaveError(error)) {
+        toast.error("Network issue while saving", {
+          description: "Check your connection and click Update to retry.",
+        });
+      } else {
+        toast.error("Failed to update project");
+      }
       return false;
     } finally {
       setLoading(false);

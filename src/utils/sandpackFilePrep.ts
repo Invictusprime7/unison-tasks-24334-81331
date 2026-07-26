@@ -5654,19 +5654,7 @@ export function prepareSandpackFiles(
   ));
 
   if (finalFiles['/.unison/ui-manifest.json'] || referencesGeneratedUiFoundation) {
-    const foundation = buildGeneratedUiFoundation({
-      themePresetId: options?.themePresetId || 'snapshot-recovery',
-    });
-    for (const [path, content] of Object.entries(foundation.files)) {
-      if (path === '/.unison/ui-manifest.json') continue;
-      if (finalFiles[path]) {
-        if (finalFiles[path].includes('UNISON GENERATED UI FOUNDATION')) {
-          finalFiles[path] = content;
-        }
-        continue;
-      }
-      finalFiles[path] = content;
-    }
+    syncGeneratedUiFoundationFiles(finalFiles, options?.themePresetId);
   }
 
   const sandpackFiles: Record<string, string> = {};

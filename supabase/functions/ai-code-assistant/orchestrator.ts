@@ -48,6 +48,8 @@ import { buildApplyState, type ApplyState } from "./applyState.ts";
 import { preprocessPrompt } from "./promptPreprocessor.ts";
 import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./prompts/launchDeskPrompt.ts";
 import { CATALOG_CHAT_TOOLS, renderCatalogToolDirective } from "../_shared/catalogTools.ts";
+import { buildEnvelopeDirective, type EnvelopeShape } from "./envelopeContext.ts";
+
 
 const BUILDER_EDIT_TASKS = new Set<string>([
   'surgical_edit', 'behavioral_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit',

@@ -51,6 +51,7 @@ import type { WizardInteractionManifest } from '@/services/wizardInteractionEnri
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
 import {
   buildGeneratedUiFoundation,
+  GENERATED_UI_FOUNDATION_VERSION,
   type GeneratedUiManifest,
 } from './generatedUiFoundation';
 import {

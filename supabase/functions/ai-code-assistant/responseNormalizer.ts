@@ -228,6 +228,13 @@ export function buildResponseBody(opts: {
   reviewSummary?: string;
   applyState?: Record<string, unknown>;
   toolCalls?: unknown[];
+  envelopeVerification?: {
+    passed: boolean;
+    summary: string;
+    unmetCriteria: string[];
+    outOfScopeFiles: string[];
+    blockingMisses: string[];
+  };
 }): Record<string, unknown> {
   const fileInfo = detectFileStatuses(opts.content);
 

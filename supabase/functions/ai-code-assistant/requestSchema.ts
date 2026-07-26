@@ -33,6 +33,10 @@ export const AIRequestSchema = z.object({
     scope: z.record(z.string(), z.unknown()).optional(),
     goals: z.array(z.record(z.string(), z.unknown())).max(20).optional(),
     complexity: z.string().max(30).optional(),
+    constraints: z.array(z.string().max(400)).max(20).optional(),
+    requestedCapabilities: z.array(z.string().max(60)).max(20).optional(),
+    ambiguities: z.array(z.string().max(400)).max(20).optional(),
+
     executionMode: z.string().max(40).optional(),
     confidence: z.number().optional(),
     needsExternalResearch: z.boolean().optional(),

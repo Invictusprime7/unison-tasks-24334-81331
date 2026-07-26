@@ -61,7 +61,7 @@ export async function runProviderLoop(opts: {
   const startedAt = Date.now();
   const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
   const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));
-  const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY'));
+  const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY'));
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
   const recordProviderError = (label: string, detail: string) => {
@@ -210,7 +210,7 @@ export async function runProviderLoop(opts: {
   // gemini-2.5-flash supports 65 536 output tokens — the most capable
   // single-shot provider for large wizard seed generation (9+ pages).
   const runDirectGemini = async (): Promise<void> => {
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY');
     if (!GEMINI_API_KEY || content) return;
 
     const role = 'direct';

@@ -166,11 +166,16 @@ function buildFoundationFiles(manifest: GeneratedUiManifest): Record<string, str
   const radixFiles = Object.fromEntries(
     RADIX_VFS_PRIMITIVES.map((primitive) => [
       `/src/unison/ui/radix/${primitive}.ts`,
-      `${marker}
+      primitive === 'slot'
+        ? `${marker}
+export { Slot, Slottable } from './slot-safe';
+`
+        : `${marker}
 export * from '@radix-ui/react-${primitive}';
 `,
     ]),
   );
+
   const radixIndex = RADIX_VFS_PRIMITIVES
     .map((primitive) => `export * as ${toPascalCase(primitive)} from './${primitive}';`)
     .join('\n');

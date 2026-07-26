@@ -90,6 +90,7 @@ import {
   approveCapabilityPlan,
   approvedCapabilityPlanToPatchPlan,
 } from '@/services/businessCapabilityPlanner';
+import { applyCapabilityMigration } from '@/services/capabilityMigrationRunner';
 import { applyButtonBinding } from '@/services/aiBindingTool';
 
 // Helpers extracted to web-builder/*

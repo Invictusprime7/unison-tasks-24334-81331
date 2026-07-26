@@ -51,6 +51,7 @@ import type { WizardInteractionManifest } from '@/services/wizardInteractionEnri
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
 import {
   buildGeneratedUiFoundation,
+  GENERATED_UI_FOUNDATION_VERSION,
   type GeneratedUiManifest,
 } from './generatedUiFoundation';
 import {
@@ -172,7 +173,7 @@ export interface SiteBundleSnapshotMeta {
   };
   /** Snapshot-owned VFS primitive library available to Lane B-generated pages. */
   uiFoundation?: {
-    version: '1.0';
+    version: typeof GENERATED_UI_FOUNDATION_VERSION;
     manifestPath: '/.unison/ui-manifest.json';
     importRoot: '@/unison/ui';
   };

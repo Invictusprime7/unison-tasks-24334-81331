@@ -9,7 +9,7 @@ import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
  * owner of global theme tokens and CSS.
  */
 
-export const GENERATED_UI_FOUNDATION_VERSION = '1.0' as const;
+export const GENERATED_UI_FOUNDATION_VERSION = '1.1' as const;
 
 export type GeneratedUiLayoutRecipe =
   | 'floating-navbar'
@@ -197,9 +197,15 @@ export * from 'framer-motion';
 
 type StaggerProps = { children: React.ReactNode; className?: string };
 
-/** Compatibility aliases for pre-foundation generated pages. */
+/**
+ * Compatibility aliases for pre-foundation generated pages.
+ * These MUST stay behaviourally identical to /src/unison/ui/motion.tsx:
+ * a container that renders its own <div> inside a parent grid collapses every
+ * child into the first cell. Layout-transparent unless it owns classes.
+ */
 export function StaggerContainer({ children, className }: StaggerProps) {
   const reduceMotion = useReducedMotion();
+  if (!className) return React.createElement(React.Fragment, null, children);
   return React.createElement(motion.div, {
     className,
     initial: 'hidden',
@@ -211,14 +217,22 @@ export function StaggerContainer({ children, className }: StaggerProps) {
 
 export function StaggerChild({ children, className }: StaggerProps) {
   const reduceMotion = useReducedMotion();
+  const reveal = { opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 12 };
+  const shown = { opacity: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' } };
+  // Self-animating so items still reveal when the container is transparent.
   return React.createElement(motion.div, {
     className,
-    variants: { hidden: { opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 12 }, show: { opacity: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' } } },
+    initial: reveal,
+    whileInView: { opacity: 1, y: 0 },
+    viewport: { once: true, amount: 0.15 },
+    transition: { duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' },
+    variants: { hidden: reveal, show: shown },
   }, children);
 }
 
 export const Stagger = StaggerContainer;
 export const StaggerItem = StaggerChild;
+export const RevealGroup = StaggerContainer;
 `,
     '/src/unison/ui/icons.ts': `${marker}
 import * as React from 'react';
@@ -328,16 +342,21 @@ export function styles(...classNames: Array<string | false | null | undefined>) 
 /* Stage 4b owns the global Tailwind layers and theme tokens in /src/index.css. */
 ${UNISON_VFS_STYLE_BRIDGE}`,
   '/src/unison/ui/index.ts': `${marker}
-export { Button } from './button';
-export { Card, CardContent } from './card';
+// Root barrel: MUST re-export the full public surface of every foundation
+// module. A partial barrel resolves to \`undefined\` at runtime and surfaces as
+// "Element type is invalid" in the preview.
+export { Button, type ButtonProps } from './button';
+export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
+export { cn } from './cn';
 export { FieldLabel, Input, Textarea } from './form-fields';
-export { useForm, zodResolver, z } from './forms';
+export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
 export { ImageLightbox } from './media';
-export { Reveal, RevealGroup, Stagger, StaggerItem } from './motion';
-export { FloatingNavbar } from './navigation';
+export { Reveal, RevealGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';
+export { FloatingNavbar, type NavigationLink } from './navigation';
 export { BentoFeatureGrid, FeatureCard } from './recipes';
 export { colorStyles, componentStyles, motionStyles, styles, typography } from './styles';
+export { Slot, Slottable } from './radix/slot';
 // Compatibility surface for generated pages that import Lucide components
 // from the UI root instead of the dedicated /icons facade.
 export * from './icons';

@@ -140,6 +140,10 @@ export async function runProviderLoop(opts: {
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
           deferredEarlyError ??= earlyError;
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; continuing fallback chain...`);
+          // A 429 is per-model/tier, not terminal for the whole chain: keep
+          // walking the remaining models (including other provider families)
+          // instead of aborting generation on the first rate limit.
+          if (resp.status === 429) continue;
           break;
         }
 
@@ -255,6 +259,7 @@ export async function runProviderLoop(opts: {
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
           deferredEarlyError ??= earlyError;
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next...`);
+          if (resp.status === 429) continue;
           break;
         }
 
@@ -367,6 +372,7 @@ export async function runProviderLoop(opts: {
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
           deferredEarlyError ??= earlyError;
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next provider...`);
+          if (resp.status === 429) continue;
           break;
         }
 

@@ -934,49 +934,9 @@ export const AICodeAssistant: React.FC<AICodeAssistantProps> = ({
       }
       // ========== END BUILDER ACTIONS ==========
       
-      // Detect template action from user message
-      const detectTemplateAction = (message: string): string | undefined => {
-        const lowerMessage = message.toLowerCase();
-        
-        // Check for full control mode first (highest priority)
-        if (lowerMessage.match(/\b(full control|full reign|ai decide|you decide|your choice|go wild|do whatever|improve everything|make it better|optimize everything|enhance everything|fix everything|revamp|overhaul|transform|reimagine)\b/)) {
-          return 'full-control';
-        }
-        // E-commerce/checkout flow requests
-        if (lowerMessage.match(/\b(add|create|implement|build)\b.*\b(cart|checkout|ecommerce|e-commerce|shopping|payment|buy now|add to cart)\b/)) {
-          return 'full-control';
-        }
-        // Dynamic/interactive element requests
-        if (lowerMessage.match(/\b(make|add)\b.*\b(dynamic|interactive|animated|live|real-time)\b/)) {
-          return 'full-control';
-        }
-        // Auth/login flow requests — these are modify actions (wire existing elements)
-        if (lowerMessage.match(/\b(add|wire|connect|implement|enable)\b.*\b(sign\s*in|sign\s*up|login|logout|auth|authentication)\b/)) {
-          return 'modify';
-        }
-        // Routing/navigation requests
-        if (lowerMessage.match(/\b(add|wire|implement)\b.*\b(navigation|routing|redirect|page\s*link)\b/)) {
-          return 'modify';
-        }
-        if (lowerMessage.match(/\b(add|insert|include|create new|put|place)\b.*\b(section|element|component|button|image|form|card|hero|footer|header|nav)/)) {
-          return 'add';
-        }
-        if (lowerMessage.match(/\b(remove|delete|hide|get rid of|take out)\b/)) {
-          return 'remove';
-        }
-        if (lowerMessage.match(/\b(change|modify|update|edit|adjust|tweak|fix)\b/)) {
-          return 'modify';
-        }
-        if (lowerMessage.match(/\b(suggest|improve|recommend|enhance|optimize|better|upgrade)\b/)) {
-          return 'suggest';
-        }
-        if (lowerMessage.match(/\b(restyle|redesign|new look|change color|change style|theme|recolor)\b/)) {
-          return 'restyle';
-        }
-        return hasExistingTemplate ? 'modify' : undefined;
-      };
-      
-      const templateAction = hasExistingTemplate ? detectTemplateAction(userMessage.content) : undefined;
+      // Template action is DERIVED from the interpreted envelope — no keyword
+      // routing. (Multi-label, scope- and complexity-aware.)
+      const templateAction = templateActionFromEnvelope(envelope, Boolean(hasExistingTemplate));
       
       // Add image slot context for AI with taste
       let slotContext = '';

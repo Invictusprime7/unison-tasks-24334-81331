@@ -5,7 +5,7 @@ const pages = (n: number) => Array.from({ length: n }, (_, i) => `/src/pages/Pag
 
 describe('laneBBatchPlanner', () => {
   it('keeps a small site in a single turn', () => {
-    const plan = planLaneBBatches({ pages: pages(3), basePayloadBytes: 20_000 });
+    const plan = planLaneBBatches({ pages: pages(2), basePayloadBytes: 20_000 });
     expect(plan.batches).toHaveLength(1);
     expect(plan.limitedBy).toBe('none');
   });

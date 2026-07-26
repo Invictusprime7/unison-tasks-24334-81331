@@ -476,7 +476,8 @@ export function RevealGroup({ children, className }: { children: React.ReactNode
 
 export function StaggerItem({ children, className }: { children: React.ReactNode; className?: string }) {
   const reduceMotion = useReducedMotion();
-  return <motion.div className={cn(className)} variants={{ hidden: { opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 12 }, show: { opacity: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' } } }}>{children}</motion.div>;
+  // Self-animating so items still reveal when Stagger is layout-transparent.
+  return <motion.div className={cn('h-full', className)} initial={{ opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.15 }} transition={{ duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' }} variants={{ hidden: { opacity: reduceMotion ? 1 : 0, y: reduceMotion ? 0 : 12 }, show: { opacity: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.35, ease: 'easeOut' } } }}>{children}</motion.div>;
 }
 `,
     '/src/unison/ui/navigation.tsx': `${marker}

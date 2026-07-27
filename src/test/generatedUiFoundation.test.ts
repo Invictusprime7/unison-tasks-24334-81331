@@ -78,7 +78,7 @@ describe('generated UI foundation', () => {
       '/src/index.css': ':root { --primary: 0 0% 10%; }',
     }, { strict: true, entryPoint: '/src/App.tsx' });
 
-    expect(prepared['/unison/ui/animation.ts']).toContain("export * from 'framer-motion'");
+    expect(prepared['/unison/ui/animation.ts']).toContain("export * from '../../motion-shim'");
     expect(prepared['/App.tsx']).toContain("from './unison/ui/animation'");
   });
 
@@ -152,7 +152,7 @@ describe('generated UI foundation', () => {
       '/src/index.css': ':root { --primary: 0 0% 10%; }',
     }, { strict: true, entryPoint: '/src/App.tsx' });
 
-    expect(prepared['/unison/ui/animation.ts']).toContain("export * from 'framer-motion'");
+    expect(prepared['/unison/ui/animation.ts']).toContain("export * from '../../motion-shim'");
     expect(prepared['/App.tsx']).toContain("from './unison/ui/animation'");
   });
 
@@ -210,7 +210,8 @@ export default function App(){ const schema = z.string(); void schema; return <D
     expect(prepared['/App.tsx']).toContain("'./unison/ui/zod'");
     expect(prepared['/App.tsx']).toContain("'./unison/ui/icons'");
     expect(prepared['/App.tsx']).toContain("'./unison/ui/styles'");
-    expect(prepared['/unison/ui/radix/dialog.ts']).toContain("@radix-ui/react-dialog");
+    expect(prepared['/unison/ui/radix/dialog.ts']).toContain("export * from '../../../radix-shim';");
+    expect(prepared['/radix-shim.tsx']).toContain('export const Root = passthrough();');
     expect(prepared['/components/HTMLTextAreaElement.tsx']).toBeUndefined();
     expect(prepared['/unison/ui/icon.tsx']).not.toContain('./components/Glyph');
     expect(prepared['/components/Glyph.tsx']).toBeUndefined();

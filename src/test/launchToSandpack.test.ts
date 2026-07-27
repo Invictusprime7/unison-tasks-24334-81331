@@ -29,7 +29,7 @@ describe("launchStateToSandpackFiles", () => {
     });
 
     expect(result.dependencies).toMatchObject(SANDPACK_PREVIEW_CORE_DEPENDENCIES);
-    expect(result.dependencies["@radix-ui/react-dialog"]).toBeDefined();
+    expect(result.dependencies["@radix-ui/react-dialog"]).toBeUndefined();
     expect(result.dependencies["@swc/helpers"]).toBeDefined();
     expect(result.dependencies["lodash-es"]).toBe("latest");
     expect(result.dependencies.recharts).toBeUndefined();
@@ -49,7 +49,7 @@ describe("launchStateToSandpackFiles", () => {
       },
     });
 
-    expect(result.dependencies["@radix-ui/react-dialog"]).toBeDefined();
+    expect(result.dependencies["@radix-ui/react-dialog"]).toBeUndefined();
     expect(result.dependencies.recharts).toBeUndefined();
   });
 
@@ -137,14 +137,16 @@ describe("launchStateToSandpackFiles", () => {
       },
     });
 
-    expect(result.dependencies['@radix-ui/react-slot']).toBeDefined();
+    expect(result.dependencies['@radix-ui/react-slot']).toBeUndefined();
     expect(result.dependencies['class-variance-authority']).toBeDefined();
     expect(result.dependencies['@radix-ui/react-dialog']).toBeUndefined();
+    expect(result.dependencies['@swc/helpers']).toBeDefined();
+    expect(result.sandpackFiles['/unison/ui/radix/slot-safe.tsx']).toContain("from '../../../radix-shim'");
     expect(result.dependencies['framer-motion']).toBeUndefined();
     expect(result.dependencies['lucide-react']).toBeUndefined();
   });
 
-  it('recovers a legacy manifestless animation facade and installs Framer Motion', () => {
+  it('recovers a legacy manifestless animation facade through the local Sandpack shim', () => {
     const result = buildPreviewArtifacts({
       sourceFiles: {
         '/src/App.tsx': "import { motion } from '@/unison/ui/animation'; export default function App(){ return <motion.main>Ready</motion.main>; }",
@@ -152,8 +154,9 @@ describe("launchStateToSandpackFiles", () => {
       },
     });
 
-    expect(result.sandpackFiles['/unison/ui/animation.ts']).toContain("export * from 'framer-motion'");
-    expect(result.dependencies['framer-motion']).toBeDefined();
+    expect(result.sandpackFiles['/unison/ui/animation.ts']).toContain("export * from '../../motion-shim'");
+    expect(result.sandpackFiles['/motion-shim.tsx']).toContain('export const motion = new Proxy');
+    expect(result.dependencies['framer-motion']).toBeUndefined();
   });
 
   it("does not reintroduce embedded JSON launcher wrappers after normalization", () => {

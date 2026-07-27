@@ -1,6 +1,105 @@
 -- Canonical live form runtime: forms are business-owned definitions and every
 -- submission records the tenant, rendered surface, consent, and dedupe key.
 
+-- Earlier CRM migrations may be present in migration history even when a
+-- restored environment no longer contains their tables. Recreate the canonical
+-- tenant-safe foundations before extending them below.
+CREATE TABLE IF NOT EXISTS public.crm_contacts (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	business_id uuid REFERENCES public.businesses(id) ON DELETE SET NULL,
+	project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL,
+	email text,
+	first_name text,
+	last_name text,
+	phone text,
+	company text,
+	tags text[] NOT NULL DEFAULT '{}',
+	custom_fields jsonb NOT NULL DEFAULT '{}'::jsonb,
+	source text,
+	user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.crm_leads (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	business_id uuid REFERENCES public.businesses(id) ON DELETE SET NULL,
+	project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL,
+	contact_id uuid REFERENCES public.crm_contacts(id) ON DELETE SET NULL,
+	title text NOT NULL DEFAULT 'New lead',
+	status text NOT NULL DEFAULT 'new',
+	value numeric(12, 2),
+	source text,
+	notes text,
+	email text,
+	name text,
+	intent text,
+	metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+	user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.crm_form_submissions (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	business_id uuid REFERENCES public.businesses(id) ON DELETE SET NULL,
+	form_id text NOT NULL,
+	form_name text,
+	data jsonb NOT NULL DEFAULT '{}'::jsonb,
+	source_url text,
+	ip_address text,
+	user_agent text,
+	workflow_triggered boolean NOT NULL DEFAULT false,
+	created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.crm_contacts
+	ADD COLUMN IF NOT EXISTS business_id uuid REFERENCES public.businesses(id) ON DELETE SET NULL,
+	ADD COLUMN IF NOT EXISTS project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL;
+
+ALTER TABLE public.crm_leads
+	ADD COLUMN IF NOT EXISTS business_id uuid REFERENCES public.businesses(id) ON DELETE SET NULL,
+	ADD COLUMN IF NOT EXISTS project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL,
+	ADD COLUMN IF NOT EXISTS email text,
+	ADD COLUMN IF NOT EXISTS name text,
+	ADD COLUMN IF NOT EXISTS intent text,
+	ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE public.crm_form_submissions
+	ADD COLUMN IF NOT EXISTS business_id uuid REFERENCES public.businesses(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_crm_contacts_business_id
+	ON public.crm_contacts (business_id);
+
+CREATE INDEX IF NOT EXISTS idx_crm_leads_business_created_at
+	ON public.crm_leads (business_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_crm_leads_metadata_gin
+	ON public.crm_leads USING gin (metadata);
+
+CREATE INDEX IF NOT EXISTS idx_crm_form_submissions_business_id
+	ON public.crm_form_submissions (business_id);
+
+ALTER TABLE public.crm_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_form_submissions ENABLE ROW LEVEL SECURITY;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_contacts, public.crm_leads TO authenticated;
+GRANT SELECT ON public.crm_form_submissions TO authenticated;
+GRANT ALL ON public.crm_contacts, public.crm_leads, public.crm_form_submissions TO service_role;
+
+DROP POLICY IF EXISTS "crm_contacts_business_member" ON public.crm_contacts;
+CREATE POLICY "crm_contacts_business_member"
+	ON public.crm_contacts FOR ALL TO authenticated
+	USING (business_id IS NOT NULL AND public.is_business_member(business_id))
+	WITH CHECK (business_id IS NOT NULL AND public.is_business_member(business_id));
+
+DROP POLICY IF EXISTS "crm_leads_business_member" ON public.crm_leads;
+CREATE POLICY "crm_leads_business_member"
+	ON public.crm_leads FOR ALL TO authenticated
+	USING (business_id IS NOT NULL AND public.is_business_member(business_id))
+	WITH CHECK (business_id IS NOT NULL AND public.is_business_member(business_id));
+
 CREATE TABLE IF NOT EXISTS public.form_definitions (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	business_id UUID NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,

@@ -1,7 +1,7 @@
 import type { LaunchState } from '@/types/launchState';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { launchStateToSandpackFiles } from '@/utils/launchToSandpack';
-import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { applySandpackRuntimeShims, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
@@ -77,7 +77,7 @@ export function buildPreviewArtifacts(
   // Re-stamp AUTO-GENERATED canonical Unison files (data + product widgets)
   // on every compile so AI / editor mutations cannot break the preview.
   // See src/services/unisonCanonicalRegistry.ts.
-  const stampedFiles = applyUnisonCanonicals(rawSandpackFiles);
+  const stampedFiles = applySandpackRuntimeShims(applyUnisonCanonicals(rawSandpackFiles));
 
   // ── Final preview-side parse gate ─────────────────────────────────────
   // NO SWALLOW: any PreviewPipelineError (and any other unexpected throw)

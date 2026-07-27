@@ -13,7 +13,7 @@ export const SANDPACK_DEPENDENCIES: Record<string, string> = {
   'react': '^18.3.1',
   'react-dom': '^18.3.1',
   'react-router-dom': '^6.20.0',
-  '@swc/helpers': '^0.5.23',
+  '@swc/helpers': '0.5.23',
   '@babel/standalone': '^7.28.4',
 
   // Styling utilities
@@ -107,6 +107,117 @@ export const SANDPACK_PREVIEW_CORE_DEPENDENCIES: Record<string, string> = {
   'react-router-dom': SANDPACK_DEPENDENCIES['react-router-dom'],
   '@swc/helpers': SANDPACK_DEPENDENCIES['@swc/helpers'],
 };
+
+// These versions mirror the compatible Radix/Motion graph installed by the
+// builder. Sandpack cannot safely resolve a generated facade against `latest`
+// because the Radix internals are separately published packages.
+const SANDPACK_RUNTIME_PACKAGE_VERSIONS: Record<string, string> = {
+  '@radix-ui/react-accordion': '1.2.12',
+  '@radix-ui/react-alert-dialog': '1.1.15',
+  '@radix-ui/react-aspect-ratio': '1.1.8',
+  '@radix-ui/react-avatar': '1.1.11',
+  '@radix-ui/react-checkbox': '1.3.3',
+  '@radix-ui/react-collapsible': '1.1.12',
+  '@radix-ui/react-context-menu': '2.2.16',
+  '@radix-ui/react-dialog': '1.1.15',
+  '@radix-ui/react-dropdown-menu': '2.1.16',
+  '@radix-ui/react-hover-card': '1.1.15',
+  '@radix-ui/react-label': '2.1.8',
+  '@radix-ui/react-menubar': '1.1.16',
+  '@radix-ui/react-navigation-menu': '1.2.14',
+  '@radix-ui/react-popover': '1.1.15',
+  '@radix-ui/react-progress': '1.1.8',
+  '@radix-ui/react-radio-group': '1.3.8',
+  '@radix-ui/react-scroll-area': '1.2.10',
+  '@radix-ui/react-select': '2.2.6',
+  '@radix-ui/react-separator': '1.1.8',
+  '@radix-ui/react-slider': '1.3.6',
+  '@radix-ui/react-slot': '1.2.4',
+  '@radix-ui/react-switch': '1.2.6',
+  '@radix-ui/react-tabs': '1.1.13',
+  '@radix-ui/react-toast': '1.2.15',
+  '@radix-ui/react-toggle': '1.1.10',
+  '@radix-ui/react-toggle-group': '1.1.11',
+  '@radix-ui/react-tooltip': '1.2.8',
+  'framer-motion': '12.29.2',
+};
+
+/**
+ * Sandpack only installs the packages passed to customSetup. It does not
+ * reliably discover nested dependencies from generated Radix and Motion
+ * facades, so previews that reach those libraries need this explicit closure.
+ */
+export const SANDPACK_TRANSITIVE_RUNTIME_DEPENDENCIES: Record<string, string> = {
+  '@radix-ui/number': '1.1.1',
+  '@radix-ui/primitive': '1.1.3',
+  '@radix-ui/rect': '1.1.1',
+  '@radix-ui/react-arrow': '1.1.7',
+  '@radix-ui/react-collection': '1.1.7',
+  '@radix-ui/react-compose-refs': '1.1.2',
+  '@radix-ui/react-context': '1.1.2',
+  '@radix-ui/react-direction': '1.1.1',
+  '@radix-ui/react-dismissable-layer': '1.1.11',
+  '@radix-ui/react-focus-guards': '1.1.3',
+  '@radix-ui/react-focus-scope': '1.1.7',
+  '@radix-ui/react-id': '1.1.1',
+  '@radix-ui/react-menu': '2.1.16',
+  '@radix-ui/react-popper': '1.2.8',
+  '@radix-ui/react-portal': '1.1.9',
+  '@radix-ui/react-presence': '1.1.5',
+  '@radix-ui/react-primitive': '2.1.3',
+  '@radix-ui/react-roving-focus': '1.1.11',
+  '@radix-ui/react-use-callback-ref': '1.1.1',
+  '@radix-ui/react-use-controllable-state': '1.2.2',
+  '@radix-ui/react-use-effect-event': '0.0.2',
+  '@radix-ui/react-use-escape-keydown': '1.1.1',
+  '@radix-ui/react-use-is-hydrated': '0.1.0',
+  '@radix-ui/react-use-layout-effect': '1.1.1',
+  '@radix-ui/react-use-previous': '1.1.1',
+  '@radix-ui/react-use-rect': '1.1.1',
+  '@radix-ui/react-use-size': '1.1.1',
+  '@radix-ui/react-visually-hidden': '1.2.3',
+  '@floating-ui/react-dom': '2.1.6',
+  '@floating-ui/dom': '1.7.4',
+  'aria-hidden': '1.2.6',
+  'react-remove-scroll': '2.7.2',
+  'react-remove-scroll-bar': '2.3.7',
+  'react-style-singleton': '2.2.3',
+  'use-callback-ref': '1.3.3',
+  'use-sidecar': '1.1.3',
+  'motion-dom': '12.29.2',
+  'motion-utils': '12.29.2',
+  'tslib': '2.8.1',
+};
+
+/** Add nested package requirements only when the active preview reaches them. */
+export function expandSandpackRuntimeDependencies(
+  dependencies: Record<string, string>,
+): Record<string, string> {
+  const compatibleDependencies = Object.fromEntries(
+    Object.entries(dependencies).map(([name, version]) => [
+      name,
+      SANDPACK_RUNTIME_PACKAGE_VERSIONS[name] || version,
+    ]),
+  );
+  const importsRadix = Object.keys(compatibleDependencies).some((name) => name.startsWith('@radix-ui/react-'));
+  const importsMotion = Boolean(compatibleDependencies['framer-motion']);
+
+  if (!importsRadix && !importsMotion) return compatibleDependencies;
+
+  const runtimeDependencies: Record<string, string> = {};
+  if (importsRadix) {
+    for (const [name, version] of Object.entries(SANDPACK_TRANSITIVE_RUNTIME_DEPENDENCIES)) {
+      if (name === 'motion-dom' || name === 'motion-utils') continue;
+      runtimeDependencies[name] = version;
+    }
+  }
+  if (importsMotion) {
+    runtimeDependencies['motion-dom'] = SANDPACK_TRANSITIVE_RUNTIME_DEPENDENCIES['motion-dom'];
+    runtimeDependencies['motion-utils'] = SANDPACK_TRANSITIVE_RUNTIME_DEPENDENCIES['motion-utils'];
+  }
+
+  return { ...runtimeDependencies, ...compatibleDependencies };
+}
 
 const dependencyGroup = (...names: string[]): Record<string, string> =>
   Object.fromEntries(names.map((name) => [name, SANDPACK_DEPENDENCIES[name]]));

@@ -76,6 +76,7 @@ interface PreviewCompileState {
 
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
+const SANDPACK_BUNDLER_URL = 'https://sandpack-bundler.codesandbox.io';
 
 export interface VFSPreviewProps {
   /** VFS nodes for file content */
@@ -224,18 +225,38 @@ const SandpackErrorListener: React.FC<{
   return null;
 };
 
-// Restored from the deployed Vercel preview surface. Sandpack owns the
-// installation lifecycle; this component only renders its native progress
-// signal in the existing bottom-left preview position.
+// Sandpack owns the installation lifecycle; render only its native compiler
+// progress signal in the existing bottom-left preview position.
 const SandpackDependencyProgress: React.FC<{ dependencyCount: number }> = ({ dependencyCount }) => {
+  const { sandpack } = useSandpack();
   const progressMessage = useSandpackPreviewProgress({ timeout: 3000 });
+  const [showInitialInstall, setShowInitialInstall] = useState(true);
 
-  if (!progressMessage) return null;
+  useEffect(() => {
+    if (sandpack.status !== 'initial') {
+      setShowInitialInstall(false);
+      return;
+    }
+
+    // The remote Sandpack compiler does not consistently emit a terminal
+    // completion event. Keep the fallback brief; native progress messages
+    // remain visible whenever the compiler does publish them.
+    const timer = window.setTimeout(() => setShowInitialInstall(false), 4000);
+    return () => window.clearTimeout(timer);
+  }, [sandpack.status]);
+
+  const progressLabel = progressMessage || (
+    sandpack.status === 'initial' && showInitialInstall
+      ? 'Installing preview modules'
+      : null
+  );
+
+  if (!progressLabel) return null;
 
   return (
     <div className="pointer-events-none absolute bottom-3 left-3 z-20 flex items-center gap-2 rounded-md border border-border/70 bg-background/95 px-3 py-2 text-xs text-foreground shadow-sm backdrop-blur">
       <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-      <span>{progressMessage}</span>
+      <span>{progressLabel}</span>
       <span className="text-muted-foreground">({dependencyCount} modules)</span>
     </div>
   );
@@ -361,7 +382,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   // AI execution and terminal bridge
   const previewAI = usePreviewAI();
   
-  // React/Sandpack is the sole preview runtime. Legacy Docker/local preview
+  // React/Sandpack is the sole preview runtime. Docker/local preview
   // environment variables must never replace the canonical in-browser VFS.
   const dockerGatewayConfigured = false;
   const localViteConfigured = false;
@@ -468,6 +489,10 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   );
 
   useEffect(() => {
+    // The provider is not mounted while artifacts compile. Its first real
+    // dependency graph is initial state, not a runtime change; remounting at
+    // this point aborts the Sandpack runner before it can connect.
+    if (previewCompiling) return;
     if (dependencySignatureRef.current === null) {
       dependencySignatureRef.current = dependencySignature;
       return;
@@ -476,7 +501,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       dependencySignatureRef.current = dependencySignature;
       setSandpackKey((key) => key + 1);
     }
-  }, [dependencySignature]);
+  }, [dependencySignature, previewCompiling]);
 
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
   useEffect(() => {
@@ -515,21 +540,22 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return activeFile;
   }, [activeFile]);
   
-  // Determine Sandpack entry file — Model B: always prefer App.tsx as the site router
+  // Sandpack must run the controlled index entry, which mounts the routed App.
   const sandpackEntryFile = useMemo(() => {
-    // Always use App.tsx as the canonical entry (site router model)
-    if (sandpackFiles['/App.tsx']) return '/App.tsx';
-    if (sandpackFiles['/App.jsx']) return '/App.jsx';
+    const controlledEntries = ['/index.tsx', '/index.jsx'];
+    for (const entry of controlledEntries) {
+      if (sandpackFiles[entry]) return entry;
+    }
 
-    // Fallback to active file only if no App exists
+    // Fallback to the active file only when artifact preparation did not emit
+    // the controlled mount module.
     if (normalizedActiveFile && sandpackFiles[normalizedActiveFile]) {
       return normalizedActiveFile;
     }
 
-    const candidates = ['/index.tsx', '/index.jsx'];
-    for (const candidate of candidates) {
-      if (sandpackFiles[candidate]) return candidate;
-    }
+    if (sandpackFiles['/App.tsx']) return '/App.tsx';
+    if (sandpackFiles['/App.jsx']) return '/App.jsx';
+
     const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/index.tsx');
     return firstCode || '/App.tsx';
   }, [sandpackFiles, normalizedActiveFile]);
@@ -834,7 +860,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
 
   
-  // Initialize backend — Docker for local dev, Sandpack for production
+  // Initialize Sandpack as the canonical preview runtime.
   useEffect(() => {
     if (startAttemptedRef.current) return;
     startAttemptedRef.current = true;
@@ -877,16 +903,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [backend, dockerService, files, launch]);
 
   const handleSandpackTimeout = useCallback(() => {
-    // Sandpack's hosted runner occasionally drops its initial connection. Retry
-    // the identical, fully provisioned VFS once per mount; do not retry compile
-    // errors or loop indefinitely when the remote service is unavailable.
-    if (timeoutRecoveryCountRef.current >= 1 || timeoutRecoveryTimerRef.current !== null) return;
-
+    // Sandpack owns its runner retry lifecycle. Remounting here aborts the
+    // connection it is still establishing and can turn a transient delay into
+    // a permanent TIME_OUT. Keep the mounted provider alive for its native
+    // retry control instead.
     timeoutRecoveryCountRef.current += 1;
-    timeoutRecoveryTimerRef.current = window.setTimeout(() => {
-      timeoutRecoveryTimerRef.current = null;
-      setSandpackKey((key) => key + 1);
-    }, 750);
   }, []);
 
   useEffect(() => () => {
@@ -1203,6 +1224,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
               files={sandpackFiles}
               theme="light"
               options={{
+                bundlerURL: SANDPACK_BUNDLER_URL,
                 externalResources: [
                   'https://cdn.tailwindcss.com',
                 ],

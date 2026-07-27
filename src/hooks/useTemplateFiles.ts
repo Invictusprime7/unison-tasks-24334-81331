@@ -21,6 +21,7 @@ import {
   WIZARD_FOOTER_PATH,
   WIZARD_NAVBAR_PATH,
 } from "@/services/wizardSharedChrome";
+import { migrateFrameworkVfs } from "@/services/frameworkVfsMigration";
 
 /**
  * Pass 1 (Canonical Preview Enforcement): if a draft is being created without
@@ -608,15 +609,42 @@ export function useTemplateFiles() {
       }
 
       if (draft) {
+        const frameworkMigration = migrateFrameworkVfs({
+          vfsFiles: draft.vfs_files as Record<string, string> | null,
+          metadata: draft.metadata as Record<string, unknown> | null,
+        });
+        let hydratedDraft = draft;
+        if (frameworkMigration.changed) {
+          const { data: persistedDraft, error: persistError } = await supabase
+            .from("builder_drafts")
+            .update({
+              vfs_files: frameworkMigration.vfsFiles as unknown as Json,
+              metadata: frameworkMigration.metadata as unknown as Json,
+            })
+            .eq("id", draft.id)
+            .select("*")
+            .maybeSingle();
+          if (persistError) {
+            console.warn('[useTemplateFiles] framework VFS migration persistence failed:', persistError);
+          } else if (persistedDraft) {
+            hydratedDraft = persistedDraft;
+          } else {
+            hydratedDraft = {
+              ...draft,
+              vfs_files: frameworkMigration.vfsFiles as unknown as Json,
+              metadata: frameworkMigration.metadata as unknown as Json,
+            };
+          }
+        }
         setCurrentDraftId(draft.id);
         const draftProjectId =
-          (draft as { project_id?: string | null }).project_id ??
-          ((draft.metadata as Record<string, unknown> | null)?.projectId as
+          (hydratedDraft as { project_id?: string | null }).project_id ??
+          ((hydratedDraft.metadata as Record<string, unknown> | null)?.projectId as
             | string
             | undefined) ??
           null;
         setCurrentProjectId(draftProjectId ?? null);
-        return draftRowToTemplate(draft);
+        return draftRowToTemplate(hydratedDraft);
       }
 
       // Legacy fallback: design_templates (read-only)

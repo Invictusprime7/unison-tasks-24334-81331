@@ -997,38 +997,62 @@ const App = (() => {
   return null;
 })();
 
-// Configure Tailwind CDN with semantic design tokens
-if (typeof window !== 'undefined' && (window as any).tailwind) {
-  (window as any).tailwind.config = {
-    theme: {
-      extend: {
-        colors: {
-          border: 'hsl(var(--border))',
-          input: 'hsl(var(--input))',
-          ring: 'hsl(var(--ring))',
-          background: 'hsl(var(--background))',
-          foreground: 'hsl(var(--foreground))',
-          primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
-          secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
-          destructive: { DEFAULT: 'hsl(var(--destructive))', foreground: 'hsl(var(--destructive-foreground))' },
-          muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
-          accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
-          popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
-          card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
-        },
-        borderRadius: {
-          lg: 'var(--radius)',
-          md: 'calc(var(--radius) - 2px)',
-          sm: 'calc(var(--radius) - 4px)',
-        },
-        fontFamily: {
-          heading: 'var(--font-heading, ui-sans-serif, system-ui, sans-serif)',
-          body: 'var(--font-body, ui-sans-serif, system-ui, sans-serif)',
-        },
+// Sandpack replaces the VFS index.html with its own shell, so scripts placed
+// there never run. Bootstrap Tailwind here, before the site mounts, to compile
+// the generated utility classes alongside the snapshot-owned token stylesheet.
+const __tailwindConfig = {
+  theme: {
+    extend: {
+      colors: {
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
+        secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
+        destructive: { DEFAULT: 'hsl(var(--destructive))', foreground: 'hsl(var(--destructive-foreground))' },
+        muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
+        accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
+        popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
+        card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+      },
+      fontFamily: {
+        heading: 'var(--font-heading, ui-sans-serif, system-ui, sans-serif)',
+        body: 'var(--font-body, ui-sans-serif, system-ui, sans-serif)',
       },
     },
-  };
-}
+  },
+};
+
+const __loadTailwindUtilities = () => new Promise<void>((resolve) => {
+  if (document.querySelector('[data-unison-tailwind-runtime]')) {
+    resolve();
+    return;
+  }
+
+  (window as any).tailwind = { config: __tailwindConfig };
+  const source = document.createElement('style');
+  source.type = 'text/tailwindcss';
+  source.dataset.unisonTailwindSource = 'true';
+  source.textContent = '@tailwind base; @tailwind components; @tailwind utilities;';
+  document.head.appendChild(source);
+
+  const loader = document.createElement('script');
+  loader.src = 'https://cdn.tailwindcss.com';
+  loader.async = true;
+  loader.dataset.unisonTailwindRuntime = 'true';
+  const finish = () => window.setTimeout(resolve, 0);
+  loader.onload = finish;
+  loader.onerror = finish;
+  document.head.appendChild(loader);
+  window.setTimeout(finish, 5000);
+});
 
 ${PREVIEW_NAV_BRIDGE}
 __initUnisonPreviewNavBridge();
@@ -1072,6 +1096,7 @@ class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { ha
   }
 }
 
+const __mountPreview = () => {
 if (App) {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
@@ -1094,6 +1119,9 @@ if (App) {
     </div>
   );
 }
+};
+
+void __loadTailwindUtilities().finally(__mountPreview);
 `;
 
 const HOOKS_SHIM = `
@@ -1426,6 +1454,167 @@ export function Calendar({ ...props }) { return React.createElement('div', { cla
 
 export default {};
 `;
+
+// Sandpack's remote compiler transforms Radix CJS modules and then attempts to
+// collect injected @swc/helpers imports. Generated previews only need the
+// component API shape, so keep the existing VFS facade imports local.
+const RADIX_PREVIEW_SHIM = `
+import React from 'react';
+
+const passthrough = (tag = 'div') => React.forwardRef(({ children, ...props }, ref) =>
+  React.createElement(tag, { ...props, ref }, children)
+);
+
+export const Root = passthrough();
+export const Trigger = passthrough('button');
+export const Content = passthrough();
+export const Portal = ({ children }) => React.createElement(React.Fragment, null, children);
+export const Overlay = passthrough();
+export const Title = passthrough('h2');
+export const Description = passthrough('p');
+export const Close = passthrough('button');
+export const Item = passthrough();
+export const ItemText = passthrough('span');
+export const ItemIndicator = passthrough('span');
+export const Group = passthrough();
+export const Label = passthrough('label');
+export const Separator = passthrough();
+export const Viewport = passthrough();
+export const Scrollbar = passthrough();
+export const Thumb = passthrough();
+export const Icon = passthrough('span');
+export const Arrow = passthrough();
+export const Value = passthrough('span');
+export const Indicator = passthrough('span');
+export const Toggle = passthrough('button');
+export const ToggleGroup = Root;
+export const ToggleGroupItem = Trigger;
+export const List = passthrough();
+export const Link = passthrough('a');
+export const Collection = passthrough();
+export const CollectionItem = passthrough();
+export const AspectRatio = passthrough();
+export const Image = passthrough('img');
+export const Fallback = passthrough('span');
+export const Provider = ({ children }) => React.createElement(React.Fragment, null, children);
+export const ToastProvider = Provider;
+export const ToastViewport = Viewport;
+export const Toast = Root;
+export const ToastTitle = Title;
+export const ToastDescription = Description;
+export const ToastAction = Trigger;
+export const ToastClose = Close;
+export const createSlot = () => Slot;
+export const Slottable = ({ children }) => React.createElement(React.Fragment, null, children);
+export const Slot = React.forwardRef(({ children, ...props }, ref) => {
+  const child = React.Children.toArray(children).find(React.isValidElement);
+  return child
+    ? React.cloneElement(child, { ...props, ref })
+    : React.createElement('span', { ...props, ref }, children);
+});
+export const createContextScope = () => [() => [Provider, () => ({})], () => ({})];
+export const createCollection = () => [{ Provider, Slot, ItemSlot: Item }, () => [], () => ({})];
+export const unstable_createCollection = createCollection;
+export const createPopperScope = () => () => ({});
+export const createMenuScope = () => () => ({});
+export const createDialogScope = () => () => ({});
+export const createSelectScope = () => () => ({});
+export const createTooltipScope = () => () => ({});
+export const createTabsScope = () => () => ({});
+export const createAccordionScope = () => () => ({});
+export const useControllableState = ({ defaultProp, prop, onChange }) => {
+  const [value, setValue] = React.useState(prop === undefined ? defaultProp : prop);
+  const set = (next) => { const resolved = typeof next === 'function' ? next(value) : next; setValue(resolved); onChange?.(resolved); };
+  return [prop === undefined ? value : prop, set];
+};
+export const useComposedRefs = (...refs) => (node) => refs.forEach((ref) => {
+  if (typeof ref === 'function') ref(node);
+  else if (ref) ref.current = node;
+});
+`;
+
+// Sandpack's CommonJS transform for Framer Motion has the same dependency
+// collector failure as Radix. Generated previews need declarative motion
+// components, not the animation runtime, while compiling.
+const MOTION_PREVIEW_SHIM = `
+import React from 'react';
+
+const MOTION_ONLY_PROPS = new Set([
+  'animate', 'initial', 'exit', 'transition', 'variants', 'whileHover',
+  'whileTap', 'whileFocus', 'whileInView', 'layout', 'layoutId', 'drag',
+  'dragConstraints', 'onAnimationStart', 'onAnimationComplete',
+]);
+const component = (tag = 'div') => React.forwardRef(({ children, ...props }, ref) => {
+  const domProps = Object.fromEntries(
+    Object.entries(props).filter(([name]) => !MOTION_ONLY_PROPS.has(name))
+  );
+  return React.createElement(tag, { ...domProps, ref }, children);
+});
+const motionComponent = (tag) => component(String(tag));
+export const motion = new Proxy({}, { get: (_target, tag) => motionComponent(tag) });
+export const m = motion;
+export const AnimatePresence = ({ children }) => React.createElement(React.Fragment, null, children);
+export const LazyMotion = AnimatePresence;
+export const LayoutGroup = AnimatePresence;
+export const MotionConfig = AnimatePresence;
+export const Reorder = { Group: component(), Item: component() };
+export const useMotionValue = (initial) => {
+  const value = React.useRef(initial);
+  return React.useMemo(() => ({ get: () => value.current, set: (next) => { value.current = next; }, on: () => () => {} }), []);
+};
+export const useSpring = (value) => value;
+export const useTransform = (value) => value;
+export const useScroll = () => ({ scrollX: useMotionValue(0), scrollY: useMotionValue(0), scrollXProgress: useMotionValue(0), scrollYProgress: useMotionValue(0) });
+export const useInView = () => true;
+export const useAnimation = () => ({ start: () => Promise.resolve(), set: () => {}, stop: () => {} });
+export const useReducedMotion = () => false;
+`;
+
+/**
+ * Keep external Radix packages out of Sandpack's dependency graph. This must
+ * also run after canonical overlays, which are written after the main file
+ * preparation pass.
+ */
+export function applyRadixPreviewShim(files: Record<string, string>): Record<string, string> {
+  const previewFiles = { ...files };
+
+  for (const [filePath, content] of Object.entries(previewFiles)) {
+    if (!/\.[cm]?[jt]sx?$/.test(filePath)) continue;
+
+    const sandpackPath = filePath.replace(/^\/src\//, '/');
+    const radixShimImport = toRelativeSandpackImport(sandpackPath, '/radix-shim');
+    previewFiles[filePath] = content.replace(
+      /(['"])@radix-ui\/react-[^'"]+\1/g,
+      (_match, quote: string) => `${quote}${radixShimImport}${quote}`,
+    );
+  }
+
+  previewFiles['/radix-shim.tsx'] = RADIX_PREVIEW_SHIM;
+  return previewFiles;
+}
+
+/** Replace Framer Motion imports only in Sandpack artifact files. */
+export function applyFramerMotionPreviewShim(files: Record<string, string>): Record<string, string> {
+  const previewFiles = { ...files };
+
+  for (const [filePath, content] of Object.entries(previewFiles)) {
+    if (!/\.[cm]?[jt]sx?$/.test(filePath)) continue;
+
+    const sandpackPath = filePath.replace(/^\/src\//, '/');
+    const motionShimImport = toRelativeSandpackImport(sandpackPath, '/motion-shim');
+    previewFiles[filePath] = content.replace(
+      /(['"])framer-motion\1/g,
+      (_match, quote: string) => `${quote}${motionShimImport}${quote}`,
+    );
+  }
+
+  previewFiles['/motion-shim.tsx'] = MOTION_PREVIEW_SHIM;
+  return previewFiles;
+}
+
+export function applySandpackRuntimeShims(files: Record<string, string>): Record<string, string> {
+  return applyFramerMotionPreviewShim(applyRadixPreviewShim(files));
+}
 
 // ── Industry-contextual fallback images ──────────────────────────────────────
 const CONTEXTUAL_IMAGES: Record<string, string[]> = {
@@ -4987,6 +5176,7 @@ export function processCode(code: string, filePath: string): string {
 
   let processed = code;
   const hooksShimImport = toRelativeSandpackImport(filePath, '/hooks-shim');
+  const radixShimImport = toRelativeSandpackImport(filePath, '/radix-shim');
 
   processed = repairMalformedDefaultExportClosures(processed);
 
@@ -5090,11 +5280,22 @@ export function processCode(code: string, filePath: string): string {
   );
 
   // Process remaining imports — strip unresolvable npm packages to prevent Sandpack crashes
+
+  // Generated Unison Radix facades re-export the external primitive. Sandpack
+  // cannot collect its CommonJS transform helpers reliably, so preserve the
+  // facade API while resolving it against the local preview shim.
+  processed = processed.replace(
+    /export\s+\*\s+from\s+['"]@radix-ui\/react-[^'"]+['"];?/g,
+    `export * from '${radixShimImport}';`,
+  );
   processed = processed.replace(
     /^import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"]([^'"]+)['"];?\s*$/gm,
     (match, modulePath) => {
       if (isSandpackAllowedImport(modulePath)) return match;
       if (modulePath.startsWith('@/')) {
+      if (/^@radix-ui\/react-/.test(modulePath)) {
+        return match.replace(modulePath, radixShimImport);
+      }
         return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
       }
       if (/\.(css|scss|less)$/.test(modulePath)) return match;
@@ -5908,6 +6109,7 @@ export function prepareSandpackFiles(
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
   sandpackFiles['/lib-utils-shim.ts'] = LIB_UTILS_SHIM;
   sandpackFiles['/ui-shim.tsx'] = UI_COMPONENTS_SHIM;
+  sandpackFiles['/radix-shim.tsx'] = RADIX_PREVIEW_SHIM;
 
   // Canonical tsconfig so consumers (and tests) can rely on the modern
   // automatic JSX runtime being active. The per-file `forceClassicReactJsxRuntime`
@@ -6112,7 +6314,7 @@ export function prepareSandpackFiles(
   }
 
   console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles));
-  return sandpackFiles;
+  return applySandpackRuntimeShims(sandpackFiles);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

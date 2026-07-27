@@ -92,6 +92,7 @@ import {
 } from '@/services/businessCapabilityPlanner';
 import { applyCapabilityMigration } from '@/services/capabilityMigrationRunner';
 import { applyButtonBinding } from '@/services/aiBindingTool';
+import { upgradeCurrentUserDraftFrameworkVfs } from '@/services/draftFrameworkMigrationService';
 
 // Helpers extracted to web-builder/*
 import {
@@ -1106,6 +1107,16 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // Template file management
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const templateFiles = useTemplateFiles();
+  const frameworkDraftSweepStartedRef = useRef(false);
+  useEffect(() => {
+    if (frameworkDraftSweepStartedRef.current) return;
+    frameworkDraftSweepStartedRef.current = true;
+
+    void upgradeCurrentUserDraftFrameworkVfs().catch((error) => {
+      console.warn('[WebBuilder] profile draft framework migration failed:', error);
+    });
+  }, []);
+
   // Pass 2 (identity hardening): resolved real projects.id for the active
   // draft. Used to construct BuilderIdentity at commit/deploy/AI-apply
   // boundaries instead of aliasing the draft id as projectId.
@@ -3456,6 +3467,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         activePagePath,
         businessId: businessId ?? null,
         projectId: projectId ?? null,
+        metadata: { launchSource: undefined },
       };
     }
   }, [buildSavePayload, launchEntryPoint, activePagePath, businessId, projectId]);
@@ -3485,7 +3497,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       return draftPersistencePromiseRef.current;
     }
 
-    const payload = buildSavePayload();
+    const payload = buildSavePayloadOrFallback(virtualFSRef.current.getSandpackFiles());
     const effectiveDescription = (
       saveProjectDescription.trim() ||
       `Generated from ${payload.metadata?.launchSource || 'launcher'}`
@@ -3527,7 +3539,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     effectiveRouteState?.templateName,
     projectId,
     getFinalCodeWithOverrides,
-    buildSavePayload,
+    buildSavePayloadOrFallback,
     saveProjectDescription,
     templateFiles,
   ]);
@@ -3561,9 +3573,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       if (existingDraftId) {
         let payload;
         try {
-          payload = buildSavePayload();
+          payload = buildSavePayloadOrFallback(currentVfsFiles);
         } catch (error) {
-          if (!isPreviewPipelineError(error)) throw error;
+          if (!isRecompileInputError(error)) throw error;
 
           // Older recovered drafts can render from their saved VFS without
           // carrying the newer wizard composition required for recompilation.
@@ -3608,7 +3620,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     editorCode,
     getAutoSaveKey,
     templateFiles,
-    buildSavePayload,
+    buildSavePayloadOrFallback,
     ensureLauncherDraftSaved,
     computeVfsSignature,
     launchEntryPoint,
@@ -4905,18 +4917,28 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     isPublic: boolean
   ) => {
     const finalCode = getFinalCodeWithOverrides();
-    await templateFiles.saveTemplate(name, description, isPublic, finalCode, buildSavePayload());
-  }, [templateFiles, getFinalCodeWithOverrides, buildSavePayload]);
+    await templateFiles.saveTemplate(
+      name,
+      description,
+      isPublic,
+      finalCode,
+      buildSavePayloadOrFallback(virtualFSRef.current.getSandpackFiles()),
+    );
+  }, [templateFiles, getFinalCodeWithOverrides, buildSavePayloadOrFallback]);
 
   // Handle quick save (update existing template)
   const handleQuickSave = useCallback(async () => {
     if (templateFiles.currentDraftId) {
       const finalCode = getFinalCodeWithOverrides();
-      await templateFiles.updateTemplate(templateFiles.currentDraftId, finalCode, buildSavePayload());
+      await templateFiles.updateTemplate(
+        templateFiles.currentDraftId,
+        finalCode,
+        buildSavePayloadOrFallback(virtualFSRef.current.getSandpackFiles()),
+      );
     } else {
       setFileManagerOpen(true);
     }
-  }, [templateFiles, getFinalCodeWithOverrides, buildSavePayload]);
+  }, [templateFiles, getFinalCodeWithOverrides, buildSavePayloadOrFallback]);
 
   // Handle save to projects from preview
   const handleSaveToProjects = useCallback(async (saveAsNew: boolean = false) => {
@@ -4929,7 +4951,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     try {
       const isUpdating = templateFiles.currentDraftId && !saveAsNew;
       const finalCode = getFinalCodeWithOverrides();
-      const basePayload = buildSavePayload();
+      const basePayload = buildSavePayloadOrFallback(virtualFSRef.current.getSandpackFiles());
       
       if (isUpdating) {
         // Update existing project

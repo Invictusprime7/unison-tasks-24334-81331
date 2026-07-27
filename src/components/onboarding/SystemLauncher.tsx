@@ -8,6 +8,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight,
@@ -72,6 +82,12 @@ import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wi
 import { preflightNavWiring } from "@/services/preflightNavWiring";
 import { runPreflightRepair } from "@/services/aiSitePreflightRepair";
 import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
+import { VFSPreview } from "@/components/VFSPreview";
+import {
+  createConfirmedLaunchIds,
+  provisionConfirmedLaunchSite,
+  type ConfirmedLaunchIds,
+} from "@/services/confirmedLaunchProvisioner";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import { createLaunchState } from "@/types/launchState";
 import { extractLauncherPayload } from "@/utils/launcherPayload";
@@ -130,6 +146,14 @@ interface SystemLauncherProps {
    * owners don't retype the identity they just entered post-signup.
    */
   prefill?: SystemLauncherPrefill | null;
+}
+
+interface LaunchPreviewConfirmation {
+  businessName: string;
+  siteName: string;
+  files: Record<string, string>;
+  businessId: string;
+  siteId: string;
 }
 
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
@@ -1346,6 +1370,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchStatus, setLaunchStatus] = useState("");
+  const [launchPreviewConfirmation, setLaunchPreviewConfirmation] = useState<LaunchPreviewConfirmation | null>(null);
+  const launchConfirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   // Business Profile selected in the wizard header. When set, the project
   // is stamped into this business; when null we fall back to
   // install-system provisioning (creates a fresh business).
@@ -1379,6 +1405,20 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     linkedin: "",
     youtube: "",
   });
+
+  const requestLaunchConfirmation = useCallback((preview: LaunchPreviewConfirmation) => (
+    new Promise<boolean>((resolve) => {
+      launchConfirmationResolverRef.current = resolve;
+      setLaunchPreviewConfirmation(preview);
+    })
+  ), []);
+
+  const resolveLaunchConfirmation = useCallback((confirmed: boolean) => {
+    const resolve = launchConfirmationResolverRef.current;
+    launchConfirmationResolverRef.current = null;
+    setLaunchPreviewConfirmation(null);
+    resolve?.(confirmed);
+  }, []);
 
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
 
@@ -1548,7 +1588,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         }
       }
 
-      const ownerEmail = sessionData.session.user.email || '';
+      const launcherUser = sessionData.session.user;
+      const ownerEmail = launcherUser.email || '';
+      const launchIds: ConfirmedLaunchIds = createConfirmedLaunchIds(selectedBusinessId);
+      const plannedBusinessId = selectedBusinessId || launchIds.businessId;
 
       const generationCategory = getGenerationCategory(system, effectiveTemplate);
       const industryProfile = getIndustryForCategory(generationCategory);
@@ -1579,7 +1622,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = 'selected-pages';
 
 
-      // ── Provision backend in background (non-blocking) ──
       const installSystemType = selectedSystem as string;
       const installBody: any = {
         systemType: installSystemType,
@@ -1591,21 +1633,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ownerEmail: ownerEmail || undefined,
         publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native' : undefined,
       };
-
-      console.log('[SystemLauncher] Invoking install-system with body:', installBody);
-      const installPromise = supabase.functions.invoke('install-system', {
-        body: installBody,
-      })
-        .then(({ data, error }) => {
-          if (error) {
-            console.warn('[SystemLauncher] install-system failed (non-fatal):', error.message);
-            return null;
-          }
-          return data?.data?.businessId as string | null;
-        }).catch((err) => {
-          console.warn('[SystemLauncher] install-system error (non-fatal):', err);
-          return null;
-        });
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) EARLY ──
       // Must run before commitToPipeline so the canonical pipeline can lock the
@@ -1660,7 +1687,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ownerEmail: ownerEmail || undefined,
         publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native-first-party' : 'manual-setup',
         wizardSeedId,
-        businessId: selectedBusinessId || undefined,
+        businessId: plannedBusinessId,
       };
 
 
@@ -3078,16 +3105,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }
 
 
-      const installedBusinessId = await installPromise;
-      // Wizard selection wins: if the creator picked a Business Profile in
-      // the header, save the project under that business instead of the
-      // freshly provisioned one from install-system.
-      const provisionedBusinessId = selectedBusinessId || installedBusinessId;
-      try {
-        if (provisionedBusinessId) {
-          localStorage.setItem('unison:lastBusinessId', provisionedBusinessId);
-        }
-      } catch { /* ignore */ }
+      const provisionedBusinessId = plannedBusinessId;
 
       const nativeSetupSnapshot = buildNativePublishSetupSnapshot({
         enabled: launchContract.nativePublishCapable,
@@ -3132,7 +3150,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         compiledPlayground,
         canonicalPlayground: materializedPlayground,
         mergeWithCanonicalSnapshot: true,
-        businessId: provisionedBusinessId || undefined,
+        businessId: provisionedBusinessId,
+        projectId: launchIds.projectId,
+        siteId: launchIds.siteId,
         systemType: selectedSystem,
         systemName: system.name,
         templateName: `${brand} Site`,
@@ -3180,49 +3200,56 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         );
       }
 
-      // Persist the generated VFS before navigation. Route/session handoffs are
-      // deliberately treated as an optimization, never the only copy of a
-      // launcher project. The draft trigger creates and links its Cloud project.
-      if (!provisionedBusinessId) {
-        throw new Error('Choose or create a Business Profile before launching a site.');
-      }
-
-      const { data: { user: launcherUser } } = await supabase.auth.getUser();
-      if (!launcherUser) {
-        throw new Error('Sign in before launching a site.');
-      }
-
       const durableCode = wiredVfsFiles['/src/App.tsx'] || wiredVfsFiles['/App.tsx'] || '';
-      const { data: persistedDraft, error: persistDraftError } = await supabase
-        .from('builder_drafts')
-        .insert({
-          user_id: launcherUser.id,
-          business_id: provisionedBusinessId,
-          name: `${brand} Site`,
-          code: durableCode,
-          editor_code: durableCode,
-          vfs_files: wiredVfsFiles as unknown as Json,
-          metadata: {
-            name: `${brand} Site`,
-            projectName: `${brand} Site`,
-            description: `${system.name} site launched from the System Launcher`,
-            industry: resolvedIndustry,
-            systemType: selectedSystem,
-            entryPoint: launchArtifacts.entryPoint,
-            themePresetId: resolvedPreset.id,
-            siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
-          } as unknown as Json,
-        })
-        .select('id, project_id')
-        .single();
-
-      if (persistDraftError) throw persistDraftError;
-      if (!persistedDraft?.project_id) {
-        throw new Error('The launcher draft was saved but could not be linked to a Cloud project.');
+      setLaunchStatus('Review the generated site before creating its live data workspace.');
+      const confirmed = await requestLaunchConfirmation({
+        businessName: brand,
+        siteName: `${brand} Site`,
+        files: wiredVfsFiles,
+        businessId: provisionedBusinessId,
+        siteId: launchIds.siteId,
+      });
+      if (!confirmed) {
+        toast.info('Launch cancelled. No site data was created.');
+        return;
       }
 
-      const launchProjectId = persistedDraft.project_id;
-      const launcherDraftId = persistedDraft.id;
+      setLaunchStatus('Creating the site workspace and live data contracts…');
+      const confirmedLaunch = await provisionConfirmedLaunchSite({
+        ids: launchIds,
+        existingBusinessId: selectedBusinessId,
+        businessName: brand,
+        industry: resolvedIndustry,
+        siteName: `${brand} Site`,
+        siteSlug: `${brand}-${launchIds.siteId.slice(0, 8)}`
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, ''),
+        systemType: selectedSystem,
+        templateId: effectiveTemplate?.id,
+        themePresetId: resolvedPreset.id,
+        code: durableCode,
+        vfsFiles: wiredVfsFiles,
+        siteBundleSnapshot: (launchArtifacts.siteBundleSnapshot || {}) as unknown as Record<string, unknown>,
+        runtimeManifest: runtimeManifest as unknown as Record<string, unknown>,
+        wizardSelections: wizardSelections as unknown as Record<string, unknown>,
+      });
+      const launchProjectId = confirmedLaunch.projectId;
+      const launcherDraftId = confirmedLaunch.draftId;
+
+      try {
+        localStorage.setItem('unison:lastBusinessId', confirmedLaunch.businessId);
+      } catch { /* browser storage is best-effort */ }
+
+      // Keep existing pack and demo-data provisioning, but only after the
+      // confirmed root graph exists and with the transaction's business id.
+      const { error: installError } = await supabase.functions.invoke('install-system', {
+        body: { ...installBody, businessId: confirmedLaunch.businessId },
+      });
+      if (installError) {
+        console.warn('[SystemLauncher] install-system post-confirmation seed failed:', installError);
+        toast.warning('The site workspace was created, but starter data is still provisioning.');
+      }
 
       // Persist generated bindings → site_intent_bindings (launcher-native wiring).
       // Best-effort; failures never block launch.
@@ -3349,7 +3376,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         sitePlan,
-        businessId: provisionedBusinessId || undefined,
+        businessId: confirmedLaunch.businessId,
+        siteId: confirmedLaunch.siteId,
         projectId: launchProjectId,
         draftId: launcherDraftId,
         materializedPlayground,
@@ -3379,7 +3407,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         preloadedIntents: canonicalIntents,
         startInPreview: true,
         intentRuntime: true,
-        businessId: provisionedBusinessId || undefined,
+        businessId: confirmedLaunch.businessId,
         projectId: launchProjectId,
         industry: resolvedIndustry,
         runtimeManifest,
@@ -3454,13 +3482,15 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   // ─── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(isOpen) => {
-        onOpenChange(isOpen);
-        if (!isOpen) resetState();
-      }}
-    >
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) resolveLaunchConfirmation(false);
+          onOpenChange(isOpen);
+          if (!isOpen) resetState();
+        }}
+      >
       <DialogContent className="max-w-[960px] p-0 overflow-hidden border-0 bg-[#07080F] max-h-[92vh] shadow-[0_0_100px_rgba(0,200,255,0.06),0_0_40px_rgba(0,0,0,0.5)]">
         <DialogHeader className="sr-only">
           <DialogTitle>Launch Your Website</DialogTitle>
@@ -4191,8 +4221,53 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             </motion.div>
           )}
         </AnimatePresence>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={Boolean(launchPreviewConfirmation)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) resolveLaunchConfirmation(false);
+        }}
+      >
+        <AlertDialogContent className="max-w-6xl border-white/10 bg-[#07080F] text-white shadow-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Review Generated Site</AlertDialogTitle>
+            <AlertDialogDescription className="text-white/55">
+              {launchPreviewConfirmation?.siteName} will create its Unison workspace, live data contracts, and initial revision only after confirmation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="h-[62vh] min-h-[420px] overflow-hidden border border-white/10 bg-black">
+            {launchPreviewConfirmation && (
+              <VFSPreview
+                nodes={[]}
+                files={launchPreviewConfirmation.files}
+                businessId={launchPreviewConfirmation.businessId}
+                siteId={launchPreviewConfirmation.siteId}
+                forceBackend="sandpack"
+                showConsole={false}
+                showToolbar={false}
+                className="h-full"
+              />
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              className="border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
+              onClick={() => resolveLaunchConfirmation(false)}
+            >
+              Keep Editing
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+              onClick={() => resolveLaunchConfirmation(true)}
+            >
+              Confirm Site Launch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };
 

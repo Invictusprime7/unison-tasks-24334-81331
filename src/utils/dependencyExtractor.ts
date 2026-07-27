@@ -10,6 +10,8 @@
  * - Merges with bundled dependencies for Sandpack
  */
 
+import { expandSandpackRuntimeDependencies } from '@/utils/sandpackDependencies';
+
 // Built-in Node.js modules that shouldn't be treated as dependencies
 const BUILTIN_MODULES = new Set([
   'fs', 'path', 'os', 'util', 'events', 'stream', 'http', 'https', 'url',
@@ -24,7 +26,7 @@ const KNOWN_VERSIONS: Record<string, string> = {
   'react': '^18.2.0',
   'react-dom': '^18.2.0',
   'react-router-dom': '^6.20.0',
-  '@swc/helpers': '^0.5.23',
+  '@swc/helpers': '0.5.23',
   '@babel/standalone': '^7.28.4',
   'lucide-react': 'latest',
   'framer-motion': 'latest',
@@ -256,12 +258,13 @@ export function extractDependencies(
     ? collectReachableFiles(files, options.entryPoints)
     : files;
 
-  // First, check for package.json in VFS
+  // A generated VFS package.json also describes export/build tooling and
+  // local aliases. It supplies versions for browser imports, but must never
+  // become Sandpack's unconditional install list.
   let packageJsonDeps: Record<string, string> = {};
   const packageJsonContent = filesToScan['/package.json'] || filesToScan['package.json'];
   if (packageJsonContent) {
     packageJsonDeps = parsePackageJson(packageJsonContent);
-    Object.keys(packageJsonDeps).forEach(pkg => fromPackageJson.add(pkg));
   }
 
   // Scan all code files for imports
@@ -300,14 +303,16 @@ export function extractDependencies(
 
   // Build final dependencies map
   // Explicit `install` commands persist into VFS package.json. Include those
-  // packages even before the user adds an import so the install is real and a
-  // later HMR edit can resolve immediately.
-  const dependencies: Record<string, string> = { ...packageJsonDeps };
+  // package versions only when the active preview graph imports them. This
+  // prevents generated Vite/build dependencies and local aliases from making
+  // Sandpack fetch an invalid or oversized module graph.
+  const dependencies: Record<string, string> = {};
   
   for (const pkg of detected) {
     // Priority: package.json > known versions > 'latest'
     if (packageJsonDeps[pkg]) {
       dependencies[pkg] = packageJsonDeps[pkg];
+      fromPackageJson.add(pkg);
     } else if (KNOWN_VERSIONS[pkg]) {
       dependencies[pkg] = KNOWN_VERSIONS[pkg];
     } else {
@@ -369,7 +374,9 @@ export function getDependenciesForSandpack(
   // available for rich components even before a particular variant imports
   // every package. Extracted dependencies are merged in for site-specific
   // imports; the curated baseline owns versions where the two overlap.
-  const dependencies = mergeDependencies(extractionInfo.dependencies, baseDependencies);
+  const dependencies = expandSandpackRuntimeDependencies(
+    mergeDependencies(extractionInfo.dependencies, baseDependencies),
+  );
   
   // Log for debugging
   if (extractionInfo.unresolved.length > 0) {

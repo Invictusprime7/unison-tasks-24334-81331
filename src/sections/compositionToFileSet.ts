@@ -279,6 +279,8 @@ export default function Navbar({ props }: { props: any }) {
 const HERO_MODULE = `import React from 'react';
 import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, sectionPad, primaryBtnStyle, outlineBtnStyle } from './theme';
 
+const HERO_TOP_PADDING = 'clamp(5.5rem, 8vw, 6.5rem)';
+
 export default function Hero({ props }: { props: any }) {
   const { headline, subheadline, description, ctas = [], badge, stats, layout = 'centered', image, backgroundImage } = props;
   const split = layout === 'split';
@@ -294,7 +296,7 @@ export default function Hero({ props }: { props: any }) {
 
   if (fullBleed) {
     return (
-      <section data-ut-variant="hero:full-bleed" style={{ ...sectionPad, paddingTop: '10rem', paddingBottom: '9rem', minHeight: '72vh', display: 'flex', alignItems: 'center', position: 'relative', overflow: 'hidden', background: hsl(THEME.colors.foreground) }}>
+      <section data-ut-variant="hero:full-bleed" style={{ ...sectionPad, paddingTop: HERO_TOP_PADDING, paddingBottom: '9rem', minHeight: '72vh', display: 'flex', alignItems: 'center', position: 'relative', overflow: 'hidden', background: hsl(THEME.colors.foreground) }}>
         {media && <img src={media} alt="" aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(0,0,0,0.78), rgba(0,0,0,0.38))' }} />
         <div style={{ ...containerStyle, position: 'relative', zIndex: 1, textAlign: 'left' }}>{content}</div>
@@ -304,7 +306,7 @@ export default function Hero({ props }: { props: any }) {
 
   if (split) {
     return (
-      <section data-ut-variant="hero:split-image" style={{ ...sectionPad, paddingTop: '8rem', background: hsl(THEME.colors.background) }}>
+      <section data-ut-variant="hero:split-image" style={{ ...sectionPad, paddingTop: HERO_TOP_PADDING, background: hsl(THEME.colors.background) }}>
         <div style={{ ...containerStyle, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'clamp(2rem, 6vw, 5rem)', alignItems: 'center' }}>
           <div style={{ textAlign: 'left' }}>{content}</div>
           <div style={{ minHeight: '320px', borderRadius: THEME.radius, overflow: 'hidden', background: \`linear-gradient(135deg, \${hsla(THEME.colors.primary, 0.16)}, \${hsla(THEME.colors.secondary, 0.2)})\`, border: \`1px solid \${hsla(THEME.colors.border, 0.65)}\` }}>
@@ -316,7 +318,7 @@ export default function Hero({ props }: { props: any }) {
   }
 
   return (
-    <section data-ut-variant="hero:centered" style={{ ...sectionPad, paddingTop: '8rem', background: hsl(THEME.colors.background) }}>
+    <section data-ut-variant="hero:centered" style={{ ...sectionPad, paddingTop: HERO_TOP_PADDING, background: hsl(THEME.colors.background) }}>
       <div style={{ ...containerStyle, textAlign: 'center' }}>
         {content}
         {media && <img src={media} alt="" style={{ width: '100%', maxWidth: '960px', maxHeight: '540px', objectFit: 'cover', borderRadius: THEME.radius, margin: '3rem auto 0', display: 'block', border: \`1px solid \${hsla(THEME.colors.border, 0.65)}\` }} />}

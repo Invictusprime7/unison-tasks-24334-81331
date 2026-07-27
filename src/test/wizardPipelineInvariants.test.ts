@@ -190,6 +190,21 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('Lane B UI foundation repair accepted');
   });
 
+  it('requires generated-preview confirmation before provisioning the durable site root', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+    const confirmationIndex = launcherSource.indexOf('const confirmed = await requestLaunchConfirmation');
+    const provisionIndex = launcherSource.indexOf('const confirmedLaunch = await provisionConfirmedLaunchSite');
+
+    expect(confirmationIndex).toBeGreaterThan(-1);
+    expect(provisionIndex).toBeGreaterThan(confirmationIndex);
+    expect(launcherSource).toContain('<VFSPreview');
+    expect(launcherSource).toContain('No site data was created.');
+    expect(launcherSource).not.toContain('const installPromise =');
+  });
+
   it('defers malformed registered pages to completion instead of failing the entire launch', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
@@ -273,6 +288,18 @@ describe('wizard pipeline ownership invariants', () => {
 
     expect(builderSource).toMatch(/const effectiveTemplateId =\s+snapshotMeta\?\.templateId \|\|\s+undefined;/);
     expect(builderSource).not.toMatch(/const effectiveTemplateId =\s+currentDraftId \|\|/);
+  });
+
+  it('persists legacy VFS drafts when canonical theme seed metadata is unavailable', () => {
+    const builderSource = readFileSync(
+      resolve(process.cwd(), 'src/components/creatives/WebBuilder.tsx'),
+      'utf8',
+    );
+
+    expect(builderSource).toContain(
+      'const payload = buildSavePayloadOrFallback(virtualFSRef.current.getSandpackFiles());',
+    );
+    expect(builderSource).toContain('payload = buildSavePayloadOrFallback(currentVfsFiles);');
   });
 });
   const templateId = getCompositionsBySystemType('booking')[0]?.id;

@@ -24,6 +24,7 @@ import {
   loadLatestPublishReadyRevisionForProject,
   recordRepublishEvent,
 } from '@/services/vfsCommitService';
+import { withPoweredByUnisonAttribution } from '@/services/export/unisonAttribution';
 import type { BusinessSystemType } from '@/lib/infrastructureContext';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
@@ -280,7 +281,7 @@ export async function deployToProvider(
     updateProgress(10, 'Preparing files for deployment...');
 
     // Normalize file paths (remove leading slashes for Vercel)
-    const normalizedFiles: Record<string, string> = {};
+    let normalizedFiles: Record<string, string> = {};
     for (const [path, content] of Object.entries(request.files)) {
       const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
       normalizedFiles[normalizedPath] = content;
@@ -290,6 +291,7 @@ export async function deployToProvider(
     if (!normalizedFiles['index.html']) {
       throw new Error('Missing index.html - required for deployment');
     }
+    normalizedFiles = withPoweredByUnisonAttribution(normalizedFiles);
 
     updateProgress(30, `Connecting to ${request.provider}...`);
 

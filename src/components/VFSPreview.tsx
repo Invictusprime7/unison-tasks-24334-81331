@@ -31,6 +31,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack, useSandpackPreviewProgress } from '@codesandbox/sandpack-react';
 import { usePreviewService } from '@/hooks/usePreviewService';
+import { createExternalPreviewSession } from '@/services/externalPreviewSession';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
@@ -354,6 +355,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const dependencySignatureRef = useRef<string | null>(null);
   const startAttemptedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
   const timeoutRecoveryCountRef = useRef(0);
   const timeoutRecoveryTimerRef = useRef<number | null>(null);
   
@@ -925,15 +927,22 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       window.open(LOCAL_PREVIEW_URL, '_blank', 'noopener,noreferrer');
       return;
     }
-    // Sandpack: locate the preview iframe rendered by SandpackPreview and reuse its src
+    // Sandpack: persist the canonical files and open a stable same-origin route.
     try {
-      const root = (iframeRef.current?.closest?.('.sp-wrapper') as HTMLElement | null)
-        || document.querySelector('.sp-wrapper')
-        || document;
+      const root = previewContainerRef.current;
+      if (!root) {
+        onError?.('Preview is still starting — try again in a moment.');
+        return;
+      }
       const spIframe = root.querySelector('iframe.sp-preview-iframe, iframe[title*="Sandpack"], iframe[src*="csb.app"], iframe[src*="codesandbox"]') as HTMLIFrameElement | null;
       const src = spIframe?.src;
       if (src) {
-        window.open(src, '_blank', 'noopener,noreferrer');
+        const previewTitle = document.title
+          .replace(/\s*[|–—-]\s*Unison Tasks.*$/i, '')
+          .trim() || 'Site preview';
+        const previewKey = createExternalPreviewSession(files, previewTitle);
+        const previewUrl = new URL(`/preview/${previewKey}`, window.location.origin);
+        window.open(previewUrl, '_blank', 'noopener,noreferrer');
         return;
       }
       onError?.('Preview is still starting — try again in a moment.');
@@ -941,7 +950,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       console.error('[VFSPreview] openInNewTab failed:', err);
       onError?.('Failed to open preview in new tab.');
     }
-  }, [backend, dockerService.session, onError]);
+  }, [backend, dockerService.session, files, onError]);
 
   // Navigate preview to a hash route via postMessage
   const handleNavigateToRoute = useCallback((route: string) => {
@@ -1060,7 +1069,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }
 
   return (
-    <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
+    <div ref={previewContainerRef} className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
       {/* Toolbar */}
       {showToolbar && (
         <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border">

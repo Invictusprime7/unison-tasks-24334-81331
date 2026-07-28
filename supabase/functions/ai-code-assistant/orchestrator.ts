@@ -51,6 +51,11 @@ import { CATALOG_CHAT_TOOLS, renderCatalogToolDirective } from "../_shared/catal
 import { buildEnvelopeDirective, type EnvelopeShape } from "./envelopeContext.ts";
 import { verifyAgainstEnvelope, buildRepairInstruction } from "./envelopeVerifier.ts";
 import { recordEnvelopeRun, type EnvelopeRunContext } from "./envelopeRunLog.ts";
+import {
+  buildUnisonContextDirective,
+  resolveReasoningEffort,
+  resolveUnisonComplexity,
+} from "./unisonContext.ts";
 
 
 const BUILDER_EDIT_TASKS = new Set<string>([
@@ -127,7 +132,9 @@ async function runLaunchDeskLane(
 
   const { messages, launchBrief } = parsed;
 
-  const systemPrompt = buildLaunchDeskSystemPrompt();
+  let systemPrompt = buildLaunchDeskSystemPrompt();
+  systemPrompt += buildEnvelopeDirective(parsed.requestEnvelope as EnvelopeShape | undefined);
+  systemPrompt += buildUnisonContextDirective(parsed.unisonContext);
 
   // Build the user turn — synthesise the brief from launchBrief fields,
   // falling back to the last user message if no launchBrief was supplied.
@@ -144,13 +151,19 @@ async function runLaunchDeskLane(
     { role: 'user', content: userContent },
   ];
 
+  const launchComplexity = resolveUnisonComplexity('moderate', parsed.unisonContext);
+  const launchReasoningEffort = resolveReasoningEffort(
+    parsed.gatewayOptions?.reasoningEffort,
+    launchComplexity,
+  );
   const providerPlan = buildProviderPlan(task, Boolean(
     Deno.env.get('OPENAI_API_KEY') || Deno.env.get('GEMINI_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY'),
-  ), undefined, 'moderate', userContent);
+  ), parsed.gatewayOptions, launchComplexity, userContent);
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
     navPageGen: false,
+    reasoningEffort: launchReasoningEffort,
   });
 
   if (providerResult.earlyError) {
@@ -452,6 +465,11 @@ async function runBuilderLane(
     });
   }
 
+  const unisonDirective = buildUnisonContextDirective(parsed.unisonContext);
+  if (unisonDirective) {
+    finalSystemPrompt += unisonDirective;
+  }
+
 
   // Inject live preview DOM snapshot for context awareness
   if (previewSnapshot) {
@@ -491,13 +509,21 @@ async function runBuilderLane(
   ];
 
   // ── 8. Call AI providers (complexity-aware model selection) ─────────────
-  console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
+  const effectiveComplexity = resolveUnisonComplexity(
+    preprocessed.complexity.tier,
+    parsed.unisonContext,
+  );
+  const effectiveReasoningEffort = resolveReasoningEffort(
+    gatewayOptions?.reasoningEffort,
+    effectiveComplexity,
+  );
+  console.log(`[orchestrator] Prompt complexity: ${effectiveComplexity} (server=${preprocessed.complexity.tier}, score=${preprocessed.complexity.score}, unison=${parsed.unisonContext?.estimatedComplexity ?? 'n/a'}, factors=[${preprocessed.complexity.factors.join(',')}])`);
   const providerRoutingKey = `${userId || 'anonymous'}:${userPromptText}`;
   const providerPlan = buildProviderPlan(
     task,
     hasConfiguredProvider,
     gatewayOptions,
-    preprocessed.complexity.tier,
+    effectiveComplexity,
     providerRoutingKey,
   );
   console.log(`[orchestrator] provider primary=${providerPlan.primaryProvider || 'unavailable'} models=${providerPlan.gatewayModels.map((model) => model.id).join(',')}`);
@@ -512,7 +538,7 @@ async function runBuilderLane(
     aiMessages: aiMessagesForCall,
     providerPlan,
     navPageGen,
-    reasoningEffort: gatewayOptions?.reasoningEffort,
+    reasoningEffort: effectiveReasoningEffort,
     allowDirectFallbacks: true,
     tools: enableCatalogTools ? CATALOG_CHAT_TOOLS : undefined,
     toolChoice: enableCatalogTools ? 'auto' : undefined,
@@ -618,7 +644,7 @@ async function runBuilderLane(
         ],
         providerPlan,
         navPageGen,
-        reasoningEffort: gatewayOptions?.reasoningEffort,
+        reasoningEffort: effectiveReasoningEffort,
         allowDirectFallbacks: true,
       });
 

@@ -246,6 +246,12 @@ All colors MUST be HSL.
     scroll-behavior: smooth;
   }
 
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
     /* Optimize font rendering for mobile */
@@ -253,6 +259,9 @@ All colors MUST be HSL.
     -moz-osx-font-smoothing: grayscale;
     /* Prevent horizontal overflow on mobile */
     overflow-x: hidden;
+    min-height: 100dvh;
+    min-height: 100svh;
+    overscroll-behavior-y: none;
     /* Base font size scales with viewport on small devices */
     font-size: clamp(14px, 2.5vw, 16px);
   }

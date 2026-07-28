@@ -15,6 +15,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { shrinkBuilderTurnPayload, BUILDER_BODY_RETRY_BUDGETS } from "@/services/builderPayloadBudget";
+import type { UnisonAIContext } from "@/unison/aiContext";
 export type BuilderTurnResponse<T = unknown> = { data: T | null; error: unknown };
 
 export interface BuilderTurnInput {
@@ -46,6 +47,7 @@ export interface BuilderTurnInput {
   userDesignProfile?: unknown;
   attachments?: unknown[];
   gatewayOptions?: unknown;
+  unisonContext?: UnisonAIContext;
   wizardSeed?: unknown;
   [extra: string]: unknown;
 }

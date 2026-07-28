@@ -3491,7 +3491,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           if (!isOpen) resetState();
         }}
       >
-      <DialogContent className="max-w-[960px] p-0 overflow-hidden border-0 bg-[#07080F] max-h-[92vh] shadow-[0_0_100px_rgba(0,200,255,0.06),0_0_40px_rgba(0,0,0,0.5)]">
+      <DialogContent className="h-[calc(100dvh-1rem)] w-[calc(100%-1.5rem)] max-w-[350px] content-start !gap-0 overflow-x-hidden overflow-y-auto border-0 bg-[#07080F] p-0 shadow-[0_0_100px_rgba(0,200,255,0.06),0_0_40px_rgba(0,0,0,0.5)] [&>*]:min-w-0 sm:h-auto sm:w-[calc(100%-2rem)] sm:max-w-[960px] sm:overflow-hidden">
         <DialogHeader className="sr-only">
           <DialogTitle>Launch Your Website</DialogTitle>
           <DialogDescription>
@@ -3500,22 +3500,22 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         </DialogHeader>
 
         {/* ─── Header + Step Indicator ─── */}
-        <div className="relative px-6 pt-5 pb-4 border-b border-white/[0.06]">
+        <div className="relative border-b border-white/[0.06] px-3 pb-2.5 pt-3 sm:px-6 sm:pb-4 sm:pt-5">
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[250px] bg-cyan-500/[0.04] rounded-full blur-[100px]" />
           </div>
 
-          <div className="relative flex items-start justify-between mb-4 gap-4">
+          <div className="relative mb-2.5 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 flex items-center justify-center text-sm">
                 ⚡
               </div>
               <div>
                 <h2 className="text-sm font-bold text-white/90 tracking-tight">Unison Launcher</h2>
-                <p className="text-[11px] text-white/30">AI-powered site generation</p>
+                <p className="hidden text-[11px] text-white/30 sm:block">AI-powered site generation</p>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 flex-wrap">
+            <div className="grid w-full grid-cols-3 gap-1.5 pb-1 [&_button]:h-9 [&_button]:min-w-0 [&_button]:w-full [&_button]:px-2 [&_button]:text-[10px] [&_button_span]:truncate sm:flex sm:w-auto sm:justify-end sm:gap-2 sm:[&_button]:h-auto sm:[&_button]:w-auto sm:[&_button]:px-3 sm:[&_button]:text-xs">
               <BusinessSelector
                 value={selectedBusinessId}
                 onChange={setSelectedBusinessId}
@@ -3536,7 +3536,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           </div>
 
           {/* Step pills */}
-          <div className="relative flex items-center gap-0">
+          <div className="relative flex items-center gap-0 overflow-x-auto pb-1 -mx-1 px-1">
             {STEP_META.map((s, i) => {
               const isActive = step === s.key;
               const isPast = currentStepIdx > i;
@@ -3544,7 +3544,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <div key={s.key} className="flex items-center">
                   {i > 0 && (
                     <div className={cn(
-                      "w-14 h-px mx-1.5 transition-colors duration-500",
+                      "w-5 sm:w-14 h-px mx-1.5 transition-colors duration-500",
                       isPast ? "bg-gradient-to-r from-cyan-500/60 to-cyan-500/30" : "bg-white/[0.06]"
                     )} />
                   )}
@@ -3558,7 +3558,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     }}
                     disabled={!isPast && !isActive}
                     className={cn(
-                      "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-300 outline-none",
+                      "flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all duration-300 outline-none sm:gap-2 sm:rounded-full sm:px-3.5 sm:py-1.5",
                       isActive && "bg-cyan-500/12 text-cyan-400 ring-1 ring-cyan-500/25",
                       isPast && "bg-cyan-500/8 text-cyan-500/60 hover:text-cyan-400 cursor-pointer",
                       !isActive && !isPast && "text-white/20"
@@ -3596,18 +3596,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
-              className="px-6 pt-7 pb-8"
+              className="px-3 pb-4 pt-4 sm:px-6 sm:pb-8 sm:pt-7"
             >
-              <div className="text-center mb-8">
-                <h2 className="text-2xl md:text-3xl font-bold text-white mb-2 tracking-tight">
+              <div className="mb-4 text-center sm:mb-8">
+                <h2 className="mb-1 text-lg font-bold tracking-tight text-white sm:mb-2 sm:text-2xl md:text-3xl">
                   What are you building?
                 </h2>
-                <p className="text-sm text-white/35 max-w-md mx-auto">
+                <p className="mx-auto max-w-md text-xs text-white/35 sm:text-sm">
                   Pick your industry — we'll show you premium templates built for it.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-[640px] mx-auto">
+              <div className="mx-auto grid max-w-[640px] grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-3">
                 {INDUSTRY_CARDS.map((card) => (
                   <motion.button
                     key={card.systemId}
@@ -3615,7 +3615,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     whileHover={{ scale: 1.03, y: -2 }}
                     whileTap={{ scale: 0.97 }}
                     className={cn(
-                      "group relative p-5 rounded-2xl text-left transition-all duration-300",
+                      "group relative min-h-16 rounded-lg p-2.5 text-left transition-all duration-300 sm:min-h-0 sm:rounded-2xl sm:p-5",
                       "bg-white/[0.02] border border-white/[0.06]",
                       "hover:border-cyan-500/25",
                       "focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/40",
@@ -3631,13 +3631,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       style={{ background: card.glowColor }}
                     />
                     <div className="relative">
-                      <div className="text-3xl mb-3 group-hover:scale-110 transition-transform duration-300 will-change-transform">
+                      <div className="mb-1 text-xl transition-transform duration-300 will-change-transform group-hover:scale-110 sm:mb-3 sm:text-3xl">
                         {card.icon}
                       </div>
                       <h3 className="font-semibold text-sm text-white/90 mb-1 group-hover:text-white transition-colors">
                         {card.label}
                       </h3>
-                      <p className="text-[11px] text-white/25 leading-relaxed group-hover:text-white/40 transition-colors">
+                      <p className="hidden text-[11px] leading-relaxed text-white/25 transition-colors group-hover:text-white/40 sm:block">
                         {card.tagline}
                       </p>
                     </div>
@@ -3645,7 +3645,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 ))}
               </div>
 
-              <div className="text-center mt-7">
+              <div className="mt-3 text-center sm:mt-7">
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -3671,7 +3671,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-3">
+              <div className="px-4 sm:px-6 pt-4 pb-3 flex items-center justify-between gap-2 sm:gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <Button
                     variant="ghost"
@@ -3711,7 +3711,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               </div>
 
 
-              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide space-y-6">
+              <div className="flex-1 space-y-4 overflow-y-visible px-3 pb-4 sm:max-h-[55vh] sm:space-y-6 sm:overflow-y-auto sm:px-6 scrollbar-hide">
                 {/* Q1: Primary Goal */}
                 <div>
                   <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
@@ -3780,7 +3780,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   <label className="block text-xs font-semibold text-white/50 mb-3 uppercase tracking-wider">
                     Which pages should your site have? <span className="text-white/20">(select all)</span>
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {PAGE_CHOICES.map((page) => {
                       const isSelected = selectedPages.includes(page.id);
                       return (
@@ -3806,7 +3806,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+              <div className="px-4 sm:px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
                 <div className="flex-1 text-xs text-white/30">
                   {primaryGoal && (
                     <span className="flex items-center gap-1.5">
@@ -3834,7 +3834,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-3">
+              <div className="px-4 sm:px-6 pt-4 pb-3 flex items-center justify-between gap-2 sm:gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <Button
                     variant="ghost"
@@ -3866,7 +3866,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 />
               </div>
 
-              <div className="flex-1 min-h-0 px-6 pb-4 flex flex-col gap-4">
+              <div className="flex-1 min-h-0 px-4 sm:px-6 pb-4 flex flex-col gap-4">
                 <div className="max-h-[22vh] overflow-y-auto scrollbar-hide pr-1">
 
 
@@ -3932,7 +3932,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
 
               {/* Footer */}
-              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+              <div className="px-4 sm:px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
                 <div className="flex-1 text-sm">
                   {selectedTemplate ? (
                     <span className="flex items-center gap-2 text-white/50">
@@ -3957,7 +3957,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex flex-col"
             >
-              <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-3">
+              <div className="px-4 sm:px-6 pt-4 pb-3 flex items-center justify-between gap-2 sm:gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <Button
                     variant="ghost"
@@ -3988,7 +3988,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 />
               </div>
 
-              <div className="flex-1 max-h-[55vh] overflow-y-auto px-6 pb-4 scrollbar-hide">
+              <div className="flex-1 overflow-y-visible px-3 pb-4 sm:max-h-[55vh] sm:overflow-y-auto sm:px-6 scrollbar-hide">
                 {/* Business Name */}
                 <div className="mb-5">
                   <label className="block text-xs font-semibold text-white/50 mb-2 uppercase tracking-wider">
@@ -4146,7 +4146,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
+              <div className="px-4 sm:px-6 py-3.5 border-t border-white/[0.06] flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 text-xs text-white/30">
                     {selectedTemplate && (

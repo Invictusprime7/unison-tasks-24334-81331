@@ -34,6 +34,7 @@ const ProjectSetup = lazy(() => import("@/pages/ProjectSetup"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const TeamManagement = lazy(() => import("@/pages/TeamManagement"));
 const AIChat = lazy(() => import("@/pages/AIChat"));
+const ExternalPreviewPage = lazy(() => import("@/pages/ExternalPreviewPage"));
 
 export type RouteShell = "public" | "onboarding" | "workspace" | "project" | "builder" | "focus";
 export type RouteChrome = "none" | "legacy" | "canonical" | "fullscreen";
@@ -242,6 +243,17 @@ export const appRoutes: AppRouteConfig[] = [
       requiresAuth: true,
       requiresWorkspace: true,
       primaryAction: "Preview",
+    },
+  },
+  {
+    path: "/preview/:previewKey",
+    element: withAsyncBoundary(<ExternalPreviewPage />),
+    meta: {
+      id: "external-preview",
+      title: "Site preview",
+      section: "public",
+      shell: "public",
+      chrome: "none",
     },
   },
   {

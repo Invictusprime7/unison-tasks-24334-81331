@@ -6,6 +6,7 @@
 import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
 import { createChatCompletion } from "../_shared/ai/providerClient.ts";
+import type { ModelSpec } from './providerRouter.ts';
 
 export interface ProviderEarlyError {
   status: number;
@@ -31,6 +32,33 @@ export interface ProviderCallResult {
   toolCalls?: RawToolCall[];
   /** Non-null when we should return an early HTTP error (rate limit, payment required) */
   earlyError?: ProviderEarlyError;
+}
+
+export function buildPlannedChatCompletionRequest(opts: {
+  model: ModelSpec;
+  aiMessages: Array<{ role: string; content: unknown }>;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
+  tools?: unknown[];
+  toolChoice?: unknown;
+}): Record<string, unknown> {
+  const { model, aiMessages, reasoningEffort, tools, toolChoice } = opts;
+  const usesCompletionTokens = model.id.includes('gpt-5');
+  const request: Record<string, unknown> = {
+    model: model.id,
+    ...(usesCompletionTokens
+      ? { max_completion_tokens: model.maxTokens }
+      : { max_tokens: model.maxTokens }),
+    messages: aiMessages,
+  };
+
+  if (reasoningEffort && reasoningEffort !== 'none') {
+    request.reasoning_effort = reasoningEffort;
+  }
+  if (tools && tools.length > 0) {
+    request.tools = tools;
+    request.tool_choice = toolChoice ?? 'auto';
+  }
+  return request;
 }
 
 export async function runProviderLoop(opts: {
@@ -344,22 +372,13 @@ export async function runProviderLoop(opts: {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), perModelMs);
 
-        const usesCompletionTokens = model.id.includes('gpt-5');
-        const reqBody: Record<string, unknown> = {
-          model: model.id,
-          ...(usesCompletionTokens
-            ? { max_completion_tokens: model.maxTokens }
-            : { max_tokens: model.maxTokens }),
-          messages: aiMessages,
-        };
-        // Only send reasoning parameters for supported OpenAI-compatible models.
-        if (reasoningEffort && reasoningEffort !== "none" && model.id.startsWith('openai/')) {
-          reqBody.reasoning = { effort: reasoningEffort };
-        }
-        if (hasTools) {
-          reqBody.tools = tools;
-          reqBody.tool_choice = effectiveToolChoice;
-        }
+        const reqBody = buildPlannedChatCompletionRequest({
+          model,
+          aiMessages,
+          reasoningEffort,
+          tools: hasTools ? tools : undefined,
+          toolChoice: effectiveToolChoice,
+        });
 
         const resp = await createChatCompletion(reqBody as Parameters<typeof createChatCompletion>[0], controller.signal);
         clearTimeout(timeoutId);

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { 
   Plus, Layout, Type, Square, Eye, Play,
-  Monitor, Tablet, Smartphone,
+  Monitor, Tablet, Smartphone, MousePointer2, MoreHorizontal,
   Sparkles, Code, Undo2, Redo2, Save, Keyboard, Zap, RefreshCcw,
   ChevronsDown, ChevronsUp, ArrowDown, ArrowUp, FileCode, Copy, Maximize2, Trash2,
   FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch, Shield
@@ -126,6 +126,7 @@ import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { useSiteBuilder, type UseSiteBuilderReturn } from "@/hooks/useSiteBuilder";
 import { useAIVFS } from '@/hooks/useAIVFS';
+import { canonicalizeAIFilePaths } from '@/services/aiVFSOrchestrator';
 import { extractEmbeddedCSS } from '@/utils/templateToVFS';
 import { compileSiteBundleToVFS, normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
@@ -404,7 +405,7 @@ function isRecompileInputError(error: unknown): boolean {
 export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  const isMobile = useIsMobile(1024);
   const { launch } = useLaunch();
   const routeState = (location.state as WebBuilderRouteState | null) ?? null;
   const urlResumeId = useMemo(
@@ -494,6 +495,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [exportJs, setExportJs] = useState("");
   const [exportProjectName, setExportProjectName] = useState("my-project");
   const [saveProjectDialogOpen, setSaveProjectDialogOpen] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [saveProjectName, setSaveProjectName] = useState("");
   const [saveProjectDescription, setSaveProjectDescription] = useState("");
   const [currentTemplateName, setCurrentTemplateName] = useState<string | null>(null);
@@ -5767,70 +5769,22 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         draftId: currentDraftId || undefined,
       }}
     >
-    <div ref={mainContainerRef} className={cn("wb-obsidian flex flex-col h-screen bg-[#09090b]", isMobile && "pb-14")}>
+    <div ref={mainContainerRef} className={cn("wb-obsidian flex min-h-[100dvh] h-[100dvh] flex-col overflow-hidden bg-[#09090b]", isMobile && "pb-16")}>
       {/* Launcher is opened only by an explicit user flow. */}
       <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
 
       {/* Interactive Element Highlighting Styles */}
       <InteractiveElementHighlight isInteractiveMode={isInteractiveMode} />
 
-      {/* Full-Width Top Toolbar */}
-      <div className="h-12 flex-shrink-0 bg-[#0a0a14] border-b-2 border-fuchsia-500/50 flex items-center px-4 gap-3 shadow-[0_4px_20px_rgba(255,0,255,0.15)] z-20">
+      {/* Global builder toolbar */}
+      <div className="z-20 flex h-11 flex-shrink-0 items-center gap-1.5 border-b border-white/[0.06] bg-[#0a0a14] px-2 lg:px-3">
         {/* Left Section: AI Toggle, Back, Device, Mode */}
-        <div className="flex items-center gap-2">
-          {/* AI Panel Toggle Button */}
+        <div className="flex items-center gap-1.5 lg:gap-2">
           <Button
             variant="ghost"
-            size="sm"
-            onClick={() => setAiPanelOpen(!aiPanelOpen)}
-            className={cn(
-              "h-8 px-2.5 rounded-lg transition-all duration-200",
-              aiPanelOpen 
-                ? "bg-lime-500/20 text-lime-400 hover:bg-lime-500/30 shadow-[0_0_10px_rgba(0,255,0,0.3)]" 
-                : "text-lime-400/60 hover:text-lime-400 hover:bg-lime-500/10"
-            )}
-            title={aiPanelOpen ? "Close AI Panel" : "Open AI Panel"}
-          >
-            <span className="text-sm">⚡ AI</span>
-          </Button>
-
-          <AIEditHistoryMenu
-            projectId={currentDraftId ?? null}
-            onRevert={(snap) => {
-              const beforeFiles = virtualFS.getSandpackFiles();
-              virtualFS.importFiles(snap.before);
-              syncBuilderFromFiles(snap.before, activePagePath);
-              pushAISnapshot(currentDraftId ?? null, {
-                label: `Revert · ${snap.label}`,
-                source: 'manual',
-                before: beforeFiles,
-                after: snap.before,
-                changedPaths: diffChangedPaths(beforeFiles, snap.before),
-              });
-              toast.success('Reverted to previous state');
-            }}
-            onReapply={(snap) => {
-              const beforeFiles = virtualFS.getSandpackFiles();
-              virtualFS.importFiles(snap.after);
-              syncBuilderFromFiles(snap.after, activePagePath);
-              pushAISnapshot(currentDraftId ?? null, {
-                label: `Reapply · ${snap.label}`,
-                source: 'manual',
-                before: beforeFiles,
-                after: snap.after,
-                changedPaths: diffChangedPaths(beforeFiles, snap.after),
-              });
-              toast.success('Reapplied AI edit');
-            }}
-          />
-
-          <div className="h-5 w-px bg-fuchsia-500/50" />
-          
-          <Button
-            variant="ghost"
-            size="sm"
+            size="icon"
             onClick={handleBackNavigation}
-            className="text-cyan-400 hover:text-cyan-300 h-8 px-2.5 rounded-lg hover:bg-cyan-500/20 hover:shadow-[0_0_10px_rgba(0,255,255,0.3)] transition-all duration-200"
+            className="h-8 w-8 rounded-md text-white/55 hover:bg-white/[0.06] hover:text-white"
             title={`Go back to ${referrerPageName}${hasUnsavedChanges ? ' (unsaved changes will be auto-saved)' : ''} - Alt+←`}
           >
             <ArrowLeft className="h-4 w-4" />
@@ -5852,42 +5806,19 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               disabled={renamingProject}
               placeholder="Untitled project"
               aria-label="Project name"
-              className="hidden md:block bg-transparent border border-transparent hover:border-cyan-500/30 focus:border-cyan-500/60 focus:bg-[#0d0d18] outline-none text-sm text-cyan-100 px-2 py-1 rounded-md max-w-[220px] truncate"
+              className="hidden h-8 max-w-[180px] truncate rounded-md border border-transparent bg-transparent px-2 text-xs font-medium text-white/80 outline-none hover:bg-white/[0.04] focus:border-white/10 focus:bg-white/[0.04] lg:block"
             />
           )}
 
-          {/* Business Profile pill — admins can move the project between businesses */}
-          {projectId && (
-            <div className="hidden md:block">
-              <BusinessPill />
-            </div>
-          )}
-
-
-          {/* Export project — opens ExportDialog (Vite source .zip, HTML/CSS/React) */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleExport('react')}
-            className="hidden md:inline-flex h-7 items-center gap-1.5 rounded-md border border-cyan-500/30 bg-[#0d0d18] px-2.5 text-xs text-cyan-200 hover:border-cyan-400/60 hover:bg-cyan-500/10 hover:text-cyan-100"
-            title="Export project (.zip, HTML, React)"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Export
-          </Button>
-
-
-          <div className="h-5 w-px bg-fuchsia-500/50 hidden sm:block" />
-          
           {/* Device + Mode + Tools — hidden on small screens (use bottom nav on mobile) */}
-          <div className="hidden sm:flex items-center gap-2">
+          <div className="hidden items-center gap-2 lg:flex">
           {/* Device Breakpoints */}
-          <div className="flex items-center gap-0.5 bg-[#0d0d18] rounded-lg p-1">
+          <div className="flex items-center gap-0.5 rounded-md bg-white/[0.035] p-0.5">
             <Button
               variant={device === "desktop" ? "secondary" : "ghost"}
               size="icon"
               onClick={() => setDevice("desktop")}
-              className={cn("h-7 w-7 rounded-md transition-all duration-200", device === "desktop" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
+              className={cn("h-7 w-7 rounded transition-colors", device === "desktop" ? "bg-white/10 text-white" : "text-white/40 hover:bg-white/[0.06] hover:text-white/80")}
               title="Desktop"
             >
               <Monitor className="h-3.5 w-3.5" />
@@ -5896,7 +5827,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               variant={device === "tablet" ? "secondary" : "ghost"}
               size="icon"
               onClick={() => setDevice("tablet")}
-              className={cn("h-7 w-7 rounded-md transition-all duration-200", device === "tablet" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
+              className={cn("h-7 w-7 rounded transition-colors", device === "tablet" ? "bg-white/10 text-white" : "text-white/40 hover:bg-white/[0.06] hover:text-white/80")}
               title="Tablet"
             >
               <Tablet className="h-3.5 w-3.5" />
@@ -5905,14 +5836,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               variant={device === "mobile" ? "secondary" : "ghost"}
               size="icon"
               onClick={() => setDevice("mobile")}
-              className={cn("h-7 w-7 rounded-md transition-all duration-200", device === "mobile" ? "bg-cyan-500 text-black font-bold shadow-[0_0_15px_rgba(0,255,255,0.6)]" : "text-cyan-400/70 hover:text-cyan-300 hover:bg-cyan-500/20")}
+              className={cn("h-7 w-7 rounded transition-colors", device === "mobile" ? "bg-white/10 text-white" : "text-white/40 hover:bg-white/[0.06] hover:text-white/80")}
               title="Mobile"
             >
               <Smartphone className="h-3.5 w-3.5" />
             </Button>
           </div>
-          
-          <div className="h-5 w-px bg-fuchsia-500/50" />
           
           {/* Mode Toggle */}
           <SimpleModeToggle
@@ -5943,27 +5872,27 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             }}
           />
           
-          {/* Left/Right Panel Toggles */}
-          <div className="h-5 w-px bg-fuchsia-500/50" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
-            className={cn(
-              "h-8 px-2 rounded-lg transition-all duration-200",
-              !leftPanelCollapsed 
-                ? "bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30" 
-                : "text-cyan-400/60 hover:text-cyan-400 hover:bg-cyan-500/10"
-            )}
-            title={leftPanelCollapsed ? "Show Elements Panel" : "Hide Elements Panel"}
-          >
-            <Layers className="h-4 w-4" />
-          </Button>
           </div>{/* end hidden sm:flex device+mode+tools */}
         </div>
 
+        <div className="flex flex-1 justify-center lg:hidden">
+          <SimpleModeToggle
+            currentMode={builderMode === 'preview' ? 'preview' : 'select'}
+            onModeChange={(mode) => {
+              setBuilderMode(mode);
+              setIsInteractiveMode(mode === 'preview');
+              if (mode === 'preview') {
+                setSelectedHTMLElement(null);
+                clearSelection();
+                clearLivePreviewSelection();
+              }
+            }}
+            className="min-w-0"
+          />
+        </div>
+
         {/* Center Section: Floating Dock - hidden on small screens */}
-        <div className="flex-1 hidden sm:flex justify-center min-w-0">
+        <div className="hidden min-w-0 flex-1 justify-center lg:flex">
           <FloatingDock
             onSelectTemplate={handleSelectTemplate}
             onDemoTemplate={(code, name, systemType, templateId) => {
@@ -5980,9 +5909,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         </div>
 
         {/* Right Section: View Mode, Save, AI Activity, Right Panel Toggle */}
-        <div className="flex items-center gap-2">
+        <div className="hidden items-center gap-2 lg:flex">
           {/* View Mode Toggle */}
-          <div className="flex items-center bg-[#0d0d18]/80 backdrop-blur-sm rounded-xl p-0.5 border border-white/[0.06] shadow-lg shadow-black/20">
+          <div className="flex items-center rounded-md bg-white/[0.035] p-0.5">
             {([
               { id: 'canvas' as const, icon: Square, label: 'Canvas' },
               { id: 'code' as const, icon: FileCode, label: 'Code' },
@@ -5994,27 +5923,22 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   key={id}
                   onClick={() => setViewMode(id)}
                   className={cn(
-                    'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-250 outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-500/50',
+                    'relative flex h-7 items-center justify-center gap-1.5 rounded px-2 text-[11px] font-medium outline-none transition-colors',
                     isActive
-                      ? 'bg-fuchsia-500 text-black shadow-[0_0_18px_rgba(255,0,255,0.55)] scale-[1.02]'
-                      : 'text-fuchsia-400/60 hover:text-fuchsia-300 hover:bg-fuchsia-500/[0.12]',
+                      ? 'bg-white/10 text-white'
+                      : 'text-white/40 hover:bg-white/[0.06] hover:text-white/80',
                   )}
                   title={`${label} View`}
                 >
                   <Icon className="h-3.5 w-3.5" />
-                  <span className={cn('tracking-wide hidden sm:inline', isActive ? 'font-bold' : '')}>{label}</span>
-                  {isActive && (
-                    <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-fuchsia-300/60" />
-                  )}
+                  <span className={cn('tracking-wide hidden lg:inline', isActive ? 'font-bold' : '')}>{label}</span>
                 </button>
               );
             })}
           </div>
-          
-          <div className="h-5 w-px bg-cyan-500/50 hidden sm:block" />
-          
+
           {/* Save/Deploy/Settings — hidden on small screens */}
-          <div className="hidden sm:flex items-center gap-1.5">
+          <div className="hidden lg:flex items-center gap-1.5">
             {autoSaveStatus === 'saving' && (
               <div className="animate-spin h-3 w-3 border-2 border-yellow-500/30 border-t-yellow-400 rounded-full" />
             )}
@@ -6025,11 +5949,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               variant="ghost"
               size="sm"
               onClick={() => setSaveProjectDialogOpen(true)}
-              className="h-7 text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/20 px-2.5 rounded-lg hover:shadow-[0_0_10px_rgba(255,255,0,0.3)] transition-all duration-200"
+              className="h-8 rounded-md px-2 text-white/55 hover:bg-white/[0.06] hover:text-white"
               title={currentTemplateName ? `Update "${currentTemplateName}"` : "Save to Projects"}
             >
               <Save className="h-3.5 w-3.5 mr-1.5" />
-              <span className="text-xs font-bold">{currentTemplateName ? 'Update' : 'Save'}</span>
+              <span className="text-xs font-medium">{currentTemplateName ? 'Update' : 'Save'}</span>
             </Button>
             <DeployButton
               getFiles={() => getCurrentCanonicalBuildArtifacts()?.deployFiles || {}}
@@ -6052,58 +5976,55 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             />
           </div>
           
-          {/* Right Panel Toggle + Playground — hidden on small screens */}
-          <div className="hidden sm:flex items-center gap-2">
-          <div className="h-5 w-px bg-fuchsia-500/50" />
-          
-          {/* Right Panel Toggle */}
+          <div className="hidden items-center gap-1 lg:flex">
           <Button
             variant="ghost"
-            size="sm"
+            size="icon"
+            onClick={() => setAiPanelOpen(!aiPanelOpen)}
+            className={cn("h-8 w-8 rounded-md", aiPanelOpen ? "bg-white/10 text-white" : "text-white/45 hover:bg-white/[0.06] hover:text-white")}
+            title={aiPanelOpen ? "Close AI panel" : "Open AI panel"}
+          >
+            <Sparkles className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
+            className={cn("h-8 w-8 rounded-md", !leftPanelCollapsed ? "bg-white/10 text-white" : "text-white/45 hover:bg-white/[0.06] hover:text-white")}
+            title={leftPanelCollapsed ? "Show tools" : "Hide tools"}
+          >
+            <Layers className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setRightPanelCollapsed(!rightPanelCollapsed)}
-            className={cn(
-              "h-8 px-2 rounded-lg transition-all duration-200",
-              !rightPanelCollapsed 
-                ? "bg-fuchsia-500/20 text-fuchsia-400 hover:bg-fuchsia-500/30" 
-                : "text-fuchsia-400/60 hover:text-fuchsia-400 hover:bg-fuchsia-500/10"
-            )}
+            className={cn("h-8 w-8 rounded-md", !rightPanelCollapsed ? "bg-white/10 text-white" : "text-white/45 hover:bg-white/[0.06] hover:text-white")}
             title={rightPanelCollapsed ? "Show Properties Panel" : "Hide Properties Panel"}
           >
             <Settings className="h-4 w-4" />
           </Button>
 
-          <div className="h-5 w-px bg-emerald-500/50" />
-
-          {selectedPlaygroundBinding && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setPlaygroundInitialSection("intent_registry");
-                setPlaygroundInitialBindingId(selectedPlaygroundBinding.bindingId);
-                setPlaygroundModalOpen(true);
-              }}
-              className="h-8 px-2.5 rounded-lg text-amber-300/80 hover:text-amber-300 hover:bg-amber-500/10 transition-all duration-200"
-              title="Open selected intent in Creator's Playground"
-            >
-              <span className="text-[11px] truncate max-w-[140px]">
-                {selectedPlaygroundBinding.coreIntent || selectedPlaygroundBinding.intent}
-              </span>
-            </Button>
-          )}
-
-          {/* Creator's Playground Toggle */}
           <Button
             variant="ghost"
-            size="sm"
+            size="icon"
             onClick={() => {
               setPlaygroundInitialBindingId(undefined);
               setPlaygroundModalOpen(true);
             }}
-            className="h-8 px-2.5 rounded-lg text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/15 hover:shadow-[0_0_10px_rgba(0,200,100,0.3)] transition-all duration-200"
+            className="h-8 w-8 rounded-md text-white/45 hover:bg-white/[0.06] hover:text-white"
             title="Open Creator's Playground"
           >
-            <span className="text-sm">🕹️</span>
+            <Play className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setMobileActionsOpen(true)}
+            className="h-8 w-8 rounded-md text-white/45 hover:bg-white/[0.06] hover:text-white"
+            title="More project actions"
+          >
+            <MoreHorizontal className="h-4 w-4" />
           </Button>
           </div>{/* end hidden sm:flex right panel+playground */}
         </div>
@@ -6250,12 +6171,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   // edits cannot crash preview, ship un-stamped nav links, or
                   // leak intents disallowed by the active industry profile.
                   const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
-                  const preflight = runFullPreflight(rawFiles, {
+                  const beforeFiles = virtualFS.getSandpackFiles();
+                  const canonicalFiles = canonicalizeAIFilePaths(rawFiles, beforeFiles);
+                  const preflight = runFullPreflight(canonicalFiles, {
                     siteBundleSnapshot: snapshotForPreflight,
                     industry: snapshotForPreflight?.industry,
                   });
                   const files = preflight.files;
-                  const beforeFiles = virtualFS.getSandpackFiles();
+                  const proposedFiles = { ...beforeFiles, ...files };
 
                   // Pass 3 — VFSCommitService gate. Dry-run BEFORE mutating
                   // the working VFS so a preview-breaking AI patch never
@@ -6269,7 +6192,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         draftId: currentDraftId,
                         revisionId: currentRevisionId,
                         beforeFiles,
-                        nextFiles: files,
+                        nextFiles: proposedFiles,
                         snapshotForPreflight,
                       }
                     : null;
@@ -6290,8 +6213,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   if (result.success) {
                     // Protect these paths from the snapshot projection until the
                     // durable commit refreshes the snapshot with the same content.
-                    markLiveEditedVfsPaths(Object.keys(files));
-                    const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
+                    markLiveEditedVfsPaths(result.filesWritten);
+                    const appliedFiles = Object.fromEntries(
+                      result.filesWritten
+                        .filter((path) => files[path] !== undefined)
+                        .map((path) => [path, files[path]]),
+                    );
+                    const mergedFiles = {
+                      ...beforeFiles,
+                      ...appliedFiles,
+                      ...(result.packageJson ? { '/package.json': result.packageJson } : {}),
+                    };
                     const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
                     console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
                     setViewMode('canvas');
@@ -6484,7 +6416,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           <div className={cn(
             "bg-[#0d0d18] border-r-2 border-cyan-500/40 flex flex-col overflow-hidden shadow-[0_0_20px_rgba(0,255,255,0.15)] transition-all duration-300",
             isMobile
-              ? "absolute left-0 top-0 bottom-0 w-[85vw] max-w-xs z-30"
+              ? "absolute left-2 top-2 bottom-2 w-[calc(100vw-1rem)] max-w-md z-30 rounded-lg border-2"
               : "w-64 flex-shrink-0"
           )}>
             {/* Left Panel Header with Close Button */}
@@ -6656,7 +6588,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         )}
         
         {/* Left Panel Toggle — hidden on mobile (panels accessed via bottom nav) */}
-        <div className="relative hidden sm:block">
+        <div className="relative hidden lg:block">
           <Button
             variant="ghost"
             size="icon"
@@ -6694,11 +6626,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               onApproveCapabilityPlan={approveCapabilityPlanFromPanel}
               onApplyToVFS={async (rawFiles, applyMeta) => {
                 const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
-                const files = runFullPreflight(rawFiles, {
+                const beforeFiles = virtualFS.getSandpackFiles();
+                const canonicalFiles = canonicalizeAIFilePaths(rawFiles, beforeFiles);
+                const files = runFullPreflight(canonicalFiles, {
                   siteBundleSnapshot: snapshotForPreflight,
                   industry: snapshotForPreflight?.industry,
                 }).files;
-                const beforeFiles = virtualFS.getSandpackFiles();
+                const proposedFiles = { ...beforeFiles, ...files };
 
                 // Pass 3 — VFSCommitService gate (mobile mount).
                 const projectIdForCommit = resolvedProjectId || currentDraftId || '';
@@ -6709,7 +6643,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       draftId: currentDraftId,
                       revisionId: currentRevisionId,
                       beforeFiles,
-                      nextFiles: files,
+                      nextFiles: proposedFiles,
                       snapshotForPreflight,
                     }
                   : null;
@@ -6726,8 +6660,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
                 const result = aiVFS.applyCode(files);
                 if (result.success) {
-                  markLiveEditedVfsPaths(Object.keys(files));
-                  const mergedFiles = { ...virtualFS.getSandpackFiles(), ...files };
+                  markLiveEditedVfsPaths(result.filesWritten);
+                  const appliedFiles = Object.fromEntries(
+                    result.filesWritten
+                      .filter((path) => files[path] !== undefined)
+                      .map((path) => [path, files[path]]),
+                  );
+                  const mergedFiles = {
+                    ...beforeFiles,
+                    ...appliedFiles,
+                    ...(result.packageJson ? { '/package.json': result.packageJson } : {}),
+                  };
                   syncBuilderFromFiles(mergedFiles, activePagePath);
                   setViewMode('canvas');
                   setAiPanelOpen(false);
@@ -6823,76 +6766,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             {/* Canvas Mode - AI Live Preview Only */}
             {viewMode === 'canvas' && (
               <div className="w-full h-full flex flex-col overflow-hidden relative">
-                <div className="h-10 backdrop-blur-md bg-[hsl(0,0%,5%)]/95 border-b border-white/10 flex items-center justify-between px-2 sm:px-4">
-                  <div className="flex items-center gap-2">
-                    <div className={cn(
-                      "w-2 h-2 rounded-full shadow-sm flex-shrink-0",
-                      builderMode === 'select' ? "bg-emerald-400" : "bg-slate-500"
-                    )} />
-                    <span className="hidden sm:inline text-xs font-medium text-slate-300">
-                      {builderMode === 'select' ? 'Select Mode' : 'Preview Mode'}
-                    </span>
-                    <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                      <FileCode className="h-3 w-3" /> React Preview
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {/* Undo/Redo/Refresh buttons */}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleUndo}
-                      disabled={!codeHistory.canUndo}
-                      className="h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-40 rounded-md transition-all duration-200"
-                      title="Undo (Ctrl+Z)"
-                    >
-                      <Undo2 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleRedo}
-                      disabled={!codeHistory.canRedo}
-                      className="h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-40 rounded-md transition-all duration-200"
-                      title="Redo (Ctrl+Y)"
-                    >
-                      <Redo2 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleRefreshPreview}
-                      disabled={isRefreshing}
-                      className="h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-40 rounded-md transition-all duration-200"
-                      title="Refresh Preview (F5)"
-                    >
-                      <RefreshCcw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        livePreviewRef.current?.openInNewTab();
-                      }}
-                      className="hidden sm:inline-flex h-7 w-7 text-slate-300 hover:text-white hover:bg-white/10 rounded-md transition-all duration-200"
-                      title="Open preview in new tab"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </Button>
-                    {builderMode === 'select' && (
-                      <>
-                        <span className="w-px h-4 bg-border mx-1 hidden sm:block" />
-                        <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
-                          <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">Del</kbd>
-                          <span>Delete</span>
-                          <span className="mx-1">·</span>
-                          <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">⌘D</kbd>
-                          <span>Duplicate</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
                 {/* Page tabs — synced with PageRegistry (Creator Playground + AI-generated pages) */}
                 <PageNavigationBar
                   pages={pageTabs}
@@ -6900,6 +6773,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   onSelectPage={handlePageTabSelect}
                   onAddPage={handlePageTabAdd}
                   onRemovePage={handlePageTabRemove}
+                  onUndo={handleUndo}
+                  onRedo={handleRedo}
+                  onRefresh={handleRefreshPreview}
+                  onOpenPreview={() => livePreviewRef.current?.openInNewTab()}
+                  canUndo={codeHistory.canUndo}
+                  canRedo={codeHistory.canRedo}
+                  isRefreshing={isRefreshing}
                 />
                 <div 
                   ref={scrollContainerRef}
@@ -7057,58 +6937,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               <div className="w-full h-full flex gap-4">
                 {/* Live Preview - Main viewing area */}
                 <div className="flex-1 bg-white rounded-xl overflow-hidden border border-white/[0.08] shadow-2xl shadow-black/30 relative flex flex-col">
-                  <div className="h-10 backdrop-blur-md bg-gradient-to-r from-slate-100/95 to-slate-50/95 border-b border-slate-200/50 flex items-center justify-between px-4 flex-shrink-0">
-                    <div className="flex items-center gap-2">
-                      <Eye className="w-4 h-4 text-slate-400" />
-                      <span className="text-sm text-slate-500">Live Preview</span>
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-600">
-                        <FileCode className="h-3 w-3" /> React Preview
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleUndo}
-                        disabled={!codeHistory.canUndo}
-                        className="h-7 w-7 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 disabled:opacity-40 rounded-md transition-all duration-200"
-                        title="Undo (Ctrl+Z)"
-                      >
-                        <Undo2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleRedo}
-                        disabled={!codeHistory.canRedo}
-                        className="h-7 w-7 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 disabled:opacity-40 rounded-md transition-all duration-200"
-                        title="Redo (Ctrl+Y)"
-                      >
-                        <Redo2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleRefreshPreview}
-                        disabled={isRefreshing}
-                        className="h-7 w-7 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 disabled:opacity-40 rounded-md transition-all duration-200"
-                        title="Refresh Preview (F5)"
-                      >
-                        <RefreshCcw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          livePreviewRef.current?.openInNewTab();
-                        }}
-                        className="h-7 w-7 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-md transition-all duration-200"
-                        title="Open preview in new tab"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
                   {/* Page tabs — synced with PageRegistry (Creator Playground + AI-generated pages) */}
                   <PageNavigationBar
                     pages={pageTabs}
@@ -7116,6 +6944,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                     onSelectPage={handlePageTabSelect}
                     onAddPage={handlePageTabAdd}
                     onRemovePage={handlePageTabRemove}
+                    onUndo={handleUndo}
+                    onRedo={handleRedo}
+                    onRefresh={handleRefreshPreview}
+                    onOpenPreview={() => livePreviewRef.current?.openInNewTab()}
+                    canUndo={codeHistory.canUndo}
+                    canRedo={codeHistory.canRedo}
+                    isRefreshing={isRefreshing}
                   />
                   <div 
                     ref={splitViewDropZoneRef}
@@ -7294,7 +7129,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         </div>
 
         {/* Right Panel Toggle — hidden on mobile (panels accessed via bottom nav) */}
-        <div className="relative hidden sm:block">
+        <div className="relative hidden lg:block">
           <Button
             variant="ghost"
             size="icon"
@@ -7311,7 +7146,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           <div className={cn(
             "bg-[#0d0d18] border-l-2 border-fuchsia-500/40 flex flex-col overflow-hidden shadow-[0_0_20px_rgba(255,0,255,0.15)] transition-all duration-300",
             isMobile
-              ? "absolute right-0 top-0 bottom-0 w-[85vw] max-w-xs z-30"
+              ? "absolute right-2 top-2 bottom-2 w-[calc(100vw-1rem)] max-w-md z-30 rounded-lg border-2"
               : "w-64 flex-shrink-0"
           )}>
             {/* Right Panel Header with Close Button */}
@@ -7376,7 +7211,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
         {/* Floating Element Toolbar - appears over selected elements */}
         {selectedHTMLElement && viewMode === 'canvas' && builderMode === 'select' && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[96vw]">
+          <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[96vw]">
             <ElementFloatingToolbar
               element={selectedHTMLElement}
               onUpdateStyles={handleFloatingStyleUpdate}
@@ -7466,17 +7301,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             <button
               onClick={() => setInspectorOpen((v) => !v)}
               className={cn(
-                "fixed top-20 right-4 z-50 px-3 py-1.5 rounded-md border text-xs font-medium transition-all",
+                "fixed right-3 top-16 z-50 hidden h-8 w-8 items-center justify-center rounded-md border border-white/[0.06] text-xs transition-colors lg:flex",
                 inspectorOpen
-                  ? "bg-cyan-500 text-black border-cyan-400 shadow-[0_0_15px_rgba(0,255,255,0.4)]"
-                  : "bg-[#0d0d18] text-cyan-400 border-cyan-500/40 hover:bg-cyan-500/10"
+                  ? "bg-white/10 text-white"
+                  : "bg-[#0d0d18]/90 text-white/45 hover:bg-white/[0.06] hover:text-white"
               )}
               title="Element Intent Inspector"
             >
-              ⚡ Intent {inspectorOpen ? '▾' : '▸'}
+              <Zap className="h-3.5 w-3.5" />
             </button>
             {inspectorOpen && (
-              <div className="fixed top-32 right-4 z-50">
+              <div className="fixed right-3 top-28 z-50">
                 <ElementIntentInspector
                   selection={{
                     elementKey: selectedHTMLElement.selector || `el:${selectedHTMLElement.tagName}`,
@@ -7504,17 +7339,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             <button
               onClick={() => setCatalogPanelOpen((v) => !v)}
               className={cn(
-                "fixed top-20 right-32 z-50 px-3 py-1.5 rounded-md border text-xs font-medium transition-all",
+                "fixed right-12 top-16 z-50 hidden h-8 w-8 items-center justify-center rounded-md border border-white/[0.06] text-xs transition-colors lg:flex",
                 catalogPanelOpen
-                  ? "bg-indigo-500 text-white border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.4)]"
-                  : "bg-[#0d0d18] text-indigo-300 border-indigo-500/40 hover:bg-indigo-500/10"
+                  ? "bg-white/10 text-white"
+                  : "bg-[#0d0d18]/90 text-white/45 hover:bg-white/[0.06] hover:text-white"
               )}
               title="Connected Data / Catalog"
             >
-              🗃 Data {catalogPanelOpen ? '▾' : '▸'}
+              <Cloud className="h-3.5 w-3.5" />
             </button>
             {catalogPanelOpen && (
-              <div className="fixed top-32 right-32 z-50">
+              <div className="fixed right-12 top-28 z-50">
                 <CatalogInspectorPanel
                   projectId={projectId}
                   sectionTypeMap={catalogSectionTypeMap}
@@ -7529,7 +7364,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       </ResizablePanelGroup>
 
       {/* Mobile Bottom Navigation Bar — fixed at bottom, only visible on small screens */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 h-14 bg-[#0a0a14] border-t-2 border-fuchsia-500/50 flex items-center justify-around px-2 shadow-[0_-4px_20px_rgba(255,0,255,0.15)]">
+      <div className="fixed inset-x-0 bottom-0 z-50 flex h-16 items-center justify-around border-t border-white/[0.06] bg-[#0a0a14]/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
         {/* AI */}
         <button
           onClick={() => {
@@ -7538,8 +7373,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             if (next) { setLeftPanelCollapsed(true); setRightPanelCollapsed(true); }
           }}
           className={cn(
-            "flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg transition-all duration-200 flex-1",
-            aiPanelOpen ? "text-lime-400 bg-lime-500/20" : "text-white/40 hover:text-white/70"
+            "relative flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-white/40 transition-colors",
+            aiPanelOpen ? "text-white after:absolute after:bottom-0 after:h-px after:w-5 after:bg-indigo-400" : "hover:text-white/70"
           )}
         >
           <span className="text-base leading-none">⚡</span>
@@ -7553,8 +7388,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             if (!next === false) { /* closing — no-op */ } else { setAiPanelOpen(false); setRightPanelCollapsed(true); }
           }}
           className={cn(
-            "flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg transition-all duration-200 flex-1",
-            !leftPanelCollapsed ? "text-cyan-400 bg-cyan-500/20" : "text-white/40 hover:text-white/70"
+            "relative flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-white/40 transition-colors",
+            !leftPanelCollapsed ? "text-white after:absolute after:bottom-0 after:h-px after:w-5 after:bg-indigo-400" : "hover:text-white/70"
           )}
         >
           <Layers className="h-4 w-4" />
@@ -7569,10 +7404,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             setRightPanelCollapsed(true);
           }}
           className={cn(
-            "flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg transition-all duration-200 flex-1",
+            "relative flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-white/40 transition-colors",
             viewMode === 'canvas' && leftPanelCollapsed && !aiPanelOpen && rightPanelCollapsed
-              ? "text-fuchsia-400 bg-fuchsia-500/20"
-              : "text-white/40 hover:text-white/70"
+              ? "text-white after:absolute after:bottom-0 after:h-px after:w-5 after:bg-indigo-400"
+              : "hover:text-white/70"
           )}
         >
           <Square className="h-4 w-4" />
@@ -7586,14 +7421,109 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             if (!next === false) { /* closing */ } else { setAiPanelOpen(false); setLeftPanelCollapsed(true); }
           }}
           className={cn(
-            "flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg transition-all duration-200 flex-1",
-            !rightPanelCollapsed ? "text-fuchsia-400 bg-fuchsia-500/20" : "text-white/40 hover:text-white/70"
+            "relative flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-white/40 transition-colors",
+            !rightPanelCollapsed ? "text-white after:absolute after:bottom-0 after:h-px after:w-5 after:bg-indigo-400" : "hover:text-white/70"
           )}
         >
           <Settings className="h-4 w-4" />
           <span className="text-[10px] font-medium">Props</span>
         </button>
+        {/* Mobile actions */}
+        <button
+          onClick={() => setMobileActionsOpen(true)}
+          className="flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-white/40 transition-colors hover:text-white/70"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+          <span className="text-[10px] font-medium">More</span>
+        </button>
       </div>
+
+      <Dialog open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
+        <DialogContent className="w-[calc(100%-1rem)] max-w-md border-white/[0.08] bg-[#0d0d18] p-4 text-white shadow-[0_24px_72px_-28px_rgba(0,0,0,0.9)]">
+          <DialogHeader>
+            <DialogTitle className="text-base text-cyan-100">Project actions</DialogTitle>
+            <DialogDescription className="text-xs text-white/50">
+              Save, publish, and switch the canvas preview without leaving the editor.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-1.5">
+            <Button variant="outline" onClick={() => { setMobileActionsOpen(false); setBuilderMode('select'); }} className="justify-start border-white/10 bg-white/[0.03] text-white hover:bg-cyan-500/10">
+              <MousePointer2 className="mr-2 h-4 w-4 text-lime-400" /> Edit mode
+            </Button>
+            <Button variant="outline" onClick={() => { setMobileActionsOpen(false); setBuilderMode('preview'); }} className="justify-start border-white/10 bg-white/[0.03] text-white hover:bg-cyan-500/10">
+              <Eye className="mr-2 h-4 w-4 text-cyan-400" /> Preview mode
+            </Button>
+            <Button variant="outline" onClick={() => { setMobileActionsOpen(false); setSaveProjectDialogOpen(true); }} className="justify-start border-white/10 bg-white/[0.03] text-white hover:bg-cyan-500/10">
+              <Save className="mr-2 h-4 w-4 text-yellow-400" /> Save project
+            </Button>
+            <Button variant="outline" onClick={() => { setMobileActionsOpen(false); handleExport('react'); }} className="justify-start border-white/10 bg-white/[0.03] text-white hover:bg-cyan-500/10">
+              <Download className="mr-2 h-4 w-4 text-cyan-400" /> Export
+            </Button>
+            <Button variant="outline" onClick={() => { setMobileActionsOpen(false); setPlaygroundInitialBindingId(undefined); setPlaygroundModalOpen(true); }} className="justify-start border-white/10 bg-white/[0.03] text-white hover:bg-cyan-500/10">
+              <Layers className="mr-2 h-4 w-4 text-emerald-400" /> Playground
+            </Button>
+            <Button variant="outline" onClick={() => { setMobileActionsOpen(false); setShowLauncher(true); }} className="justify-start border-white/10 bg-white/[0.03] text-white hover:bg-cyan-500/10">
+              <Sparkles className="mr-2 h-4 w-4 text-fuchsia-400" /> New site
+            </Button>
+          </div>
+          <div className="flex min-h-9 items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
+            <div className="min-w-0 flex-1">
+              {projectId && <BusinessPill />}
+            </div>
+            <AIEditHistoryMenu
+              projectId={currentDraftId ?? null}
+              onRevert={(snap) => {
+                const beforeFiles = virtualFS.getSandpackFiles();
+                virtualFS.importFiles(snap.before);
+                syncBuilderFromFiles(snap.before, activePagePath);
+                pushAISnapshot(currentDraftId ?? null, {
+                  label: `Revert · ${snap.label}`,
+                  source: 'manual',
+                  before: beforeFiles,
+                  after: snap.before,
+                  changedPaths: diffChangedPaths(beforeFiles, snap.before),
+                });
+                toast.success('Reverted to previous state');
+              }}
+              onReapply={(snap) => {
+                const beforeFiles = virtualFS.getSandpackFiles();
+                virtualFS.importFiles(snap.after);
+                syncBuilderFromFiles(snap.after, activePagePath);
+                pushAISnapshot(currentDraftId ?? null, {
+                  label: `Reapply · ${snap.label}`,
+                  source: 'manual',
+                  before: beforeFiles,
+                  after: snap.after,
+                  changedPaths: diffChangedPaths(beforeFiles, snap.after),
+                });
+                toast.success('Reapplied AI edit');
+              }}
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-2 border-t border-white/10 pt-3">
+            {([['desktop', Monitor], ['tablet', Tablet], ['mobile', Smartphone]] as const).map(([id, Icon]) => (
+              <Button key={id} variant="outline" onClick={() => setDevice(id)} className={cn("gap-1 border-white/10 bg-white/[0.03] text-white capitalize", device === id && "border-cyan-400/60 bg-cyan-500/15 text-cyan-200")}>
+                <Icon className="h-4 w-4" /> {id}
+              </Button>
+            ))}
+          </div>
+          <div className="border-t border-white/10 pt-3">
+            <DeployButton
+              getFiles={() => getCurrentCanonicalBuildArtifacts()?.deployFiles || {}}
+              defaultSiteName={currentTemplateName || 'unison-site'}
+              contract={compiledContract}
+              snapshot={effectiveRouteState?.siteBundleSnapshot ?? null}
+              systemId={activeSystemType}
+              projectId={projectId ?? null}
+              variant="outline"
+              onDeployComplete={(url) => {
+                setMobileActionsOpen(false);
+                toast.success('Site published!', { description: `Live at ${url}` });
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <PreviewOverlayManager
         activeOverlay={activeRuntimeOverlay}

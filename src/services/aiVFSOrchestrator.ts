@@ -133,6 +133,34 @@ function getExistingContent(files: Record<string, string>, path: string): string
   return files[path] ?? files[normalized] ?? files[normalized.replace(/^\/src\//, '/')];
 }
 
+/**
+ * Resolve Sandpack-style aliases such as `/pages/Home.tsx` to the canonical
+ * source path already owned by the VFS (`/src/pages/Home.tsx`). AI models see
+ * both namespaces in preview context; writing the alias creates a shadow file
+ * that is never imported by the router even though the VFS write succeeds.
+ */
+export function canonicalizeAIFilePaths(
+  aiFiles: Record<string, string>,
+  currentFiles: Record<string, string>,
+): Record<string, string> {
+  const canonical: Record<string, string> = {};
+
+  for (const [rawPath, content] of Object.entries(aiFiles)) {
+    const normalized = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+    const candidates = normalized.startsWith('/src/')
+      ? [normalized, normalized.replace(/^\/src\//, '/')]
+      : [normalized, `/src${normalized}`];
+    const matchedPath = candidates.find((candidate) => (
+      Object.prototype.hasOwnProperty.call(currentFiles, candidate)
+      || Object.prototype.hasOwnProperty.call(currentFiles, candidate.slice(1))
+    ));
+
+    canonical[matchedPath || normalized] = content;
+  }
+
+  return canonical;
+}
+
 function validateAIFileEdits(
   aiFiles: Record<string, string>,
   currentFiles: Record<string, string>,
@@ -201,6 +229,7 @@ export function applyAIOutputToVFS(
   try {
     // 0. Snapshot current state for undo
     const currentFiles = preserveExisting ? vfs.getSandpackFiles() : {};
+    aiFiles = canonicalizeAIFilePaths(aiFiles, currentFiles);
     const { appliable, skipped } = validateAIFileEdits(aiFiles, currentFiles);
     for (const entry of skipped) errors.push(`[${entry.path}] ${entry.reason}`);
     if (Object.keys(appliable).length === 0) {

@@ -46,7 +46,7 @@ class VFSErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="h-screen w-full flex items-center justify-center bg-background">
+        <div className="min-h-[100dvh] w-full flex items-center justify-center bg-background">
           <div className="text-center max-w-md p-8">
             <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold mb-2">Web Builder failed to load</h2>
@@ -86,10 +86,10 @@ class VFSErrorBoundary extends Component<
 const WebBuilderPage = () => (
   <VFSErrorBoundary>
     <VFSProvider>
-      <div className="h-screen w-full">
+      <div className="min-h-[100dvh] w-full overflow-hidden">
         <Suspense
           fallback={
-            <div className="h-screen w-full flex items-center justify-center">
+            <div className="min-h-[100dvh] w-full flex items-center justify-center">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
                 <p className="text-muted-foreground">Loading Web Builder...</p>

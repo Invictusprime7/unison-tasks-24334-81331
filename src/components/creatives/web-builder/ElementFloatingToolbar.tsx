@@ -672,12 +672,12 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
 
   return (
     <div className={cn(
-      'bg-[#0d0d18] rounded-xl shadow-[0_0_25px_rgba(0,255,255,0.3)] p-2 flex flex-col gap-0',
-      'animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2',
+      'flex flex-col gap-0 rounded-lg border border-white/[0.08] bg-[#0d0d18]/95 p-1.5 shadow-[0_18px_44px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl',
+      'animate-in fade-in-0 slide-in-from-bottom-1 duration-150',
       className
     )}>
       {readiness && (
-        <div className="mb-2 flex items-center gap-1.5 flex-wrap rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
+        <div className="mb-1.5 flex flex-wrap items-center gap-1.5 border-b border-white/[0.06] px-1.5 py-1.5">
           {readiness.surfaceLabel ? (
             <span className="text-[10px] font-semibold text-cyan-300">{readiness.surfaceLabel}</span>
           ) : null}
@@ -755,9 +755,9 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
         </div>
       )}
       {/* ── Buttons row ── */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex flex-wrap items-center gap-1">
         {/* Element badge */}
-        <div className="px-2.5 py-1 bg-cyan-500 text-black rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-[0_0_10px_rgba(0,255,255,0.4)]">
+        <div className="px-2 py-1 text-[10px] font-semibold uppercase text-white/55">
           {element.tagName || 'element'}
         </div>
 

@@ -64,6 +64,7 @@ import { vfsEventBus } from '@/services/vfsEventBus';
 import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
 import { DebugAgentPanel } from './DebugAgentPanel';
 import { interpretPrompt, type TaskPlan } from '@/unison';
+import { buildUnisonAIContext } from '@/unison/aiContext';
 import type { PlanStepStatus } from '@/unison/nlTypes';
 import { TaskPlanSteps } from './TaskPlanSteps';
 import {
@@ -1064,6 +1065,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       };
       
       const { plan: taskPlan, feedback: unisonFeedback } = interpretPrompt(_userContent, projectContext);
+      const unisonContext = buildUnisonAIContext(taskPlan);
       
       liveStep('analyzing', `Plan: ${taskPlan.steps.length} steps · route: ${taskPlan.route}`,
         `Confidence: ${Math.round(taskPlan.intent.confidence * 100)}% · Complexity: ${taskPlan.estimatedComplexity}`
@@ -1467,6 +1469,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               businessId: businessId ?? null,
               prompt: _userContent.slice(0, 8000),
             },
+            requestEnvelope: capabilityInterpretation.envelope,
+            unisonContext,
             // Always use template-react for React projects (even surgical edits)
             // to ensure the AI generates React/TSX output, not raw HTML.
             // The surgicalEdit flag tells the edge function to apply surgical constraints.
@@ -2277,8 +2281,24 @@ export default function App() {
       }
       debugHistory.push({ role: 'user', content: errorPrompt });
 
+      const debugInterpretation = await interpretBuilderRequest(errorPrompt, {
+        vertical: systemType ?? undefined,
+        filePaths: Object.keys(debugVfs),
+        hasExistingTemplate: hasVfsContext,
+      });
+      const { plan: debugTaskPlan } = interpretPrompt(errorPrompt, {
+        provisionedCapabilities: [],
+        existingFiles: Object.keys(debugVfs),
+        existingPages: [],
+        builderMode: 'edit',
+        hasBusinessId: !!systemsBuildContext?.brand?.business_name,
+        installedWorkflows: [],
+      });
+
       const response = await runBuilderTurn<any>({
         messages: debugHistory,
+        requestEnvelope: debugInterpretation.envelope,
+        unisonContext: buildUnisonAIContext(debugTaskPlan),
         mode: 'code',
         currentCode: hasVfsContext ? undefined : currentCode,
         editMode: true,

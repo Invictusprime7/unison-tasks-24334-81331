@@ -31,12 +31,47 @@ export type UnisonRuntimeEnvironment = 'builder' | 'preview' | 'published';
  * runtime. Domain data is always resolved through this context, not UI props.
  */
 export interface UnisonRuntimeContext {
-  organizationId: string;
+  workspaceId: string;
   businessId: string;
   projectId: string;
-  siteId: string;
+  websiteId: string;
   snapshotId: string;
   environment: UnisonRuntimeEnvironment;
+  revisionId?: string;
+  deploymentId?: string;
+  permissions?: readonly string[];
+  subscriptionTier?: string;
+  brandProfileVersion?: string;
+  /** @deprecated Read persisted manifests through normalizeUnisonRuntimeContext. */
+  organizationId?: string;
+  /** @deprecated Use websiteId. */
+  siteId?: string;
+}
+
+export function normalizeUnisonRuntimeContext(
+  context: Partial<UnisonRuntimeContext> | null | undefined,
+): UnisonRuntimeContext | undefined {
+  if (!context) return undefined;
+  const workspaceId = context.workspaceId ?? context.organizationId;
+  const websiteId = context.websiteId ?? context.siteId;
+  if (
+    !workspaceId ||
+    !context.businessId ||
+    !context.projectId ||
+    !websiteId ||
+    !context.snapshotId ||
+    !context.environment
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...context,
+    workspaceId,
+    websiteId,
+    organizationId: context.organizationId ?? workspaceId,
+    siteId: context.siteId ?? websiteId,
+  } as UnisonRuntimeContext;
 }
 
 export interface RuntimeAppContext {

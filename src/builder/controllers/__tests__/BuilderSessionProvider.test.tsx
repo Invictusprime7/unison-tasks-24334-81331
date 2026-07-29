@@ -67,9 +67,11 @@ describe('BuilderSessionProvider', () => {
 
   it('exposes a complete canonical runtime context unchanged', () => {
     const runtimeContext = {
+      workspaceId: 'org-1',
       organizationId: 'org-1',
       businessId: 'biz-1',
       projectId: 'proj-1',
+      websiteId: 'site-1',
       siteId: 'site-1',
       snapshotId: 'snapshot-1',
       environment: 'builder' as const,

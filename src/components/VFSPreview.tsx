@@ -192,6 +192,16 @@ const SandpackErrorListener: React.FC<{
     const status = sandpack.status;
     const error = sandpack.error;
 
+    if (status === 'timeout') {
+      const timeoutMessage = 'Preview runner took too long to connect. Retrying once automatically.';
+      if (lastReportedRef.current !== timeoutMessage) {
+        lastReportedRef.current = timeoutMessage;
+        onError?.(timeoutMessage);
+        onTimeout?.();
+      }
+      return;
+    }
+
     if (error) {
       const msg = typeof error === 'string'
         ? error
@@ -394,6 +404,14 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [nodes, propFiles]);
   const filesSignature = useMemo(() => stablePreviewFileSignature(files), [files]);
 
+  useEffect(() => {
+    timeoutRecoveryCountRef.current = 0;
+    if (timeoutRecoveryTimerRef.current !== null) {
+      window.clearTimeout(timeoutRecoveryTimerRef.current);
+      timeoutRecoveryTimerRef.current = null;
+    }
+  }, [filesSignature]);
+
   const [previewCompile, setPreviewCompile] = useState<PreviewCompileState>({
     sandpackFiles: {},
     dependencies: {},
@@ -570,6 +588,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const sandpackProviderOptions = useMemo(() => ({
     externalResources: ['https://cdn.tailwindcss.com'],
     bundlerURL: new URL('/sandpack/index.html', window.location.origin).toString(),
+    bundlerTimeOut: 120_000,
     activeFile: sandpackEntryFile,
     visibleFiles: [sandpackEntryFile],
     autorun: true,
@@ -922,11 +941,21 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [backend, dockerService, files, launch]);
 
   const handleSandpackTimeout = useCallback(() => {
-    // Sandpack owns its runner retry lifecycle. Remounting here aborts the
-    // connection it is still establishing and can turn a transient delay into
-    // a permanent TIME_OUT. Keep the mounted provider alive for its native
-    // retry control instead.
+    if (
+      timeoutRecoveryCountRef.current >= 1 ||
+      timeoutRecoveryTimerRef.current !== null
+    ) {
+      return;
+    }
+
     timeoutRecoveryCountRef.current += 1;
+    // Sandpack has already unregistered the timed-out client and removed the
+    // iframe src. Remount only after that teardown settles; remounting during
+    // the handshake would abort a client that could still connect.
+    timeoutRecoveryTimerRef.current = window.setTimeout(() => {
+      timeoutRecoveryTimerRef.current = null;
+      setSandpackKey((key) => key + 1);
+    }, 500);
   }, []);
 
   useEffect(() => () => {

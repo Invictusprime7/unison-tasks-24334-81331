@@ -69,6 +69,10 @@ describe('Web Builder preview ownership', () => {
     expect(sharedPreview).not.toContain('sandpack.codesandbox.io');
     const middleware = readSource('middleware.ts');
     expect(sharedPreview).toContain("bundlerURL: new URL('/sandpack/index.html', window.location.origin).toString()");
+    expect(sharedPreview).toContain('bundlerTimeOut: 120_000');
+    expect(sharedPreview).toContain("if (status === 'timeout')");
+    expect(sharedPreview).toContain('timeoutRecoveryCountRef.current >= 1');
+    expect(sharedPreview).toContain('setSandpackKey((key) => key + 1);');
     expect(viteConfig).toContain("request.headers.referer?.includes('/web-builder')");
     expect(middleware).toContain("request.headers.get('referer')?.includes('/web-builder')");
     expect(middleware).toContain("rewrite(new URL('/sandpack/index.html', request.url))");

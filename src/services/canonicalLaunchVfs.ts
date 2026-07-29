@@ -172,9 +172,11 @@ function buildRuntimeAppContext(
   return {
     runtimeContext: organizationId && businessId && projectId && siteId && snapshotId
       ? {
+          workspaceId: organizationId,
           organizationId,
           businessId,
           projectId,
+          websiteId: siteId,
           siteId,
           snapshotId,
           environment: input.environment ?? 'builder',

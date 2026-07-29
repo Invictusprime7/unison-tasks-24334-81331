@@ -10,9 +10,7 @@
  * provider — `useBusinessProfile()` returns { profile: null, loading: false }.
  */
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
@@ -24,25 +22,10 @@ import {
   saveBusinessProfile,
   type BusinessProfilePatch,
 } from '@/services/businessProfileService';
-
-interface BusinessProfileContextValue {
-  profile: BusinessProfileDTO | null;
-  loading: boolean;
-  error: string | null;
-  reload: () => Promise<void>;
-  patch: (p: BusinessProfilePatch) => Promise<BusinessProfileDTO | null>;
-}
-
-const DEFAULT: BusinessProfileContextValue = {
-  profile: null,
-  loading: false,
-  error: null,
-  reload: async () => {},
-  patch: async () => null,
-};
-
-const BusinessProfileContext = createContext<BusinessProfileContextValue>(DEFAULT);
-BusinessProfileContext.displayName = 'BusinessProfileContext';
+import {
+  BusinessProfileContext,
+  type BusinessProfileContextValue,
+} from '@/contexts/BusinessProfileContextDef';
 
 export interface BusinessProfileProviderProps {
   businessId: string | undefined;
@@ -108,9 +91,4 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
   return (
     <BusinessProfileContext.Provider value={value}>{children}</BusinessProfileContext.Provider>
   );
-}
-
-/** Inline hook (per project rule: no standalone custom hook files). */
-export function useBusinessProfile(): BusinessProfileContextValue {
-  return useContext(BusinessProfileContext);
 }

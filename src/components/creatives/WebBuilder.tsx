@@ -94,6 +94,7 @@ import {
 import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
+import { normalizeUnisonRuntimeContext } from "@/platform/core/runtimeManifest";
 import {
   approveCapabilityPlan,
   approvedCapabilityPlanToPatchPlan,
@@ -5804,10 +5805,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
   console.log('[WebBuilder] About to return JSX...');
 
-  const builderRuntimeContext =
+  const builderRuntimeContext = normalizeUnisonRuntimeContext(
     effectiveRouteState?.runtimeManifest?.appContext?.runtimeContext ??
     effectiveRouteState?.siteBundleSnapshot?.appContext?.runtimeContext ??
-    launch?.runtimeManifest?.appContext?.runtimeContext;
+    launch?.runtimeManifest?.appContext?.runtimeContext,
+  );
 
   return (
     <BuilderSessionProvider

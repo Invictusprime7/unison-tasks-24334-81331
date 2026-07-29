@@ -368,6 +368,7 @@ export function useTemplateFiles() {
       if (!data) throw new Error("Failed to persist draft");
 
       await syncCanonicalComponentGraph({
+        businessId: (data as { business_id?: string | null }).business_id ?? payload?.businessId ?? null,
         projectId: (data as { project_id?: string | null }).project_id ?? payload?.projectId ?? null,
         draftId: data.id,
         canonicalPlayground: payload?.canonicalPlayground,
@@ -505,6 +506,7 @@ export function useTemplateFiles() {
       }
       setCurrentProjectId(updatedDraft.project_id ?? payload?.projectId ?? null);
       await syncCanonicalComponentGraph({
+        businessId: updatedDraft.business_id ?? payload?.businessId ?? null,
         projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
         draftId: id,
         canonicalPlayground: payload?.canonicalPlayground,
@@ -829,6 +831,7 @@ export function useTemplateFiles() {
       }
       setCurrentProjectId(updatedDraft.project_id ?? payload?.projectId ?? null);
       await syncCanonicalComponentGraph({
+        businessId: updatedDraft.business_id ?? payload?.businessId ?? null,
         projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
         draftId: targetDraftId,
         canonicalPlayground: payload?.canonicalPlayground,

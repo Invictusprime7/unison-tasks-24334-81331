@@ -1125,6 +1125,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // Template file management
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const templateFiles = useTemplateFiles();
+  const savedTemplateRestoreStateRef = useRef(new Map<string, 'loading' | 'loaded'>());
   const frameworkDraftSweepStartedRef = useRef(false);
   useEffect(() => {
     if (frameworkDraftSweepStartedRef.current) return;
@@ -1294,15 +1295,29 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     // A wizard route can retain a stale ?id= value from a prior builder tab.
     // Its VFS is already the authoritative project; querying drafts here can
     // fail independently and incorrectly toast "Failed to load project".
-    if (!templateId || hasStructuredRuntimeLaunch) return;
+    if (
+      !templateId ||
+      hasStructuredRuntimeLaunch ||
+      savedTemplateRestoreStateRef.current.has(templateId)
+    ) return;
 
     let cancelled = false;
+    savedTemplateRestoreStateRef.current.set(templateId, 'loading');
     (async () => {
       const template = await templateFiles.loadTemplate(templateId);
-      if (!template || cancelled) return;
-      if (!hydrateSavedTemplate(template)) return;
+      if (!template || cancelled) {
+        savedTemplateRestoreStateRef.current.delete(templateId);
+        return;
+      }
+      if (!hydrateSavedTemplate(template)) {
+        savedTemplateRestoreStateRef.current.delete(templateId);
+        return;
+      }
+      savedTemplateRestoreStateRef.current.set(templateId, 'loaded');
       toast.success(`Opened "${template.name}"`, {
+        id: `project-restored-${templateId}`,
         description: 'Project restored from your saved state',
+        duration: 4_000,
       });
     })();
 

@@ -32,6 +32,14 @@ export interface BusinessProfileProviderProps {
   children: ReactNode;
 }
 
+function broadcastProfile(profile: BusinessProfileDTO | null) {
+  if (typeof window === 'undefined') return;
+  const message = { type: 'BUSINESS_PROFILE_CHANGED', profile };
+  for (const iframe of document.querySelectorAll('iframe')) {
+    iframe.contentWindow?.postMessage(message, window.location.origin);
+  }
+}
+
 export function BusinessProfileProvider({ businessId, children }: BusinessProfileProviderProps) {
   const [profile, setProfile] = useState<BusinessProfileDTO | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -50,6 +58,7 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
       // Mirror into window for VFS preview iframe hydration.
       if (typeof window !== 'undefined') {
         (window as unknown as Record<string, unknown>).__UNISON_BUSINESS__ = p ?? null;
+        broadcastProfile(p);
         window.dispatchEvent(
           new CustomEvent('unison:business-profile-changed', { detail: { businessId, profile: p } }),
         );
@@ -69,6 +78,7 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
         setProfile(next);
         if (typeof window !== 'undefined') {
           (window as unknown as Record<string, unknown>).__UNISON_BUSINESS__ = next;
+          broadcastProfile(next);
           window.dispatchEvent(
             new CustomEvent('unison:business-profile-changed', { detail: { businessId, profile: next } }),
           );
@@ -82,6 +92,20 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleProfileRequest = (event: MessageEvent) => {
+      if (event.origin && event.origin !== window.location.origin) return;
+      if ((event.data as { type?: string } | null)?.type !== 'BUSINESS_PROFILE_REQUEST') return;
+      event.source?.postMessage(
+        { type: 'BUSINESS_PROFILE_CHANGED', profile },
+        { targetOrigin: window.location.origin },
+      );
+    };
+    window.addEventListener('message', handleProfileRequest);
+    return () => window.removeEventListener('message', handleProfileRequest);
+  }, [profile]);
 
   const value = useMemo<BusinessProfileContextValue>(
     () => ({ profile, loading, error, reload, patch }),

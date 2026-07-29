@@ -123,6 +123,10 @@ import {
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
 import { validateGeneratedUiContract } from "@/platform/core/generatedUiFoundation";
+import { loadBusinessProfile } from '@/services/businessProfileService';
+import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
+import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
+import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
 
 // ============================================================================
@@ -1432,6 +1436,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   // Only seeds empty fields so a returning user editing the wizard is never overwritten.
   useEffect(() => {
     if (!open || !prefill) return;
+    if (prefill.businessId) {
+      setSelectedBusinessId(prefill.businessId);
+    }
     if (prefill.businessName && !businessName) {
       setBusinessName(prefill.businessName);
     }
@@ -3106,6 +3113,33 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
 
       const provisionedBusinessId = plannedBusinessId;
+      const loadedBusinessProfile = selectedBusinessId
+        ? await loadBusinessProfile(selectedBusinessId)
+        : null;
+      if (selectedBusinessId && !loadedBusinessProfile) {
+        throw new Error('Unable to load the selected Business Profile for this launch.');
+      }
+      const businessProfile: BusinessProfileDTO = loadedBusinessProfile || {
+        businessId: provisionedBusinessId,
+        ownerId: launcherUser.id,
+        name: brand,
+        industry: resolvedIndustry,
+        email: ownerEmail || null,
+        notificationEmail: ownerEmail || null,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        address: {},
+        hours: [],
+        socialLinks: {},
+        settings: {},
+      };
+      const plannedDataBindings = planSectionDataBindings(siteBundleSnapshot);
+      const businessRuntime = buildBusinessRuntimeContract({
+        businessId: provisionedBusinessId,
+        profile: businessProfile,
+        snapshotId: siteBundleSnapshot.snapshotId,
+        expectedBindingCount: plannedDataBindings.length,
+        bindingsReady: true,
+      });
 
       const nativeSetupSnapshot = buildNativePublishSetupSnapshot({
         enabled: launchContract.nativePublishCapable,
@@ -3152,6 +3186,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         mergeWithCanonicalSnapshot: true,
         businessId: provisionedBusinessId,
         projectId: launchIds.projectId,
+        organizationId: provisionedBusinessId,
         siteId: launchIds.siteId,
         systemType: selectedSystem,
         systemName: system.name,
@@ -3164,6 +3199,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         themePresetId: resolvedPreset.id,
         backendRequired: false,
         wizardSelections,
+        businessRuntime,
         allowCanonicalPageFallback: false,
         strictPreflight: true,
       });
@@ -3233,6 +3269,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         siteBundleSnapshot: (launchArtifacts.siteBundleSnapshot || {}) as unknown as Record<string, unknown>,
         runtimeManifest: runtimeManifest as unknown as Record<string, unknown>,
         wizardSelections: wizardSelections as unknown as Record<string, unknown>,
+        businessRuntime,
+        dataBindings: plannedDataBindings,
       });
       const launchProjectId = confirmedLaunch.projectId;
       const launcherDraftId = confirmedLaunch.draftId;
@@ -3253,11 +3291,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       // Persist generated bindings → site_intent_bindings (launcher-native wiring).
       // Best-effort; failures never block launch.
-      if (provisionedBusinessId && launchProjectId) {
+      if (confirmedLaunch.businessId && launchProjectId) {
         try {
           const { persistGeneratedBindings } = await import('@/services/persistGeneratedBindings');
           const result = await persistGeneratedBindings({
-            businessId: provisionedBusinessId,
+            businessId: confirmedLaunch.businessId,
             projectId: launchProjectId,
             files: wiredVfsFiles,
           });
@@ -3271,7 +3309,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         try {
           const { autoEmitSectionBindings } = await import('@/services/autoEmitSectionBindings');
           const emitResult = await autoEmitSectionBindings({
-            businessId: provisionedBusinessId,
+            businessId: confirmedLaunch.businessId,
             projectId: launchProjectId,
             snapshot: launchArtifacts.siteBundleSnapshot,
           });
@@ -3283,7 +3321,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             window.dispatchEvent(
               new CustomEvent('unison:catalog-seeded', {
                 detail: {
-                  businessId: provisionedBusinessId,
+                  businessId: confirmedLaunch.businessId,
                   projectId: launchProjectId,
                   industry: resolvedIndustry,
                   bindingIds: emitResult.bindingIds,
@@ -3301,12 +3339,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // by revisionId instead of relying on sessionStorage. Best-effort;
       // failures never block launch.
       let launcherRevisionId: string | null = null;
-      if (isCommitServiceEnabled() && provisionedBusinessId && launchProjectId) {
+      if (isCommitServiceEnabled() && confirmedLaunch.businessId && launchProjectId) {
         try {
           if (launcherUser.id) {
             const identity: BuilderIdentity = {
               userId: launcherUser.id,
-              businessId: provisionedBusinessId,
+              businessId: confirmedLaunch.businessId,
               projectId: launchProjectId,
               draftId: launcherDraftId,
               revisionId: '',

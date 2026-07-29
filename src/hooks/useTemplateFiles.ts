@@ -62,6 +62,12 @@ interface TemplateData {
   activePagePath?: string;
   canonicalPlayground?: Record<string, unknown>;
   siteBundleSnapshot?: Record<string, unknown>;
+  runtimeManifest?: Record<string, unknown>;
+  businessRuntime?: Record<string, unknown>;
+  businessId?: string;
+  projectId?: string;
+  draftId?: string;
+  siteId?: string;
   version?: number;
 }
 
@@ -189,7 +195,7 @@ const buildCanvasData = (code: string, payload?: SaveProjectPayload): TemplateDa
 });
 
 /** Convert a builder_drafts row to a SavedTemplate envelope. */
-const draftRowToTemplate = (row: any): SavedTemplate => {
+export const draftRowToTemplate = (row: any): SavedTemplate => {
   const meta = (row.metadata || {}) as Record<string, any>;
   const vfsFiles = (
     row.vfs_files ||
@@ -214,6 +220,12 @@ const draftRowToTemplate = (row: any): SavedTemplate => {
       activePagePath: meta.activePagePath,
       canonicalPlayground: (meta.canonicalPlayground || undefined) as Record<string, unknown> | undefined,
       siteBundleSnapshot: (meta.siteBundleSnapshot || undefined) as Record<string, unknown> | undefined,
+      runtimeManifest: (meta.runtimeManifest || undefined) as Record<string, unknown> | undefined,
+      businessRuntime: (meta.businessRuntime || undefined) as Record<string, unknown> | undefined,
+      businessId: row.business_id || undefined,
+      projectId: row.project_id || undefined,
+      draftId: row.id,
+      siteId: row.site_id || meta.siteId || undefined,
     },
   };
 };

@@ -13,7 +13,6 @@ import {
   CATALOG_SURFACES,
   getCatalogSurface,
   type CatalogKind,
-  type CatalogSurface,
 } from '@/platform/core/catalogSurfaceRegistry';
 import type { SectionDataFallback } from '@/types/catalog';
 
@@ -76,6 +75,56 @@ export interface AutoEmitResult {
   bindingIds: string[];
 }
 
+export interface PlannedSectionDataBinding {
+  snapshotId: string;
+  pagePath: string;
+  sectionId: string;
+  slotKey: null;
+  bindingType: 'section';
+  sourceKind: CatalogKind;
+  sourceTable: string;
+  collectionId: null;
+  filters: Record<string, unknown>;
+  sort: { field?: string; direction?: 'asc' | 'desc' };
+  limitCount: number;
+  displayMapping: Record<string, unknown>;
+  fallbackMode: SectionDataFallback;
+}
+
+export function planSectionDataBindings(
+  snapshot: SiteBundleSnapshot | null | undefined,
+): PlannedSectionDataBinding[] {
+  const planned: PlannedSectionDataBinding[] = [];
+  if (!snapshot?.pageRegistry?.pages) return planned;
+
+  for (const page of Object.values(snapshot.pageRegistry.pages)) {
+    const sectionTypes = (page as unknown as { sectionTypes?: unknown }).sectionTypes;
+    if (!Array.isArray(sectionTypes)) continue;
+
+    for (let index = 0; index < sectionTypes.length; index++) {
+      const surface = getCatalogSurface(String(sectionTypes[index] ?? '').trim());
+      if (!surface) continue;
+      planned.push({
+        snapshotId: snapshot.snapshotId,
+        pagePath: page.path || `/${page.pageId}`,
+        sectionId: `${surface.bindingPrefix}-${index}`,
+        slotKey: null,
+        bindingType: 'section',
+        sourceKind: surface.catalogKind,
+        sourceTable: surface.sourceTable,
+        collectionId: null,
+        filters: surface.defaultFilters,
+        sort: surface.defaultSort,
+        limitCount: surface.defaultLimit,
+        displayMapping: buildDisplayMappingForBinding(surface),
+        fallbackMode: surface.fallbackMode,
+      });
+    }
+  }
+
+  return planned;
+}
+
 export async function autoEmitSectionBindings(
   opts: AutoEmitOptions,
 ): Promise<AutoEmitResult> {
@@ -91,59 +140,35 @@ export async function autoEmitSectionBindings(
   const result: AutoEmitResult = { emitted: 0, skipped: 0, errors: 0, bindingIds: [] };
   if (!businessId || !projectId || !snapshot?.pageRegistry?.pages) return result;
 
-  for (const page of Object.values(snapshot.pageRegistry.pages)) {
-    const pagePath = page.path || `/${page.pageId}`;
-    const sectionTypes = (page as unknown as { sectionTypes?: unknown }).sectionTypes;
-    if (!Array.isArray(sectionTypes) || sectionTypes.length === 0) continue;
+  const plannedBindings = planSectionDataBindings(snapshot);
+  for (const binding of plannedBindings) {
+    const fallbackDefault = binding.fallbackMode === 'hide_section'
+      ? 'hide_section'
+      : defaultFallback ?? binding.fallbackMode;
+    try {
+      const dto = await upsertBinding({
+        businessId,
+        projectId,
+        ...binding,
+        filters:
+          defaultFilters[binding.sourceKind] ?? binding.filters,
+        limitCount: defaultLimit ?? binding.limitCount,
+        fallbackMode: fallbackDefault,
+      });
 
-    for (let index = 0; index < sectionTypes.length; index++) {
-      const raw = String(sectionTypes[index] ?? '').trim();
-      if (!raw) continue;
-      const surface: CatalogSurface | null = getCatalogSurface(raw);
-      if (!surface) {
-        result.skipped++;
-        continue;
-      }
-
-      const sectionId = `${surface.bindingPrefix}-${index}`;
-      const fallbackDefault: SectionDataFallback =
-        surface.fallbackMode === 'hide_section'
-          ? 'hide_section'
-          : defaultFallback ?? surface.fallbackMode;
-
-      try {
-        const dto = await upsertBinding({
-          businessId,
-          projectId,
-          snapshotId: snapshot.snapshotId,
-          pagePath,
-          sectionId,
-          bindingType: 'section',
-          sourceKind: surface.catalogKind,
-          sourceTable: surface.sourceTable,
-          filters:
-            defaultFilters[surface.catalogKind] ??
-            surface.defaultFilters,
-          sort: surface.defaultSort,
-          limitCount: defaultLimit ?? surface.defaultLimit,
-          displayMapping: buildDisplayMappingForBinding(surface),
-          fallbackMode: fallbackDefault,
-        });
-
-        if (dto) {
-          result.emitted++;
-          result.bindingIds.push(dto.id);
-        } else {
-          result.errors++;
-        }
-      } catch (e) {
-        console.warn('[autoEmitSectionBindings] upsert failed', {
-          pagePath,
-          sectionId,
-          error: e,
-        });
+      if (dto) {
+        result.emitted++;
+        result.bindingIds.push(dto.id);
+      } else {
         result.errors++;
       }
+    } catch (e) {
+      console.warn('[autoEmitSectionBindings] upsert failed', {
+        pagePath: binding.pagePath,
+        sectionId: binding.sectionId,
+        error: e,
+      });
+      result.errors++;
     }
   }
 

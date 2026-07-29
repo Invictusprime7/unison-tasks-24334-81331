@@ -10,6 +10,8 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
 const ROOT = process.cwd();
 const SRC = join(ROOT, 'src');
@@ -26,67 +28,84 @@ const ALLOWLIST = new Set([
 
 const FORBIDDEN_SYMBOLS = ['executeCanonicalPipeline', 'recompileFromPlayground'];
 
-// Match identifier usage but ignore declarations / comments at a coarse level.
-const usageRegex = new RegExp(
-  `\\b(${FORBIDDEN_SYMBOLS.join('|')})\\b`,
-  'g',
-);
+export function findForbiddenUsages(text, fileName = 'source.ts') {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const usages = [];
 
-
-
-const violations= [];
-
-function walk(dir) {
-  for (const name of readdirSync(dir)) {
-    const full = join(dir, name);
-    const st = statSync(full);
-    if (st.isDirectory()) {
-      if (name === 'node_modules' || name === 'dist' || name.startsWith('.')) continue;
-      walk(full);
-      continue;
+  function visit(node) {
+    if (ts.isIdentifier(node) && FORBIDDEN_SYMBOLS.includes(node.text)) {
+      const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      usages.push({
+        line: position.line + 1,
+        symbol: node.text,
+        text: sourceFile.text.slice(node.getStart(sourceFile), node.getEnd()),
+      });
     }
-    if (!/\.(ts|tsx)$/.test(name)) continue;
-    if (/\.test\.tsx?$|\.spec\.tsx?$/.test(name)) continue;
-    const rel = relative(ROOT, full).split(sep).join('/');
-    if (ALLOWLIST.has(rel)) continue;
-
-    const text = readFileSync(full, 'utf8');
-    if (!FORBIDDEN_SYMBOLS.some((s) => text.includes(s))) continue;
-
-    const lines = text.split('\n');
-    lines.forEach((line, idx) => {
-      // Strip line comments to reduce false positives.
-      const stripped = line.replace(/\/\/.*$/, '');
-      let m;
-      usageRegex.lastIndex = 0;
-      while ((m = usageRegex.exec(stripped))) {
-        violations.push({
-          file: rel,
-          line: idx + 1,
-          symbol: m[1],
-          text: line.trim(),
-        });
-      }
-    });
+    ts.forEachChild(node, visit);
   }
+
+  visit(sourceFile);
+  return usages;
 }
 
-walk(SRC);
+function collectViolations(dir) {
+  const violations = [];
 
-if (violations.length === 0) {
-  console.log('[lint-pipeline-bypass] OK — no bypasses found.');
-  process.exit(0);
+  function walk(currentDir) {
+    for (const name of readdirSync(currentDir)) {
+      const full = join(currentDir, name);
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        if (name === 'node_modules' || name === 'dist' || name.startsWith('.')) continue;
+        walk(full);
+        continue;
+      }
+      if (!/\.(ts|tsx)$/.test(name)) continue;
+      if (/\.test\.tsx?$|\.spec\.tsx?$/.test(name)) continue;
+      const rel = relative(ROOT, full).split(sep).join('/');
+      if (ALLOWLIST.has(rel)) continue;
+
+      const text = readFileSync(full, 'utf8');
+      if (!FORBIDDEN_SYMBOLS.some((s) => text.includes(s))) continue;
+
+      for (const usage of findForbiddenUsages(text, full)) {
+        violations.push({ file: rel, ...usage });
+      }
+    }
+  }
+
+  walk(dir);
+  return violations;
 }
 
-console.error(
-  `\n[lint-pipeline-bypass] FAIL — ${violations.length} bypass(es) detected.\n` +
-    `All pipeline mutations must route through commitToPipeline(input, source).\n`,
-);
-for (const v of violations) {
-  console.error(`  ${v.file}:${v.line}  uses ${v.symbol}`);
-  console.error(`    > ${v.text}`);
+function main() {
+  const violations = collectViolations(SRC);
+
+  if (violations.length === 0) {
+    console.log('[lint-pipeline-bypass] OK — no bypasses found.');
+    process.exit(0);
+  }
+
+  console.error(
+    `\n[lint-pipeline-bypass] FAIL — ${violations.length} bypass(es) detected.\n` +
+      `All pipeline mutations must route through commitToPipeline(input, source).\n`,
+  );
+  for (const v of violations) {
+    console.error(`  ${v.file}:${v.line}  uses ${v.symbol}`);
+    console.error(`    > ${v.text}`);
+  }
+  console.error(
+    `\nFix: import { commitToPipeline } from '@/platform/core' and pass a CommitSource.\n`,
+  );
+  process.exit(1);
 }
-console.error(
-  `\nFix: import { commitToPipeline } from '@/platform/core' and pass a CommitSource.\n`,
-);
-process.exit(1);
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

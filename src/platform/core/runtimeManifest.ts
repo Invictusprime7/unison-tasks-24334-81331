@@ -91,6 +91,7 @@ export interface RuntimeAppContext {
   entryPoint?: string;
   routes?: string[];
   wizardSelections?: Record<string, unknown>;
+  businessRuntime?: import('@/platform/core/businessRuntimeContract').BusinessRuntimeContract;
   /** Resolved Style-card preset id (e.g. 'organic'); single source of truth for /src/index.css */
   themePresetId?: string;
   /** Durable semantic HSL token payload selected by the wizard Style card. */

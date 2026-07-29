@@ -168,6 +168,8 @@ describe("buildCanonicalLaunchArtifacts", () => {
       compiledPlayground: { vfsFiles: snapshot.vfsFiles },
       businessId: "biz_123",
       projectId: "project_123",
+      organizationId: "biz_123",
+      siteId: "site_123",
       systemType: "agency",
       systemName: "Acme Co",
       templateName: "Acme Launch",
@@ -182,6 +184,13 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files["/src/pages/Home.tsx"]).toContain("motion.div");
     expect(artifacts.files["/package.json"]).toContain("\"framer-motion\"");
     expect(artifacts.runtimeManifest.appContext?.projectId).toBe("project_123");
+    expect(artifacts.runtimeManifest.appContext?.runtimeContext).toMatchObject({
+      workspaceId: 'biz_123',
+      businessId: 'biz_123',
+      projectId: 'project_123',
+      websiteId: 'site_123',
+      snapshotId: 'snap_123',
+    });
     expect(artifacts.runtimeManifest.appContext?.previewRuntime?.foundation).toBe('token-glass');
     expect(artifacts.appContext).not.toHaveProperty('experienceContract');
     expect(artifacts.runtimeManifest.metadataFiles).toContain(CANONICAL_METADATA_FILE_PATHS.appContext);
@@ -189,6 +198,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.wizardRuntime]).toContain('token-glass');
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.siteBundleSnapshot]).toContain("\"vfsFilePaths\"");
+    expect(artifacts.files['/src/components/businessProfile.ts']).toContain('useBusinessProfile');
   });
 
   it("uses SiteBundleSnapshot VFS instead of a stale compile result at launch", () => {

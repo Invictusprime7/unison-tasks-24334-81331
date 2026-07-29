@@ -1,4 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
+import type { PlannedSectionDataBinding } from '@/services/autoEmitSectionBindings';
 
 export const REQUIRED_SITE_CAPABILITIES = [
   'business_profile',
@@ -37,6 +39,8 @@ export interface ConfirmedLaunchProvisionInput {
   siteBundleSnapshot: Record<string, unknown>;
   runtimeManifest: Record<string, unknown>;
   wizardSelections: Record<string, unknown>;
+  businessRuntime: BusinessRuntimeContract;
+  dataBindings: PlannedSectionDataBinding[];
   capabilities?: readonly string[];
 }
 

@@ -22,6 +22,50 @@ const IdsSchema = z.object({
   bundleId: z.string().uuid(),
 });
 
+const BusinessRuntimeSchema = z.object({
+  version: z.literal('1.0'),
+  businessId: z.string().uuid(),
+  profile: z.object({
+    source: z.literal('businesses'),
+    version: z.string().min(1).max(120),
+    completenessPercent: z.number().int().min(0).max(100),
+    publishReady: z.boolean(),
+    missingRequiredFields: z.array(z.string().min(1).max(80)).max(32),
+  }),
+  dataBindings: z.object({
+    source: z.literal('site_data_bindings'),
+    snapshotId: z.string().min(1).max(200),
+    expectedCount: z.number().int().min(0).max(300),
+    status: z.literal('ready'),
+  }),
+  generatedAt: z.string().datetime(),
+});
+
+const DataBindingSchema = z.object({
+  snapshotId: z.string().min(1).max(200),
+  pagePath: z.string().min(1).max(300),
+  sectionId: z.string().min(1).max(200),
+  slotKey: z.string().max(200).nullable(),
+  bindingType: z.literal('section'),
+  sourceKind: z.string().min(1).max(80),
+  sourceTable: z.enum([
+    'services',
+    'products',
+    'menu_items',
+    'pricing_plans',
+    'featured_offers',
+    'testimonials',
+    'portfolio_projects',
+    'availability_slots',
+  ]),
+  collectionId: z.string().uuid().nullable(),
+  filters: z.record(z.unknown()),
+  sort: z.record(z.unknown()),
+  limitCount: z.number().int().min(1).max(100),
+  displayMapping: z.record(z.unknown()),
+  fallbackMode: z.enum(['empty_state', 'hide_section', 'show_placeholder']),
+});
+
 const BodySchema = z.object({
   ids: IdsSchema,
   existingBusinessId: z.string().uuid().nullable().optional(),
@@ -37,6 +81,8 @@ const BodySchema = z.object({
   siteBundleSnapshot: z.record(z.unknown()),
   runtimeManifest: z.record(z.unknown()),
   wizardSelections: z.record(z.unknown()),
+  businessRuntime: BusinessRuntimeSchema.optional(),
+  dataBindings: z.array(DataBindingSchema).max(300).default([]),
   capabilities: z.array(z.string().trim().min(1).max(120)).min(1).max(32),
 });
 
@@ -76,6 +122,36 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
   try {
     await pg.queryArray("BEGIN");
     const businessId = body.existingBusinessId ?? body.ids.businessId;
+    const fallbackSnapshotId = typeof body.siteBundleSnapshot.snapshotId === 'string'
+      ? body.siteBundleSnapshot.snapshotId
+      : 'legacy-launch';
+    const businessRuntime = body.businessRuntime ?? {
+      version: '1.0' as const,
+      businessId,
+      profile: {
+        source: 'businesses' as const,
+        version: 'unversioned',
+        completenessPercent: 0,
+        publishReady: false,
+        missingRequiredFields: ['profile_verification_required'],
+      },
+      dataBindings: {
+        source: 'site_data_bindings' as const,
+        snapshotId: fallbackSnapshotId,
+        expectedCount: 0,
+        status: 'ready' as const,
+      },
+      generatedAt: new Date().toISOString(),
+    };
+    if (businessRuntime.businessId !== businessId) {
+      throw new Error('BUSINESS_RUNTIME_IDENTITY_MISMATCH');
+    }
+    if (businessRuntime.dataBindings.expectedCount !== body.dataBindings.length) {
+      throw new Error('BUSINESS_RUNTIME_BINDING_COUNT_MISMATCH');
+    }
+    if (body.dataBindings.some((binding) => binding.snapshotId !== businessRuntime.dataBindings.snapshotId)) {
+      throw new Error('BUSINESS_RUNTIME_SNAPSHOT_MISMATCH');
+    }
 
     if (body.existingBusinessId) {
       const authorization = await query<{ authorized: boolean }>(
@@ -138,6 +214,32 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
         JSON.stringify({ siteId: body.ids.siteId, source: "system-launcher" }),
       ],
     );
+    for (const binding of body.dataBindings) {
+      await query(
+        pg,
+        `INSERT INTO public.site_data_bindings
+          (business_id, project_id, snapshot_id, page_path, section_id, slot_key, binding_type,
+           source_kind, source_table, collection_id, filters, sort, limit_count, display_mapping, fallback_mode)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14::jsonb, $15)`,
+        [
+          businessId,
+          body.ids.projectId,
+          binding.snapshotId,
+          binding.pagePath,
+          binding.sectionId,
+          binding.slotKey,
+          binding.bindingType,
+          binding.sourceKind,
+          binding.sourceTable,
+          binding.collectionId,
+          JSON.stringify(binding.filters),
+          JSON.stringify(binding.sort),
+          binding.limitCount,
+          JSON.stringify(binding.displayMapping),
+          binding.fallbackMode,
+        ],
+      );
+    }
     await query(
       pg,
       `INSERT INTO public.site_builds (id, site_id, mode, version, status, current_stage, started_at, finished_at, context)
@@ -151,6 +253,7 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
           templateId: body.templateId,
           themePresetId: body.themePresetId,
           wizardSelections: body.wizardSelections,
+          businessRuntime,
         }),
       ],
     );
@@ -176,6 +279,7 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
           businessId,
           projectId: body.ids.projectId,
           runtimeManifest: body.runtimeManifest,
+          businessRuntime,
           poweredByUnison: true,
         }),
       ],
@@ -207,6 +311,7 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
           siteBundleSnapshot: body.siteBundleSnapshot,
           runtimeManifest: body.runtimeManifest,
           wizardSelections: body.wizardSelections,
+          businessRuntime,
           launchConfirmation: { confirmedAt: new Date().toISOString(), confirmedBy: userId },
         }),
       ],

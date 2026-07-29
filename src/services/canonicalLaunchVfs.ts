@@ -25,6 +25,11 @@ import {
   getMissingCanonicalChromeRoutes,
   isCanonicalWizardSharedChromePath,
 } from './wizardSharedChrome';
+import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
+import {
+  BUSINESS_PROFILE_HYDRATION_MODULE,
+  BUSINESS_PROFILE_HYDRATION_PATH,
+} from '@/sections/businessProfileHydrationModule';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',
@@ -72,6 +77,7 @@ export interface BuildCanonicalLaunchArtifactsInput {
   interactionManifest?: WizardInteractionManifest | null;
   backendRequired?: boolean;
   wizardSelections?: WizardSelections | null;
+  businessRuntime?: BusinessRuntimeContract | null;
   /**
    * When false, registered page modules must come from generatedFiles. The
    * canonical snapshot may still provide router/root support, but its page
@@ -180,6 +186,7 @@ function buildRuntimeAppContext(
           siteId,
           snapshotId,
           environment: input.environment ?? 'builder',
+          brandProfileVersion: input.businessRuntime?.profile.version,
         }
       : undefined,
     businessId,
@@ -198,6 +205,7 @@ function buildRuntimeAppContext(
     wizardSelections: input.wizardSelections
       ? (JSON.parse(JSON.stringify(input.wizardSelections)) as Record<string, unknown>)
       : undefined,
+    businessRuntime: input.businessRuntime || undefined,
     themePresetId,
     themeTokens: input.wizardSelections?.themeTokens || siteBundleSnapshot?.themeTokens,
     previewRuntime: {
@@ -672,6 +680,7 @@ export function buildCanonicalLaunchArtifacts(
         // registry/router/bindings and Stage 4b owns /src/index.css.
       })
     : { ...safeFiles };
+  mergedFiles[BUSINESS_PROFILE_HYDRATION_PATH] = BUSINESS_PROFILE_HYDRATION_MODULE;
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
   const appContext = buildRuntimeAppContext(

@@ -95,6 +95,8 @@ import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
 import { normalizeUnisonRuntimeContext } from "@/platform/core/runtimeManifest";
+import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
+import { BusinessProfileProvider } from '@/contexts/BusinessProfileContext';
 import {
   approveCapabilityPlan,
   approvedCapabilityPlanToPatchPlan,
@@ -348,6 +350,7 @@ interface WebBuilderRouteState {
   systemType?: string;
   systemName?: string;
   businessId?: string;
+  siteId?: string;
   projectId?: string;
   draftId?: string;
   manifestId?: string;
@@ -372,6 +375,7 @@ interface WebBuilderRouteState {
   wizardSelections?: WizardSelections;
   setupSnapshot?: PlaygroundSetupSnapshot;
   nativeReadinessManifest?: Record<string, unknown>;
+  businessRuntime?: BusinessRuntimeContract;
   /** Durable structured WizardSeed from launcher; threaded into every AIBuilderPanel turn. */
   wizardSeed?: Record<string, unknown>;
   fromLauncher?: boolean;
@@ -464,10 +468,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       nativeReadinessManifest: launch.nativeReadinessManifest,
     };
   }, [launch]);
+  const [persistedResumeState, setPersistedResumeState] = useState<WebBuilderRouteState | null>(null);
   const effectiveRouteState = useMemo<WebBuilderRouteState | null>(() => {
-    if (isExplicitProjectResume) return routeState;
+    if (isExplicitProjectResume) {
+      return mergeRouteStatePreservingFiles(persistedResumeState, routeState);
+    }
     return mergeRouteStatePreservingFiles(pendingLauncherHandoff, launchRouteState, routeState);
-  }, [isExplicitProjectResume, launchRouteState, pendingLauncherHandoff, routeState]);
+  }, [isExplicitProjectResume, launchRouteState, pendingLauncherHandoff, persistedResumeState, routeState]);
   const launchEntryPoint = useMemo(
     () =>
       normalizeLauncherEntryPoint(
@@ -1165,7 +1172,23 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         calendars?: Record<string, import('@/types/playground').PlaygroundCalendar>;
         popups?: Record<string, import('@/types/playground').PlaygroundPopup>;
       };
+      runtimeManifest?: RuntimeManifest;
+      businessRuntime?: BusinessRuntimeContract;
+      businessId?: string;
+      projectId?: string;
+      draftId?: string;
+      siteId?: string;
     };
+    setPersistedResumeState({
+      businessId: canvasData.businessId,
+      projectId: canvasData.projectId,
+      draftId: canvasData.draftId,
+      siteId: canvasData.siteId,
+      entryPoint: canvasData.entryPoint,
+      runtimeManifest: canvasData.runtimeManifest,
+      siteBundleSnapshot: canvasData.siteBundleSnapshot as SiteBundleSnapshot | undefined,
+      businessRuntime: canvasData.businessRuntime,
+    });
     const persistedPlayground = canvasData.canonicalPlayground || (
       canvasData.siteBundleSnapshot ? {
         pageRegistry: canvasData.siteBundleSnapshot.pageRegistry,
@@ -5823,6 +5846,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         draftId: currentDraftId || undefined,
       }}
     >
+    <BusinessProfileProvider businessId={businessId || undefined}>
     <div ref={mainContainerRef} className={cn("wb-obsidian flex min-h-[100dvh] h-[100dvh] flex-col overflow-hidden bg-[#09090b]", isMobile && "pb-16")}>
       {/* Launcher is opened only by an explicit user flow. */}
       <SystemLauncher open={showLauncher} onOpenChange={setShowLauncher} />
@@ -7974,6 +7998,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       </Suspense>
       )}
     </div>
+    </BusinessProfileProvider>
     </BuilderSessionProvider>
   );
 };

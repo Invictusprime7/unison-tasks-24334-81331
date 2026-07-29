@@ -20,6 +20,25 @@ const ids = {
   bundleId: '66666666-6666-4666-8666-666666666666',
 };
 
+const businessRuntime = {
+  version: '1.0' as const,
+  businessId: ids.businessId,
+  profile: {
+    source: 'businesses' as const,
+    version: '2026-07-28T12:00:00.000Z',
+    completenessPercent: 100,
+    publishReady: true,
+    missingRequiredFields: [],
+  },
+  dataBindings: {
+    source: 'site_data_bindings' as const,
+    snapshotId: 'snapshot-1',
+    expectedCount: 0,
+    status: 'ready' as const,
+  },
+  generatedAt: '2026-07-28T13:00:00.000Z',
+};
+
 describe('provisionConfirmedLaunchSite', () => {
   it('sends the complete live-site capability contract to the confirmed launch endpoint', async () => {
     invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
@@ -36,12 +55,16 @@ describe('provisionConfirmedLaunchSite', () => {
       siteBundleSnapshot: {},
       runtimeManifest: {},
       wizardSelections: {},
+      businessRuntime,
+      dataBindings: [],
     })).resolves.toEqual(ids);
 
     expect(invoke).toHaveBeenCalledWith('provision-launch-site', expect.objectContaining({
       body: expect.objectContaining({
         ids,
         capabilities: REQUIRED_SITE_CAPABILITIES,
+        businessRuntime,
+        dataBindings: [],
       }),
     }));
   });
@@ -61,6 +84,8 @@ describe('provisionConfirmedLaunchSite', () => {
       siteBundleSnapshot: {},
       runtimeManifest: {},
       wizardSelections: {},
+      businessRuntime,
+      dataBindings: [],
     })).rejects.toThrow('incomplete site identity');
   });
 });

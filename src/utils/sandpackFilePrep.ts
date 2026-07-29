@@ -27,7 +27,7 @@ import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexC
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
-import { resolveSnapshot } from '@/services/snapshotProjector';
+import { isLiveEditedVfsPath, resolveSnapshot } from '@/services/snapshotProjector';
 import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedChrome';
 import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
@@ -6017,11 +6017,13 @@ export function prepareSandpackFiles(
     const existingIndexCSS = sandpackFiles['/index.css'] || '';
     if (existingIndexCSS && !existingIndexCSS.includes('--primary:')) {
       if (cssResolution.isWizardDraft) {
+        if (isLiveEditedVfsPath('/src/index.css')) {
+          console.info('[prepareSandpackFiles] Preserving live-edited wizard stylesheet without legacy semantic tokens.');
         // RESILIENCY: if the caller knows the themePresetId (Lane B recompile,
         // AI patch flow, cloud rehydrate), re-emit the themed stylesheet in
         // place of the untokenized CSS instead of hard-failing. Only throw
         // when we truly cannot recover the wizard's preset.
-        if (resolvedPresetId) {
+        } else if (resolvedPresetId) {
           try {
             sandpackFiles['/index.css'] = buildBaseCssForPreset(resolvedPresetId);
             console.warn(

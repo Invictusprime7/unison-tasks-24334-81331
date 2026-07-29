@@ -21,8 +21,23 @@ describe('Web Builder preview ownership', () => {
 
     expect(sharedPreview).toContain('dependencySignatureRef');
     expect(sharedPreview).toContain('if (previewCompiling) return;');
+    expect(sharedPreview).toContain('if (!hasCompiledPreview) {');
+    expect(sharedPreview).toContain('dependencySignatureRef.current = null;');
     expect(sharedPreview).toContain('importIntoOwner(changedFiles)');
     expect(builder.match(/onImportFiles=\{virtualFS\.importFiles\}/g)).toHaveLength(2);
+  });
+
+  it('keeps the connected Sandpack provider mounted during background recompiles', () => {
+    const sharedPreview = readSource('src/components/VFSPreview.tsx');
+
+    expect(sharedPreview).toContain('const hasCompiledPreview = Object.keys(sandpackFiles).length > 0;');
+    expect(sharedPreview).toContain('(!previewCompiling || hasCompiledPreview)');
+    expect(sharedPreview).toContain('const sandpackProviderOptions = useMemo(');
+    expect(sharedPreview).toContain('const sandpackCustomSetup = useMemo(');
+    expect(sharedPreview).toContain('options={sandpackProviderOptions}');
+    expect(sharedPreview).toContain('customSetup={sandpackCustomSetup}');
+    expect(sharedPreview).toContain("initMode: 'immediate' as const");
+    expect(sharedPreview).not.toContain('customSetup={{');
   });
 
   it('runs the controlled index mount module instead of the unmounted App export', () => {
@@ -44,13 +59,19 @@ describe('Web Builder preview ownership', () => {
 
   it('keeps the deployed Sandpack dependency-module progress surface in the preview corner', () => {
     const sharedPreview = readSource('src/components/VFSPreview.tsx');
+    const viteConfig = readSource('vite.config.ts');
 
     expect(sharedPreview).toContain('useSandpackPreviewProgress({ timeout: 3000 })');
     expect(sharedPreview).toContain('window.setTimeout(() => setShowInitialInstall(false), 4000)');
     expect(sharedPreview).toContain("sandpack.status === 'initial' && showInitialInstall");
     expect(sharedPreview).toContain("? 'Installing preview modules'");
-    expect(sharedPreview).toContain("const SANDPACK_BUNDLER_URL = 'https://sandpack-bundler.codesandbox.io'");
-    expect(sharedPreview).toContain('bundlerURL: SANDPACK_BUNDLER_URL');
+    expect(sharedPreview).not.toContain('sandpack-bundler.codesandbox.io');
+    expect(sharedPreview).not.toContain('sandpack.codesandbox.io');
+    const middleware = readSource('middleware.ts');
+    expect(sharedPreview).toContain("bundlerURL: new URL('/sandpack/index.html', window.location.origin).toString()");
+    expect(viteConfig).toContain("request.headers.referer?.includes('/web-builder')");
+    expect(middleware).toContain("request.headers.get('referer')?.includes('/web-builder')");
+    expect(middleware).toContain("rewrite(new URL('/sandpack/index.html', request.url))");
     expect(sharedPreview).toContain('absolute bottom-3 left-3');
     expect(sharedPreview).toContain('({dependencyCount} modules)');
     expect(sharedPreview).toContain('<SandpackDependencyProgress dependencyCount={Object.keys(sandpackDeps).length} />');

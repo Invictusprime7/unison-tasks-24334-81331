@@ -95,7 +95,7 @@ describe('applyAIBuilderFiles', () => {
     expect(Object.values(preview.sandpackFiles).join('\n')).toContain('After aliased AI edit');
   });
 
-  it('keeps the written AI file visible over an older generated-site snapshot', () => {
+  it('keeps theme and section image edits visible over an older generated-site snapshot', () => {
     const snapshot: SiteBundleSnapshot = {
       snapshotId: 'ai-apply-snapshot',
       businessName: 'Generated Site',
@@ -123,7 +123,8 @@ describe('applyAIBuilderFiles', () => {
       '/.unison/site-bundle-snapshot.json': JSON.stringify(snapshot),
     };
     const result = applyAIOutputToVFS({
-      '/pages/Home.tsx': 'export default function Home(){ return <main>Live AI version</main>; }',
+      '/pages/Home.tsx': 'export default function Home(){ return <main><img src="https://images.unsplash.com/photo-live?w=1200&q=80" alt="Restaurant interior" />Live AI version</main>; }',
+      '/src/index.css': '@tailwind base;\n@tailwind components;\n@tailwind utilities;\nbody { background: #f4d7e7; color: #5f2847; }',
     }, {
       nodes: [],
       getSandpackFiles: () => files,
@@ -133,8 +134,13 @@ describe('applyAIBuilderFiles', () => {
     markLiveEditedVfsPaths(result.filesWritten);
     try {
       const preview = buildPreviewArtifacts({ sourceFiles: files, launchState: { siteBundleSnapshot: snapshot } as never });
-      expect(Object.values(preview.sandpackFiles).join('\n')).toContain('Live AI version');
-      expect(Object.values(preview.sandpackFiles).join('\n')).not.toContain('Snapshot version');
+      const compiledFiles = Object.values(preview.sandpackFiles).join('\n');
+      expect(compiledFiles).toContain('Live AI version');
+      expect(compiledFiles).toContain('https://images.unsplash.com/photo-live?w=1200&q=80');
+      expect(compiledFiles).toContain('background: #f4d7e7');
+      expect(compiledFiles).toContain('color: #5f2847');
+      expect(compiledFiles).not.toContain('Snapshot version');
+      expect(compiledFiles).not.toContain('--primary: 221 83% 53%');
     } finally {
       clearLiveEditedVfsPaths();
     }

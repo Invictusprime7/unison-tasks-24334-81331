@@ -85,6 +85,7 @@
     "@types/dompurify": "^3.2.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vercel/analytics": "^1.6.1",
+    "@vercel/functions": "^3.7.6",
     "ai": "^6.0.182",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -153,6 +154,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.1",
     "vite": "^7.1.10",
+    "vite-plugin-static-copy": "^4.1.1",
     "vitest": "^4.1.4"
   }
 }

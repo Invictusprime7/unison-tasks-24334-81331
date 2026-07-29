@@ -77,8 +77,6 @@ interface PreviewCompileState {
 
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
-const SANDPACK_BUNDLER_URL = 'https://sandpack-bundler.codesandbox.io';
-
 export interface VFSPreviewProps {
   /** VFS nodes for file content */
   nodes: VirtualNode[];
@@ -478,6 +476,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     emptyDraft,
     compiling: previewCompiling,
   } = previewCompile;
+  const hasCompiledPreview = Object.keys(sandpackFiles).length > 0;
 
   // Sandpack HMR handles source-file updates without destroying iframe state.
   // Dependency graph changes are different: customSetup is read at provider
@@ -489,12 +488,19 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       .join('|'),
     [sandpackDeps],
   );
+  const sandpackCustomSetup = useMemo(() => ({
+    dependencies: sandpackDeps,
+  }), [dependencySignature]);
 
   useEffect(() => {
     // The provider is not mounted while artifacts compile. Its first real
     // dependency graph is initial state, not a runtime change; remounting at
     // this point aborts the Sandpack runner before it can connect.
     if (previewCompiling) return;
+    if (!hasCompiledPreview) {
+      dependencySignatureRef.current = null;
+      return;
+    }
     if (dependencySignatureRef.current === null) {
       dependencySignatureRef.current = dependencySignature;
       return;
@@ -503,7 +509,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       dependencySignatureRef.current = dependencySignature;
       setSandpackKey((key) => key + 1);
     }
-  }, [dependencySignature, previewCompiling]);
+  }, [dependencySignature, hasCompiledPreview, previewCompiling]);
 
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
   useEffect(() => {
@@ -561,6 +567,17 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/index.tsx');
     return firstCode || '/App.tsx';
   }, [sandpackFiles, normalizedActiveFile]);
+  const sandpackProviderOptions = useMemo(() => ({
+    externalResources: ['https://cdn.tailwindcss.com'],
+    bundlerURL: new URL('/sandpack/index.html', window.location.origin).toString(),
+    activeFile: sandpackEntryFile,
+    visibleFiles: [sandpackEntryFile],
+    autorun: true,
+    initMode: 'immediate' as const,
+    autoReload: true,
+    recompileMode: 'delayed' as const,
+    recompileDelay: 300,
+  }), [sandpackEntryFile]);
   
   // Track Sandpack iframe + bridge readiness for the Edit-mode selection bridge
   const sandpackIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -1200,7 +1217,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         )}
 
         {/* Empty draft — no snapshot, no source. Render idle, never a minimal fallback. */}
-        {backend === 'sandpack' && previewCompiling && (
+        {backend === 'sandpack' && previewCompiling && !hasCompiledPreview && (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-6 z-10">
             <div className="max-w-sm text-center space-y-2">
               <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
@@ -1225,28 +1242,15 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         )}
 
         {/* Sandpack In-Browser React Preview — the primary rendering engine */}
-        {backend === 'sandpack' && !previewCompiling && !pipelineError && !emptyDraft && (
+        {backend === 'sandpack' && (!previewCompiling || hasCompiledPreview) && !pipelineError && !emptyDraft && (
           <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
             <SandpackProvider
               key={`sandpack-${sandpackKey}`}
               template="react-ts"
               files={sandpackFiles}
               theme="light"
-              options={{
-                bundlerURL: SANDPACK_BUNDLER_URL,
-                externalResources: [
-                  'https://cdn.tailwindcss.com',
-                ],
-                activeFile: sandpackEntryFile,
-                visibleFiles: [sandpackEntryFile],
-                autorun: true,
-                autoReload: true,
-                recompileMode: 'delayed',
-                recompileDelay: 300,
-              }}
-              customSetup={{
-                dependencies: sandpackDeps,
-              }}
+              options={sandpackProviderOptions}
+              customSetup={sandpackCustomSetup}
             >
               <SandpackLayout className="!flex-1 !min-h-0 !border-0 !rounded-none !bg-transparent" style={{ height: '100%' }}>
                 <SandpackPreview

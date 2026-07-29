@@ -469,8 +469,11 @@ export function enhancePromptForAI(rawText: string, options: PromptEnhancementOp
   const isBehavioral = analysis.intent === 'behavioral_edit';
   const isDebug = analysis.intent === 'fix_error';
 
-  // Surgical: primary intent is surgical OR it's a targeted edit intent that isn't behavioral/debug
-  const isSurgical = ['surgical_edit', 'content_update', 'restyle', 'add_section', 'remove_section'].includes(analysis.intent);
+  // Whole-site restyles need permission to update shared tokens and multiple
+  // components. Keep restyles surgical only when the user named a target.
+  const isSurgical = analysis.intent === 'restyle'
+    ? analysis.targets.length > 0
+    : ['surgical_edit', 'content_update', 'add_section', 'remove_section'].includes(analysis.intent);
 
   // For very short prompts (< 30 chars), skip enhancement
   if (rawText.length < 30 && analysis.complexity === 'simple' && rawText.length <= maxLength) {

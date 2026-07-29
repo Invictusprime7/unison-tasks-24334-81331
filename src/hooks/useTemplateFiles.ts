@@ -699,12 +699,17 @@ export function useTemplateFiles() {
     }
   }, []);
 
-  const autoSave = useCallback(async (code: string, payload?: SaveProjectPayload): Promise<boolean> => {
-    if (!currentDraftId) return false;
+  const autoSave = useCallback(async (
+    code: string,
+    payload?: SaveProjectPayload,
+    draftIdOverride?: string | null,
+  ): Promise<boolean> => {
+    const targetDraftId = draftIdOverride || currentDraftId;
+    if (!targetDraftId) return false;
     try {
-      if (currentDraftId.startsWith("local-")) {
+      if (targetDraftId.startsWith("local-")) {
         const localTemplates = getLocalTemplates();
-        const index = localTemplates.findIndex(t => t.id === currentDraftId);
+        const index = localTemplates.findIndex(t => t.id === targetDraftId);
         if (index !== -1) {
           localTemplates[index] = {
             ...localTemplates[index],
@@ -795,7 +800,7 @@ export function useTemplateFiles() {
         const { data: existing } = await supabase
           .from("builder_drafts")
           .select("metadata")
-          .eq("id", currentDraftId)
+          .eq("id", targetDraftId)
           .maybeSingle();
 
         const prevMeta = (existing?.metadata || {}) as Record<string, unknown>;
@@ -813,23 +818,23 @@ export function useTemplateFiles() {
       const { data: updatedDraft, error } = await supabase
         .from("builder_drafts")
         .update(updatePatch)
-        .eq("id", currentDraftId)
+        .eq("id", targetDraftId)
         .select("id, project_id, business_id")
         .maybeSingle();
       if (error) {
         throw error;
       }
       if (!updatedDraft) {
-        throw new Error(`Autosave did not update draft ${currentDraftId}; access or linkage is invalid.`);
+        throw new Error(`Autosave did not update draft ${targetDraftId}; access or linkage is invalid.`);
       }
       setCurrentProjectId(updatedDraft.project_id ?? payload?.projectId ?? null);
       await syncCanonicalComponentGraph({
         projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
-        draftId: currentDraftId,
+        draftId: targetDraftId,
         canonicalPlayground: payload?.canonicalPlayground,
       });
       emitCloudDraftSaved({
-        draftId: currentDraftId,
+        draftId: targetDraftId,
         projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
         businessId: updatedDraft.business_id ?? payload?.businessId ?? null,
       });

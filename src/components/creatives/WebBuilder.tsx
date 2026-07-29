@@ -25,6 +25,14 @@ import { CanvasDragDropService } from "@/services/canvasDragDropService";
 import { AIBuilderPanel, type VFSEdit, type IframeError } from "./web-builder/AIBuilderPanel";
 import { AIEditHistoryMenu } from "./web-builder/AIEditHistoryMenu";
 import { pushSnapshot as pushAISnapshot, diffChangedPaths } from "@/services/aiHistoryStore";
+import {
+  computeBuilderVfsSignature,
+  markBuilderRecoveryPersisted,
+  readBuilderRecoverySnapshot,
+  writeBuilderRecoverySnapshot,
+  type BuilderRecoverySnapshot,
+  type BuilderSaveReason,
+} from "@/services/builderStateRecovery";
 import { DirectEditToolbar } from "./web-builder/DirectEditToolbar";
 import { ArrangementTools } from "./web-builder/ArrangementTools";
 import { useTemplateState } from "@/hooks/useTemplateState";
@@ -1129,6 +1137,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     null;
 
   const hydrateSavedTemplate = useCallback((template: {
+    id: string;
     name: string;
     description?: string | null;
     canvas_data?: Record<string, unknown> | null | unknown;
@@ -1177,13 +1186,27 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     if (persistedPlayground?.popups) setPlaygroundPopups(persistedPlayground.popups);
 
     if (canvasData?.vfsFiles && Object.keys(canvasData.vfsFiles).length > 0) {
+      const recovery = readBuilderRecoverySnapshot(template.id);
+      const shouldReplayRecovery = Boolean(
+        recovery?.pendingRemote &&
+        recovery.templateId === template.id &&
+        Object.keys(recovery.vfsFiles).length > 0,
+      );
+      const vfsFiles = shouldReplayRecovery ? recovery!.vfsFiles : canvasData.vfsFiles;
       const entry = canvasData.entryPoint || launchEntryPoint;
       const preferred = canvasData.activePagePath || entry;
-      importBuilderFiles(canvasData.vfsFiles, {
+      importBuilderFiles(vfsFiles, {
         preferredPath: preferred,
         entryPoint: entry,
         replace: true,
       });
+      if (shouldReplayRecovery && recovery) {
+        setPreviewCode(recovery.code);
+        setEditorCode(recovery.editorCode);
+        toast.info('Recovered interrupted edits', {
+          description: 'Your latest local AI changes are being synced back to this project.',
+        });
+      }
       if (canvasData.activePagePath) {
         setActivePagePath(canvasData.activePagePath);
       }
@@ -2686,25 +2709,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
   const lastSavedCodeRef = useRef<string>('');
   // Track VFS file map signature so we persist multi-file AI edits even when
   // the legacy single-file `previewCode` blob did not change.
   const lastSavedVfsSignatureRef = useRef<string>('');
-  const computeVfsSignature = useCallback((files: Record<string, string>): string => {
-    const keys = Object.keys(files).sort();
-    if (keys.length === 0) return '';
-    let hash = 0;
-    for (const k of keys) {
-      const v = files[k] ?? '';
-      // Cheap stable signature: path + length + last-32-char tail.
-      const tail = v.length > 32 ? v.slice(-32) : v;
-      const seg = `${k}:${v.length}:${tail}|`;
-      for (let i = 0; i < seg.length; i++) {
-        hash = ((hash << 5) - hash + seg.charCodeAt(i)) | 0;
-      }
-    }
-    return `${keys.length}:${hash}`;
-  }, []);
+  const computeVfsSignature = useCallback(computeBuilderVfsSignature, []);
   // Keep the current template id in a ref so callbacks always read the
   // latest value without stale-closure issues (avoids re-creating intervals).
   const currentDraftIdRef = useRef<string | null>(templateFiles.currentDraftId);
@@ -3475,7 +3485,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   }, [buildSavePayload, launchEntryPoint, activePagePath, businessId, projectId]);
 
   const ensureLauncherDraftSaved = useCallback(async (
-    reason: 'launcher_import' | 'interval_autosave',
+    reason: 'launcher_import' | BuilderSaveReason,
+    snapshotFiles?: Record<string, string>,
+    snapshotCode?: string,
   ): Promise<string | null> => {
     const effectiveName = (
       projectDisplayName.trim() ||
@@ -3490,7 +3502,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       return null;
     }
 
-    const finalCode = getFinalCodeWithOverrides();
+    const finalCode = snapshotCode || getFinalCodeWithOverrides();
     if (!finalCode || finalCode.includes('AI-generated code will appear here')) {
       return null;
     }
@@ -3499,7 +3511,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       return draftPersistencePromiseRef.current;
     }
 
-    const payload = buildSavePayloadOrFallback(virtualFSRef.current.getSandpackFiles());
+    const vfsFiles = snapshotFiles || virtualFSRef.current.getSandpackFiles();
+    const payload = {
+      ...buildSavePayloadOrFallback(vfsFiles),
+      vfsFiles,
+    };
     const effectiveDescription = (
       saveProjectDescription.trim() ||
       `Generated from ${payload.metadata?.launchSource || 'launcher'}`
@@ -3520,6 +3536,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       },
     ).then((draftId) => {
       if (draftId) {
+        currentDraftIdRef.current = draftId;
         templateFiles.setCurrentDraftId(draftId);
         setCurrentDraftId(draftId);
         setCurrentTemplateName(effectiveName);
@@ -3550,77 +3567,102 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   //  - Legacy single-file `previewCode` change (template/inline edits), OR
   //  - VFS file map change (multi-file AI edits, importBuilderFiles, etc.)
   // Without the VFS-signature check, AI multi-file edits never persisted.
-  const saveDraft = useCallback(async () => {
-    const currentVfsFiles = virtualFSRef.current.getSandpackFiles();
+  const saveDraft = useCallback((options?: {
+    force?: boolean;
+    reason?: BuilderSaveReason;
+    vfsFiles?: Record<string, string>;
+  }): Promise<boolean> => {
+    const currentVfsFiles = options?.vfsFiles || virtualFSRef.current.getSandpackFiles();
     const vfsSignature = computeVfsSignature(currentVfsFiles);
-    const previewCodeChanged = !!previewCode && previewCode !== lastSavedCodeRef.current;
+    const codeForSave = currentVfsFiles[activePagePath] || previewCode || '';
+    const editorCodeForSave = editorCode || codeForSave;
+    const previewCodeChanged = !!codeForSave && codeForSave !== lastSavedCodeRef.current;
     const vfsChanged = vfsSignature !== '' && vfsSignature !== lastSavedVfsSignatureRef.current;
 
-    if (!previewCodeChanged && !vfsChanged) return;
+    if (!options?.force && !previewCodeChanged && !vfsChanged) return Promise.resolve(true);
+
+    const reason = options?.reason || 'interval_autosave';
+    const snapshot: BuilderRecoverySnapshot = {
+      version: 2,
+      code: codeForSave,
+      editorCode: editorCodeForSave,
+      savedAt: new Date().toISOString(),
+      templateId: currentDraftIdRef.current || null,
+      vfsSignature,
+      vfsFiles: currentVfsFiles,
+      reason,
+      pendingRemote: true,
+    };
+
+    // Synchronous interruption boundary: the full VFS is safe before a remote
+    // request is queued, even if the browser process exits immediately.
+    if (!writeBuilderRecoverySnapshot(snapshot)) {
+      console.error('[AutoSave] Could not write the local recovery journal.');
+      return Promise.resolve(false);
+    }
 
     setAutoSaveStatus('saving');
-    try {
-      const saveKey = getAutoSaveKey();
-      const draft = {
-        code: previewCode,
-        editorCode: editorCode,
-        savedAt: new Date().toISOString(),
-        templateId: currentDraftIdRef.current || null,
-        vfsSignature,
-      };
-      try { localStorage.setItem(saveKey, JSON.stringify(draft)); } catch { /* quota — ignore */ }
-      const existingDraftId = currentDraftIdRef.current;
-      const reason = 'interval_autosave' as const;
-      let persisted = false;
-      if (existingDraftId) {
-        let payload;
-        try {
-          payload = buildSavePayloadOrFallback(currentVfsFiles);
-        } catch (error) {
-          if (!isRecompileInputError(error)) throw error;
-
-          // Older recovered drafts can render from their saved VFS without
-          // carrying the newer wizard composition required for recompilation.
-          // Persist those source files as-is rather than rejecting an edit.
-          console.warn('[AutoSave] Canonical recompile deferred for recovered VFS:', error.summary);
-          payload = {
-            vfsFiles: currentVfsFiles,
-            entryPoint: launchEntryPoint,
-            activePagePath,
-            businessId: businessId ?? null,
-            projectId: projectId ?? null,
-          };
+    const persist = async (): Promise<boolean> => {
+      try {
+        const existingDraftId = currentDraftIdRef.current;
+        let persisted = false;
+        let resolvedDraftId = existingDraftId;
+        if (existingDraftId) {
+          let payload;
+          try {
+            payload = {
+              ...buildSavePayloadOrFallback(currentVfsFiles),
+              vfsFiles: currentVfsFiles,
+            };
+          } catch (error) {
+            if (!isRecompileInputError(error)) throw error;
+            console.warn('[AutoSave] Canonical recompile deferred for recovered VFS:', error.summary);
+            payload = {
+              vfsFiles: currentVfsFiles,
+              entryPoint: launchEntryPoint,
+              activePagePath,
+              businessId: businessId ?? null,
+              projectId: projectId ?? null,
+            };
+          }
+          persisted = await templateFiles.autoSave(codeForSave, {
+            ...payload,
+            metadata: {
+              autoSaved: true,
+              autoSaveReason: reason,
+              autoSavedAt: new Date().toISOString(),
+              vfsFileCount: Object.keys(currentVfsFiles).length,
+            },
+          }, existingDraftId);
+        } else {
+          resolvedDraftId = await ensureLauncherDraftSaved(reason, currentVfsFiles, codeForSave);
+          persisted = Boolean(resolvedDraftId);
         }
-        // buildSavePayload() snapshots the FULL VFS file map into payload.vfsFiles,
-        // which useTemplateFiles.autoSave persists into builder_drafts.vfs_files.
-        persisted = await templateFiles.autoSave(previewCode || '', {
-          ...payload,
-          metadata: {
-            autoSaved: true,
-            autoSaveReason: reason,
-            autoSavedAt: new Date().toISOString(),
-            vfsFileCount: Object.keys(currentVfsFiles).length,
-          },
-        });
-      } else {
-        // Create a draft on first VFS write so subsequent saves can target it.
-        persisted = Boolean(await ensureLauncherDraftSaved(reason));
-      }
 
-      if (!persisted) throw new Error('Cloud autosave was not acknowledged by the draft store.');
-      lastSavedCodeRef.current = previewCode;
-      lastSavedVfsSignatureRef.current = vfsSignature;
-      setLastSavedAt(new Date());
-      setAutoSaveStatus('saved');
-      setTimeout(() => setAutoSaveStatus('idle'), 2000);
-    } catch (error) {
-      console.error('[AutoSave] Error saving draft:', error);
-      setAutoSaveStatus('idle');
-    }
+        if (!persisted) throw new Error('Cloud autosave was not acknowledged by the draft store.');
+        if (resolvedDraftId) currentDraftIdRef.current = resolvedDraftId;
+        markBuilderRecoveryPersisted(snapshot, resolvedDraftId);
+        lastSavedCodeRef.current = codeForSave;
+        lastSavedVfsSignatureRef.current = vfsSignature;
+        setLastSavedAt(new Date());
+        setAutoSaveStatus('saved');
+        setTimeout(() => setAutoSaveStatus('idle'), 2000);
+        return true;
+      } catch (error) {
+        console.error('[AutoSave] Error saving draft:', error);
+        setAutoSaveStatus('idle');
+        return false;
+      }
+    };
+
+    // Prevent a slower, older request from finishing after a newer AI edit and
+    // replacing builder_drafts.vfs_files with stale state.
+    const queued = saveQueueRef.current.then(persist, persist);
+    saveQueueRef.current = queued.catch(() => false);
+    return queued;
   }, [
     previewCode,
     editorCode,
-    getAutoSaveKey,
     templateFiles,
     buildSavePayloadOrFallback,
     ensureLauncherDraftSaved,
@@ -3680,10 +3722,22 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   useEffect(() => {
     const t = window.setTimeout(() => {
       // First-ever VFS observation after mount/load: seed the baseline signature
-      // instead of saving — the files came from the loaded draft, not the user.
+      // instead of saving — unless a pending recovery journal proves a remote
+      // write was interrupted and still needs to be replayed.
       if (lastSavedVfsSignatureRef.current === '') {
         const files = virtualFSRef.current.getSandpackFiles();
         if (Object.keys(files).length > 0) {
+          const recovery = currentDraftIdRef.current
+            ? readBuilderRecoverySnapshot(currentDraftIdRef.current)
+            : readBuilderRecoverySnapshot(null);
+          if (recovery?.pendingRemote && Object.keys(recovery.vfsFiles).length > 0) {
+            void saveDraftRef.current({
+              force: true,
+              reason: 'ai_recovery',
+              vfsFiles: recovery.vfsFiles,
+            });
+            return;
+          }
           lastSavedVfsSignatureRef.current = computeVfsSignature(files);
         }
         return;
@@ -3704,22 +3758,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         const vfsDirty = sig !== '' && sig !== lastSavedVfsSignatureRef.current;
         if (!previewDirty && !vfsDirty) return;
 
-        // Best-effort localStorage snapshot — runs synchronously before unload.
-        const saveKey = getAutoSaveKey();
-        try {
-          localStorage.setItem(saveKey, JSON.stringify({
-            code: previewCode,
-            editorCode,
-            savedAt: new Date().toISOString(),
-            templateId: currentDraftIdRef.current || null,
-            vfsSignature: sig,
-            vfsFiles: currentVfsFiles,
-          }));
-        } catch { /* quota */ }
-
-        // Best-effort async DB save (may not complete before unload — that's why
-        // the localStorage snapshot above is the durable safety net).
-        void saveDraftRef.current();
+        // saveDraft writes the full local journal synchronously, then queues the
+        // best-effort Cloud mirror.
+        void saveDraftRef.current({
+          force: true,
+          reason: 'navigation_flush',
+          vfsFiles: currentVfsFiles,
+        });
       } catch (e) {
         console.warn('[AutoSave] flush failed:', e);
       }
@@ -3750,7 +3795,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', flush);
     };
-  }, [computeVfsSignature, getAutoSaveKey, previewCode, editorCode]);
+  }, [computeVfsSignature, previewCode]);
 
   
   // Restore draft on mount — ONLY when NOT loading a specific saved project by URL.
@@ -3772,17 +3817,24 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         const now = new Date();
         const hoursSinceLastSave = (now.getTime() - savedTime.getTime()) / (1000 * 60 * 60);
         
+        const hasRecoveredVfs = draft.vfsFiles && Object.keys(draft.vfsFiles).length > 0;
         // Only restore if draft is less than 24 hours old
-        if (hoursSinceLastSave < 24 && draft.code) {
+        if (hoursSinceLastSave < 24 && (draft.code || hasRecoveredVfs)) {
           // Check if there's meaningful content (not just default)
-          const isDefaultContent = draft.code.includes('AI-generated code will appear here');
+          const isDefaultContent = draft.code?.includes('AI-generated code will appear here');
           if (!isDefaultContent) {
             setShowLauncher(false);
-            setPreviewCode(draft.code);
+            if (hasRecoveredVfs) {
+              importBuilderFiles(draft.vfsFiles, {
+                preferredPath: activePagePath,
+                entryPoint: launchEntryPoint,
+                replace: true,
+              });
+            }
+            if (draft.code) setPreviewCode(draft.code);
             if (draft.editorCode) {
               setEditorCode(draft.editorCode);
             }
-            lastSavedCodeRef.current = draft.code;
             setLastSavedAt(savedTime);
             toast.info('Draft restored', {
               description: `Last saved ${format(savedTime, 'MMM d, h:mm a')}`,
@@ -6251,6 +6303,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         if (revId) setCurrentRevisionId(revId);
                       });
                     }
+                    const saved = await saveDraft({
+                      force: true,
+                      reason: 'ai_edit',
+                      vfsFiles: mergedFiles,
+                    });
+                    if (!saved) {
+                      return {
+                        success: false,
+                        errors: ['The edit was applied locally, but its saved project state could not be confirmed.'],
+                      };
+                    }
                   } else {
                     console.error('[WebBuilder] aiVFS.applyCode failed:', result.errors);
                   }
@@ -6263,7 +6326,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                     description: `${edits.length} file(s) modified - check the file explorer`,
                   });
                 }}
-                onCodeGenerated={(code) => {
+                onCodeGenerated={async (code) => {
                   console.log('[WebBuilder] ========== AI CODE GENERATED ==========');
                   console.log('[WebBuilder] Code length:', code.length);
                   console.log('[WebBuilder] Code preview:', code.substring(0, 200));
@@ -6310,11 +6373,20 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   console.log('[WebBuilder] Auto-wired intents:', normalized.analysis.intents);
                   console.log('[WebBuilder] Normalized code length:', normalized.code.length);
                   
-                  importBuilderFiles(templateToVFSFiles(normalized.code, currentTemplateName || 'AI Generated'), {
+                  const imported = importBuilderFiles(templateToVFSFiles(normalized.code, currentTemplateName || 'AI Generated'), {
                     preferredPath: activePagePath,
                     entryPoint: activePagePath,
                   });
                   console.log('[WebBuilder] VFS updated via importBuilderFiles');
+                  const saved = await saveDraft({
+                    force: true,
+                    reason: 'ai_edit',
+                    vfsFiles: imported?.files || virtualFS.getSandpackFiles(),
+                  });
+                  if (!saved) {
+                    toast.error('AI edit saved locally, but Cloud sync is pending');
+                    return;
+                  }
                   
                   console.log('[WebBuilder] setPreviewCode called, switching to canvas view');
                   setViewMode('canvas');
@@ -6379,9 +6451,15 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                     console.log('[WebBuilder] Auto-wired intents in file patch:', normalized.analysis.intents);
                   }
 
-                  importBuilderFiles(normalizedFiles, {
+                  const imported = importBuilderFiles(normalizedFiles, {
                     preferredPath: activePagePath,
                     entryPoint: activePagePath,
+                  });
+                  if (!imported) return false;
+                  void saveDraft({
+                    force: true,
+                    reason: 'ai_edit',
+                    vfsFiles: imported.files,
                   });
 
                   // Detect new pages so the user gets immediate feedback that a
@@ -6693,15 +6771,35 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       if (revId) setCurrentRevisionId(revId);
                     });
                   }
+                  const saved = await saveDraft({
+                    force: true,
+                    reason: 'ai_edit',
+                    vfsFiles: mergedFiles,
+                  });
+                  if (!saved) {
+                    return {
+                      success: false,
+                      errors: ['The edit was applied locally, but its saved project state could not be confirmed.'],
+                    };
+                  }
                 }
                 return { success: result.success, errors: result.errors };
               }}
               onViewEdits={() => { setViewMode('split'); setAiPanelOpen(false); }}
-              onCodeGenerated={(code) => {
-                importBuilderFiles(templateToVFSFiles(code, currentTemplateName || 'AI Template'), {
+              onCodeGenerated={async (code) => {
+                const imported = importBuilderFiles(templateToVFSFiles(code, currentTemplateName || 'AI Template'), {
                   preferredPath: launchEntryPoint,
                   entryPoint: launchEntryPoint,
                 });
+                const saved = await saveDraft({
+                  force: true,
+                  reason: 'ai_edit',
+                  vfsFiles: imported?.files || virtualFS.getSandpackFiles(),
+                });
+                if (!saved) {
+                  toast.error('AI edit saved locally, but Cloud sync is pending');
+                  return;
+                }
                 setViewMode('canvas');
                 setAiPanelOpen(false);
               }}
@@ -7252,10 +7350,20 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       meta: { origin: 'floating-toolbar-ai', actionType: 'element-edit' },
                     });
                   } catch (err) { console.warn('[onAIEditComplete] snapshot failed:', err); }
-                  importBuilderFiles(templateToVFSFiles(primary.code, currentTemplateName || 'Element Edit'), {
+                  const imported = importBuilderFiles(templateToVFSFiles(primary.code, currentTemplateName || 'Element Edit'), {
                     preferredPath: activePagePath,
                     entryPoint: activePagePath,
                   });
+                  if (!imported) return false;
+                  const saved = await saveDraft({
+                    force: true,
+                    reason: 'ai_edit',
+                    vfsFiles: imported.files,
+                  });
+                  if (!saved) {
+                    toast.error('AI edit saved locally, but Cloud sync is pending');
+                    return false;
+                  }
                   setSelectedHTMLElement(null);
                   toast.success('Element updated by AI');
                   return true;
@@ -7279,6 +7387,15 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         });
                       } catch (err) { console.warn('[onAIEditComplete] snapshot failed:', err); }
                       virtualFS.importFiles({ [path]: attempt.code });
+                      const saved = await saveDraft({
+                        force: true,
+                        reason: 'ai_edit',
+                        vfsFiles: { ...allFiles, [path]: attempt.code },
+                      });
+                      if (!saved) {
+                        toast.error('AI edit saved locally, but Cloud sync is pending');
+                        return false;
+                      }
                       setSelectedHTMLElement(null);
                       toast.success(`Element updated by AI in ${path.split('/').pop()}`);
                       return true;
@@ -7472,10 +7589,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             </div>
             <AIEditHistoryMenu
               projectId={currentDraftId ?? null}
-              onRevert={(snap) => {
+              onRevert={async (snap) => {
                 const beforeFiles = virtualFS.getSandpackFiles();
                 virtualFS.importFiles(snap.before);
                 syncBuilderFromFiles(snap.before, activePagePath);
+                const restoredFiles = { ...beforeFiles, ...snap.before };
                 pushAISnapshot(currentDraftId ?? null, {
                   label: `Revert · ${snap.label}`,
                   source: 'manual',
@@ -7483,12 +7601,22 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   after: snap.before,
                   changedPaths: diffChangedPaths(beforeFiles, snap.before),
                 });
+                const saved = await saveDraft({
+                  force: true,
+                  reason: 'ai_edit',
+                  vfsFiles: restoredFiles,
+                });
+                if (!saved) {
+                  toast.error('Revert saved locally, but Cloud sync is pending');
+                  return;
+                }
                 toast.success('Reverted to previous state');
               }}
-              onReapply={(snap) => {
+              onReapply={async (snap) => {
                 const beforeFiles = virtualFS.getSandpackFiles();
                 virtualFS.importFiles(snap.after);
                 syncBuilderFromFiles(snap.after, activePagePath);
+                const restoredFiles = { ...beforeFiles, ...snap.after };
                 pushAISnapshot(currentDraftId ?? null, {
                   label: `Reapply · ${snap.label}`,
                   source: 'manual',
@@ -7496,6 +7624,15 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   after: snap.after,
                   changedPaths: diffChangedPaths(beforeFiles, snap.after),
                 });
+                const saved = await saveDraft({
+                  force: true,
+                  reason: 'ai_edit',
+                  vfsFiles: restoredFiles,
+                });
+                if (!saved) {
+                  toast.error('Reapply saved locally, but Cloud sync is pending');
+                  return;
+                }
                 toast.success('Reapplied AI edit');
               }}
             />

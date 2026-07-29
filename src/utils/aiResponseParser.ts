@@ -79,6 +79,104 @@ export interface AIResponseParseResult {
   hasStructuredContent: boolean;
 }
 
+export interface ExtractedMultiFileOutput {
+  files: Record<string, string>;
+  explanation?: string;
+}
+
+function parseMultiFileCandidate(candidate: string): ExtractedMultiFileOutput | null {
+  try {
+    const parsed = JSON.parse(candidate) as { files?: unknown; explanation?: unknown };
+    if (!parsed.files || typeof parsed.files !== 'object' || Array.isArray(parsed.files)) return null;
+
+    const files: Record<string, string> = {};
+    for (const [path, content] of Object.entries(parsed.files)) {
+      if (typeof content !== 'string') return null;
+      files[path] = content;
+    }
+    if (Object.keys(files).length === 0) return null;
+
+    return {
+      files,
+      ...(typeof parsed.explanation === 'string' ? { explanation: parsed.explanation } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function findBalancedJsonObjects(input: string): string[] {
+  const objects: string[] = [];
+  for (let start = 0; start < input.length; start += 1) {
+    if (input[start] !== '{') continue;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < input.length; index += 1) {
+      const char = input[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') inString = true;
+      else if (char === '{') depth += 1;
+      else if (char === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          objects.push(input.slice(start, index + 1));
+          start = index;
+          break;
+        }
+      }
+    }
+  }
+  return objects;
+}
+
+/** Extract the structured file contract even when the model wraps JSON in prose. */
+export function extractMultiFileOutput(input: string): ExtractedMultiFileOutput | null {
+  const trimmed = input.trim();
+  const direct = parseMultiFileCandidate(trimmed);
+  if (direct) return direct;
+
+  const fencedJson = /```(?:json)?\s*\r?\n([\s\S]*?)```/gi;
+  let fence: RegExpExecArray | null;
+  while ((fence = fencedJson.exec(input)) !== null) {
+    const parsed = parseMultiFileCandidate(fence[1].trim());
+    if (parsed) return parsed;
+  }
+
+  for (const candidate of findBalancedJsonObjects(input)) {
+    if (!candidate.includes('"files"')) continue;
+    const parsed = parseMultiFileCandidate(candidate);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+const CSS_DOCUMENT_PATTERN = /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)/;
+
+/** Return CSS-only model output as a canonical stylesheet patch. */
+export function extractStylesheetOutput(input: string): Record<string, string> | null {
+  const trimmed = input.trim();
+  if (CSS_DOCUMENT_PATTERN.test(trimmed) && !/\b(?:import|export)\s/.test(trimmed)) {
+    return { '/src/index.css': trimmed };
+  }
+
+  const fences = /```([\w-]*)\s*\r?\n([\s\S]*?)```/g;
+  let fence: RegExpExecArray | null;
+  while ((fence = fences.exec(input)) !== null) {
+    const language = fence[1].toLowerCase();
+    const content = fence[2].trim();
+    if ((language === 'css' || CSS_DOCUMENT_PATTERN.test(content)) && !/\b(?:import|export)\s/.test(content)) {
+      return { '/src/index.css': content };
+    }
+  }
+  return null;
+}
+
 /**
  * Parse file patches from AI response
  * Format: <file path="/path/to/file.tsx">...content...</file>

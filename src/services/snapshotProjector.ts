@@ -163,6 +163,10 @@ export function ensureSnapshotTokens(
     return existing;
   }
 
+  if (existing && isLiveEditedVfsPath('/src/index.css')) {
+    return existing;
+  }
+
   if (resolution.isWizardDraft) {
     throw new PreviewPipelineError(
       'vfs',
@@ -284,6 +288,14 @@ export function clearLiveEditedVfsPaths(paths?: string[]): void {
 
 export function getLiveEditedVfsPaths(): string[] {
   return [...liveEditedPaths.keys()];
+}
+
+export function isLiveEditedVfsPath(path: string): boolean {
+  const normalized = normalizeVfsPath(path);
+  if (liveEditedPaths.has(normalized)) return true;
+  if (normalized === '/index.css') return liveEditedPaths.has('/src/index.css');
+  if (normalized === '/src/index.css') return liveEditedPaths.has('/index.css');
+  return false;
 }
 
 /**

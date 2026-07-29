@@ -102,6 +102,7 @@ import { previewCapabilityMigration } from '@/services/capabilityMigrationRunner
 import { MigrationProposalPanel } from '@/components/ai-builder/MigrationProposalPanel';
 import { LayoutSnapshotCard } from '@/components/creatives/web-builder/ai-chat/LayoutSnapshotCard';
 import { interpretBuilderRequest } from '@/services/builderRequestInterpreter';
+import { extractMultiFileOutput, extractStylesheetOutput } from '@/utils/aiResponseParser';
 
 import {
   resolveCapabilityIntentBindings,
@@ -1031,6 +1032,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       const isSurgicalEdit = detectedSurgical && !!currentCode;
       const isBehavioralEdit = detectedBehavioral && !!currentCode;
       const isDebugMode = detectedDebug && !!currentCode;
+      const isThemeEdit = promptAnalysis.intent === 'restyle' || promptAnalysis.secondaryIntents.includes('restyle');
+      const isImageEdit = /\b(add|insert|include|place|replace|swap|change|generate|create|use)\b[\s\S]{0,80}\b(image|images|photo|photos|picture|pictures|visual|visuals)\b/i.test(rawInput);
 
       liveStep('analyzing', `Intent: ${promptAnalysis.intent} · Complexity: ${promptAnalysis.complexity}`, [
         promptAnalysis.targets.length ? `Targets: ${promptAnalysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
@@ -1221,8 +1224,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           facades
             ? `VFS UI runtime: Lucide ${facades.icons}; Framer Motion ${facades.animation}; Zod ${facades.schemas}; React Hook Form + zodResolver ${facades.forms}; styles ${facades.styles}; Radix namespace ${facades.radix}; Radix primitive modules ${facades.radixPrimitives.map((primitive) => `@/unison/ui/radix/${primitive}`).join(', ')}.`
             : 'Prefer VFS imports: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for typography, colors, component styles, and Tailwind class composition.',
-          'Use semantic Stage 4b Tailwind tokens. Never write /src/index.css or /src/unison/ui/*.',
+          isThemeEdit
+            ? 'For this requested theme change, update semantic color/font variables in /src/index.css and token-based classes in affected components. Preserve Tailwind directives and stylesheet structure. Never write /src/unison/ui/*.'
+            : 'Use semantic Stage 4b Tailwind tokens. Never write /src/index.css or /src/unison/ui/*.',
           'Preserve accessible labels and data-ut-intent attributes.',
+        ].join('\n'));
+      }
+      if (isImageEdit) {
+        contextLines.push([
+          '\n[Image edit contract]',
+          'Apply the image directly in the requested section component and return the complete modified file in the files JSON contract.',
+          'Use a stable HTTPS image URL (prefer a verified images.unsplash.com URL) in src or backgroundImage. Do not create local .png/.jpg asset files, placeholders, or describe the change without modifying code.',
+          'Include descriptive alt text and preserve the section layout unless the user requested a layout change.',
         ].join('\n'));
       }
       if (designIntervention) {
@@ -1680,12 +1693,19 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       if (aiContent) {
         const trimmed = aiContent.trim();
 
-        // Strategy 0: Strip markdown JSON fences before checking for JSON structure
-        // AI often returns: ```json\n{ "files": {...} }\n```
-        let jsonCandidate = trimmed;
-        const jsonFenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/i);
-        if (jsonFenceMatch) {
-          jsonCandidate = jsonFenceMatch[1].trim();
+        const structuredOutput = extractMultiFileOutput(trimmed);
+        if (structuredOutput) {
+          multiFileOutput = structuredOutput.files;
+          explanationText = structuredOutput.explanation || '✅ Multi-file project generated and applied.';
+          console.log('[AIBuilderPanel] Parsed multi-file output:', Object.keys(multiFileOutput));
+        }
+        if (!multiFileOutput) {
+          const stylesheetOutput = extractStylesheetOutput(trimmed);
+          if (stylesheetOutput) {
+            multiFileOutput = stylesheetOutput;
+            explanationText = '✅ Theme stylesheet applied.';
+            console.log('[AIBuilderPanel] Parsed stylesheet output for /src/index.css');
+          }
         }
 
       // Pre-processing: Detect if content is AI reasoning/prose with no usable code
@@ -1715,20 +1735,6 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         console.warn('[AIBuilderPanel] Content appears to be pure AI reasoning — skipping code extraction');
         explanationText = trimmed;
       }
-
-        // Strategy 1: Check for JSON multi-file output: {"files": {...}}
-        if (jsonCandidate.startsWith('{') && jsonCandidate.includes('"files"')) {
-          try {
-            const parsed = JSON.parse(jsonCandidate);
-            if (parsed.files && typeof parsed.files === 'object') {
-              multiFileOutput = parsed.files;
-              explanationText = parsed.explanation || '✅ Multi-file project generated and applied.';
-              console.log('[AIBuilderPanel] Parsed multi-file JSON output:', Object.keys(multiFileOutput));
-            }
-          } catch (parseErr) { 
-            console.warn('[AIBuilderPanel] JSON parse failed:', parseErr);
-          }
-        }
 
         // Strategy 2: Check if content IS a React component (starts with import/export/function)
         if (!multiFileOutput && !generatedCode) {
@@ -1788,10 +1794,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               generatedCode = bestBlock;
               console.log('[AIBuilderPanel] Extracted React code from fence');
             } else if (isCssOnly) {
-              // CSS extracted from fence — inject via useEffect (no dangerouslySetInnerHTML)
-              const cssJsonStr = JSON.stringify(bestBlock);
-              generatedCode = `import React, { useEffect } from 'react';\n\nconst CSS_CONTENT = ${cssJsonStr};\n\nexport default function App() {\n  useEffect(() => {\n    const s = document.createElement('style');\n    s.textContent = CSS_CONTENT;\n    document.head.appendChild(s);\n    return () => { s.remove(); };\n  }, []);\n\n  return (\n    <div style={{ minHeight: '100vh' }}><p>Styles applied.</p></div>\n  );\n}`;
-              console.log('[AIBuilderPanel] Extracted CSS from fence, wrapped in React component');
+              multiFileOutput = { '/src/index.css': bestBlock };
+              explanationText = '✅ Theme stylesheet applied.';
+              console.log('[AIBuilderPanel] Extracted CSS fence for /src/index.css');
             } else if (hasHtmlStructure) {
               generatedCode = wrapHtmlInReactComponent(bestBlock);
               console.log('[AIBuilderPanel] Extracted HTML from fence, wrapped in React component');
@@ -1823,23 +1828,6 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             console.log('[AIBuilderPanel] Content is raw HTML, wrapping in React component');
             generatedCode = wrapHtmlInReactComponent(trimmed);
             explanationText = '✅ HTML site generated and wrapped for preview.';
-          }
-        }
-
-        // Strategy 6 (surgical edit fallback): Extract JSON {"files": {...}} from prose
-        // AI may return: "Here's the change:\n```json\n{\"files\": {...}}\n```\nI changed X"
-        if (!multiFileOutput && !generatedCode && isSurgicalEdit) {
-          // Try to find {"files": embedded anywhere in the content
-          const filesJsonMatch = trimmed.match(/\{[\s\S]*?"files"\s*:\s*\{[\s\S]*?\}\s*\}/);
-          if (filesJsonMatch) {
-            try {
-              const parsed = JSON.parse(filesJsonMatch[0]);
-              if (parsed.files && typeof parsed.files === 'object') {
-                multiFileOutput = parsed.files;
-                explanationText = parsed.explanation || '✅ Surgical edit applied.';
-                console.log('[AIBuilderPanel] Strategy 6: Extracted multi-file JSON from prose:', Object.keys(multiFileOutput!));
-              }
-            } catch { /* not valid JSON, continue */ }
           }
         }
 
@@ -1956,24 +1944,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         generatedCode = wrapHtmlInReactComponent(generatedCode);
       }
 
-      // SAFETY NET 2: If generatedCode is raw CSS (:root, body {, @import, etc.), wrap in React component
+      // SAFETY NET 2: CSS should have been routed to /src/index.css above.
       if (generatedCode && /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)\s*[{/(]/m.test(generatedCode.trim()) && !generatedCode.includes('import ') && !generatedCode.includes('export ')) {
-        console.warn('[AIBuilderPanel] Safety net: detected raw CSS being applied as TSX — wrapping in React component');
-        const cssJsonStr = JSON.stringify(generatedCode);
-        generatedCode = `import React from 'react';
-
-const CSS_CONTENT = ${cssJsonStr};
-
-export default function App() {
-  return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: CSS_CONTENT }} />
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p>Styles applied. Waiting for page content...</p>
-      </div>
-    </>
-  );
-}`;
+        console.warn('[AIBuilderPanel] Ignoring raw CSS that escaped stylesheet extraction');
+        generatedCode = null;
       }
 
       // Determine the target file path for single-file output.

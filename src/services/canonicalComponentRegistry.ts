@@ -1,5 +1,9 @@
 import { nanoid } from "nanoid";
 import type { CreatorComponentInstance } from "@/types/creatorData";
+import type { CapabilityId } from "@/platform/core/capabilityRegistry";
+import type { CatalogSourceTable } from "@/platform/core/catalogSurfaceRegistry";
+import type { CoreIntent } from "@/platform/core/coreIntents";
+import type { SlotRole } from "@/platform/core/slotBindingPolicy";
 
 export type CanonicalComponentCategory =
   | "leads"
@@ -19,6 +23,14 @@ export interface CanonicalComponentDefinition {
   requiredBusinessFields?: string[];
   requiredSetupSteps?: string[];
   outputEvents: string[];
+  /** Capabilities that authorize this component's runtime surface. */
+  requiredCapabilities: CapabilityId[];
+  /** Registry-backed read surfaces rendered by this component. */
+  catalogSurfaces?: CatalogSourceTable[];
+  /** The only write intent this component may emit, when it owns a write. */
+  writeIntent?: CoreIntent;
+  /** Declarative interactive slots that must be resolved during compilation. */
+  slotBindings: SlotRole[];
   htmlTemplate: string;
 }
 
@@ -33,6 +45,9 @@ const registry: CanonicalComponentDefinition[] = [
     requiredBindingKeys: ["formId"],
     requiredBusinessFields: ["notificationEmail", "crmDestination"],
     outputEvents: ["lead.created", "form.submitted", "contact.submitted"],
+    requiredCapabilities: ['contact'],
+    writeIntent: 'contact.submit',
+    slotBindings: ['form-submit'],
     htmlTemplate: `<section data-component="intent-contact-form" data-ut-component-slug="contact-form" data-ut-component-category="leads" data-intent="contact.submit" data-business-id="{{businessId}}" class="w-full py-12 px-4">
   <div class="max-w-xl mx-auto">
     <div class="text-center mb-8">
@@ -58,6 +73,9 @@ const registry: CanonicalComponentDefinition[] = [
     requiredBindingKeys: ["formId"],
     requiredBusinessFields: ["notificationEmail", "crmDestination"],
     outputEvents: ["quote.requested", "lead.created", "form.submitted"],
+    requiredCapabilities: ['quoting'],
+    writeIntent: 'quote.request',
+    slotBindings: ['form-submit'],
     htmlTemplate: `<section data-component="intent-quote-form" data-ut-component-slug="request-quote" data-ut-component-category="leads" data-intent="quote.request" class="w-full py-12 px-4">
   <div class="max-w-2xl mx-auto rounded-3xl border bg-card p-8 shadow-lg">
     <h2 class="text-3xl font-bold text-foreground mb-2">Request a Quote</h2>
@@ -83,6 +101,9 @@ const registry: CanonicalComponentDefinition[] = [
     requiredBindingKeys: ["formId"],
     requiredBusinessFields: ["notificationEmail"],
     outputEvents: ["newsletter.subscribed", "lead.created", "form.submitted"],
+    requiredCapabilities: ['newsletter'],
+    writeIntent: 'newsletter.subscribe',
+    slotBindings: ['newsletter'],
     htmlTemplate: `<section data-component="intent-newsletter" data-ut-component-slug="newsletter-signup" data-ut-component-category="leads" data-intent="newsletter.subscribe" class="w-full py-16 px-4 bg-gradient-to-br from-primary/5 to-primary/10">
   <div class="max-w-2xl mx-auto text-center">
     <h2 class="text-3xl font-bold text-foreground mb-3">Stay Updated</h2>
@@ -105,6 +126,10 @@ const registry: CanonicalComponentDefinition[] = [
     requiredBusinessFields: ["notificationEmail", "bookingOwner"],
     requiredSetupSteps: ["booking_calendar"],
     outputEvents: ["booking.requested", "booking.confirmed", "calendar.opened"],
+    requiredCapabilities: ['booking'],
+    catalogSurfaces: ['services', 'availability_slots'],
+    writeIntent: 'booking.create',
+    slotBindings: ['form-submit', 'primary-cta', 'card-cta'],
     htmlTemplate: `<section data-component="intent-booking" data-ut-component-slug="booking-scheduler" data-ut-component-category="booking" data-intent="booking.create" class="w-full max-w-lg mx-auto my-8">
   <div class="bg-gradient-to-br from-primary/5 to-primary/10 rounded-2xl p-8 shadow-lg border border-primary/20">
     <div class="mb-6">
@@ -139,6 +164,10 @@ const registry: CanonicalComponentDefinition[] = [
     requiredBusinessFields: ["paymentProvider"],
     requiredSetupSteps: ["payments"],
     outputEvents: ["checkout.started", "checkout.completed", "order.created"],
+    requiredCapabilities: ['commerce'],
+    catalogSurfaces: ['products'],
+    writeIntent: 'pay.checkout',
+    slotBindings: ['checkout-cta', 'card-cta'],
     htmlTemplate: `<section data-component="checkout-cta" data-ut-component-slug="checkout-cta" data-ut-component-category="commerce" data-intent="pay.checkout" class="w-full max-w-md mx-auto my-8 rounded-3xl border bg-card p-8 shadow-lg">
   <h3 class="text-2xl font-bold text-foreground mb-2">Ready to buy?</h3>
   <p class="text-muted-foreground mb-6">Launch checkout with your canonical product and pricing flow.</p>
@@ -155,6 +184,8 @@ const registry: CanonicalComponentDefinition[] = [
     requiredBindingKeys: [],
     requiredBusinessFields: ["followUpChannel"],
     outputEvents: ["conversation.started", "message.received", "lead.created"],
+    requiredCapabilities: [],
+    slotBindings: ['icon-chat'],
     htmlTemplate: `<div data-component="chat-widget" data-ut-component-slug="chat-widget" data-ut-component-category="support" class="fixed bottom-6 right-6 z-50">
   <button class="h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-xl">Chat</button>
 </div>`,
@@ -193,7 +224,7 @@ export function createCanonicalComponentInstance(
     bindings: options.bindings || {},
     props: options.props || {},
     usedOnPages: options.usedOnPages || [],
-    requiredCapabilities: [...definition.requiredBindingKeys],
+    requiredCapabilities: [...definition.requiredCapabilities],
     outputEvents: [...definition.outputEvents],
     status: "draft",
   };

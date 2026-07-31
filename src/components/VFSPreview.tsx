@@ -75,6 +75,8 @@ interface PreviewCompileState {
   compiling: boolean;
 }
 
+const MAX_SANDPACK_TIMEOUT_RECOVERIES = 3;
+
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
 export interface VFSPreviewProps {
@@ -183,8 +185,9 @@ class SandpackErrorBoundary extends Component<
 const SandpackErrorListener: React.FC<{
   onError?: (error: string) => void;
   onTimeout?: () => void;
+  onRunning?: () => void;
   dependencies: Record<string, string>;
-}> = ({ onError, onTimeout, dependencies }) => {
+}> = ({ onError, onTimeout, onRunning, dependencies }) => {
   const { sandpack } = useSandpack();
   const lastReportedRef = useRef<string>('');
 
@@ -226,10 +229,13 @@ const SandpackErrorListener: React.FC<{
           onTimeout?.();
         }
       }
-    } else if (status === 'idle' || status === 'running') {
+    } else if (status === 'running') {
+      lastReportedRef.current = '';
+      onRunning?.();
+    } else if (status === 'idle') {
       lastReportedRef.current = '';
     }
-  }, [sandpack.status, sandpack.error, onError, onTimeout, dependencies]);
+  }, [sandpack.status, sandpack.error, onError, onTimeout, onRunning, dependencies]);
 
   return null;
 };
@@ -360,6 +366,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [sandpackKey, setSandpackKey] = useState(0);
+  const [sandpackTimeoutExhausted, setSandpackTimeoutExhausted] = useState(false);
   const dependencySignatureRef = useRef<string | null>(null);
   const startAttemptedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -406,6 +413,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
   useEffect(() => {
     timeoutRecoveryCountRef.current = 0;
+    setSandpackTimeoutExhausted(false);
     if (timeoutRecoveryTimerRef.current !== null) {
       window.clearTimeout(timeoutRecoveryTimerRef.current);
       timeoutRecoveryTimerRef.current = null;
@@ -942,9 +950,12 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
   const handleSandpackTimeout = useCallback(() => {
     if (
-      timeoutRecoveryCountRef.current >= 1 ||
+      timeoutRecoveryCountRef.current >= MAX_SANDPACK_TIMEOUT_RECOVERIES ||
       timeoutRecoveryTimerRef.current !== null
     ) {
+      if (timeoutRecoveryCountRef.current >= MAX_SANDPACK_TIMEOUT_RECOVERIES) {
+        setSandpackTimeoutExhausted(true);
+      }
       return;
     }
 
@@ -955,7 +966,22 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     timeoutRecoveryTimerRef.current = window.setTimeout(() => {
       timeoutRecoveryTimerRef.current = null;
       setSandpackKey((key) => key + 1);
-    }, 500);
+    }, 700 * timeoutRecoveryCountRef.current);
+  }, []);
+
+  const handleSandpackRunning = useCallback(() => {
+    timeoutRecoveryCountRef.current = 0;
+    setSandpackTimeoutExhausted(false);
+  }, []);
+
+  const handleRetrySandpackConnection = useCallback(() => {
+    if (timeoutRecoveryTimerRef.current !== null) {
+      window.clearTimeout(timeoutRecoveryTimerRef.current);
+      timeoutRecoveryTimerRef.current = null;
+    }
+    timeoutRecoveryCountRef.current = 0;
+    setSandpackTimeoutExhausted(false);
+    setSandpackKey((key) => key + 1);
   }, []);
 
   useEffect(() => () => {
@@ -1245,6 +1271,22 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           </div>
         )}
 
+        {backend === 'sandpack' && !previewCompiling && !pipelineError && !emptyDraft && sandpackTimeoutExhausted && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-background p-6">
+            <div className="max-w-sm text-center space-y-3">
+              <WifiOff className="h-8 w-8 mx-auto text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Preview runner did not connect</h3>
+              <p className="text-xs text-muted-foreground">
+                The generated site is ready, but the in-browser preview runner could not finish its module connection.
+              </p>
+              <Button size="sm" onClick={handleRetrySandpackConnection}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Retry Preview
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Empty draft — no snapshot, no source. Render idle, never a minimal fallback. */}
         {backend === 'sandpack' && previewCompiling && !hasCompiledPreview && (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-6 z-10">
@@ -1271,7 +1313,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         )}
 
         {/* Sandpack In-Browser React Preview — the primary rendering engine */}
-        {backend === 'sandpack' && (!previewCompiling || hasCompiledPreview) && !pipelineError && !emptyDraft && (
+        {backend === 'sandpack' && (!previewCompiling || hasCompiledPreview) && !pipelineError && !emptyDraft && !sandpackTimeoutExhausted && (
           <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
             <SandpackProvider
               key={`sandpack-${sandpackKey}`}
@@ -1292,6 +1334,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
               <SandpackErrorListener
                 onError={onError}
                 onTimeout={handleSandpackTimeout}
+                onRunning={handleSandpackRunning}
                 dependencies={sandpackDeps}
               />
               <SandpackDependencyProgress dependencyCount={Object.keys(sandpackDeps).length} />

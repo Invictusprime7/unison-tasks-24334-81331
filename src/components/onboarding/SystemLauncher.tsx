@@ -126,6 +126,8 @@ import { validateGeneratedUiContract } from "@/platform/core/generatedUiFoundati
 import { loadBusinessProfile } from '@/services/businessProfileService';
 import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
+import { planLaunchFormDefinitions } from '@/services/launchFormDefinitions';
+import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
 
@@ -3200,9 +3202,19 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         backendRequired: false,
         wizardSelections,
         businessRuntime,
+        enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
         strictPreflight: true,
       });
+      const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
+      const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
+        runtime: JSON.parse(launchArtifacts.files['/.unison/published-runtime.json']) as import('@/services/canonicalLaunchVfs').PublishedRuntimeConfig,
+        bindingCount: plannedDataBindings.length,
+        formDefinitionCount: plannedFormDefinitions.length,
+      });
+      if (!publishedRuntimeReadiness.ok) {
+        throw new Error(`Published runtime is not ready: ${publishedRuntimeReadiness.blockers.join(' ')}`);
+      }
 
       // Persist the Wizard Seed inside the VFS so the in-Builder AI can read it
       // back later as durable continuity (theme, capabilities, intents, pages).
@@ -3216,6 +3228,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           scaffoldMode: resolvedScaffoldMode,
           launchContract,
           wizardGenerationGaps,
+          publishedRuntimeReadiness,
           generatedAt: new Date().toISOString(),
         }, null, 2),
         '/.unison/native-publish-setup.json': JSON.stringify(nativeSetupSnapshot || null, null, 2),
@@ -3268,9 +3281,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         vfsFiles: wiredVfsFiles,
         siteBundleSnapshot: (launchArtifacts.siteBundleSnapshot || {}) as unknown as Record<string, unknown>,
         runtimeManifest: runtimeManifest as unknown as Record<string, unknown>,
+        generatedSiteRuntimeManifest: launchArtifacts.generatedSiteRuntimeManifest,
         wizardSelections: wizardSelections as unknown as Record<string, unknown>,
         businessRuntime,
         dataBindings: plannedDataBindings,
+        formDefinitions: plannedFormDefinitions,
       });
       const launchProjectId = confirmedLaunch.projectId;
       const launcherDraftId = confirmedLaunch.draftId;

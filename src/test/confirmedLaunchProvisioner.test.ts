@@ -39,6 +39,18 @@ const businessRuntime = {
   generatedAt: '2026-07-28T13:00:00.000Z',
 };
 
+const generatedSiteRuntimeManifest = {
+  version: '1.0' as const,
+  siteId: ids.siteId,
+  snapshotId: 'snapshot-1',
+  enabledCapabilities: [],
+  components: [],
+  reads: [],
+  intents: [],
+  readiness: { status: 'ready' as const, blockers: [] },
+  generatedAt: '2026-07-28T13:00:00.000Z',
+};
+
 describe('provisionConfirmedLaunchSite', () => {
   it('sends the complete live-site capability contract to the confirmed launch endpoint', async () => {
     invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
@@ -54,6 +66,7 @@ describe('provisionConfirmedLaunchSite', () => {
       vfsFiles: { '/src/App.tsx': 'export default function App() { return null; }' },
       siteBundleSnapshot: {},
       runtimeManifest: {},
+      generatedSiteRuntimeManifest,
       wizardSelections: {},
       businessRuntime,
       dataBindings: [],
@@ -64,6 +77,7 @@ describe('provisionConfirmedLaunchSite', () => {
         ids,
         capabilities: REQUIRED_SITE_CAPABILITIES,
         businessRuntime,
+        generatedSiteRuntimeManifest,
         dataBindings: [],
       }),
     }));
@@ -83,6 +97,7 @@ describe('provisionConfirmedLaunchSite', () => {
       vfsFiles: { '/src/App.tsx': 'export default function App() { return null; }' },
       siteBundleSnapshot: {},
       runtimeManifest: {},
+      generatedSiteRuntimeManifest,
       wizardSelections: {},
       businessRuntime,
       dataBindings: [],

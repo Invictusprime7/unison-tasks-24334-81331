@@ -1,6 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import type { PlannedSectionDataBinding } from '@/services/autoEmitSectionBindings';
+import type { PlannedFormDefinition } from '@/services/launchFormDefinitions';
+import type { GeneratedSiteRuntimeManifest } from '@/services/generatedSiteRuntimeManifest';
 
 export const REQUIRED_SITE_CAPABILITIES = [
   'business_profile',
@@ -38,9 +40,11 @@ export interface ConfirmedLaunchProvisionInput {
   vfsFiles: Record<string, string>;
   siteBundleSnapshot: Record<string, unknown>;
   runtimeManifest: Record<string, unknown>;
+  generatedSiteRuntimeManifest: GeneratedSiteRuntimeManifest;
   wizardSelections: Record<string, unknown>;
   businessRuntime: BusinessRuntimeContract;
   dataBindings: PlannedSectionDataBinding[];
+  formDefinitions?: PlannedFormDefinition[];
   capabilities?: readonly string[];
 }
 
@@ -61,6 +65,7 @@ export async function provisionConfirmedLaunchSite(
   const { data, error } = await supabase.functions.invoke('provision-launch-site', {
     body: {
       ...input,
+      formDefinitions: input.formDefinitions ?? [],
       capabilities: input.capabilities ?? REQUIRED_SITE_CAPABILITIES,
     },
   });

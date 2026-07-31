@@ -71,8 +71,12 @@ describe('Web Builder preview ownership', () => {
     expect(sharedPreview).toContain("bundlerURL: new URL('/sandpack/index.html', window.location.origin).toString()");
     expect(sharedPreview).toContain('bundlerTimeOut: 120_000');
     expect(sharedPreview).toContain("if (status === 'timeout')");
-    expect(sharedPreview).toContain('timeoutRecoveryCountRef.current >= 1');
+    expect(sharedPreview).toContain('MAX_SANDPACK_TIMEOUT_RECOVERIES = 3');
+    expect(sharedPreview).toContain('timeoutRecoveryCountRef.current >= MAX_SANDPACK_TIMEOUT_RECOVERIES');
     expect(sharedPreview).toContain('setSandpackKey((key) => key + 1);');
+    expect(sharedPreview).toContain('onRunning={handleSandpackRunning}');
+    expect(sharedPreview).toContain('Preview runner did not connect');
+    expect(sharedPreview).toContain('Retry Preview');
     expect(viteConfig).toContain("request.headers.referer?.includes('/web-builder')");
     expect(middleware).toContain("request.headers.get('referer')?.includes('/web-builder')");
     expect(middleware).toContain("rewrite(new URL('/sandpack/index.html', request.url))");

@@ -12,6 +12,7 @@
 export const CATALOG_HYDRATION_PATH = '/src/components/catalogHydration.ts';
 
 export const CATALOG_HYDRATION_MODULE = `import { useEffect, useRef, useState } from 'react';
+import { PUBLISHED_RUNTIME_CONFIG } from '@/unison/publishedRuntime';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shape returned to callers
@@ -51,8 +52,50 @@ export function useSectionData(
   useEffect(() => {
     mounted.current = true;
     if (typeof window === 'undefined' || window.parent === window) {
-      setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: null });
-      return () => { mounted.current = false; };
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 1500);
+      void (async () => {
+        const runtime = PUBLISHED_RUNTIME_CONFIG;
+        if (!runtime.siteId || !runtime.runtimeEndpoint || controller.signal.aborted) {
+          if (mounted.current) setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: null });
+          return;
+        }
+        try {
+          const response = await fetch(runtime.runtimeEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              operation: 'read',
+              runtimeVersion: runtime.runtimeVersion,
+              siteId: runtime.siteId,
+              read: {
+                type: 'catalog',
+                pagePath: typeof window.location !== 'undefined' ? (window.location.pathname || '/') : '/',
+                sectionId,
+                sectionType: sectionType || null,
+                occurrenceIndex: typeof occurrenceIndex === 'number' ? occurrenceIndex : null,
+              },
+            }),
+          });
+          const data: any = response.ok ? await response.json() : null;
+          if (!mounted.current) return;
+          setState({
+            loading: false,
+            rows: Array.isArray(data?.rows) ? data.rows : null,
+            cardBinding: data?.cardBinding ?? null,
+            fallback: data?.fallback ?? null,
+            error: data?.error ?? null,
+          });
+        } catch {
+          if (mounted.current) setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: null });
+        }
+      })();
+      return () => {
+        mounted.current = false;
+        window.clearTimeout(timer);
+        controller.abort();
+      };
     }
 
     const requestId = nextId();

@@ -34,6 +34,14 @@ import {
   CATALOG_HYDRATION_PATH,
   HYDRATABLE_SECTION_TYPES,
 } from './catalogHydrationModule';
+import {
+  FORM_RUNTIME_MODULE,
+  FORM_RUNTIME_PATH,
+} from './formRuntimeModule';
+import {
+  PUBLISHED_ACTION_RUNTIME_MODULE,
+  PUBLISHED_ACTION_RUNTIME_PATH,
+} from './publishedActionRuntimeModule';
 
 const THEME_PATH = '/src/components/theme.ts';
 const LAYOUT_PATH = '/src/components/SiteLayout.tsx';
@@ -167,12 +175,16 @@ export const RESPONSIVE_CSS = \`
 function layoutModule(): string {
   return `import React, { useEffect } from 'react';
 import { THEME, hsl, RESPONSIVE_CSS } from './theme';
+import { usePublishedFormRuntime } from './formRuntime';
+import { usePublishedActionRuntime } from './publishedActionRuntime';
 
 /**
  * SiteLayout — applies snapshot-owned semantic tokens to the document.
  * Template-global CSS is intentionally excluded: Stage 4b owns global style.
  */
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
+  usePublishedFormRuntime();
+  usePublishedActionRuntime();
   useEffect(() => {
     const s = document.createElement('style');
     s.textContent = RESPONSIVE_CSS;
@@ -909,6 +921,8 @@ export function compositionToReactFileSet(
     [LAYOUT_PATH]: layoutModule(),
     [sectionMap.path]: sectionMap.content,
     [CATALOG_HYDRATION_PATH]: CATALOG_HYDRATION_MODULE,
+    [FORM_RUNTIME_PATH]: FORM_RUNTIME_MODULE,
+    [PUBLISHED_ACTION_RUNTIME_PATH]: PUBLISHED_ACTION_RUNTIME_MODULE,
     [pageFilePath]: pageModule(projectedTemplate, sectionMapImport, options?.designIntervention),
   };
   for (const component of sectionMap.components) {

@@ -8,6 +8,11 @@ import {
   type RuntimeManifest,
   type UnisonRuntimeEnvironment,
 } from '@/types/runtimeManifest';
+import {
+  compileGeneratedSiteRuntimeManifest,
+  type GeneratedSiteRuntimeManifest,
+} from '@/services/generatedSiteRuntimeManifest';
+import type { CapabilityId } from '@/platform/core/capabilityRegistry';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
 import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
@@ -30,6 +35,14 @@ import {
   BUSINESS_PROFILE_HYDRATION_MODULE,
   BUSINESS_PROFILE_HYDRATION_PATH,
 } from '@/sections/businessProfileHydrationModule';
+import {
+  FORM_RUNTIME_MODULE,
+  FORM_RUNTIME_PATH,
+} from '@/sections/formRuntimeModule';
+import {
+  PUBLISHED_ACTION_RUNTIME_MODULE,
+  PUBLISHED_ACTION_RUNTIME_PATH,
+} from '@/sections/publishedActionRuntimeModule';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',
@@ -37,12 +50,32 @@ export const CANONICAL_METADATA_FILE_PATHS = {
   siteBundleSnapshot: '/.unison/site-bundle-snapshot.json',
   canonicalPlayground: '/.unison/canonical-playground.json',
   wizardRuntime: '/.unison/wizard-runtime.json',
+  publishedRuntime: '/.unison/published-runtime.json',
+  generatedSiteRuntime: '/.unison/generated-site-runtime.json',
 } as const;
+
+export const PUBLISHED_RUNTIME_MODULE_PATH = '/src/unison/publishedRuntime.ts';
+export const GENERATED_SITE_RUNTIME_MANIFEST_MODULE_PATH = '/src/unison/generatedSiteRuntimeManifest.ts';
+
+export interface PublishedRuntimeConfig {
+  version: '1.0';
+  runtimeVersion: '1.0';
+  siteId: string | null;
+  businessId: string | null;
+  projectId: string | null;
+  snapshotId: string | null;
+  endpoint: string | null;
+  runtimeEndpoint: string | null;
+  formEndpoint: string | null;
+}
+
+const DEFAULT_PUBLIC_SUPABASE_URL = 'https://nfrdomdvyrbwuokathtw.supabase.co';
 
 export interface CanonicalLaunchArtifacts {
   files: Record<string, string>;
   entryPoint: string;
   runtimeManifest: RuntimeManifest;
+  generatedSiteRuntimeManifest: GeneratedSiteRuntimeManifest;
   appContext: RuntimeAppContext;
   siteBundleSnapshot?: SiteBundleSnapshot;
   canonicalPlayground?: Record<string, unknown>;
@@ -78,6 +111,8 @@ export interface BuildCanonicalLaunchArtifactsInput {
   backendRequired?: boolean;
   wizardSelections?: WizardSelections | null;
   businessRuntime?: BusinessRuntimeContract | null;
+  /** Capability set that authorizes generated component runtime contracts. */
+  enabledCapabilities?: readonly CapabilityId[];
   /**
    * When false, registered page modules must come from generatedFiles. The
    * canonical snapshot may still provide router/root support, but its page
@@ -86,6 +121,32 @@ export interface BuildCanonicalLaunchArtifactsInput {
   allowCanonicalPageFallback?: boolean;
   /** Throw if internal preflight has to quarantine generated code. */
   strictPreflight?: boolean;
+}
+
+export function buildPublishedRuntimeConfig(
+  input: Pick<BuildCanonicalLaunchArtifactsInput, 'siteId' | 'businessId' | 'projectId' | 'siteBundleSnapshot'>,
+): PublishedRuntimeConfig {
+  const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || DEFAULT_PUBLIC_SUPABASE_URL).trim().replace(/\/$/, '');
+
+  return {
+    version: '1.0',
+    runtimeVersion: '1.0',
+    siteId: input.siteId || null,
+    businessId: input.businessId || null,
+    projectId: input.projectId || null,
+    snapshotId: input.siteBundleSnapshot?.snapshotId || null,
+    endpoint: supabaseUrl ? `${supabaseUrl}/functions/v1/site-runtime-read` : null,
+    runtimeEndpoint: supabaseUrl ? `${supabaseUrl}/functions/v1/site-runtime` : null,
+    formEndpoint: supabaseUrl ? `${supabaseUrl}/functions/v1/form-submit` : null,
+  };
+}
+
+export function buildPublishedRuntimeModule(config: PublishedRuntimeConfig): string {
+  return `export const PUBLISHED_RUNTIME_CONFIG = ${JSON.stringify(config, null, 2)} as const;\n`;
+}
+
+export function buildGeneratedSiteRuntimeManifestModule(manifest: GeneratedSiteRuntimeManifest): string {
+  return `export const GENERATED_SITE_RUNTIME_MANIFEST = ${JSON.stringify(manifest, null, 2)} as const;\n`;
 }
 
 function rebaseAppModuleForHomePage(content: string): string {
@@ -464,6 +525,8 @@ export function upsertCanonicalMetadataFiles(
   input: {
     appContext: RuntimeAppContext;
     runtimeManifest: RuntimeManifest;
+    publishedRuntime: PublishedRuntimeConfig;
+    generatedSiteRuntimeManifest: GeneratedSiteRuntimeManifest;
     siteBundleSnapshot?: SiteBundleSnapshot;
     canonicalPlayground?: Record<string, unknown>;
   },
@@ -475,6 +538,12 @@ export function upsertCanonicalMetadataFiles(
   nextFiles[CANONICAL_METADATA_FILE_PATHS.wizardRuntime] = JSON.stringify({
     previewRuntime: input.appContext.previewRuntime,
   }, null, 2);
+  nextFiles[CANONICAL_METADATA_FILE_PATHS.publishedRuntime] = JSON.stringify(input.publishedRuntime, null, 2);
+  nextFiles[CANONICAL_METADATA_FILE_PATHS.generatedSiteRuntime] = JSON.stringify(
+    input.generatedSiteRuntimeManifest,
+    null,
+    2,
+  );
 
   if (input.siteBundleSnapshot) {
     nextFiles[CANONICAL_METADATA_FILE_PATHS.siteBundleSnapshot] = JSON.stringify(
@@ -681,6 +750,8 @@ export function buildCanonicalLaunchArtifacts(
       })
     : { ...safeFiles };
   mergedFiles[BUSINESS_PROFILE_HYDRATION_PATH] = BUSINESS_PROFILE_HYDRATION_MODULE;
+  mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
+  mergedFiles[PUBLISHED_ACTION_RUNTIME_PATH] = PUBLISHED_ACTION_RUNTIME_MODULE;
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
   const appContext = buildRuntimeAppContext(
@@ -698,9 +769,19 @@ export function buildCanonicalLaunchArtifacts(
     presetId: appContext.themePresetId || resolvedThemePresetId,
     cssPath: '/src/index.css',
   };
+  const publishedRuntime = buildPublishedRuntimeConfig(input);
+  mergedFiles[PUBLISHED_RUNTIME_MODULE_PATH] = buildPublishedRuntimeModule(publishedRuntime);
   const runtimeSnapshotSeed = input.siteBundleSnapshot
     ? { ...input.siteBundleSnapshot, appContext }
     : undefined;
+  const generatedSiteRuntimeManifest = compileGeneratedSiteRuntimeManifest({
+    siteId: input.siteId,
+    snapshot: runtimeSnapshotSeed,
+    enabledCapabilities: input.enabledCapabilities,
+  });
+  mergedFiles[GENERATED_SITE_RUNTIME_MANIFEST_MODULE_PATH] = buildGeneratedSiteRuntimeManifestModule(
+    generatedSiteRuntimeManifest,
+  );
   const canonicalPlayground = buildCanonicalPlayground(runtimeSnapshotSeed, input.canonicalPlayground);
   const metadataFiles = Object.values(CANONICAL_METADATA_FILE_PATHS);
   const sessionKey = buildSessionKey(appContext, entryPoint);
@@ -743,6 +824,8 @@ export function buildCanonicalLaunchArtifacts(
   const files = upsertCanonicalMetadataFiles(verifiedViteFiles, {
     appContext,
     runtimeManifest,
+    publishedRuntime,
+    generatedSiteRuntimeManifest,
     siteBundleSnapshot,
     canonicalPlayground,
   });
@@ -784,6 +867,7 @@ export function buildCanonicalLaunchArtifacts(
     files,
     entryPoint,
     runtimeManifest,
+    generatedSiteRuntimeManifest,
     appContext,
     siteBundleSnapshot,
     canonicalPlayground,

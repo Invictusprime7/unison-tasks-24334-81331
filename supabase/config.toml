@@ -60,6 +60,12 @@ verify_jwt = false
 [functions.form-submit]
 verify_jwt = false
 
+[functions.site-runtime-read]
+verify_jwt = false
+
+[functions.site-runtime]
+verify_jwt = false
+
 [functions.research]
 verify_jwt = true
 

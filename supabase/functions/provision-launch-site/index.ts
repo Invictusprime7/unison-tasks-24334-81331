@@ -66,6 +66,72 @@ const DataBindingSchema = z.object({
   fallbackMode: z.enum(['empty_state', 'hide_section', 'show_placeholder']),
 });
 
+const FormDefinitionSchema = z.object({
+  externalId: z.enum([
+    'contact.submit',
+    'quote.request',
+    'booking.request',
+    'newsletter.subscribe',
+    'application.submit',
+  ]),
+  name: z.string().trim().min(1).max(160),
+  intent: z.enum([
+    'contact.submit',
+    'quote.request',
+    'booking.request',
+    'newsletter.subscribe',
+    'application.submit',
+  ]),
+  fields: z.array(z.object({
+    name: z.string().trim().min(1).max(100),
+    required: z.boolean(),
+  })).max(50),
+}).refine((definition) => definition.externalId === definition.intent, {
+  message: 'Public form definition id must match its intent.',
+});
+
+const GeneratedRuntimeManifestSchema = z.object({
+  version: z.literal('1.0'),
+  siteId: z.string().uuid().nullable(),
+  snapshotId: z.string().min(1).max(200).nullable(),
+  enabledCapabilities: z.array(z.string().min(1).max(120)).max(32),
+  components: z.array(z.object({
+    instanceId: z.string().min(1).max(200),
+    componentSlug: z.string().min(1).max(200),
+    usedOnPages: z.array(z.string().min(1).max(200)).max(100),
+    bindings: z.record(z.string().max(500)),
+    pageLess: z.boolean(),
+    requiredCapabilities: z.array(z.string().min(1).max(120)).max(32),
+    catalogSurfaces: z.array(z.string().min(1).max(120)).max(32),
+    writeIntent: z.string().min(1).max(160).nullable(),
+    slotBindings: z.array(z.string().min(1).max(120)).max(32),
+    slots: z.array(z.object({
+      slot: z.string().min(1).max(120),
+      intent: z.string().min(1).max(160).nullable(),
+      source: z.enum(['slot-policy', 'component-contract', 'unresolved']),
+      section: z.string().min(1).max(120).nullable(),
+      policyIntent: z.string().min(1).max(160).nullable(),
+      status: z.enum(['ready', 'blocked']),
+      blockers: z.array(z.string().min(1).max(300)).max(32),
+    })).max(32),
+    status: z.enum(['ready', 'blocked']),
+    blockers: z.array(z.string().min(1).max(300)).max(64),
+  })).max(200),
+  reads: z.array(z.string().min(1).max(120)).max(100),
+  intents: z.array(z.object({
+    intent: z.string().min(1).max(160),
+    handler: z.enum(['client', 'intent-exec', 'workflow-trigger', 'stripe-checkout', 'auth-overlay', 'webhook']),
+    surface: z.enum(['inline', 'overlay', 'redirect', 'client']),
+    requiredCapabilities: z.array(z.string().min(1).max(120)).max(32),
+    componentIds: z.array(z.string().min(1).max(200)).min(1).max(200),
+  })).max(200),
+  readiness: z.object({
+    status: z.enum(['ready', 'blocked']),
+    blockers: z.array(z.string().min(1).max(300)).max(256),
+  }),
+  generatedAt: z.string().datetime(),
+});
+
 const BodySchema = z.object({
   ids: IdsSchema,
   existingBusinessId: z.string().uuid().nullable().optional(),
@@ -80,9 +146,11 @@ const BodySchema = z.object({
   vfsFiles: z.record(z.string(), z.string()),
   siteBundleSnapshot: z.record(z.unknown()),
   runtimeManifest: z.record(z.unknown()),
+  generatedSiteRuntimeManifest: GeneratedRuntimeManifestSchema,
   wizardSelections: z.record(z.unknown()),
   businessRuntime: BusinessRuntimeSchema.optional(),
   dataBindings: z.array(DataBindingSchema).max(300).default([]),
+  formDefinitions: z.array(FormDefinitionSchema).max(10).default([]),
   capabilities: z.array(z.string().trim().min(1).max(120)).min(1).max(32),
 });
 
@@ -151,6 +219,12 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
     }
     if (body.dataBindings.some((binding) => binding.snapshotId !== businessRuntime.dataBindings.snapshotId)) {
       throw new Error('BUSINESS_RUNTIME_SNAPSHOT_MISMATCH');
+    }
+    if (body.generatedSiteRuntimeManifest.siteId !== body.ids.siteId) {
+      throw new Error('GENERATED_RUNTIME_SITE_IDENTITY_MISMATCH');
+    }
+    if (body.generatedSiteRuntimeManifest.snapshotId !== businessRuntime.dataBindings.snapshotId) {
+      throw new Error('GENERATED_RUNTIME_SNAPSHOT_MISMATCH');
     }
 
     if (body.existingBusinessId) {
@@ -240,6 +314,23 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
         ],
       );
     }
+    for (const definition of body.formDefinitions) {
+      await query(
+        pg,
+        `INSERT INTO public.form_definitions
+          (business_id, project_id, site_id, external_id, name, intent, fields, destination, success_behavior, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, '{}'::jsonb, '{}'::jsonb, true)`,
+        [
+          businessId,
+          body.ids.projectId,
+          body.ids.siteId,
+          definition.externalId,
+          definition.name,
+          definition.intent,
+          JSON.stringify(definition.fields),
+        ],
+      );
+    }
     await query(
       pg,
       `INSERT INTO public.site_builds (id, site_id, mode, version, status, current_stage, started_at, finished_at, context)
@@ -279,6 +370,7 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
           businessId,
           projectId: body.ids.projectId,
           runtimeManifest: body.runtimeManifest,
+          generatedSiteRuntimeManifest: body.generatedSiteRuntimeManifest,
           businessRuntime,
           poweredByUnison: true,
         }),
@@ -310,6 +402,7 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
           siteBundleId: body.ids.bundleId,
           siteBundleSnapshot: body.siteBundleSnapshot,
           runtimeManifest: body.runtimeManifest,
+          generatedSiteRuntimeManifest: body.generatedSiteRuntimeManifest,
           wizardSelections: body.wizardSelections,
           businessRuntime,
           launchConfirmation: { confirmedAt: new Date().toISOString(), confirmedBy: userId },

@@ -177,7 +177,10 @@ Deno.serve(async (req) => {
     if (definitionError) {
       throw new Error("Could not resolve the approved form definition");
     }
-    if (definition?.intent && definition.intent !== intent) {
+    if (!definition) {
+      return errorResponse("This form is not configured for the site", 400, publicCorsHeaders);
+    }
+    if (definition.intent !== intent) {
       return errorResponse("Form intent does not match its approved definition", 400, publicCorsHeaders);
     }
     if (Array.isArray(definition?.fields)) {

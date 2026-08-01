@@ -17,6 +17,8 @@
  */
 
 import type { EnvelopeShape } from "./envelopeContext.ts";
+import { resolveDatabaseContracts } from "../_shared/capabilityPackContracts.ts";
+
 
 export interface GoalVerdict {
   goal: string;
@@ -130,6 +132,83 @@ function verifyCriterion(
   return { met: false, reason: `missing ${failed.map((c) => c.label).join(", ")}` };
 }
 
+/** Markup that renders repeated content from an inline literal instead of data. */
+const HARDCODED_COLLECTION_RE =
+  /(?:const|let)\s+\w+\s*(?::[^=]+)?=\s*\[\s*\{[\s\S]{40,}?\}\s*,\s*\{/;
+
+const RUNTIME_CLIENT_RE = /(integrations\/supabase|runtime-client|useCatalog|CatalogRuntime|supabase\s*\.\s*from)/i;
+
+/**
+ * Step 7 — backend-aware verification.
+ *
+ * For every requested capability we resolve the tables its pack contract owns
+ * and require the produced markup to read them through the runtime client.
+ * When a section renders an inline collection literal and never touches the
+ * backend, the capability is decoration, not a system — that is a `must` miss.
+ */
+function verifyBackendWiring(
+  capabilities: string[],
+  files: Record<string, string>,
+): GoalVerdict[] {
+  const { order, unsupported } = resolveDatabaseContracts(capabilities);
+  if (order.length === 0) return [];
+
+  const markup = Object.entries(files)
+    .filter(([path]) => /\.(tsx|jsx|ts)$/i.test(path))
+    .map(([, content]) => content)
+    .join("\n");
+  if (!markup.trim()) return [];
+
+  const usesRuntimeClient = RUNTIME_CLIENT_RE.test(markup);
+  const hasHardcodedCollection = HARDCODED_COLLECTION_RE.test(markup);
+  const verdicts: GoalVerdict[] = [];
+
+  for (const pack of order) {
+    // `business_profile` is ambient identity — other packs carry the content.
+    if (pack.id === "business_profile") continue;
+
+    const tables = pack.tables.map((t) => t.table);
+    const referenced = tables.filter((table) => markup.includes(table));
+    const criterion = `Capability "${pack.id}" reads live data from ${tables.join(", ")} instead of hardcoded content`;
+
+    if (referenced.length > 0) {
+      verdicts.push({
+        goal: `Backend wiring: ${pack.id}`,
+        priority: "must",
+        criterion,
+        met: true,
+        evidence: `references ${referenced.join(", ")}`,
+      });
+      continue;
+    }
+
+    // No table reference. Only fail when the file clearly renders its own data.
+    if (hasHardcodedCollection && !usesRuntimeClient) {
+      verdicts.push({
+        goal: `Backend wiring: ${pack.id}`,
+        priority: "must",
+        criterion,
+        met: false,
+        reason: `content is rendered from an inline array and never queries ${tables.join(" / ")}`,
+      });
+    }
+  }
+
+  for (const capability of unsupported) {
+    verdicts.push({
+      goal: `Backend wiring: ${capability}`,
+      priority: "should",
+      criterion: `Capability "${capability}" has a provisioned backend pack`,
+      met: false,
+      reason: "no capability pack implements this capability yet",
+    });
+  }
+
+  return verdicts;
+}
+
+
+
 export function verifyAgainstEnvelope(opts: {
   envelope?: EnvelopeShape | null;
   files: Record<string, string>;
@@ -193,6 +272,15 @@ export function verifyAgainstEnvelope(opts: {
       reason: "no data-ut-intent binding present in returned markup",
     });
   }
+
+  // ── Step 7: backend-aware verification ────────────────────────────────────
+  // A capability is only satisfied when the produced markup actually reads the
+  // capability's tables through the runtime client. Hardcoded arrays rendered
+  // where live data belongs are the failure mode this catches.
+  if (capabilities.length > 0 && touchesMarkup) {
+    verdicts.push(...verifyBackendWiring(capabilities, files));
+  }
+
 
   const unmet = verdicts.filter((v) => !v.met);
   const blockingMisses = unmet

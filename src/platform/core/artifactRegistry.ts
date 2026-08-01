@@ -212,7 +212,7 @@ const ARTIFACTS: ArtifactDef[] = [
   catalogArtifact('services', { sectionType: 'services', capabilities: ['booking'] }),
   catalogArtifact('products', { sectionType: 'services', capabilities: ['commerce'] }),
   catalogArtifact('menu', { sectionType: 'services', capabilities: ['commerce'] }),
-  catalogArtifact('pricing', { sectionType: 'pricing', capabilities: ['payments'], category: 'conversion' }),
+  catalogArtifact('pricing', { sectionType: 'pricing', capabilities: ['commerce'], category: 'conversion' }),
   catalogArtifact('testimonials', {
     sectionType: 'testimonials',
     capabilities: [],

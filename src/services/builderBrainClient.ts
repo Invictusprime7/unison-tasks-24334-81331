@@ -148,6 +148,9 @@ export async function runBuilderTurn<TResponse = any>(
 ): Promise<{ data: TResponse; error: any }> {
   const maxAttempts = 4;
   const baseDelays = [600, 1400, 2800];
+  // Provider cooldowns are seconds-scale; back off harder than transport retries.
+  const rateLimitDelays = [4000, 9000, 18000];
+
   let lastError: unknown = null;
   let sentPayload: Record<string, unknown> = input as unknown as Record<string, unknown>;
 

@@ -12,7 +12,7 @@ import {
   bindingsForCapabilities,
   expandBusinessCapabilities,
   interpretCapabilities,
-  VERTICAL_OPERATIONS_RECIPES,
+  operationsCapabilitiesFor,
   resolveBuilderScope,
   type BuilderScope,
 } from '@/services/capabilityInterpretation';
@@ -295,18 +295,18 @@ export interface WizardCapabilityInput {
  * the caller decides whether to auto-approve and apply.
  */
 export function capabilityPlanFromWizard(input: WizardCapabilityInput): CapabilityPlan {
-  const industryKey = String(input.industry ?? '').toLowerCase().trim();
   const requested = new Set<BusinessCapability>(['business_profile']);
 
-  const recipe = VERTICAL_OPERATIONS_RECIPES[industryKey]
-    ?? VERTICAL_OPERATIONS_RECIPES[industryKey.replace(/[\s_]+/g, '-')];
-  recipe?.forEach((cap) => requested.add(cap));
-
   const surfaces = [...(input.sectionTypes ?? []), ...(input.pageSlugs ?? [])];
+
+  // Additive: universal baseline + industry hint + selected catalog surfaces.
+  operationsCapabilitiesFor(input.industry, surfaces).forEach((cap) => requested.add(cap));
+
   for (const surface of surfaces) {
     const key = String(surface ?? '').toLowerCase().trim();
     SECTION_CAPABILITIES[key]?.forEach((cap) => requested.add(cap));
   }
+
 
   const requestedCapabilities = expandBusinessCapabilities([...requested]);
 

@@ -20,6 +20,7 @@ import type {
 } from '@/types/builderRequestEnvelope';
 import { ABSTRACT_GOALS } from '@/platform/core/abstractGoalRegistry';
 import type { BusinessCapability } from '@/platform/core/capabilityRegistry';
+import { capabilitiesForSurfaces } from '@/services/catalog/catalogCapabilityResolution';
 
 export type BuilderScope = 'website' | 'business-system' | 'developer';
 
@@ -150,22 +151,48 @@ export function expandBusinessCapabilities(
 }
 
 // ---------------------------------------------------------------------------
-// Vertical operations recipes — what "operate like a real X" concretely means
+// Operations recipes — ADDITIVE defaults, never an exhaustive gate.
+// Industry is a seed hint; selected catalog surfaces + envelope are stronger.
 // ---------------------------------------------------------------------------
 
+/** Applies to every business, regardless of industry. */
+export const UNIVERSAL_OPERATIONS_BASELINE: BusinessCapability[] = [
+  'business_profile',
+  'forms.contact',
+  'crm.leads',
+  'notifications.email',
+];
+
 export const VERTICAL_OPERATIONS_RECIPES: Record<string, BusinessCapability[]> = {
-  salon: ['catalog.services', 'booking.appointments', 'crm.contacts', 'notifications.email'],
-  spa: ['catalog.services', 'booking.appointments', 'crm.contacts', 'notifications.email'],
-  restaurant: ['catalog.menu', 'booking.appointments', 'crm.contacts', 'notifications.email'],
-  coaching: ['catalog.services', 'booking.appointments', 'crm.leads', 'notifications.email'],
-  fitness: ['catalog.services', 'booking.appointments', 'crm.contacts', 'notifications.email'],
-  'local-service': ['catalog.services', 'forms.quote', 'crm.leads', 'notifications.email'],
-  contractor: ['catalog.services', 'forms.quote', 'crm.leads', 'notifications.email'],
-  agency: ['catalog.services', 'forms.contact', 'crm.leads', 'automation.follow_up'],
-  'real-estate': ['catalog.services', 'forms.contact', 'crm.leads', 'automation.follow_up'],
+  salon: ['catalog.services', 'booking.appointments', 'crm.contacts'],
+  spa: ['catalog.services', 'booking.appointments', 'crm.contacts'],
+  restaurant: ['catalog.menu', 'booking.appointments', 'crm.contacts'],
+  coaching: ['catalog.services', 'booking.appointments'],
+  fitness: ['catalog.services', 'booking.appointments', 'crm.contacts'],
+  'local-service': ['catalog.services', 'forms.quote'],
+  contractor: ['catalog.services', 'forms.quote'],
+  agency: ['catalog.services', 'automation.follow_up'],
+  'real-estate': ['catalog.services', 'automation.follow_up'],
   ecommerce: ['catalog.products', 'commerce.cart', 'commerce.checkout', 'crm.contacts'],
-  nonprofit: ['forms.contact', 'crm.contacts', 'notifications.email'],
+  nonprofit: ['crm.contacts'],
 };
+
+/**
+ * Resolves operational capabilities additively:
+ *   universal baseline  +  industry hint (if any)  +  selected catalog surfaces
+ * An unknown industry degrades to baseline + selections — never to nothing.
+ */
+export function operationsCapabilitiesFor(
+  industry?: string,
+  selectedSections: readonly string[] = [],
+): BusinessCapability[] {
+  const key = String(industry ?? '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  const out = new Set<BusinessCapability>(UNIVERSAL_OPERATIONS_BASELINE);
+  for (const cap of VERTICAL_OPERATIONS_RECIPES[key] ?? []) out.add(cap);
+  for (const cap of capabilitiesForSurfaces([...selectedSections])) out.add(cap);
+  return BUSINESS_CAPABILITIES.filter((cap) => out.has(cap));
+}
+
 
 /** "make it actually work / operate like a real salon / not just look like one" */
 const OPERATIONALIZE = /\b(operate|operational|actually work|really work|functional|functioning|real business|not just look|instead of just looking|live data|real data|wire.{0,12}up|make it work)\b/i;
@@ -267,7 +294,10 @@ export const SCOPE_LABEL: Record<BuilderScope, string> = {
 export interface CapabilityInterpretationInput {
   prompt: string;
   envelope?: InterpreterEnvelope | null;
+  /** Ranking/seed hint only — never a gate. */
   industry?: string;
+  /** Catalog surfaces the wizard/user actually selected (the real gate). */
+  selectedSections?: readonly string[];
 }
 
 export interface CapabilityInterpretation {
@@ -285,7 +315,7 @@ export interface CapabilityInterpretation {
 export function interpretCapabilities(
   input: CapabilityInterpretationInput,
 ): CapabilityInterpretation {
-  const { prompt, envelope, industry } = input;
+  const { prompt, envelope, industry, selectedSections = [] } = input;
   const scope = resolveBuilderScope(envelope);
   const requested = new Set<BusinessCapability>();
   let source: CapabilityInterpretation['source'] = 'none';
@@ -303,16 +333,19 @@ export function interpretCapabilities(
     if (requested.size > 0) source = 'envelope';
   }
 
-  // Abstract "make it actually operate" language → vertical recipe.
+  // Selected catalog surfaces always imply their capabilities, industry aside.
+  for (const cap of capabilitiesForSurfaces([...selectedSections])) {
+    requested.add(cap);
+    if (source === 'none') source = 'envelope';
+  }
+
+  // "make it actually operate" → additive operations recipe (baseline + hints).
   const operationalText = `${prompt} ${envelope?.summary ?? ''} ${envelope?.goals.map((g) => g.description).join(' ') ?? ''}`;
   if (detectOperationalizeRequest(operationalText)) {
-    const key = String(industry ?? '').trim().toLowerCase();
-    const recipe = VERTICAL_OPERATIONS_RECIPES[key];
-    if (recipe?.length) {
-      recipe.forEach((cap) => requested.add(cap));
-      if (source === 'none') source = 'vertical-recipe';
-    }
+    for (const cap of operationsCapabilitiesFor(industry, selectedSections)) requested.add(cap);
+    if (source === 'none') source = 'vertical-recipe';
   }
+
 
   // Degraded path: no interpreter available and nothing resolved yet.
   if (requested.size === 0 && !envelope) {

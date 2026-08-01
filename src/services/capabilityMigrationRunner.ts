@@ -10,11 +10,13 @@
 import { supabase } from '@/integrations/supabase/client';
 import { buildCapabilityMigration, type MigrationStatement } from '@/platform/core/capabilityMigrationSql';
 import type { CapabilityPack } from '@/platform/core/capabilityPacks';
+import { describeLintResult, lintMigrationSql, type MigrationLintResult } from './migrationSqlLint';
 
 export interface CapabilityMigrationPreview {
   statements: MigrationStatement[];
   sql: string;
   tables: string[];
+  lint: MigrationLintResult;
 }
 
 export interface CapabilityMigrationResult {
@@ -30,7 +32,8 @@ export interface CapabilityMigrationResult {
 
 /** What the migration will do, derived locally for the approval card. */
 export function previewCapabilityMigration(packs: CapabilityPack[]): CapabilityMigrationPreview {
-  return buildCapabilityMigration(packs);
+  const migration = buildCapabilityMigration(packs);
+  return { ...migration, lint: lintMigrationSql(migration.sql) };
 }
 
 export interface ApplyCapabilityMigrationInput {
@@ -63,6 +66,19 @@ export async function applyCapabilityMigration(
       error: 'A saved business or project is required before backend changes can be applied.',
     };
   }
+  if (!preview.lint.ok) {
+    return {
+      success: false,
+      status: 'failed',
+      tables: preview.tables,
+      packs: packs.map((pack) => pack.id),
+      applied: 0,
+      failed: preview.statements.length,
+      error: describeLintResult(preview.lint),
+    };
+  }
+
+
 
   const { data, error } = await supabase.functions.invoke('capability-migration-apply', {
     body: {

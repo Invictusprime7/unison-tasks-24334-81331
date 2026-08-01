@@ -25,6 +25,7 @@ import {
   resolveDatabaseContracts,
   type MigrationStatement,
 } from '../_shared/capabilityPackContracts.ts';
+import { describeLintResult, lintMigrationSql } from '../_shared/migrationSqlLint.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -114,6 +115,20 @@ Deno.serve(async (req) => {
     const migration = buildContractMigration(order);
     for (const statement of migration.statements) {
       assertExecutable(statement, migration.statements);
+    }
+
+    // ---- Gate 3b: mandatory SQL lint (blockers stop execution) -----------
+    const lint = lintMigrationSql(migration.sql);
+    if (!lint.ok) {
+      return new Response(
+        JSON.stringify({
+          error: describeLintResult(lint),
+          status: 'failed',
+          lint,
+          sql: migration.sql,
+        }),
+        { status: 422, headers: jsonHeaders },
+      );
     }
 
     // ---- Gate 4: one transaction, rolled back on any failure -------------

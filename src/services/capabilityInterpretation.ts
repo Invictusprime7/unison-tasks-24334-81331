@@ -294,7 +294,10 @@ export const SCOPE_LABEL: Record<BuilderScope, string> = {
 export interface CapabilityInterpretationInput {
   prompt: string;
   envelope?: InterpreterEnvelope | null;
+  /** Ranking/seed hint only — never a gate. */
   industry?: string;
+  /** Catalog surfaces the wizard/user actually selected (the real gate). */
+  selectedSections?: readonly string[];
 }
 
 export interface CapabilityInterpretation {
@@ -312,7 +315,7 @@ export interface CapabilityInterpretation {
 export function interpretCapabilities(
   input: CapabilityInterpretationInput,
 ): CapabilityInterpretation {
-  const { prompt, envelope, industry } = input;
+  const { prompt, envelope, industry, selectedSections = [] } = input;
   const scope = resolveBuilderScope(envelope);
   const requested = new Set<BusinessCapability>();
   let source: CapabilityInterpretation['source'] = 'none';
@@ -330,16 +333,19 @@ export function interpretCapabilities(
     if (requested.size > 0) source = 'envelope';
   }
 
-  // Abstract "make it actually operate" language → vertical recipe.
+  // Selected catalog surfaces always imply their capabilities, industry aside.
+  for (const cap of capabilitiesForSurfaces([...selectedSections])) {
+    requested.add(cap);
+    if (source === 'none') source = 'envelope';
+  }
+
+  // "make it actually operate" → additive operations recipe (baseline + hints).
   const operationalText = `${prompt} ${envelope?.summary ?? ''} ${envelope?.goals.map((g) => g.description).join(' ') ?? ''}`;
   if (detectOperationalizeRequest(operationalText)) {
-    const key = String(industry ?? '').trim().toLowerCase();
-    const recipe = VERTICAL_OPERATIONS_RECIPES[key];
-    if (recipe?.length) {
-      recipe.forEach((cap) => requested.add(cap));
-      if (source === 'none') source = 'vertical-recipe';
-    }
+    for (const cap of operationsCapabilitiesFor(industry, selectedSections)) requested.add(cap);
+    if (source === 'none') source = 'vertical-recipe';
   }
+
 
   // Degraded path: no interpreter available and nothing resolved yet.
   if (requested.size === 0 && !envelope) {

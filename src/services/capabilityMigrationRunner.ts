@@ -32,7 +32,8 @@ export interface CapabilityMigrationResult {
 
 /** What the migration will do, derived locally for the approval card. */
 export function previewCapabilityMigration(packs: CapabilityPack[]): CapabilityMigrationPreview {
-  return buildCapabilityMigration(packs);
+  const migration = buildCapabilityMigration(packs);
+  return { ...migration, lint: lintMigrationSql(migration.sql) };
 }
 
 export interface ApplyCapabilityMigrationInput {

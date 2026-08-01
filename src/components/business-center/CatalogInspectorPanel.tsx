@@ -9,6 +9,9 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
+import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
+import { useBusinessProfile } from '@/contexts/useBusinessProfile';
+
 import {
   evaluateCatalogReadinessGate,
   type CatalogGateVerdict,

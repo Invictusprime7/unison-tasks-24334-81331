@@ -355,17 +355,18 @@ export async function runProviderLoop(opts: {
         lastError = lastError || 'budget exhausted before all models tried';
         break;
       }
-      // Per-model timeout: give the LEAD model the lion's share of the
-      // remaining budget (up to its configured cap) so a single fast model
-      // can actually finish, and only fall back when it truly fails.
-      // Fallback models get whatever is left, floored at 12s so they have
-      // a real chance to respond instead of being preemptively starved.
+      // Per-model timeout: the LEAD model gets the largest slice, but never the
+      // entire remaining budget — otherwise a slow 429/retry walk on the lead
+      // provider starves every fallback and the whole turn dies on a timeout.
+      // Reserve ~40% of the remaining window for the fallback chain.
       const isLeadModel = model.id === providerPlan.gatewayModels[0]?.id;
       const cap = providerPlan.perModelTimeoutMs;
       const headroom = Math.max(8000, remaining - 2000);
+      const leadShare = Math.max(30000, Math.floor(headroom * 0.6));
       const perModelMs = isLeadModel
-        ? Math.min(cap, headroom)
+        ? Math.min(cap, headroom, leadShare)
         : Math.min(cap, Math.max(12000, headroom));
+
 
       try {
         console.log(`[AI-Hybrid] Trying planned direct model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);

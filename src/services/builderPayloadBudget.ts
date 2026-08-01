@@ -138,8 +138,47 @@ export function shrinkBuilderTurnPayload<T extends Record<string, unknown>>(
     trimmed.push('messages(history-dropped)');
   }
 
+  // 6. Remaining heavyweight context objects. These were previously untouched,
+  //    which let large Wizard turns (9+ pages of launchBrief / unisonContext)
+  //    stay above the gateway drop threshold even after every other trim —
+  //    surfacing as "Failed to send a request to the Edge Function".
+  for (const key of ['unisonContext', 'launchBrief', 'siteElementsLibraryContext', 'systemsBuildContext', 'userDesignProfile'] as const) {
+    if (fits()) return done();
+    const value = payload[key];
+    if (value === undefined) continue;
+    if (typeof value === 'string') {
+      payload[key] = truncate(value, 2_000);
+    } else {
+      const asJson = JSON.stringify(value ?? null) || '';
+      payload[key] = { note: 'trimmed-for-transport', preview: asJson.slice(0, 4_000) };
+    }
+    trimmed.push(`${key}(trimmed)`);
+    if (!fits()) {
+      delete payload[key];
+      trimmed.push(`${key}(dropped)`);
+    }
+  }
+
+  // 7. Final clamp — the surviving message content itself can exceed the
+  //    budget. Truncate string contents (newest last) rather than let the
+  //    gateway silently drop the whole request.
+  const finalMessages = payload.messages as Array<{ role: string; content: unknown }> | undefined;
+  if (!fits() && Array.isArray(finalMessages) && finalMessages.length > 0) {
+    const overhead = byteLength({ ...payload, messages: [] });
+    const allowance = Math.max(8_000, budgetBytes - overhead - 2_000);
+    const perMessage = Math.floor(allowance / finalMessages.length);
+    payload.messages = finalMessages.map((m) =>
+      typeof m?.content === 'string' && m.content.length > perMessage
+        ? { ...m, content: truncate(m.content, perMessage) }
+        : m,
+    );
+    trimmed.push('messages(content-truncated)');
+  }
+
   function done(): ShrinkResult<T> {
     return { payload: payload as T, originalBytes, finalBytes: byteLength(payload), trimmed };
   }
   return done();
 }
+
+

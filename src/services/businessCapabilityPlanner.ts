@@ -10,7 +10,9 @@ import { emptyPatchPlan, type PatchPlan } from '@/types/patchPlan';
 import type { BuilderRequestEnvelope as InterpreterEnvelope } from '@/types/builderRequestEnvelope';
 import {
   bindingsForCapabilities,
+  expandBusinessCapabilities,
   interpretCapabilities,
+  VERTICAL_OPERATIONS_RECIPES,
   resolveBuilderScope,
   type BuilderScope,
 } from '@/services/capabilityInterpretation';
@@ -306,7 +308,7 @@ export function capabilityPlanFromWizard(input: WizardCapabilityInput): Capabili
     SECTION_CAPABILITIES[key]?.forEach((cap) => requested.add(cap));
   }
 
-  const requestedCapabilities = expandCapabilityDependencies([...requested]);
+  const requestedCapabilities = expandBusinessCapabilities([...requested]);
 
   return planFromCapabilities({
     envelope: {

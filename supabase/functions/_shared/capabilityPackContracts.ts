@@ -85,7 +85,7 @@ export const PACK_DATABASE_CONTRACTS: PackDatabaseContract[] = [
   {
     id: 'crm.leads',
     dependsOn: ['business_profile'],
-    provides: ['crm.leads', 'crm.contacts', 'forms.contact', 'notifications.email'],
+    provides: ['crm.leads', 'crm.contacts', 'forms.contact', 'forms.quote', 'notifications.email'],
     tables: [
       {
         table: 'leads',

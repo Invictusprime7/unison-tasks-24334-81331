@@ -27,6 +27,11 @@
  */
 
 import type { SectionType } from '@/sections/types';
+import type { BusinessProfileDTO } from '@/types/businessProfile';
+
+/** Keys of the canonical business object an artifact may read at runtime. */
+export type BusinessProfileField = keyof BusinessProfileDTO;
+
 import type { CapabilityId } from './capabilityRegistry';
 import { getCapability } from './capabilityRegistry';
 import {

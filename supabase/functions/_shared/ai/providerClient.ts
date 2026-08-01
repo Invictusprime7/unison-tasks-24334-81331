@@ -23,6 +23,8 @@ const GEMINI_CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
 const MAX_RATE_LIMIT_RETRY_MS = 2_500;
+/** Per-provider slice so a single hanging provider cannot eat the whole window. */
+const PROVIDER_ATTEMPT_TIMEOUT_MS = 45_000;
 
 export function getShortRateLimitRetryMs(headers: Headers, now = Date.now()): number | null {
   const retryAfter = headers.get("retry-after");

@@ -10,6 +10,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { buildCapabilityMigration, type MigrationStatement } from '@/platform/core/capabilityMigrationSql';
 import type { CapabilityPack } from '@/platform/core/capabilityPacks';
+import { describeLintResult, lintMigrationSql, type MigrationLintResult } from './migrationSqlLint';
 
 export interface CapabilityMigrationPreview {
   statements: MigrationStatement[];

@@ -13,9 +13,10 @@ export type ChatCompletionRequest = {
   [key: string]: unknown;
 };
 
-type Provider = "openai" | "gemini" | "anthropic";
+type Provider = "lovable" | "openai" | "gemini" | "anthropic";
 type EnvReader = (name: string) => string | undefined;
 
+const LOVABLE_GATEWAY_CHAT_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations";
 const GEMINI_CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
@@ -84,9 +85,16 @@ export function resolveConfiguredProviders(
   // Gemini is the default text provider. Explicit model namespaces override
   // the default while preserving the other configured providers as fallbacks.
   const providers: Provider[] = [];
+  // The managed Lovable AI Gateway is the primary text provider: it accepts the
+  // canonical `vendor/model` ids this codebase already plans with, and it is not
+  // subject to the per-account rate limits that made direct OpenAI calls fail.
+  if (readEnv("LOVABLE_API_KEY")) providers.push("lovable");
   if (readGeminiApiKey(readEnv)) providers.push("gemini");
   if (readEnv("OPENAI_API_KEY")) providers.push("openai");
   if (readEnv("ANTHROPIC_API_KEY")) providers.push("anthropic");
+
+  // The gateway serves every namespace, so it always stays first when configured.
+  if (providers[0] === "lovable") return providers;
 
   const preferred = requestedProvider(model);
   if (!preferred || !providers.includes(preferred)) return providers;
@@ -129,6 +137,15 @@ export async function createImageGeneration(
 function modelFor(provider: Provider, requestedModel?: string): string {
   const model = requestedModel ?? "";
 
+  if (provider === "lovable") {
+    // Gateway ids are always `vendor/model`; bare ids get their vendor restored.
+    if (model.includes("/")) return model;
+    if (model.startsWith("gpt-")) return `openai/${model}`;
+    if (model.startsWith("gemini-")) return `google/${model}`;
+    if (model.startsWith("claude-")) return `anthropic/${model}`;
+    return "google/gemini-3.6-flash";
+  }
+
   if (provider === "openai") {
     if (Deno.env.get("OPENAI_MODEL")) return Deno.env.get("OPENAI_MODEL")!;
     if (model.startsWith("openai/")) return model.slice("openai/".length);
@@ -156,22 +173,36 @@ function withProviderHeader(response: Response, provider: Provider): Response {
 }
 
 async function callOpenAICompatible(
-  provider: "openai" | "gemini",
+  provider: "lovable" | "openai" | "gemini",
   request: ChatCompletionRequest,
   signal?: AbortSignal,
 ): Promise<Response> {
-  const apiKey = provider === "openai" ? Deno.env.get("OPENAI_API_KEY") : readGeminiApiKey();
+  const apiKey = provider === "openai"
+    ? Deno.env.get("OPENAI_API_KEY")
+    : provider === "lovable"
+      ? Deno.env.get("LOVABLE_API_KEY")
+      : readGeminiApiKey();
   if (!apiKey) throw new Error(`${provider} is not configured`);
 
-  const body: Record<string, unknown> = { ...request, model: modelFor(provider, request.model) };
-  if (String(body.model).startsWith("gpt-5") && body.max_tokens !== undefined) {
+  const model = modelFor(provider, request.model);
+  const body: Record<string, unknown> = { ...request, model };
+  if (/(^|\/)gpt-5/.test(String(model)) && body.max_tokens !== undefined) {
     body.max_completion_tokens = body.max_completion_tokens ?? body.max_tokens;
     delete body.max_tokens;
   }
 
-  const response = await fetchWithShortRateLimitRetry(provider === "openai" ? OPENAI_CHAT_URL : GEMINI_CHAT_URL, {
+  const url = provider === "lovable"
+    ? LOVABLE_GATEWAY_CHAT_URL
+    : provider === "openai"
+      ? OPENAI_CHAT_URL
+      : GEMINI_CHAT_URL;
+  const headers: Record<string, string> = provider === "lovable"
+    ? { "Lovable-API-Key": apiKey, "Content-Type": "application/json" }
+    : { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
+
+  const response = await fetchWithShortRateLimitRetry(url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
     signal,
   }, signal);
@@ -217,7 +248,7 @@ export async function createChatCompletion(request: ChatCompletionRequest, signa
     provider !== "anthropic" || (!request.stream && !Array.isArray(request.tools))
   ));
   if (providers.length === 0) {
-    throw new Error("No AI provider is configured. Set OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY.");
+    throw new Error("No AI provider is configured. Set LOVABLE_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY.");
   }
 
   let lastResponse: Response | undefined;
@@ -228,6 +259,7 @@ export async function createChatCompletion(request: ChatCompletionRequest, signa
         ? await callAnthropic(request, signal)
         : await callOpenAICompatible(provider, request, signal);
       if (response.ok) return response;
+      console.warn(`[providerClient] ${provider} failed with ${response.status}; trying next provider`);
       lastResponse = response;
     } catch (error) {
       lastError = error;

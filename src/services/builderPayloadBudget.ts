@@ -175,3 +175,10 @@ export function shrinkBuilderTurnPayload<T extends Record<string, unknown>>(
     trimmed.push('messages(content-truncated)');
   }
 
+  function done(): ShrinkResult<T> {
+    return { payload: payload as T, originalBytes, finalBytes: byteLength(payload), trimmed };
+  }
+  return done();
+}
+
+

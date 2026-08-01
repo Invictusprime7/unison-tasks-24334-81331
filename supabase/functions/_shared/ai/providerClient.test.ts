@@ -97,12 +97,12 @@ Deno.test("parses a short HTTP-date Retry-After value", () => {
   if (retryMs !== 2000) throw new Error(`Expected 2000ms retry, received ${retryMs}`);
 });
 
-Deno.test("prefers the managed Lovable gateway over direct provider keys", () => {
+Deno.test("never places the Lovable gateway ahead of direct provider keys", () => {
   const providers = resolveConfiguredProviders("openai/gpt-5-mini", env({
     LOVABLE_API_KEY: "lovable-test-key",
     GEMINI_API_KEY: "gemini-test-key",
     OPENAI_API_KEY: "openai-test-key",
   }));
 
-  assertEquals(providers, ["lovable", "gemini", "openai"]);
+  assertEquals(providers, ["openai", "gemini", "lovable"]);
 });

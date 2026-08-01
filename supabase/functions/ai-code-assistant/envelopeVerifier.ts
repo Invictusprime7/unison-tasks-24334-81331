@@ -17,6 +17,8 @@
  */
 
 import type { EnvelopeShape } from "./envelopeContext.ts";
+import { resolveDatabaseContracts } from "../_shared/capabilityPackContracts.ts";
+
 
 export interface GoalVerdict {
   goal: string;

@@ -3449,11 +3449,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         } catch (err) {
           if (err instanceof CommitRejectedError) {
             console.warn('[SystemLauncher] commitMutation rejected (non-fatal at launch)', err.result.diagnostics);
+            toast.warning('Site saved, but revision history was rejected. Preview uses the saved draft.');
           } else {
             console.warn('[SystemLauncher] commitMutation threw (non-fatal)', err);
+            toast.warning('Site saved, but revision history could not be recorded.');
           }
         }
       }
+
+
+
 
       const navState = {
         vfsFiles: wiredVfsFiles,

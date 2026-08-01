@@ -75,5 +75,22 @@ export async function provisionConfirmedLaunchSite(
   if (!result?.businessId || !result.siteId || !result.projectId || !result.draftId || !result.buildId || !result.bundleId) {
     throw new Error('Confirmed launch provisioning returned an incomplete site identity.');
   }
+
+  // Durability gate: a launch is only real once the generated VFS is readable
+  // back out of `builder_drafts`. Without this check a silently-rolled-back
+  // transaction produces a project that paints an empty preview canvas.
+  const { data: draftRow, error: verifyError } = await supabase
+    .from('builder_drafts')
+    .select('id, vfs_files')
+    .eq('id', result.draftId)
+    .maybeSingle();
+  if (verifyError) {
+    throw new Error(`Launch persisted but could not be verified: ${verifyError.message}`);
+  }
+  const persistedFiles = (draftRow?.vfs_files ?? {}) as Record<string, unknown>;
+  if (!draftRow || Object.keys(persistedFiles).length === 0) {
+    throw new Error('Launch did not persist the generated site files. Nothing was saved — please retry.');
+  }
+
   return result as ConfirmedLaunchIds;
 }

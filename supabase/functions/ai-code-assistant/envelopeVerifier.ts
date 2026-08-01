@@ -194,6 +194,15 @@ export function verifyAgainstEnvelope(opts: {
     });
   }
 
+  // ── Step 7: backend-aware verification ────────────────────────────────────
+  // A capability is only satisfied when the produced markup actually reads the
+  // capability's tables through the runtime client. Hardcoded arrays rendered
+  // where live data belongs are the failure mode this catches.
+  if (capabilities.length > 0 && touchesMarkup) {
+    verdicts.push(...verifyBackendWiring(capabilities, files));
+  }
+
+
   const unmet = verdicts.filter((v) => !v.met);
   const blockingMisses = unmet
     .filter((v) => /must|required|critical/i.test(v.priority))

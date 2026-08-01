@@ -530,7 +530,56 @@ export async function runProviderLoop(opts: {
     }
   }
 
+  // ── Phase 5: Rate-limit cooldown retry ────────────────────────────────
+  // Every provider family can be in a short per-tier cooldown at the same
+  // moment. A 429 is transient, so wait out a brief cooldown and re-run the
+  // lead planned model once before surfacing a rate-limit error to the wizard.
+  if (!content && allowDirectFallbacks && deferredEarlyError?.status === 429) {
+    const leadModel = providerPlan.gatewayModels[0];
+    const remaining = budgetRemaining();
+    if (leadModel && remaining > 15_000) {
+      const cooldownMs = Math.min(6_000, Math.max(2_000, remaining - 12_000));
+      console.warn(`[AI-Hybrid] All providers rate limited; cooling down ${cooldownMs}ms before one retry pass`);
+      await new Promise((resolve) => setTimeout(resolve, cooldownMs));
+      try {
+        const controller = new AbortController();
+        const perModelMs = Math.min(providerPlan.perModelTimeoutMs, Math.max(8000, budgetRemaining() - 2000));
+        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+        const reqBody = buildPlannedChatCompletionRequest({
+          model: leadModel,
+          aiMessages,
+          reasoningEffort,
+          tools: hasTools ? tools : undefined,
+          toolChoice: effectiveToolChoice,
+        });
+        const resp = await createChatCompletion(reqBody as Parameters<typeof createChatCompletion>[0], controller.signal);
+        clearTimeout(timeoutId);
+        if (resp.ok) {
+          const data = await resp.json().catch(() => null);
+          const message = data?.choices?.[0]?.message ?? {};
+          const parsedContent = message.content || '';
+          const parsedToolCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as RawToolCall[]) : undefined;
+          if (parsedContent || (parsedToolCalls && parsedToolCalls.length > 0)) {
+            const extracted = extractThinkingTags(parsedContent);
+            if (extracted.reasoning) reasoning = extracted.reasoning;
+            content = extracted.content;
+            modelUsed = leadModel.id;
+            providerUsed = resp.headers.get('X-Unison-AI-Provider') ?? providerUsed;
+            if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
+            deferredEarlyError = undefined;
+            console.log(`[AI-Hybrid] Cooldown retry succeeded with ${leadModel.label}`);
+          }
+        } else {
+          recordProviderError(`${leadModel.label} (cooldown retry)`, String(resp.status));
+        }
+      } catch (err) {
+        recordProviderError(`${leadModel.label} (cooldown retry)`, err instanceof Error ? err.message : 'unknown');
+      }
+    }
+  }
+
   if (!content) {
+
     if (deferredEarlyError) {
       return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
     }

@@ -52,9 +52,11 @@ describe('capability pack contracts', () => {
   it('resolves capability aliases to the owning pack', () => {
     expect(packForCapability('crm.contacts')?.id).toBe('crm.leads');
     expect(packForCapability('forms.contact')?.id).toBe('crm.leads');
-    expect(packForCapability('commerce.checkout')).toBeNull();
+    expect(packForCapability('commerce.checkout')?.id).toBe('commerce.checkout');
+    expect(packForCapability('auth.customer')).toBeNull();
     expect(getCapabilityPack('booking.appointments')?.name).toBe('Booking & Availability');
   });
+
 });
 
 describe('resolveCapabilityPacks', () => {

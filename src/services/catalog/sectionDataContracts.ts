@@ -11,6 +11,12 @@ import {
   getCatalogSurface,
   type CatalogSourceTable,
 } from '@/platform/core/catalogSurfaceRegistry';
+import {
+  rankCatalogSurfaces,
+  type CatalogRankingContext,
+} from '@/services/catalog/catalogCapabilityResolution';
+
+export type { CatalogRankingContext };
 
 export type { CatalogSourceTable };
 

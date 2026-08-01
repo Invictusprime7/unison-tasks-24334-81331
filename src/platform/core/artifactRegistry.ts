@@ -240,7 +240,7 @@ const ARTIFACTS: ArtifactDef[] = [
     category: 'hero',
     dataSource: {
       kind: 'business-profile',
-      profileFields: ['name', 'tagline', 'logoUrl', 'heroImageUrl'],
+      profileFields: ['name', 'tagline', 'logoUrl', 'brandColor'],
       minRows: 0,
       fallbackMode: 'show_placeholder',
     },
@@ -261,7 +261,7 @@ const ARTIFACTS: ArtifactDef[] = [
     category: 'content',
     dataSource: {
       kind: 'business-profile',
-      profileFields: ['name', 'description', 'foundedYear', 'logoUrl'],
+      profileFields: ['name', 'description', 'logoUrl'],
       minRows: 0,
       fallbackMode: 'show_placeholder',
     },
@@ -282,7 +282,7 @@ const ARTIFACTS: ArtifactDef[] = [
     category: 'conversion',
     dataSource: {
       kind: 'business-profile',
-      profileFields: ['phone', 'email', 'address', 'hours', 'socials'],
+      profileFields: ['phone', 'email', 'address', 'hours', 'socialLinks'],
       minRows: 0,
       fallbackMode: 'show_placeholder',
     },
@@ -303,7 +303,7 @@ const ARTIFACTS: ArtifactDef[] = [
     category: 'footer',
     dataSource: {
       kind: 'business-profile',
-      profileFields: ['name', 'phone', 'email', 'address', 'socials', 'logoUrl'],
+      profileFields: ['name', 'phone', 'email', 'address', 'socialLinks', 'logoUrl'],
       minRows: 0,
       fallbackMode: 'show_placeholder',
     },

@@ -47,8 +47,11 @@ describe('capability migration SQL', () => {
       (s) => s.kind === 'grant' && s.sql.includes('TO anon'),
     );
     for (const grant of anonGrants) {
-      expect(grant.sql).toMatch(/GRANT (SELECT|INSERT) ON/);
+      // anon may get explicit DML on its own rows, but never blanket ALL.
+      expect(grant.sql).toMatch(/^GRANT (SELECT|INSERT)(, (INSERT|UPDATE|DELETE))* ON/);
+      expect(grant.sql).not.toContain('GRANT ALL');
     }
+
     // Public submit tables must not become publicly readable.
     const leadReads = migration.statements.filter(
       (s) => s.table === 'leads' && s.kind === 'policy' && s.sql.includes('FOR SELECT'),

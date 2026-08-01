@@ -3635,10 +3635,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
     // Synchronous interruption boundary: the full VFS is safe before a remote
     // request is queued, even if the browser process exits immediately.
+    // A failed local journal write (quota exceeded, private-mode storage) must
+    // NEVER block the cloud save — that is the durable copy of the user's work.
     if (!writeBuilderRecoverySnapshot(snapshot)) {
-      console.error('[AutoSave] Could not write the local recovery journal.');
-      return Promise.resolve(false);
+      console.warn('[AutoSave] Local recovery journal unavailable; continuing with cloud save.');
     }
+
 
     setAutoSaveStatus('saving');
     const persist = async (): Promise<boolean> => {

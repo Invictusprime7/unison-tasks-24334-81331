@@ -27,6 +27,11 @@
  */
 
 import type { SectionType } from '@/sections/types';
+import type { BusinessProfileDTO } from '@/types/businessProfile';
+
+/** Keys of the canonical business object an artifact may read at runtime. */
+export type BusinessProfileField = keyof BusinessProfileDTO;
+
 import type { CapabilityId } from './capabilityRegistry';
 import { getCapability } from './capabilityRegistry';
 import {
@@ -59,10 +64,12 @@ export interface ArtifactDataSource {
   /** Present when `kind === 'catalog'`. Resolves through catalogSurfaceRegistry. */
   surfaceId?: string;
   /**
-   * Business-profile fields this artifact reads. Keys are `BusinessProfileDTO`
-   * props — used by readiness chips and the AI context engine.
+   * Business-profile fields this artifact reads. Typed against
+   * `BusinessProfileDTO` so a renamed column is a compile error, never a
+   * silently dead binding. Used by readiness chips and the AI context engine.
    */
-  profileFields?: readonly string[];
+  profileFields?: readonly BusinessProfileField[];
+
   /** Rows required before the artifact is considered publish-ready. */
   minRows: number;
   fallbackMode: CatalogFallbackMode;
@@ -233,7 +240,7 @@ const ARTIFACTS: ArtifactDef[] = [
     category: 'hero',
     dataSource: {
       kind: 'business-profile',
-      profileFields: ['name', 'tagline', 'logoUrl', 'heroImageUrl'],
+      profileFields: ['name', 'tagline', 'logoUrl', 'brandColor'],
       minRows: 0,
       fallbackMode: 'show_placeholder',
     },
@@ -254,7 +261,7 @@ const ARTIFACTS: ArtifactDef[] = [
     category: 'content',
     dataSource: {
       kind: 'business-profile',
-      profileFields: ['name', 'description', 'foundedYear', 'logoUrl'],
+      profileFields: ['name', 'description', 'logoUrl'],
       minRows: 0,
       fallbackMode: 'show_placeholder',
     },
@@ -275,7 +282,7 @@ const ARTIFACTS: ArtifactDef[] = [
     category: 'conversion',
     dataSource: {
       kind: 'business-profile',
-      profileFields: ['phone', 'email', 'address', 'hours', 'socials'],
+      profileFields: ['phone', 'email', 'address', 'hours', 'socialLinks'],
       minRows: 0,
       fallbackMode: 'show_placeholder',
     },
@@ -296,7 +303,7 @@ const ARTIFACTS: ArtifactDef[] = [
     category: 'footer',
     dataSource: {
       kind: 'business-profile',
-      profileFields: ['name', 'phone', 'email', 'address', 'socials', 'logoUrl'],
+      profileFields: ['name', 'phone', 'email', 'address', 'socialLinks', 'logoUrl'],
       minRows: 0,
       fallbackMode: 'show_placeholder',
     },

@@ -789,6 +789,7 @@ export type Database = {
           metadata: Json | null
           name: string | null
           project_id: string | null
+          site_id: string | null
           template_id: string | null
           updated_at: string
           user_id: string
@@ -803,6 +804,7 @@ export type Database = {
           metadata?: Json | null
           name?: string | null
           project_id?: string | null
+          site_id?: string | null
           template_id?: string | null
           updated_at?: string
           user_id: string
@@ -817,6 +819,7 @@ export type Database = {
           metadata?: Json | null
           name?: string | null
           project_id?: string | null
+          site_id?: string | null
           template_id?: string | null
           updated_at?: string
           user_id?: string
@@ -2292,6 +2295,69 @@ export type Database = {
         }
         Relationships: []
       }
+      form_definitions: {
+        Row: {
+          business_id: string
+          created_at: string
+          destination: Json
+          external_id: string
+          fields: Json
+          id: string
+          intent: string
+          is_active: boolean
+          name: string
+          project_id: string | null
+          site_id: string | null
+          success_behavior: Json
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          destination?: Json
+          external_id: string
+          fields?: Json
+          id?: string
+          intent: string
+          is_active?: boolean
+          name: string
+          project_id?: string | null
+          site_id?: string | null
+          success_behavior?: Json
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          destination?: Json
+          external_id?: string
+          fields?: Json
+          id?: string
+          intent?: string
+          is_active?: boolean
+          name?: string
+          project_id?: string | null
+          site_id?: string | null
+          success_behavior?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form_definitions_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_definitions_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_pages: {
         Row: {
           created_at: string | null
@@ -2837,6 +2903,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      onboarding_state: {
+        Row: {
+          business_name: string | null
+          completed: boolean
+          created_at: string
+          current_step: string | null
+          industry: string | null
+          project_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          business_name?: string | null
+          completed?: boolean
+          created_at?: string
+          current_step?: string | null
+          industry?: string | null
+          project_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          business_name?: string | null
+          completed?: boolean
+          created_at?: string
+          current_step?: string | null
+          industry?: string | null
+          project_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       orders: {
         Row: {
@@ -3386,6 +3485,7 @@ export type Database = {
           publish_status: string
           published_at: string | null
           settings: Json
+          site_id: string | null
           slug: string | null
           status: string
           template_type: string | null
@@ -3402,6 +3502,7 @@ export type Database = {
           publish_status?: string
           published_at?: string | null
           settings?: Json
+          site_id?: string | null
           slug?: string | null
           status?: string
           template_type?: string | null
@@ -3418,6 +3519,7 @@ export type Database = {
           publish_status?: string
           published_at?: string | null
           settings?: Json
+          site_id?: string | null
           slug?: string | null
           status?: string
           template_type?: string | null
@@ -3581,6 +3683,130 @@ export type Database = {
             columns: ["file_id"]
             isOneToOne: false
             referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_builds: {
+        Row: {
+          context: Json
+          created_at: string
+          current_stage: string | null
+          finished_at: string | null
+          id: string
+          mode: string
+          site_id: string
+          started_at: string | null
+          status: string
+          version: number
+        }
+        Insert: {
+          context?: Json
+          created_at?: string
+          current_stage?: string | null
+          finished_at?: string | null
+          id?: string
+          mode?: string
+          site_id: string
+          started_at?: string | null
+          status?: string
+          version?: number
+        }
+        Update: {
+          context?: Json
+          created_at?: string
+          current_stage?: string | null
+          finished_at?: string | null
+          id?: string
+          mode?: string
+          site_id?: string
+          started_at?: string | null
+          status?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_builds_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_bundles: {
+        Row: {
+          build_id: string | null
+          bundle: Json
+          created_at: string
+          id: string
+          schema_version: number
+          site_id: string
+          version: string
+        }
+        Insert: {
+          build_id?: string | null
+          bundle?: Json
+          created_at?: string
+          id?: string
+          schema_version?: number
+          site_id: string
+          version?: string
+        }
+        Update: {
+          build_id?: string | null
+          bundle?: Json
+          created_at?: string
+          id?: string
+          schema_version?: number
+          site_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_bundles_build_id_fkey"
+            columns: ["build_id"]
+            isOneToOne: false
+            referencedRelation: "site_builds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_bundles_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_capabilities: {
+        Row: {
+          capability_id: string
+          created_at: string
+          enabled_by: string | null
+          site_id: string
+          status: string
+        }
+        Insert: {
+          capability_id: string
+          created_at?: string
+          enabled_by?: string | null
+          site_id: string
+          status?: string
+        }
+        Update: {
+          capability_id?: string
+          created_at?: string
+          enabled_by?: string | null
+          site_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_capabilities_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
             referencedColumns: ["id"]
           },
         ]
@@ -3800,6 +4026,94 @@ export type Database = {
             columns: ["parent_revision_id"]
             isOneToOne: false
             referencedRelation: "site_revisions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_runtime_configs: {
+        Row: {
+          api_version: string
+          attribution_required: boolean
+          created_at: string
+          external_deploy_allowed: boolean
+          public_runtime_enabled: boolean
+          settings: Json
+          site_id: string
+          updated_at: string
+        }
+        Insert: {
+          api_version?: string
+          attribution_required?: boolean
+          created_at?: string
+          external_deploy_allowed?: boolean
+          public_runtime_enabled?: boolean
+          settings?: Json
+          site_id: string
+          updated_at?: string
+        }
+        Update: {
+          api_version?: string
+          attribution_required?: boolean
+          created_at?: string
+          external_deploy_allowed?: boolean
+          public_runtime_enabled?: boolean
+          settings?: Json
+          site_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_runtime_configs_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sites: {
+        Row: {
+          business_id: string
+          created_at: string
+          current_build_id: string | null
+          id: string
+          name: string
+          owner_user_id: string
+          settings: Json
+          slug: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          current_build_id?: string | null
+          id?: string
+          name: string
+          owner_user_id: string
+          settings?: Json
+          slug?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          current_build_id?: string | null
+          id?: string
+          name?: string
+          owner_user_id?: string
+          settings?: Json
+          slug?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sites_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
@@ -4059,6 +4373,44 @@ export type Database = {
             columns: ["timeline_id"]
             isOneToOne: false
             referencedRelation: "timelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      usage_events: {
+        Row: {
+          business_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          metadata: Json
+          resource_id: string | null
+          resource_type: string | null
+        }
+        Insert: {
+          business_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          metadata?: Json
+          resource_id?: string | null
+          resource_type?: string | null
+        }
+        Update: {
+          business_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          metadata?: Json
+          resource_id?: string | null
+          resource_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usage_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]

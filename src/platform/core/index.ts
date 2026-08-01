@@ -33,6 +33,9 @@ export * from './integrityReport';
 export * from './iconIntentRegistry';
 export * from './siteTopologyPlanner';
 
+// Artifact registry (Phase 3) — canonical artifact ↔ data ↔ intent ↔ capability map.
+export * from './artifactRegistry';
+
 // Compilation + gates (PreviewGate / PublishGate live here as isPreviewReady / isPublishReady)
 export * from './contractCompiler';
 // First-class Gate objects (PR5). Re-export AFTER contractCompiler so the

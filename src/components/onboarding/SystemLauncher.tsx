@@ -3304,6 +3304,46 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         toast.warning('The site workspace was created, but starter data is still provisioning.');
       }
 
+      // Auto-apply the full-stack capability packs implied by the wizard
+      // selections so no launch lands with stub capabilities.
+      try {
+        const { capabilityPlanFromWizard, approveCapabilityPlan } = await import('@/services/businessCapabilityPlanner');
+        const { applyCapabilityMigration } = await import('@/services/capabilityMigrationRunner');
+        const { planArtifactHydration } = await import('@/services/artifactHydrationPlan');
+
+        const hydrationEntries = planArtifactHydration(launchArtifacts.siteBundleSnapshot);
+        const wizardPlan = capabilityPlanFromWizard({
+          industry: resolvedIndustry,
+          sectionTypes: hydrationEntries.map((entry) => entry.rawSectionType),
+          pageSlugs: Object.values(launchArtifacts.siteBundleSnapshot?.pageRegistry?.pages ?? {})
+            .map((page) => String((page as { path?: string }).path ?? '').replace(/^\//, '')),
+          businessId: confirmedLaunch.businessId,
+          projectId: launchProjectId,
+        });
+
+        if (wizardPlan.packs.length > 0) {
+          setLaunchStatus('Installing backend capabilities for this site…');
+          const approved = approveCapabilityPlan(wizardPlan, {
+            approvedBy: 'wizard-launch-auto-apply',
+            approvedAt: new Date().toISOString(),
+          });
+          const migration = await applyCapabilityMigration({
+            packs: approved.packs,
+            businessId: confirmedLaunch.businessId,
+            projectId: launchProjectId,
+            summary: approved.proposal.summary,
+          });
+          if (!migration.success) {
+            console.warn('[SystemLauncher] capability auto-apply failed:', migration.error);
+            toast.warning('Some backend capabilities need approval before they go live.');
+          } else {
+            console.log('[SystemLauncher] Capability packs applied', migration.packs, migration.tables);
+          }
+        }
+      } catch (err) {
+        console.warn('[SystemLauncher] capability auto-apply skipped (non-fatal)', err);
+      }
+
       // Persist generated bindings → site_intent_bindings (launcher-native wiring).
       // Best-effort; failures never block launch.
       if (confirmedLaunch.businessId && launchProjectId) {

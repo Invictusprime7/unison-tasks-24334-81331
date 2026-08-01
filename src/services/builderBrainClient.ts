@@ -98,6 +98,22 @@ export function isTransportError(err: unknown): boolean {
   return false;
 }
 
+const RATE_LIMIT_PATTERN = /rate limit|too many requests|429/i;
+
+/**
+ * A 429 from the AI edge chain is transient (per-model/tier cooldown), not a
+ * contract failure. Treat it as retryable so Lane B does not hard-block the
+ * launch on the first rate limit.
+ */
+export function isRateLimitError(err: unknown): boolean {
+  if (!err) return false;
+  const anyErr = err as { message?: string; status?: number; context?: { status?: number } };
+  if (anyErr?.status === 429 || anyErr?.context?.status === 429) return true;
+  const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
+  return Boolean(msg) && RATE_LIMIT_PATTERN.test(msg);
+}
+
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {

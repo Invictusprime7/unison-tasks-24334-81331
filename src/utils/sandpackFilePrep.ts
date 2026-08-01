@@ -4122,6 +4122,47 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
 
       if (missingPascalExports.length === 0 || moduleExports.hasStarReExport) return statement;
 
+      // Sibling-module resolution: a missing named component is very often
+      // exported by a neighbouring module in the same folder (e.g. `Label`
+      // living in ./form-fields vs ./label). Re-point just that specifier
+      // instead of failing the whole preflight.
+      const targetDir = targetPath.slice(0, targetPath.lastIndexOf('/'));
+      const rawDir = rawImportPath.slice(0, rawImportPath.lastIndexOf('/'));
+      const relocated = new Map<string, string>();
+      for (const missing of missingPascalExports) {
+        const donor = Object.keys(sandpackFiles).find((candidate) => (
+          candidate !== targetPath &&
+          candidate.startsWith(`${targetDir}/`) &&
+          !candidate.slice(targetDir.length + 1).includes('/') &&
+          /\.(tsx?|jsx?)$/.test(candidate) &&
+          inspectModuleExports(sandpackFiles[candidate] || '').named.has(missing.imported)
+        ));
+        if (!donor) continue;
+        const donorName = donor.slice(targetDir.length + 1).replace(/\.(tsx?|jsx?)$/, '');
+        relocated.set(missing.imported, rawDir ? `${rawDir}/${donorName}` : `./${donorName}`);
+      }
+
+      if (relocated.size > 0) {
+        const kept = specifiers.filter(({ imported }) => !relocated.has(imported));
+        const lines: string[] = [];
+        if (kept.length > 0) {
+          lines.push(`import { ${kept.map(({ imported, local }) => imported === local ? imported : `${imported} as ${local}`).join(', ')} } from '${rawImportPath}';`);
+        }
+        const byModule = new Map<string, string[]>();
+        for (const { imported, local } of specifiers) {
+          const moved = relocated.get(imported);
+          if (!moved) continue;
+          const spec = imported === local ? imported : `${imported} as ${local}`;
+          byModule.set(moved, [...(byModule.get(moved) || []), spec]);
+        }
+        for (const [modulePath, specs] of byModule) {
+          console.warn(`[sandpackFilePrep] Re-pointing missing named import in ${filePath}: ${specs.join(', ')} -> ${modulePath}`);
+          lines.push(`import { ${specs.join(', ')} } from '${modulePath}';`);
+        }
+        if (relocated.size === missingPascalExports.length) return lines.join('\n');
+      }
+
+
       if (moduleExports.hasDefault && missingPascalExports.length === 1) {
         const missing = missingPascalExports[0];
         const remaining = specifiers.filter((item) => item !== missing);

@@ -98,6 +98,22 @@ export function isTransportError(err: unknown): boolean {
   return false;
 }
 
+const RATE_LIMIT_PATTERN = /rate limit|too many requests|429/i;
+
+/**
+ * A 429 from the AI edge chain is transient (per-model/tier cooldown), not a
+ * contract failure. Treat it as retryable so Lane B does not hard-block the
+ * launch on the first rate limit.
+ */
+export function isRateLimitError(err: unknown): boolean {
+  if (!err) return false;
+  const anyErr = err as { message?: string; status?: number; context?: { status?: number } };
+  if (anyErr?.status === 429 || anyErr?.context?.status === 429) return true;
+  const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
+  return Boolean(msg) && RATE_LIMIT_PATTERN.test(msg);
+}
+
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -132,6 +148,9 @@ export async function runBuilderTurn<TResponse = any>(
 ): Promise<{ data: TResponse; error: any }> {
   const maxAttempts = 4;
   const baseDelays = [600, 1400, 2800];
+  // Provider cooldowns are seconds-scale; back off harder than transport retries.
+  const rateLimitDelays = [4000, 9000, 18000];
+
   let lastError: unknown = null;
   let sentPayload: Record<string, unknown> = input as unknown as Record<string, unknown>;
 
@@ -158,12 +177,13 @@ export async function runBuilderTurn<TResponse = any>(
         body: sentPayload,
       });
 
-      if (error && isTransportError(error) && attempt < maxAttempts) {
+      if (error && (isTransportError(error) || isRateLimitError(error)) && attempt < maxAttempts) {
         lastError = error;
+        const rateLimited = isRateLimitError(error);
         const jitter = Math.floor(Math.random() * 250);
-        const delay = baseDelays[attempt - 1] + jitter;
+        const delay = (rateLimited ? rateLimitDelays : baseDelays)[attempt - 1] + jitter;
         console.warn(
-          `[builderBrainClient] transport error on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
+          `[builderBrainClient] ${rateLimited ? "rate limit" : "transport error"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (error as { message?: string })?.message,
         );
         await sleep(delay, options.signal);
@@ -173,12 +193,13 @@ export async function runBuilderTurn<TResponse = any>(
 
       return { data: data as TResponse, error };
     } catch (thrown) {
-      if (isTransportError(thrown) && attempt < maxAttempts) {
+      if ((isTransportError(thrown) || isRateLimitError(thrown)) && attempt < maxAttempts) {
         lastError = thrown;
+        const rateLimited = isRateLimitError(thrown);
         const jitter = Math.floor(Math.random() * 250);
-        const delay = baseDelays[attempt - 1] + jitter;
+        const delay = (rateLimited ? rateLimitDelays : baseDelays)[attempt - 1] + jitter;
         console.warn(
-          `[builderBrainClient] transport throw on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
+          `[builderBrainClient] ${rateLimited ? "rate limit" : "transport throw"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (thrown as { message?: string })?.message,
         );
         await sleep(delay, options.signal);
@@ -187,6 +208,7 @@ export async function runBuilderTurn<TResponse = any>(
       return { data: null as TResponse, error: thrown };
     }
   }
+
 
   // Last-ditch: bypass the wrapped supabase-js fetch and hit the edge
   // function directly via native fetch. This recovers from cases where the

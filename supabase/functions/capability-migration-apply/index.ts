@@ -116,6 +116,20 @@ Deno.serve(async (req) => {
       assertExecutable(statement, migration.statements);
     }
 
+    // ---- Gate 3b: mandatory SQL lint (blockers stop execution) -----------
+    const lint = lintMigrationSql(migration.sql);
+    if (!lint.ok) {
+      return new Response(
+        JSON.stringify({
+          error: describeLintResult(lint),
+          status: 'failed',
+          lint,
+          sql: migration.sql,
+        }),
+        { status: 422, headers: jsonHeaders },
+      );
+    }
+
     // ---- Gate 4: one transaction, rolled back on any failure -------------
     const results: StatementResult[] = [];
     const pg = new PgClient(SUPABASE_DB_URL);

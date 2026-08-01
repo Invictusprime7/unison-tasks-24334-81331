@@ -98,7 +98,25 @@ Deno.serve(async (req) => {
     } else if (action === 'approve') {
       nextStatus = 'approved';
       if (proposal.kind === 'sql_migration') {
-        applyResult.migration_sql = String((proposal.payload as Record<string, unknown>)?.sql ?? '');
+        const sql = String((proposal.payload as Record<string, unknown>)?.sql ?? '');
+        const lint = lintMigrationSql(sql);
+        if (!lint.ok) {
+          await admin
+            .from('ai_builder_proposals')
+            .update({
+              status: 'failed',
+              reviewed_by: userId,
+              reviewed_at: now,
+              apply_result: { reviewer_note: reviewer_note ?? null, lint, error: describeLintResult(lint) },
+            })
+            .eq('id', proposal_id);
+          return new Response(
+            JSON.stringify({ error: describeLintResult(lint), lint }),
+            { status: 422, headers: jsonHeaders },
+          );
+        }
+        applyResult.lint = lint;
+        applyResult.migration_sql = sql;
         applyResult.next_step = 'run_via_supabase_migration_tool';
       } else if (proposal.kind === 'edge_function') {
         applyResult.next_step = 'redeploy_edge_function_manually';

@@ -10,7 +10,9 @@ import { emptyPatchPlan, type PatchPlan } from '@/types/patchPlan';
 import type { BuilderRequestEnvelope as InterpreterEnvelope } from '@/types/builderRequestEnvelope';
 import {
   bindingsForCapabilities,
+  expandBusinessCapabilities,
   interpretCapabilities,
+  VERTICAL_OPERATIONS_RECIPES,
   resolveBuilderScope,
   type BuilderScope,
 } from '@/services/capabilityInterpretation';
@@ -198,7 +200,23 @@ export function planBusinessCapabilities(envelope: BuilderRequestEnvelope): Capa
     ? resolveBuilderScope(envelope.interpretation)
     : (envelope.scope ?? interpretation.scope);
 
-  const requestedCapabilities = interpretation.resolved;
+  return planFromCapabilities({
+    envelope,
+    scope,
+    interpretationSource: interpretation.source,
+    requestedCapabilities: interpretation.resolved,
+    uiTargets: interpretation.uiTargets,
+  });
+}
+
+function planFromCapabilities(input: {
+  envelope: BuilderRequestEnvelope;
+  scope: BuilderScope;
+  interpretationSource: CapabilityPlan['interpretationSource'];
+  requestedCapabilities: BusinessCapability[];
+  uiTargets?: string[];
+}): CapabilityPlan {
+  const { envelope, scope, requestedCapabilities } = input;
   const operationalCapabilityIds = resolveOperationalCapabilities(requestedCapabilities);
   const operationalCapabilities = operationalCapabilityIds.map((id) => CAPABILITY_REGISTRY[id]);
 
@@ -206,7 +224,7 @@ export function planBusinessCapabilities(envelope: BuilderRequestEnvelope): Capa
   const { order: packs, unsupported } = resolveCapabilityPacks(requestedCapabilities);
   const bindableSlots = packSlots(packs);
 
-  const intentBindings = bindingsForCapabilities(requestedCapabilities, interpretation.uiTargets);
+  const intentBindings = bindingsForCapabilities(requestedCapabilities, input.uiTargets ?? []);
   const dataAffected = unique([
     ...operationalCapabilities.flatMap((capability) => capability.database.requiredTables),
     ...packTables(packs),
@@ -219,7 +237,7 @@ export function planBusinessCapabilities(envelope: BuilderRequestEnvelope): Capa
   return {
     envelope,
     scope,
-    interpretationSource: interpretation.source,
+    interpretationSource: input.interpretationSource,
     requestedCapabilities,
     operationalCapabilities,
     packs,
@@ -238,6 +256,76 @@ export function planBusinessCapabilities(envelope: BuilderRequestEnvelope): Capa
       unsupportedCapabilities: unsupported,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Wizard Launcher entry (auto-apply path)
+// ---------------------------------------------------------------------------
+
+/** Section types a generated site can contain → the capability they require. */
+const SECTION_CAPABILITIES: Record<string, BusinessCapability[]> = {
+  services: ['catalog.services'],
+  menu: ['catalog.menu'],
+  products: ['catalog.products'],
+  shop: ['catalog.products', 'commerce.cart', 'commerce.checkout'],
+  pricing: ['catalog.services'],
+  booking: ['booking.appointments'],
+  contact: ['forms.contact', 'crm.leads'],
+  quote: ['forms.quote', 'crm.leads'],
+  cart: ['commerce.cart', 'commerce.checkout'],
+  checkout: ['commerce.cart', 'commerce.checkout'],
+  newsletter: ['crm.leads', 'notifications.email'],
+  testimonials: [],
+  gallery: [],
+};
+
+export interface WizardCapabilityInput {
+  industry?: string | null;
+  /** Section types present in the resolved SiteBundleSnapshot. */
+  sectionTypes?: string[];
+  /** Page slugs selected in the wizard (booking, shop, contact…). */
+  pageSlugs?: string[];
+  businessId?: string;
+  projectId?: string;
+  installedCapabilities?: CapabilityId[];
+}
+
+/**
+ * Derives the full-stack capability plan implied by a wizard launch. Pure —
+ * the caller decides whether to auto-approve and apply.
+ */
+export function capabilityPlanFromWizard(input: WizardCapabilityInput): CapabilityPlan {
+  const industryKey = String(input.industry ?? '').toLowerCase().trim();
+  const requested = new Set<BusinessCapability>(['business_profile']);
+
+  const recipe = VERTICAL_OPERATIONS_RECIPES[industryKey]
+    ?? VERTICAL_OPERATIONS_RECIPES[industryKey.replace(/[\s_]+/g, '-')];
+  recipe?.forEach((cap) => requested.add(cap));
+
+  const surfaces = [...(input.sectionTypes ?? []), ...(input.pageSlugs ?? [])];
+  for (const surface of surfaces) {
+    const key = String(surface ?? '').toLowerCase().trim();
+    SECTION_CAPABILITIES[key]?.forEach((cap) => requested.add(cap));
+  }
+
+  const requestedCapabilities = expandBusinessCapabilities([...requested]);
+
+  return planFromCapabilities({
+    envelope: {
+      requestId: `wizard-launch-${input.projectId ?? input.businessId ?? 'unknown'}`,
+      prompt: `Wizard launch for ${input.industry ?? 'business'}`,
+      scope: 'business-system',
+      context: {
+        businessId: input.businessId,
+        projectId: input.projectId,
+        industry: input.industry ?? undefined,
+        installedCapabilities: input.installedCapabilities,
+      },
+    },
+    scope: 'business-system',
+    interpretationSource: 'vertical-recipe',
+    requestedCapabilities,
+  });
 }
 
 

@@ -47,6 +47,12 @@ const PUBLIC_SUBMIT_GRANTS: PackGrant[] = [
   ...OWNER_MANAGED_GRANTS,
 ];
 
+const PUBLIC_SESSION_GRANTS: PackGrant[] = [
+  { role: 'anon', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+  ...OWNER_MANAGED_GRANTS,
+];
+
+
 export const PACK_DATABASE_CONTRACTS: PackDatabaseContract[] = [
   {
     id: 'business_profile',

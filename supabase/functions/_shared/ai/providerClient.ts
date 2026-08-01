@@ -252,18 +252,38 @@ export async function createChatCompletion(request: ChatCompletionRequest, signa
 
   let lastResponse: Response | undefined;
   let lastError: unknown;
-  for (const provider of providers) {
+  for (let i = 0; i < providers.length; i++) {
+    const provider = providers[i];
+    const isLast = i === providers.length - 1;
+    // Bound each non-final provider attempt so one slow/hanging provider cannot
+    // consume the caller's entire abort window and starve the fallback chain.
+    const child = new AbortController();
+    const onOuterAbort = () => child.abort(signal?.reason);
+    if (signal) {
+      if (signal.aborted) child.abort(signal.reason);
+      else signal.addEventListener("abort", onOuterAbort, { once: true });
+    }
+    const sliceTimer = isLast
+      ? undefined
+      : setTimeout(() => child.abort(new DOMException("provider slice timeout", "AbortError")), PROVIDER_ATTEMPT_TIMEOUT_MS);
+
     try {
       const response = provider === "anthropic"
-        ? await callAnthropic(request, signal)
-        : await callOpenAICompatible(provider, request, signal);
+        ? await callAnthropic(request, child.signal)
+        : await callOpenAICompatible(provider, request, child.signal);
       if (response.ok) return response;
       console.warn(`[providerClient] ${provider} failed with ${response.status}; trying next provider`);
       lastResponse = response;
     } catch (error) {
+      if (signal?.aborted) throw error;
+      console.warn(`[providerClient] ${provider} attempt aborted/failed; trying next provider`);
       lastError = error;
+    } finally {
+      if (sliceTimer !== undefined) clearTimeout(sliceTimer);
+      signal?.removeEventListener("abort", onOuterAbort);
     }
   }
+
 
   if (lastResponse) return lastResponse;
   throw lastError instanceof Error ? lastError : new Error("All configured AI providers failed");

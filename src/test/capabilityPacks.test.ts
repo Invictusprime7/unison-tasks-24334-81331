@@ -13,14 +13,20 @@ import {
 import { planBusinessCapabilities } from '@/services/businessCapabilityPlanner';
 
 describe('capability pack contracts', () => {
-  it('ships the four foundational packs', () => {
+  it('ships the foundational packs plus the commerce/menu/automation packs', () => {
     expect(CAPABILITY_PACKS.map((p) => p.id)).toEqual([
       'business_profile',
       'catalog.services',
       'crm.leads',
       'booking.appointments',
+      'catalog.menu',
+      'catalog.products',
+      'commerce.cart',
+      'commerce.checkout',
+      'automation.follow_up',
     ]);
   });
+
 
   it('gives every pack a complete full-stack contract', () => {
     for (const pack of CAPABILITY_PACKS) {
@@ -46,9 +52,11 @@ describe('capability pack contracts', () => {
   it('resolves capability aliases to the owning pack', () => {
     expect(packForCapability('crm.contacts')?.id).toBe('crm.leads');
     expect(packForCapability('forms.contact')?.id).toBe('crm.leads');
-    expect(packForCapability('commerce.checkout')).toBeNull();
+    expect(packForCapability('commerce.checkout')?.id).toBe('commerce.checkout');
+    expect(packForCapability('auth.customer')).toBeNull();
     expect(getCapabilityPack('booking.appointments')?.name).toBe('Booking & Availability');
   });
+
 });
 
 describe('resolveCapabilityPacks', () => {
@@ -71,10 +79,25 @@ describe('resolveCapabilityPacks', () => {
   });
 
   it('reports capabilities that have no pack yet instead of failing', () => {
-    const { order, unsupported } = resolveCapabilityPacks(['commerce.cart', 'catalog.services']);
-    expect(unsupported).toEqual(['commerce.cart']);
+    const { order, unsupported } = resolveCapabilityPacks(['portal.customer', 'catalog.services']);
+    expect(unsupported).toEqual(['portal.customer']);
     expect(order.map((p) => p.id)).toEqual(['business_profile', 'catalog.services']);
   });
+
+  it('resolves every industry recipe to zero unsupported capabilities', () => {
+    const ecommerce = resolveCapabilityPacks(['catalog.products', 'commerce.cart', 'commerce.checkout', 'crm.contacts']);
+    expect(ecommerce.unsupported).toEqual([]);
+    expect(ecommerce.order.map((p) => p.id)).toEqual([
+      'business_profile', 'catalog.products', 'commerce.cart', 'crm.leads', 'commerce.checkout',
+    ]);
+    const restaurant = resolveCapabilityPacks(['catalog.menu', 'booking.appointments', 'crm.contacts', 'notifications.email']);
+    expect(restaurant.unsupported).toEqual([]);
+    const agency = resolveCapabilityPacks(['catalog.services', 'forms.contact', 'crm.leads', 'automation.follow_up']);
+    expect(agency.unsupported).toEqual([]);
+    const localService = resolveCapabilityPacks(['catalog.services', 'forms.quote', 'crm.leads', 'notifications.email']);
+    expect(localService.unsupported).toEqual([]);
+  });
+
 
   it('aggregates tables, slots, functions and settings across the pack set', () => {
     const { order } = resolveCapabilityPacks(['booking.appointments']);

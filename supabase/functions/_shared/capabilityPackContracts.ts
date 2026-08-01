@@ -47,6 +47,12 @@ const PUBLIC_SUBMIT_GRANTS: PackGrant[] = [
   ...OWNER_MANAGED_GRANTS,
 ];
 
+const PUBLIC_SESSION_GRANTS: PackGrant[] = [
+  { role: 'anon', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+  ...OWNER_MANAGED_GRANTS,
+];
+
+
 export const PACK_DATABASE_CONTRACTS: PackDatabaseContract[] = [
   {
     id: 'business_profile',
@@ -79,7 +85,7 @@ export const PACK_DATABASE_CONTRACTS: PackDatabaseContract[] = [
   {
     id: 'crm.leads',
     dependsOn: ['business_profile'],
-    provides: ['crm.leads', 'crm.contacts', 'forms.contact', 'notifications.email'],
+    provides: ['crm.leads', 'crm.contacts', 'forms.contact', 'forms.quote', 'notifications.email'],
     tables: [
       {
         table: 'leads',
@@ -132,7 +138,85 @@ export const PACK_DATABASE_CONTRACTS: PackDatabaseContract[] = [
       },
     ],
   },
+  {
+    id: 'catalog.menu',
+    dependsOn: ['business_profile'],
+    provides: ['catalog.menu'],
+    tables: [
+      {
+        table: 'menu_items',
+        ownershipColumn: 'business_id',
+        publicRead: true,
+        publicInsert: false,
+        grants: PUBLIC_READ_GRANTS,
+      },
+    ],
+  },
+  {
+    id: 'catalog.products',
+    dependsOn: ['business_profile'],
+    provides: ['catalog.products'],
+    tables: [
+      {
+        table: 'products',
+        ownershipColumn: 'business_id',
+        publicRead: true,
+        publicInsert: false,
+        grants: PUBLIC_READ_GRANTS,
+      },
+    ],
+  },
+  {
+    id: 'commerce.cart',
+    dependsOn: ['business_profile', 'catalog.products'],
+    provides: ['commerce.cart'],
+    tables: [
+      {
+        table: 'cart_items',
+        ownershipColumn: 'user_id',
+        publicRead: false,
+        publicInsert: true,
+        grants: PUBLIC_SESSION_GRANTS,
+      },
+    ],
+  },
+  {
+    id: 'commerce.checkout',
+    dependsOn: ['business_profile', 'catalog.products', 'commerce.cart', 'crm.leads'],
+    provides: ['commerce.checkout'],
+    tables: [
+      {
+        table: 'orders',
+        ownershipColumn: 'business_id',
+        publicRead: false,
+        publicInsert: true,
+        grants: PUBLIC_SUBMIT_GRANTS,
+      },
+    ],
+  },
+  {
+    id: 'automation.follow_up',
+    dependsOn: ['business_profile', 'crm.leads'],
+    provides: ['automation.follow_up'],
+    tables: [
+      {
+        table: 'crm_workflows',
+        ownershipColumn: 'user_id',
+        publicRead: false,
+        publicInsert: false,
+        grants: OWNER_MANAGED_GRANTS,
+      },
+      {
+        table: 'crm_automations',
+        ownershipColumn: 'user_id',
+        publicRead: false,
+        publicInsert: false,
+        grants: OWNER_MANAGED_GRANTS,
+      },
+    ],
+  },
 ];
+
 
 const BY_PROVIDED = new Map<string, PackDatabaseContract>();
 for (const pack of PACK_DATABASE_CONTRACTS) {

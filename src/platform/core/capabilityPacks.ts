@@ -104,6 +104,13 @@ const PUBLIC_SUBMIT_GRANTS: PackGrant[] = [
   ...OWNER_MANAGED_GRANTS,
 ];
 
+/** Guest-cart tables: visitors own their rows through `current_session_id()`. */
+const PUBLIC_SESSION_GRANTS: PackGrant[] = [
+  { role: 'anon', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+  ...OWNER_MANAGED_GRANTS,
+];
+
+
 // ============================================================================
 // Pack 1 — Business profile
 // ============================================================================
@@ -250,7 +257,7 @@ const CRM_LEADS_PACK: CapabilityPack = {
   name: 'Lead Capture & CRM',
   description:
     'Captures form submissions from the public site into durable lead, contact and activity records the owner can work.',
-  provides: ['crm.leads', 'crm.contacts', 'forms.contact', 'notifications.email'],
+  provides: ['crm.leads', 'crm.contacts', 'forms.contact', 'forms.quote', 'notifications.email'],
   dependsOn: ['business_profile'],
   relatedOperationalPacks: ['contact', 'lead-capture'],
   database: {
@@ -414,6 +421,276 @@ const BOOKING_APPOINTMENTS_PACK: CapabilityPack = {
 };
 
 // ============================================================================
+// Pack 5 — Menu catalog (restaurant / cafe)
+// ============================================================================
+
+const CATALOG_MENU_PACK: CapabilityPack = {
+  id: 'catalog.menu',
+  name: 'Menu Catalog',
+  description:
+    'Live menu items with price, category, dietary tags and imagery that render into menu sections.',
+  provides: ['catalog.menu'],
+  dependsOn: ['business_profile'],
+  relatedOperationalPacks: [],
+  database: {
+    tables: [
+      {
+        table: 'menu_items',
+        purpose: 'Publicly readable menu scoped to one business.',
+        requiredColumns: [
+          'id', 'business_id', 'name', 'slug', 'description', 'price_cents', 'currency',
+          'category', 'image_url', 'dietary_tags', 'available', 'featured', 'sort_order', 'metadata',
+        ],
+        ownershipColumn: 'business_id',
+        publicRead: true,
+        publicInsert: false,
+        policies: ['menu_items_select_public_available', 'menu_items_member_all'],
+        grants: PUBLIC_READ_GRANTS,
+      },
+    ],
+  },
+  backend: {
+    functions: ['intent-exec'],
+    events: ['catalog.menu.updated'],
+    permissions: ['business.catalog.manage'],
+  },
+  frontend: {
+    components: ['MenuSection', 'MenuItemCard', 'BusinessCatalogEditor'],
+    dataSources: ['catalog.menu'],
+    slots: ['menu-section.list', 'menu-item.primary-action'],
+  },
+  intents: { provided: ['menu.open', 'nav.goto'], required: [] },
+  settings: { accountFields: [], projectFields: ['catalog.menuSectionId', 'catalog.currency'] },
+  readiness: {
+    assertions: [
+      { id: 'menu-items-table-exists', kind: 'table-exists', target: 'menu_items', description: 'The menu table is provisioned.', blocking: true },
+      { id: 'menu-item-exists', kind: 'row-exists', target: 'menu_items', description: 'At least one available menu item is published.', blocking: true },
+      { id: 'menu-public-read', kind: 'policy-exists', target: 'menu_items_select_public_available', description: 'Visitors can read the published menu.', blocking: true },
+      { id: 'menu-section-bound', kind: 'handler-installed', target: 'catalog.menu', description: 'A section on the site renders live menu items.', blocking: false },
+    ],
+    fixtures: ['menu-item'],
+  },
+};
+
+// ============================================================================
+// Pack 6 — Product catalog (ecommerce / retail)
+// ============================================================================
+
+const CATALOG_PRODUCTS_PACK: CapabilityPack = {
+  id: 'catalog.products',
+  name: 'Product Catalog',
+  description:
+    'Sellable products with price, inventory and imagery that render into shop and product sections.',
+  provides: ['catalog.products'],
+  dependsOn: ['business_profile'],
+  relatedOperationalPacks: ['commerce'],
+  database: {
+    tables: [
+      {
+        table: 'products',
+        purpose: 'Publicly readable product list scoped to one business.',
+        requiredColumns: [
+          'id', 'business_id', 'user_id', 'name', 'slug', 'description', 'price', 'currency',
+          'image_url', 'category', 'inventory_count', 'is_active', 'featured', 'sort_order', 'metadata',
+        ],
+        ownershipColumn: 'business_id',
+        publicRead: true,
+        publicInsert: false,
+        policies: ['products_select_member_or_public', 'products_manage_member'],
+        grants: PUBLIC_READ_GRANTS,
+      },
+    ],
+  },
+  backend: {
+    functions: ['intent-exec'],
+    events: ['catalog.product.updated'],
+    permissions: ['business.catalog.manage'],
+  },
+  frontend: {
+    components: ['ProductGrid', 'ProductCard', 'BusinessCatalogEditor'],
+    dataSources: ['catalog.products'],
+    slots: ['product-card.primary-action', 'products-section.list', 'shop-section.list'],
+  },
+  intents: { provided: ['nav.goto', 'cart.add'], required: [] },
+  settings: { accountFields: [], projectFields: ['catalog.productsSectionId', 'catalog.currency'] },
+  readiness: {
+    assertions: [
+      { id: 'products-table-exists', kind: 'table-exists', target: 'products', description: 'The products table is provisioned.', blocking: true },
+      { id: 'active-product-exists', kind: 'row-exists', target: 'products', description: 'At least one active product is published.', blocking: true },
+      { id: 'products-public-read', kind: 'policy-exists', target: 'products_select_member_or_public', description: 'Visitors can browse the published catalog.', blocking: true },
+      { id: 'products-section-bound', kind: 'handler-installed', target: 'catalog.products', description: 'A section on the site renders live products.', blocking: false },
+    ],
+    fixtures: ['product'],
+  },
+};
+
+// ============================================================================
+// Pack 7 — Cart
+// ============================================================================
+
+const COMMERCE_CART_PACK: CapabilityPack = {
+  id: 'commerce.cart',
+  name: 'Shopping Cart',
+  description:
+    'Durable guest and signed-in carts so "add to bag" survives a refresh and feeds checkout.',
+  provides: ['commerce.cart'],
+  dependsOn: ['business_profile', 'catalog.products'],
+  relatedOperationalPacks: ['commerce'],
+  database: {
+    tables: [
+      {
+        table: 'cart_items',
+        purpose: 'One row per product in a visitor or customer cart.',
+        requiredColumns: ['id', 'session_id', 'user_id', 'product_id', 'quantity'],
+        ownershipColumn: 'user_id',
+        publicRead: false,
+        publicInsert: true,
+        policies: ['cart_items_anon_session', 'cart_items_auth_owner'],
+        grants: PUBLIC_SESSION_GRANTS,
+      },
+    ],
+  },
+  backend: {
+    functions: ['intent-exec', 'intent-router'],
+    events: ['cart.item.added', 'cart.updated'],
+    permissions: ['visitor.cart.manage'],
+  },
+  frontend: {
+    components: ['CartIcon', 'CartOverlay', 'ProductCard'],
+    dataSources: ['commerce.cart', 'catalog.products'],
+    slots: ['product-card.primary-action', 'navbar.cart', 'cart-overlay.checkout'],
+  },
+  intents: { provided: ['cart.add', 'cart.remove', 'cart.open'], required: [] },
+  settings: { accountFields: [], projectFields: ['commerce.currency'] },
+  readiness: {
+    assertions: [
+      { id: 'cart-items-table-exists', kind: 'table-exists', target: 'cart_items', description: 'Carts have somewhere to persist.', blocking: true },
+      { id: 'cart-session-scoped', kind: 'rls-enabled', target: 'cart_items', description: 'Visitors can only see their own cart.', blocking: true },
+      { id: 'cart-add-handler-installed', kind: 'handler-installed', target: 'intent-router', description: 'Add-to-bag is wired to the backend.', blocking: true },
+    ],
+    fixtures: ['product', 'cart-session'],
+  },
+};
+
+// ============================================================================
+// Pack 8 — Checkout
+// ============================================================================
+
+const COMMERCE_CHECKOUT_PACK: CapabilityPack = {
+  id: 'commerce.checkout',
+  name: 'Checkout & Orders',
+  description:
+    'Converts a cart into a durable order record with customer details, totals and payment status.',
+  provides: ['commerce.checkout'],
+  dependsOn: ['business_profile', 'catalog.products', 'commerce.cart', 'crm.leads'],
+  relatedOperationalPacks: ['commerce'],
+  database: {
+    tables: [
+      {
+        table: 'orders',
+        purpose: 'Submitted orders with items, totals and payment status.',
+        requiredColumns: [
+          'id', 'business_id', 'user_id', 'session_id', 'customer_email', 'customer_name',
+          'items', 'subtotal', 'tax', 'total', 'currency', 'status',
+          'payment_intent_id', 'payment_method', 'shipping_address', 'metadata',
+        ],
+        ownershipColumn: 'business_id',
+        publicRead: false,
+        publicInsert: true,
+        policies: ['orders_insert_public_valid', 'orders_select_scoped'],
+        grants: PUBLIC_SUBMIT_GRANTS,
+      },
+    ],
+  },
+  backend: {
+    functions: ['create-checkout', 'intent-router', 'automation-event'],
+    events: ['order.created', 'checkout.completed'],
+    permissions: ['visitor.order.create', 'business.orders.manage'],
+  },
+  frontend: {
+    components: ['CheckoutForm', 'CartOverlay', 'CheckoutSuccess'],
+    dataSources: ['commerce.cart', 'commerce.orders'],
+    slots: ['cart-overlay.checkout', 'checkout-form.submit'],
+  },
+  intents: { provided: ['cart.checkout', 'pay.checkout'], required: ['cart.add'] },
+  settings: {
+    accountFields: ['business.notificationEmail'],
+    projectFields: ['commerce.currency', 'commerce.taxRate'],
+  },
+  readiness: {
+    assertions: [
+      { id: 'orders-table-exists', kind: 'table-exists', target: 'orders', description: 'Orders have somewhere to land.', blocking: true },
+      { id: 'orders-public-insert', kind: 'policy-exists', target: 'orders_insert_public_valid', description: 'Visitors can place an order without signing in.', blocking: true },
+      { id: 'orders-owner-scoped', kind: 'rls-enabled', target: 'orders', description: 'Only the business and the buyer can read an order.', blocking: true },
+      { id: 'checkout-handler-installed', kind: 'handler-installed', target: 'create-checkout', description: 'Checkout is wired to the backend.', blocking: true },
+      { id: 'checkout-notification-target', kind: 'setting-present', target: 'business.notificationEmail', description: 'New orders notify a real inbox.', blocking: true },
+    ],
+    fixtures: ['product', 'cart-session', 'customer'],
+  },
+};
+
+// ============================================================================
+// Pack 9 — Follow-up automation
+// ============================================================================
+
+const AUTOMATION_FOLLOW_UP_PACK: CapabilityPack = {
+  id: 'automation.follow_up',
+  name: 'Follow-up Automation',
+  description:
+    'Runs owner-defined follow-up sequences when a lead, booking or order event fires.',
+  provides: ['automation.follow_up'],
+  dependsOn: ['business_profile', 'crm.leads'],
+  relatedOperationalPacks: ['lead-capture'],
+  database: {
+    tables: [
+      {
+        table: 'crm_workflows',
+        purpose: 'Owner-defined automation definitions with trigger and steps.',
+        requiredColumns: ['id', 'user_id', 'name', 'description', 'trigger_type', 'trigger_config', 'steps', 'is_active'],
+        ownershipColumn: 'user_id',
+        publicRead: false,
+        publicInsert: false,
+        policies: [],
+        grants: OWNER_MANAGED_GRANTS,
+      },
+      {
+        table: 'crm_automations',
+        purpose: 'Event-triggered automations owned by the business account.',
+        requiredColumns: ['id', 'user_id', 'name', 'trigger_event', 'conditions', 'actions', 'is_active'],
+        ownershipColumn: 'user_id',
+        publicRead: false,
+        publicInsert: false,
+        policies: [],
+        grants: OWNER_MANAGED_GRANTS,
+      },
+    ],
+  },
+  backend: {
+    functions: ['automation-event', 'intent-router'],
+    events: ['automation.triggered', 'automation.step.completed'],
+    permissions: ['business.automation.manage'],
+  },
+  frontend: {
+    components: ['CRMWorkflowBuilder', 'CRMActivityFeed'],
+    dataSources: ['crm.workflows'],
+    slots: ['contact-form.submit', 'footer.newsletter'],
+  },
+  intents: { provided: ['lead.capture'], required: ['contact.submit'] },
+  settings: {
+    accountFields: ['business.notificationEmail'],
+    projectFields: ['automation.defaultSequence'],
+  },
+  readiness: {
+    assertions: [
+      { id: 'workflows-table-exists', kind: 'table-exists', target: 'crm_workflows', description: 'Automations have somewhere to live.', blocking: true },
+      { id: 'automation-handler-installed', kind: 'handler-installed', target: 'automation-event', description: 'Events reach the automation runner.', blocking: true },
+      { id: 'automation-notification-target', kind: 'setting-present', target: 'business.notificationEmail', description: 'Follow-ups send from a real inbox.', blocking: false },
+    ],
+    fixtures: ['lead'],
+  },
+};
+
+// ============================================================================
 // Registry + dependency resolution
 // ============================================================================
 
@@ -422,7 +699,13 @@ export const CAPABILITY_PACKS: CapabilityPack[] = [
   CATALOG_SERVICES_PACK,
   CRM_LEADS_PACK,
   BOOKING_APPOINTMENTS_PACK,
+  CATALOG_MENU_PACK,
+  CATALOG_PRODUCTS_PACK,
+  COMMERCE_CART_PACK,
+  COMMERCE_CHECKOUT_PACK,
+  AUTOMATION_FOLLOW_UP_PACK,
 ];
+
 
 const PACK_BY_ID = new Map<BusinessCapability, CapabilityPack>(
   CAPABILITY_PACKS.map((pack) => [pack.id, pack]),

@@ -66,6 +66,19 @@ export async function applyCapabilityMigration(
       error: 'A saved business or project is required before backend changes can be applied.',
     };
   }
+  if (!preview.lint.ok) {
+    return {
+      success: false,
+      status: 'failed',
+      tables: preview.tables,
+      packs: packs.map((pack) => pack.id),
+      applied: 0,
+      failed: preview.statements.length,
+      error: describeLintResult(preview.lint),
+    };
+  }
+
+
 
   const { data, error } = await supabase.functions.invoke('capability-migration-apply', {
     body: {

@@ -12,7 +12,7 @@ import {
   bindingsForCapabilities,
   expandBusinessCapabilities,
   interpretCapabilities,
-  VERTICAL_OPERATIONS_RECIPES,
+  operationsCapabilitiesFor,
   resolveBuilderScope,
   type BuilderScope,
 } from '@/services/capabilityInterpretation';

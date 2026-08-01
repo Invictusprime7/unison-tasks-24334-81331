@@ -25,6 +25,7 @@ import {
   resolveDatabaseContracts,
   type MigrationStatement,
 } from '../_shared/capabilityPackContracts.ts';
+import { describeLintResult, lintMigrationSql } from '../_shared/migrationSqlLint.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;

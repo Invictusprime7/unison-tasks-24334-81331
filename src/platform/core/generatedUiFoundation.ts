@@ -348,7 +348,7 @@ ${UNISON_VFS_STYLE_BRIDGE}`,
 export { Button, type ButtonProps } from './button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
 export { cn } from './cn';
-export { FieldLabel, Input, Textarea } from './form-fields';
+export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea } from './form-fields';
 export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
 export { ImageLightbox } from './media';
@@ -442,7 +442,15 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
 export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className={cn('flex min-h-28 w-full rounded-[calc(var(--radius)-0.125rem)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
 }
+
+// Alias surface: generated pages frequently import shadcn-style names.
+// Keep these exported so a naming choice never breaks the VFS import contract.
+export const Label = FieldLabel;
+export const FormLabel = FieldLabel;
+export const TextInput = Input;
+export const TextArea = Textarea;
 `,
+
     '/src/unison/ui/icon.tsx': `${marker}
   import type { LucideIcon } from './icons';
 import { cn } from './cn';

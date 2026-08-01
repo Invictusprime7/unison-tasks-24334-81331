@@ -207,15 +207,8 @@ export const PACK_DATABASE_CONTRACTS: PackDatabaseContract[] = [
         grants: OWNER_MANAGED_GRANTS,
       },
       {
-        table: 'crm_workflow_runs',
-        ownershipColumn: null,
-        publicRead: false,
-        publicInsert: false,
-        grants: OWNER_MANAGED_GRANTS,
-      },
-      {
-        table: 'crm_workflow_jobs',
-        ownershipColumn: null,
+        table: 'crm_automations',
+        ownershipColumn: 'user_id',
         publicRead: false,
         publicInsert: false,
         grants: OWNER_MANAGED_GRANTS,

@@ -13,14 +13,20 @@ import {
 import { planBusinessCapabilities } from '@/services/businessCapabilityPlanner';
 
 describe('capability pack contracts', () => {
-  it('ships the four foundational packs', () => {
+  it('ships the foundational packs plus the commerce/menu/automation packs', () => {
     expect(CAPABILITY_PACKS.map((p) => p.id)).toEqual([
       'business_profile',
       'catalog.services',
       'crm.leads',
       'booking.appointments',
+      'catalog.menu',
+      'catalog.products',
+      'commerce.cart',
+      'commerce.checkout',
+      'automation.follow_up',
     ]);
   });
+
 
   it('gives every pack a complete full-stack contract', () => {
     for (const pack of CAPABILITY_PACKS) {

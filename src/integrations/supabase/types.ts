@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_agent_registry: {
+        Row: {
+          allowed_tools: Json
+          created_at: string
+          default_config: Json
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          slug: string
+          system_prompt: string
+          tier: Database["public"]["Enums"]["agent_tier"]
+          ui_kind: Database["public"]["Enums"]["agent_ui_kind"] | null
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          allowed_tools?: Json
+          created_at?: string
+          default_config?: Json
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          slug: string
+          system_prompt: string
+          tier?: Database["public"]["Enums"]["agent_tier"]
+          ui_kind?: Database["public"]["Enums"]["agent_ui_kind"] | null
+          updated_at?: string
+          version?: string
+        }
+        Update: {
+          allowed_tools?: Json
+          created_at?: string
+          default_config?: Json
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          slug?: string
+          system_prompt?: string
+          tier?: Database["public"]["Enums"]["agent_tier"]
+          ui_kind?: Database["public"]["Enums"]["agent_ui_kind"] | null
+          updated_at?: string
+          version?: string
+        }
+        Relationships: []
+      }
       ai_builder_proposals: {
         Row: {
           applied_at: string | null
@@ -125,6 +173,73 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_events: {
+        Row: {
+          business_id: string
+          claimed_run_id: string | null
+          created_at: string
+          dedupe_key: string | null
+          id: string
+          intent: string
+          locked_at: string | null
+          locked_by: string | null
+          payload: Json
+          plugin_instance_id: string | null
+          processed_at: string | null
+          status: Database["public"]["Enums"]["agent_event_status"]
+        }
+        Insert: {
+          business_id: string
+          claimed_run_id?: string | null
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          intent: string
+          locked_at?: string | null
+          locked_by?: string | null
+          payload?: Json
+          plugin_instance_id?: string | null
+          processed_at?: string | null
+          status?: Database["public"]["Enums"]["agent_event_status"]
+        }
+        Update: {
+          business_id?: string
+          claimed_run_id?: string | null
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          intent?: string
+          locked_at?: string | null
+          locked_by?: string | null
+          payload?: Json
+          plugin_instance_id?: string | null
+          processed_at?: string | null
+          status?: Database["public"]["Enums"]["agent_event_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_events_claimed_run_fk"
+            columns: ["claimed_run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_events_plugin_instance_id_fkey"
+            columns: ["plugin_instance_id"]
+            isOneToOne: false
+            referencedRelation: "ai_plugin_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_learning_sessions: {
         Row: {
           ai_response: string
@@ -163,6 +278,99 @@ export type Database = {
           was_successful?: boolean | null
         }
         Relationships: []
+      }
+      ai_plugin_instances: {
+        Row: {
+          agent_id: string
+          business_id: string
+          config: Json
+          created_at: string
+          id: string
+          is_enabled: boolean
+          placement_key: string
+          project_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_id: string
+          business_id: string
+          config?: Json
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          placement_key?: string
+          project_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string
+          business_id?: string
+          config?: Json
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          placement_key?: string
+          project_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_plugin_instances_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agent_registry"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_plugin_instances_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_plugin_instances_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_plugin_state: {
+        Row: {
+          created_at: string
+          id: string
+          plugin_instance_id: string
+          state: Json
+          state_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          plugin_instance_id: string
+          state?: Json
+          state_key?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          plugin_instance_id?: string
+          state?: Json
+          state_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_plugin_state_plugin_instance_id_fkey"
+            columns: ["plugin_instance_id"]
+            isOneToOne: false
+            referencedRelation: "ai_plugin_instances"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ai_request_logs: {
         Row: {
@@ -211,7 +419,7 @@ export type Database = {
       }
       ai_runs: {
         Row: {
-          business_id: string | null
+          business_id: string
           completed_at: string | null
           created_at: string
           error_message: string | null
@@ -221,12 +429,12 @@ export type Database = {
           latency_ms: number | null
           output_payload: Json | null
           plugin_instance_id: string | null
-          status: string
+          status: Database["public"]["Enums"]["agent_event_status"]
           tokens_used: number | null
           tool_calls: Json | null
         }
         Insert: {
-          business_id?: string | null
+          business_id: string
           completed_at?: string | null
           created_at?: string
           error_message?: string | null
@@ -236,12 +444,12 @@ export type Database = {
           latency_ms?: number | null
           output_payload?: Json | null
           plugin_instance_id?: string | null
-          status?: string
+          status?: Database["public"]["Enums"]["agent_event_status"]
           tokens_used?: number | null
           tool_calls?: Json | null
         }
         Update: {
-          business_id?: string | null
+          business_id?: string
           completed_at?: string | null
           created_at?: string
           error_message?: string | null
@@ -251,7 +459,7 @@ export type Database = {
           latency_ms?: number | null
           output_payload?: Json | null
           plugin_instance_id?: string | null
-          status?: string
+          status?: Database["public"]["Enums"]["agent_event_status"]
           tokens_used?: number | null
           tool_calls?: Json | null
         }
@@ -263,223 +471,118 @@ export type Database = {
             referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      app_components: {
-        Row: {
-          application_id: string
-          code: string
-          created_at: string | null
-          css: string | null
-          data_source: Json | null
-          dependencies: string[] | null
-          description: string | null
-          id: string
-          imports: string[] | null
-          is_reusable: boolean | null
-          language: string | null
-          name: string
-          path: string
-          props_schema: Json | null
-          tags: string[] | null
-          tailwind_classes: string | null
-          type: string
-          updated_at: string | null
-        }
-        Insert: {
-          application_id: string
-          code: string
-          created_at?: string | null
-          css?: string | null
-          data_source?: Json | null
-          dependencies?: string[] | null
-          description?: string | null
-          id?: string
-          imports?: string[] | null
-          is_reusable?: boolean | null
-          language?: string | null
-          name: string
-          path: string
-          props_schema?: Json | null
-          tags?: string[] | null
-          tailwind_classes?: string | null
-          type: string
-          updated_at?: string | null
-        }
-        Update: {
-          application_id?: string
-          code?: string
-          created_at?: string | null
-          css?: string | null
-          data_source?: Json | null
-          dependencies?: string[] | null
-          description?: string | null
-          id?: string
-          imports?: string[] | null
-          is_reusable?: boolean | null
-          language?: string | null
-          name?: string
-          path?: string
-          props_schema?: Json | null
-          tags?: string[] | null
-          tailwind_classes?: string | null
-          type?: string
-          updated_at?: string | null
-        }
-        Relationships: [
           {
-            foreignKeyName: "app_components_application_id_fkey"
-            columns: ["application_id"]
+            foreignKeyName: "ai_runs_event_id_fkey"
+            columns: ["event_id"]
             isOneToOne: false
-            referencedRelation: "generated_applications"
+            referencedRelation: "ai_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_runs_plugin_instance_id_fkey"
+            columns: ["plugin_instance_id"]
+            isOneToOne: false
+            referencedRelation: "ai_plugin_instances"
             referencedColumns: ["id"]
           },
         ]
       }
-      app_data_sources: {
+      audit_logs: {
         Row: {
-          application_id: string
-          cache_duration: number | null
-          cache_enabled: boolean | null
-          computation: string | null
-          config: Json
-          created_at: string | null
-          data: Json | null
-          endpoint: string | null
-          headers: Json | null
+          action: string
+          business_id: string | null
+          changes: Json | null
+          created_at: string
           id: string
-          is_active: boolean | null
-          last_sync: string | null
-          method: string | null
-          name: string
-          query: string | null
-          table_name: string | null
-          transform_function: string | null
-          type: string
-          updated_at: string | null
+          ip_address: string | null
+          metadata: Json | null
+          resource_id: string | null
+          resource_name: string | null
+          resource_type: string
+          status: string
+          user_agent: string | null
+          user_email: string | null
+          user_id: string
         }
         Insert: {
-          application_id: string
-          cache_duration?: number | null
-          cache_enabled?: boolean | null
-          computation?: string | null
-          config: Json
-          created_at?: string | null
-          data?: Json | null
-          endpoint?: string | null
-          headers?: Json | null
+          action: string
+          business_id?: string | null
+          changes?: Json | null
+          created_at?: string
           id?: string
-          is_active?: boolean | null
-          last_sync?: string | null
-          method?: string | null
-          name: string
-          query?: string | null
-          table_name?: string | null
-          transform_function?: string | null
-          type: string
-          updated_at?: string | null
+          ip_address?: string | null
+          metadata?: Json | null
+          resource_id?: string | null
+          resource_name?: string | null
+          resource_type: string
+          status?: string
+          user_agent?: string | null
+          user_email?: string | null
+          user_id: string
         }
         Update: {
-          application_id?: string
-          cache_duration?: number | null
-          cache_enabled?: boolean | null
-          computation?: string | null
-          config?: Json
-          created_at?: string | null
-          data?: Json | null
-          endpoint?: string | null
-          headers?: Json | null
+          action?: string
+          business_id?: string | null
+          changes?: Json | null
+          created_at?: string
           id?: string
-          is_active?: boolean | null
-          last_sync?: string | null
-          method?: string | null
-          name?: string
-          query?: string | null
-          table_name?: string | null
-          transform_function?: string | null
-          type?: string
-          updated_at?: string | null
+          ip_address?: string | null
+          metadata?: Json | null
+          resource_id?: string | null
+          resource_name?: string | null
+          resource_type?: string
+          status?: string
+          user_agent?: string | null
+          user_email?: string | null
+          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "app_data_sources_application_id_fkey"
-            columns: ["application_id"]
+            foreignKeyName: "audit_logs_business_id_fkey"
+            columns: ["business_id"]
             isOneToOne: false
-            referencedRelation: "generated_applications"
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
       }
-      app_deployments: {
+      automation_events: {
         Row: {
-          application_id: string
-          build_duration: number | null
-          build_id: string | null
-          build_log: string | null
-          completed_at: string | null
-          config: Json | null
+          business_id: string
           created_at: string | null
-          deployed_by: string | null
-          environment: string | null
-          environment_variables: Json | null
-          error_details: Json | null
-          error_message: string | null
+          dedupe_key: string | null
           id: string
-          platform: string
-          preview_url: string | null
+          intent: string
+          payload: Json | null
+          processed_at: string | null
           status: string | null
-          updated_at: string | null
-          url: string | null
-          version: number
         }
         Insert: {
-          application_id: string
-          build_duration?: number | null
-          build_id?: string | null
-          build_log?: string | null
-          completed_at?: string | null
-          config?: Json | null
+          business_id: string
           created_at?: string | null
-          deployed_by?: string | null
-          environment?: string | null
-          environment_variables?: Json | null
-          error_details?: Json | null
-          error_message?: string | null
+          dedupe_key?: string | null
           id?: string
-          platform: string
-          preview_url?: string | null
+          intent: string
+          payload?: Json | null
+          processed_at?: string | null
           status?: string | null
-          updated_at?: string | null
-          url?: string | null
-          version: number
         }
         Update: {
-          application_id?: string
-          build_duration?: number | null
-          build_id?: string | null
-          build_log?: string | null
-          completed_at?: string | null
-          config?: Json | null
+          business_id?: string
           created_at?: string | null
-          deployed_by?: string | null
-          environment?: string | null
-          environment_variables?: Json | null
-          error_details?: Json | null
-          error_message?: string | null
+          dedupe_key?: string | null
           id?: string
-          platform?: string
-          preview_url?: string | null
+          intent?: string
+          payload?: Json | null
+          processed_at?: string | null
           status?: string | null
-          updated_at?: string | null
-          url?: string | null
-          version?: number
         }
         Relationships: [
           {
-            foreignKeyName: "app_deployments_application_id_fkey"
-            columns: ["application_id"]
+            foreignKeyName: "automation_events_business_id_fkey"
+            columns: ["business_id"]
             isOneToOne: false
-            referencedRelation: "generated_applications"
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
@@ -561,6 +664,86 @@ export type Database = {
           },
         ]
       }
+      bookings: {
+        Row: {
+          booking_date: string
+          booking_time: string
+          business_id: string | null
+          created_at: string | null
+          customer_email: string
+          customer_name: string
+          customer_phone: string | null
+          duration_minutes: number | null
+          ends_at: string | null
+          ghl_calendar_id: string | null
+          ghl_contact_id: string | null
+          id: string
+          metadata: Json | null
+          notes: string | null
+          service_id: string | null
+          service_name: string
+          session_id: string | null
+          starts_at: string | null
+          status: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          booking_date: string
+          booking_time: string
+          business_id?: string | null
+          created_at?: string | null
+          customer_email: string
+          customer_name: string
+          customer_phone?: string | null
+          duration_minutes?: number | null
+          ends_at?: string | null
+          ghl_calendar_id?: string | null
+          ghl_contact_id?: string | null
+          id?: string
+          metadata?: Json | null
+          notes?: string | null
+          service_id?: string | null
+          service_name: string
+          session_id?: string | null
+          starts_at?: string | null
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          booking_date?: string
+          booking_time?: string
+          business_id?: string | null
+          created_at?: string | null
+          customer_email?: string
+          customer_name?: string
+          customer_phone?: string | null
+          duration_minutes?: number | null
+          ends_at?: string | null
+          ghl_calendar_id?: string | null
+          ghl_contact_id?: string | null
+          id?: string
+          metadata?: Json | null
+          notes?: string | null
+          service_id?: string | null
+          service_name?: string
+          session_id?: string | null
+          starts_at?: string | null
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brand_kits: {
         Row: {
           colors: Json | null
@@ -606,7 +789,6 @@ export type Database = {
           metadata: Json | null
           name: string | null
           project_id: string | null
-          site_id: string | null
           template_id: string | null
           updated_at: string
           user_id: string
@@ -614,14 +796,13 @@ export type Database = {
         }
         Insert: {
           business_id?: string | null
-          code?: string
+          code: string
           created_at?: string
           editor_code?: string | null
           id?: string
           metadata?: Json | null
           name?: string | null
           project_id?: string | null
-          site_id?: string | null
           template_id?: string | null
           updated_at?: string
           user_id: string
@@ -636,7 +817,6 @@ export type Database = {
           metadata?: Json | null
           name?: string | null
           project_id?: string | null
-          site_id?: string | null
           template_id?: string | null
           updated_at?: string
           user_id?: string
@@ -655,20 +835,6 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "builder_drafts_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "builder_drafts_template_id_fkey"
-            columns: ["template_id"]
-            isOneToOne: false
-            referencedRelation: "design_templates"
             referencedColumns: ["id"]
           },
         ]
@@ -765,46 +931,105 @@ export type Database = {
       }
       business_automation_settings: {
         Row: {
-          auto_reply_timing: string | null
+          automations_enabled: boolean | null
+          business_days: number[] | null
+          business_hours_enabled: boolean | null
+          business_hours_end: string | null
+          business_hours_start: string | null
           business_id: string
-          calendar_connected: boolean | null
           created_at: string | null
-          email_alerts_enabled: boolean | null
-          email_enabled: boolean | null
+          dedupe_window_minutes: number | null
+          default_sender_email: string | null
+          default_sender_name: string | null
+          default_sender_phone: string | null
+          honor_stop_keywords: boolean | null
           id: string
-          review_link: string | null
-          sms_enabled: boolean | null
-          sms_followup_enabled: boolean | null
-          stripe_connected: boolean | null
+          max_messages_per_contact_per_day: number | null
+          quiet_hours_enabled: boolean | null
+          quiet_hours_end: string | null
+          quiet_hours_start: string | null
+          require_consent_for_email: boolean | null
+          require_consent_for_sms: boolean | null
+          timezone: string | null
           updated_at: string | null
         }
         Insert: {
-          auto_reply_timing?: string | null
+          automations_enabled?: boolean | null
+          business_days?: number[] | null
+          business_hours_enabled?: boolean | null
+          business_hours_end?: string | null
+          business_hours_start?: string | null
           business_id: string
-          calendar_connected?: boolean | null
           created_at?: string | null
-          email_alerts_enabled?: boolean | null
-          email_enabled?: boolean | null
+          dedupe_window_minutes?: number | null
+          default_sender_email?: string | null
+          default_sender_name?: string | null
+          default_sender_phone?: string | null
+          honor_stop_keywords?: boolean | null
           id?: string
-          review_link?: string | null
-          sms_enabled?: boolean | null
-          sms_followup_enabled?: boolean | null
-          stripe_connected?: boolean | null
+          max_messages_per_contact_per_day?: number | null
+          quiet_hours_enabled?: boolean | null
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          require_consent_for_email?: boolean | null
+          require_consent_for_sms?: boolean | null
+          timezone?: string | null
           updated_at?: string | null
         }
         Update: {
-          auto_reply_timing?: string | null
+          automations_enabled?: boolean | null
+          business_days?: number[] | null
+          business_hours_enabled?: boolean | null
+          business_hours_end?: string | null
+          business_hours_start?: string | null
           business_id?: string
-          calendar_connected?: boolean | null
           created_at?: string | null
-          email_alerts_enabled?: boolean | null
-          email_enabled?: boolean | null
+          dedupe_window_minutes?: number | null
+          default_sender_email?: string | null
+          default_sender_name?: string | null
+          default_sender_phone?: string | null
+          honor_stop_keywords?: boolean | null
           id?: string
-          review_link?: string | null
-          sms_enabled?: boolean | null
-          sms_followup_enabled?: boolean | null
-          stripe_connected?: boolean | null
+          max_messages_per_contact_per_day?: number | null
+          quiet_hours_enabled?: boolean | null
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          require_consent_for_email?: boolean | null
+          require_consent_for_sms?: boolean | null
+          timezone?: string | null
           updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "business_automation_settings_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: true
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      business_design_preferences: {
+        Row: {
+          business_id: string
+          created_at: string
+          design_preset: string | null
+          template_category: string | null
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          design_preset?: string | null
+          template_category?: string | null
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          design_preset?: string | null
+          template_category?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -836,59 +1061,60 @@ export type Database = {
           status?: string
           system_type?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "business_installs_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       business_members: {
         Row: {
-          accepted_at: string | null
           business_id: string
           created_at: string
           id: string
-          invited_at: string | null
-          invited_by: string | null
-          permissions: Json | null
           role: string
-          status: string | null
-          updated_at: string
           user_id: string
         }
         Insert: {
-          accepted_at?: string | null
           business_id: string
           created_at?: string
           id?: string
-          invited_at?: string | null
-          invited_by?: string | null
-          permissions?: Json | null
           role?: string
-          status?: string | null
-          updated_at?: string
           user_id: string
         }
         Update: {
-          accepted_at?: string | null
           business_id?: string
           created_at?: string
           id?: string
-          invited_at?: string | null
-          invited_by?: string | null
-          permissions?: Json | null
           role?: string
-          status?: string | null
-          updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      business_recipe_toggles: {
+        Row: {
+          business_id: string
+          custom_config: Json | null
+          enabled: boolean | null
+          id: string
+          recipe_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          business_id: string
+          custom_config?: Json | null
+          enabled?: boolean | null
+          id?: string
+          recipe_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          business_id?: string
+          custom_config?: Json | null
+          enabled?: boolean | null
+          id?: string
+          recipe_id?: string
+          updated_at?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "business_members_business_id_fkey"
+            foreignKeyName: "business_recipe_toggles_business_id_fkey"
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
@@ -941,7 +1167,7 @@ export type Database = {
         Row: {
           address: Json
           brand_color: string | null
-          created_at: string | null
+          created_at: string
           description: string | null
           email: string | null
           hours: Json
@@ -953,41 +1179,41 @@ export type Database = {
           notification_phone: string | null
           owner_id: string
           phone: string | null
-          settings: Json | null
+          settings: Json
           slug: string | null
           social_links: Json
           tagline: string | null
-          timezone: string | null
-          updated_at: string | null
+          timezone: string
+          updated_at: string
           website: string | null
         }
         Insert: {
           address?: Json
           brand_color?: string | null
-          created_at?: string | null
+          created_at?: string
           description?: string | null
           email?: string | null
           hours?: Json
           id?: string
           industry?: string | null
           logo_url?: string | null
-          name: string
+          name?: string
           notification_email?: string | null
           notification_phone?: string | null
           owner_id: string
           phone?: string | null
-          settings?: Json | null
+          settings?: Json
           slug?: string | null
           social_links?: Json
           tagline?: string | null
-          timezone?: string | null
-          updated_at?: string | null
+          timezone?: string
+          updated_at?: string
           website?: string | null
         }
         Update: {
           address?: Json
           brand_color?: string | null
-          created_at?: string | null
+          created_at?: string
           description?: string | null
           email?: string | null
           hours?: Json
@@ -999,15 +1225,53 @@ export type Database = {
           notification_phone?: string | null
           owner_id?: string
           phone?: string | null
-          settings?: Json | null
+          settings?: Json
           slug?: string | null
           social_links?: Json
           tagline?: string | null
-          timezone?: string | null
-          updated_at?: string | null
+          timezone?: string
+          updated_at?: string
           website?: string | null
         }
         Relationships: []
+      }
+      cart_items: {
+        Row: {
+          created_at: string | null
+          id: string
+          product_id: string | null
+          quantity: number
+          session_id: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          product_id?: string | null
+          quantity?: number
+          session_id: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          product_id?: string | null
+          quantity?: number
+          session_id?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cart_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       catalog_collections: {
         Row: {
@@ -1226,105 +1490,51 @@ export type Database = {
           },
         ]
       }
-      component_definitions: {
-        Row: {
-          category: string
-          component_type: string
-          created_at: string
-          description: string | null
-          html_template: string | null
-          id: string
-          is_system: boolean
-          name: string
-          output_events: Json
-          required_binding_keys: Json
-          required_business_fields: Json
-          required_setup_steps: Json
-          slug: string
-          target_type: string
-          updated_at: string
-        }
-        Insert: {
-          category: string
-          component_type: string
-          created_at?: string
-          description?: string | null
-          html_template?: string | null
-          id?: string
-          is_system?: boolean
-          name: string
-          output_events?: Json
-          required_binding_keys?: Json
-          required_business_fields?: Json
-          required_setup_steps?: Json
-          slug: string
-          target_type: string
-          updated_at?: string
-        }
-        Update: {
-          category?: string
-          component_type?: string
-          created_at?: string
-          description?: string | null
-          html_template?: string | null
-          id?: string
-          is_system?: boolean
-          name?: string
-          output_events?: Json
-          required_binding_keys?: Json
-          required_business_fields?: Json
-          required_setup_steps?: Json
-          slug?: string
-          target_type?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       crm_activities: {
         Row: {
+          activity_type: string
           business_id: string | null
+          completed_at: string | null
           contact_id: string | null
           created_at: string | null
-          created_by: string | null
+          deal_id: string | null
           description: string | null
           id: string
           lead_id: string | null
-          metadata: Json | null
-          project_id: string | null
+          metadata: Json
+          scheduled_at: string | null
           title: string
-          type: string
           user_id: string | null
-          workspace_id: string
         }
         Insert: {
+          activity_type: string
           business_id?: string | null
+          completed_at?: string | null
           contact_id?: string | null
           created_at?: string | null
-          created_by?: string | null
+          deal_id?: string | null
           description?: string | null
           id?: string
           lead_id?: string | null
-          metadata?: Json | null
-          project_id?: string | null
+          metadata?: Json
+          scheduled_at?: string | null
           title: string
-          type: string
           user_id?: string | null
-          workspace_id: string
         }
         Update: {
+          activity_type?: string
           business_id?: string | null
+          completed_at?: string | null
           contact_id?: string | null
           created_at?: string | null
-          created_by?: string | null
+          deal_id?: string | null
           description?: string | null
           id?: string
           lead_id?: string | null
-          metadata?: Json | null
-          project_id?: string | null
+          metadata?: Json
+          scheduled_at?: string | null
           title?: string
-          type?: string
           user_id?: string | null
-          workspace_id?: string
         }
         Relationships: [
           {
@@ -1342,6 +1552,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "crm_activities_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "crm_deals"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "crm_activities_lead_id_fkey"
             columns: ["lead_id"]
             isOneToOne: false
@@ -1350,412 +1567,266 @@ export type Database = {
           },
         ]
       }
+      crm_automations: {
+        Row: {
+          actions: Json | null
+          conditions: Json | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          trigger_event: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          actions?: Json | null
+          conditions?: Json | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          trigger_event: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          actions?: Json | null
+          conditions?: Json | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          trigger_event?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       crm_contacts: {
         Row: {
-          business_id: string | null
           company: string | null
           created_at: string | null
           custom_fields: Json | null
           email: string | null
-          external_id: string | null
           first_name: string | null
           id: string
           last_name: string | null
           phone: string | null
-          project_id: string | null
           source: string | null
           tags: string[] | null
           updated_at: string | null
           user_id: string | null
-          workspace_id: string
         }
         Insert: {
-          business_id?: string | null
           company?: string | null
           created_at?: string | null
           custom_fields?: Json | null
           email?: string | null
-          external_id?: string | null
           first_name?: string | null
           id?: string
           last_name?: string | null
           phone?: string | null
-          project_id?: string | null
           source?: string | null
           tags?: string[] | null
           updated_at?: string | null
           user_id?: string | null
-          workspace_id: string
         }
         Update: {
-          business_id?: string | null
           company?: string | null
           created_at?: string | null
           custom_fields?: Json | null
           email?: string | null
-          external_id?: string | null
           first_name?: string | null
           id?: string
           last_name?: string | null
           phone?: string | null
-          project_id?: string | null
           source?: string | null
           tags?: string[] | null
           updated_at?: string | null
           user_id?: string | null
-          workspace_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "crm_contacts_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
-      crm_form_captures: {
+      crm_deals: {
         Row: {
-          created_at: string | null
-          field_mappings: Json
-          form_selector: string
-          id: string
-          pipeline_id: string | null
-          project_id: string | null
-          stage: string
-          tags: string[] | null
-          updated_at: string | null
-          workflow_ids: string[] | null
-          workspace_id: string
-        }
-        Insert: {
-          created_at?: string | null
-          field_mappings: Json
-          form_selector: string
-          id?: string
-          pipeline_id?: string | null
-          project_id?: string | null
-          stage: string
-          tags?: string[] | null
-          updated_at?: string | null
-          workflow_ids?: string[] | null
-          workspace_id: string
-        }
-        Update: {
-          created_at?: string | null
-          field_mappings?: Json
-          form_selector?: string
-          id?: string
-          pipeline_id?: string | null
-          project_id?: string | null
-          stage?: string
-          tags?: string[] | null
-          updated_at?: string | null
-          workflow_ids?: string[] | null
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "crm_form_captures_pipeline_id_fkey"
-            columns: ["pipeline_id"]
-            isOneToOne: false
-            referencedRelation: "crm_pipelines"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      crm_form_submissions: {
-        Row: {
-          business_id: string | null
-          component_id: string | null
-          consent_metadata: Json
           contact_id: string | null
-          created_at: string
-          data: Json
-          form_id: string
-          form_name: string | null
+          created_at: string | null
+          expected_close_date: string | null
           id: string
-          idempotency_key: string | null
-          intent: string | null
-          ip_address: string | null
           lead_id: string | null
-          page_id: string | null
-          project_id: string | null
-          referrer: string | null
-          site_id: string | null
-          snapshot_id: string | null
-          source_url: string | null
-          submitted_at: string
-          user_agent: string | null
-          utm_campaign: string | null
-          utm_medium: string | null
-          utm_source: string | null
-          workflow_triggered: boolean
+          stage: string | null
+          title: string
+          updated_at: string | null
+          user_id: string | null
+          value: number | null
         }
         Insert: {
-          business_id?: string | null
-          component_id?: string | null
-          consent_metadata?: Json
           contact_id?: string | null
-          created_at?: string
-          data?: Json
-          form_id: string
-          form_name?: string | null
+          created_at?: string | null
+          expected_close_date?: string | null
           id?: string
-          idempotency_key?: string | null
-          intent?: string | null
-          ip_address?: string | null
           lead_id?: string | null
-          page_id?: string | null
-          project_id?: string | null
-          referrer?: string | null
-          site_id?: string | null
-          snapshot_id?: string | null
-          source_url?: string | null
-          submitted_at?: string
-          user_agent?: string | null
-          utm_campaign?: string | null
-          utm_medium?: string | null
-          utm_source?: string | null
-          workflow_triggered?: boolean
+          stage?: string | null
+          title: string
+          updated_at?: string | null
+          user_id?: string | null
+          value?: number | null
         }
         Update: {
-          business_id?: string | null
-          component_id?: string | null
-          consent_metadata?: Json
           contact_id?: string | null
-          created_at?: string
-          data?: Json
-          form_id?: string
-          form_name?: string | null
+          created_at?: string | null
+          expected_close_date?: string | null
           id?: string
-          idempotency_key?: string | null
-          intent?: string | null
-          ip_address?: string | null
           lead_id?: string | null
-          page_id?: string | null
-          project_id?: string | null
-          referrer?: string | null
-          site_id?: string | null
-          snapshot_id?: string | null
-          source_url?: string | null
-          submitted_at?: string
-          user_agent?: string | null
-          utm_campaign?: string | null
-          utm_medium?: string | null
-          utm_source?: string | null
-          workflow_triggered?: boolean
+          stage?: string | null
+          title?: string
+          updated_at?: string | null
+          user_id?: string | null
+          value?: number | null
         }
         Relationships: [
           {
-            foreignKeyName: "crm_form_submissions_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "crm_form_submissions_contact_id_fkey"
+            foreignKeyName: "crm_deals_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "crm_contacts"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "crm_form_submissions_lead_id_fkey"
+            foreignKeyName: "crm_deals_lead_id_fkey"
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "crm_leads"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "crm_form_submissions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "crm_form_submissions_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
-            referencedColumns: ["id"]
-          },
         ]
       }
-      crm_funnel_conversions: {
+      crm_email_templates: {
         Row: {
-          completed_steps: Json | null
-          contact_id: string | null
-          converted: boolean | null
-          converted_at: string | null
-          current_step: string | null
-          funnel_id: string | null
-          id: string
-          last_activity: string | null
-          started_at: string | null
-          workspace_id: string
-        }
-        Insert: {
-          completed_steps?: Json | null
-          contact_id?: string | null
-          converted?: boolean | null
-          converted_at?: string | null
-          current_step?: string | null
-          funnel_id?: string | null
-          id?: string
-          last_activity?: string | null
-          started_at?: string | null
-          workspace_id: string
-        }
-        Update: {
-          completed_steps?: Json | null
-          contact_id?: string | null
-          converted?: boolean | null
-          converted_at?: string | null
-          current_step?: string | null
-          funnel_id?: string | null
-          id?: string
-          last_activity?: string | null
-          started_at?: string | null
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "crm_funnel_conversions_contact_id_fkey"
-            columns: ["contact_id"]
-            isOneToOne: false
-            referencedRelation: "crm_contacts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "crm_funnel_conversions_funnel_id_fkey"
-            columns: ["funnel_id"]
-            isOneToOne: false
-            referencedRelation: "crm_funnels"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      crm_funnels: {
-        Row: {
+          body_html: string | null
+          body_text: string | null
           created_at: string | null
-          description: string | null
           id: string
           name: string
-          project_id: string | null
-          steps: Json
+          subject: string
           updated_at: string | null
-          workspace_id: string
+          user_id: string | null
+          variables: string[] | null
         }
         Insert: {
+          body_html?: string | null
+          body_text?: string | null
           created_at?: string | null
-          description?: string | null
           id?: string
           name: string
-          project_id?: string | null
-          steps: Json
+          subject: string
           updated_at?: string | null
-          workspace_id: string
+          user_id?: string | null
+          variables?: string[] | null
         }
         Update: {
+          body_html?: string | null
+          body_text?: string | null
           created_at?: string | null
-          description?: string | null
           id?: string
           name?: string
-          project_id?: string | null
-          steps?: Json
+          subject?: string
           updated_at?: string | null
-          workspace_id?: string
+          user_id?: string | null
+          variables?: string[] | null
+        }
+        Relationships: []
+      }
+      crm_form_submissions: {
+        Row: {
+          created_at: string | null
+          data: Json
+          form_id: string
+          form_name: string | null
+          id: string
+          ip_address: string | null
+          source_url: string | null
+          user_agent: string | null
+          workflow_triggered: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          data?: Json
+          form_id: string
+          form_name?: string | null
+          id?: string
+          ip_address?: string | null
+          source_url?: string | null
+          user_agent?: string | null
+          workflow_triggered?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          data?: Json
+          form_id?: string
+          form_name?: string | null
+          id?: string
+          ip_address?: string | null
+          source_url?: string | null
+          user_agent?: string | null
+          workflow_triggered?: boolean | null
         }
         Relationships: []
       }
       crm_leads: {
         Row: {
           business_id: string | null
-          company: string | null
           contact_id: string | null
-          contact_name: string | null
           created_at: string | null
-          custom_fields: Json | null
           email: string | null
-          external_id: string | null
           id: string
           intent: string | null
           metadata: Json
           name: string | null
-          phone: string | null
-          pipeline_id: string | null
-          project_id: string | null
+          notes: string | null
           source: string | null
-          stage: string
-          tags: string[] | null
+          status: string | null
           title: string
           updated_at: string | null
           user_id: string | null
           value: number | null
-          workspace_id: string
         }
         Insert: {
           business_id?: string | null
-          company?: string | null
           contact_id?: string | null
-          contact_name?: string | null
           created_at?: string | null
-          custom_fields?: Json | null
           email?: string | null
-          external_id?: string | null
           id?: string
           intent?: string | null
           metadata?: Json
           name?: string | null
-          phone?: string | null
-          pipeline_id?: string | null
-          project_id?: string | null
+          notes?: string | null
           source?: string | null
-          stage: string
-          tags?: string[] | null
-          title: string
-          updated_at?: string | null
-          user_id?: string | null
-          value?: number | null
-          workspace_id: string
-        }
-        Update: {
-          business_id?: string | null
-          company?: string | null
-          contact_id?: string | null
-          contact_name?: string | null
-          created_at?: string | null
-          custom_fields?: Json | null
-          email?: string | null
-          external_id?: string | null
-          id?: string
-          intent?: string | null
-          metadata?: Json
-          name?: string | null
-          phone?: string | null
-          pipeline_id?: string | null
-          project_id?: string | null
-          source?: string | null
-          stage?: string
-          tags?: string[] | null
+          status?: string | null
           title?: string
           updated_at?: string | null
           user_id?: string | null
           value?: number | null
-          workspace_id?: string
+        }
+        Update: {
+          business_id?: string | null
+          contact_id?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          intent?: string | null
+          metadata?: Json
+          name?: string | null
+          notes?: string | null
+          source?: string | null
+          status?: string | null
+          title?: string
+          updated_at?: string | null
+          user_id?: string | null
+          value?: number | null
         }
         Relationships: [
-          {
-            foreignKeyName: "crm_leads_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "crm_leads_contact_id_fkey"
             columns: ["contact_id"]
@@ -1765,96 +1836,50 @@ export type Database = {
           },
         ]
       }
-      crm_pipelines: {
-        Row: {
-          created_at: string | null
-          description: string | null
-          id: string
-          name: string
-          project_id: string | null
-          stages: Json
-          updated_at: string | null
-          workspace_id: string
-        }
-        Insert: {
-          created_at?: string | null
-          description?: string | null
-          id?: string
-          name: string
-          project_id?: string | null
-          stages: Json
-          updated_at?: string | null
-          workspace_id: string
-        }
-        Update: {
-          created_at?: string | null
-          description?: string | null
-          id?: string
-          name?: string
-          project_id?: string | null
-          stages?: Json
-          updated_at?: string | null
-          workspace_id?: string
-        }
-        Relationships: []
-      }
       crm_workflow_jobs: {
         Row: {
-          action_config: Json
+          action_config: Json | null
           action_type: string
-          attempts: number | null
-          context_data: Json | null
           created_at: string | null
-          executed_at: string | null
+          error_message: string | null
           id: string
-          last_error: string | null
-          max_attempts: number | null
-          scheduled_for: string | null
+          processed_at: string | null
+          result: Json | null
+          retry_count: number | null
+          scheduled_at: string | null
           status: string | null
-          workflow_id: string | null
+          step_index: number
           workflow_run_id: string | null
-          workspace_id: string
         }
         Insert: {
-          action_config: Json
+          action_config?: Json | null
           action_type: string
-          attempts?: number | null
-          context_data?: Json | null
           created_at?: string | null
-          executed_at?: string | null
+          error_message?: string | null
           id?: string
-          last_error?: string | null
-          max_attempts?: number | null
-          scheduled_for?: string | null
+          processed_at?: string | null
+          result?: Json | null
+          retry_count?: number | null
+          scheduled_at?: string | null
           status?: string | null
-          workflow_id?: string | null
+          step_index?: number
           workflow_run_id?: string | null
-          workspace_id: string
         }
         Update: {
-          action_config?: Json
+          action_config?: Json | null
           action_type?: string
-          attempts?: number | null
-          context_data?: Json | null
           created_at?: string | null
-          executed_at?: string | null
+          error_message?: string | null
           id?: string
-          last_error?: string | null
-          max_attempts?: number | null
-          scheduled_for?: string | null
+          processed_at?: string | null
+          result?: Json | null
+          retry_count?: number | null
+          scheduled_at?: string | null
           status?: string | null
-          workflow_id?: string | null
+          step_index?: number
           workflow_run_id?: string | null
-          workspace_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "crm_workflow_jobs_workflow_id_fkey"
-            columns: ["workflow_id"]
-            isOneToOne: false
-            referencedRelation: "crm_workflows"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "crm_workflow_jobs_workflow_run_id_fkey"
             columns: ["workflow_run_id"]
@@ -1867,36 +1892,33 @@ export type Database = {
       crm_workflow_runs: {
         Row: {
           completed_at: string | null
-          created_at: string | null
           error_message: string | null
           id: string
+          result: Json | null
           started_at: string | null
           status: string | null
           trigger_data: Json | null
           workflow_id: string | null
-          workspace_id: string
         }
         Insert: {
           completed_at?: string | null
-          created_at?: string | null
           error_message?: string | null
           id?: string
+          result?: Json | null
           started_at?: string | null
           status?: string | null
           trigger_data?: Json | null
           workflow_id?: string | null
-          workspace_id: string
         }
         Update: {
           completed_at?: string | null
-          created_at?: string | null
           error_message?: string | null
           id?: string
+          result?: Json | null
           started_at?: string | null
           status?: string | null
           trigger_data?: Json | null
           workflow_id?: string | null
-          workspace_id?: string
         }
         Relationships: [
           {
@@ -1910,106 +1932,40 @@ export type Database = {
       }
       crm_workflows: {
         Row: {
-          actions: Json
-          active: boolean | null
-          conditions: Json | null
           created_at: string | null
           description: string | null
           id: string
+          is_active: boolean | null
           name: string
-          project_id: string | null
+          steps: Json | null
           trigger_config: Json | null
           trigger_type: string
           updated_at: string | null
           user_id: string | null
-          workspace_id: string
         }
         Insert: {
-          actions: Json
-          active?: boolean | null
-          conditions?: Json | null
           created_at?: string | null
           description?: string | null
           id?: string
+          is_active?: boolean | null
           name: string
-          project_id?: string | null
-          trigger_config?: Json | null
-          trigger_type: string
-          updated_at?: string | null
-          user_id?: string | null
-          workspace_id: string
-        }
-        Update: {
-          actions?: Json
-          active?: boolean | null
-          conditions?: Json | null
-          created_at?: string | null
-          description?: string | null
-          id?: string
-          name?: string
-          project_id?: string | null
+          steps?: Json | null
           trigger_config?: Json | null
           trigger_type?: string
           updated_at?: string | null
           user_id?: string | null
-          workspace_id?: string
-        }
-        Relationships: []
-      }
-      design_schemas: {
-        Row: {
-          color_scheme: Json
-          created_at: string
-          description: string | null
-          effects: Json
-          gradients: Json
-          guidelines: string[]
-          id: string
-          is_active: boolean
-          keywords: string[]
-          pattern_name: string
-          pattern_type: string
-          priority: number
-          schema_type: string | null
-          shadows: Json
-          tailwind_utilities: string[]
-          updated_at: string
-        }
-        Insert: {
-          color_scheme?: Json
-          created_at?: string
-          description?: string | null
-          effects?: Json
-          gradients?: Json
-          guidelines?: string[]
-          id?: string
-          is_active?: boolean
-          keywords?: string[]
-          pattern_name: string
-          pattern_type: string
-          priority?: number
-          schema_type?: string | null
-          shadows?: Json
-          tailwind_utilities?: string[]
-          updated_at?: string
         }
         Update: {
-          color_scheme?: Json
-          created_at?: string
+          created_at?: string | null
           description?: string | null
-          effects?: Json
-          gradients?: Json
-          guidelines?: string[]
           id?: string
-          is_active?: boolean
-          keywords?: string[]
-          pattern_name?: string
-          pattern_type?: string
-          priority?: number
-          schema_type?: string | null
-          shadows?: Json
-          tailwind_utilities?: string[]
-          updated_at?: string
+          is_active?: boolean | null
+          name?: string
+          steps?: Json | null
+          trigger_config?: Json | null
+          trigger_type?: string
+          updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -2107,47 +2063,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
-      }
-      entitlements: {
-        Row: {
-          business_id: string
-          created_at: string
-          expires_at: string | null
-          id: string
-          key: string
-          source: string | null
-          updated_at: string
-          value: Json
-        }
-        Insert: {
-          business_id: string
-          created_at?: string
-          expires_at?: string | null
-          id?: string
-          key: string
-          source?: string | null
-          updated_at?: string
-          value: Json
-        }
-        Update: {
-          business_id?: string
-          created_at?: string
-          expires_at?: string | null
-          id?: string
-          key?: string
-          source?: string | null
-          updated_at?: string
-          value?: Json
-        }
-        Relationships: [
-          {
-            foreignKeyName: "entitlements_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       featured_offers: {
         Row: {
@@ -2377,208 +2292,6 @@ export type Database = {
         }
         Relationships: []
       }
-      form_definitions: {
-        Row: {
-          business_id: string
-          created_at: string
-          destination: Json
-          external_id: string
-          fields: Json
-          id: string
-          intent: string
-          is_active: boolean
-          name: string
-          project_id: string | null
-          site_id: string | null
-          success_behavior: Json
-          updated_at: string
-        }
-        Insert: {
-          business_id: string
-          created_at?: string
-          destination?: Json
-          external_id: string
-          fields?: Json
-          id?: string
-          intent: string
-          is_active?: boolean
-          name: string
-          project_id?: string | null
-          site_id?: string | null
-          success_behavior?: Json
-          updated_at?: string
-        }
-        Update: {
-          business_id?: string
-          created_at?: string
-          destination?: Json
-          external_id?: string
-          fields?: Json
-          id?: string
-          intent?: string
-          is_active?: boolean
-          name?: string
-          project_id?: string | null
-          site_id?: string | null
-          success_behavior?: Json
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "form_definitions_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "form_definitions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "form_definitions_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      generated_applications: {
-        Row: {
-          backend_deployed: boolean | null
-          backend_endpoints: Json | null
-          config: Json
-          created_at: string | null
-          database_migrated: boolean | null
-          database_schema: Json | null
-          deployed_at: string | null
-          deployment_error: string | null
-          deployment_platform: string | null
-          deployment_status: string | null
-          deployment_url: string | null
-          description: string | null
-          features: string[] | null
-          files: Json | null
-          forks_count: number | null
-          frontend_deployed: boolean | null
-          frontend_framework: string | null
-          has_authentication: boolean | null
-          has_backend: boolean | null
-          has_database: boolean | null
-          id: string
-          is_active: boolean | null
-          is_public: boolean | null
-          metadata: Json | null
-          name: string
-          parent_id: string | null
-          preview_html: string | null
-          preview_url: string | null
-          project_id: string | null
-          tags: string[] | null
-          type: string
-          updated_at: string | null
-          user_id: string | null
-          version: number | null
-          views_count: number | null
-          workspace_id: string | null
-        }
-        Insert: {
-          backend_deployed?: boolean | null
-          backend_endpoints?: Json | null
-          config: Json
-          created_at?: string | null
-          database_migrated?: boolean | null
-          database_schema?: Json | null
-          deployed_at?: string | null
-          deployment_error?: string | null
-          deployment_platform?: string | null
-          deployment_status?: string | null
-          deployment_url?: string | null
-          description?: string | null
-          features?: string[] | null
-          files?: Json | null
-          forks_count?: number | null
-          frontend_deployed?: boolean | null
-          frontend_framework?: string | null
-          has_authentication?: boolean | null
-          has_backend?: boolean | null
-          has_database?: boolean | null
-          id?: string
-          is_active?: boolean | null
-          is_public?: boolean | null
-          metadata?: Json | null
-          name: string
-          parent_id?: string | null
-          preview_html?: string | null
-          preview_url?: string | null
-          project_id?: string | null
-          tags?: string[] | null
-          type: string
-          updated_at?: string | null
-          user_id?: string | null
-          version?: number | null
-          views_count?: number | null
-          workspace_id?: string | null
-        }
-        Update: {
-          backend_deployed?: boolean | null
-          backend_endpoints?: Json | null
-          config?: Json
-          created_at?: string | null
-          database_migrated?: boolean | null
-          database_schema?: Json | null
-          deployed_at?: string | null
-          deployment_error?: string | null
-          deployment_platform?: string | null
-          deployment_status?: string | null
-          deployment_url?: string | null
-          description?: string | null
-          features?: string[] | null
-          files?: Json | null
-          forks_count?: number | null
-          frontend_deployed?: boolean | null
-          frontend_framework?: string | null
-          has_authentication?: boolean | null
-          has_backend?: boolean | null
-          has_database?: boolean | null
-          id?: string
-          is_active?: boolean | null
-          is_public?: boolean | null
-          metadata?: Json | null
-          name?: string
-          parent_id?: string | null
-          preview_html?: string | null
-          preview_url?: string | null
-          project_id?: string | null
-          tags?: string[] | null
-          type?: string
-          updated_at?: string | null
-          user_id?: string | null
-          version?: number | null
-          views_count?: number | null
-          workspace_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "generated_applications_parent_id_fkey"
-            columns: ["parent_id"]
-            isOneToOne: false
-            referencedRelation: "generated_applications"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "generated_applications_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       generated_pages: {
         Row: {
           created_at: string | null
@@ -2765,53 +2478,46 @@ export type Database = {
           },
         ]
       }
-      installed_packs: {
+      image_slot_events: {
         Row: {
-          business_id: string
-          config: Json | null
+          business_id: string | null
+          created_at: string
           id: string
-          installed_at: string
-          pack_id: string
-          pack_version: string | null
-          project_id: string | null
-          status: string | null
-          updated_at: string
+          new_src: string | null
+          old_src: string | null
+          section: string | null
+          slot_id: string
+          slot_type: string | null
+          user_id: string | null
         }
         Insert: {
-          business_id: string
-          config?: Json | null
+          business_id?: string | null
+          created_at?: string
           id?: string
-          installed_at?: string
-          pack_id: string
-          pack_version?: string | null
-          project_id?: string | null
-          status?: string | null
-          updated_at?: string
+          new_src?: string | null
+          old_src?: string | null
+          section?: string | null
+          slot_id: string
+          slot_type?: string | null
+          user_id?: string | null
         }
         Update: {
-          business_id?: string
-          config?: Json | null
+          business_id?: string | null
+          created_at?: string
           id?: string
-          installed_at?: string
-          pack_id?: string
-          pack_version?: string | null
-          project_id?: string | null
-          status?: string | null
-          updated_at?: string
+          new_src?: string | null
+          old_src?: string | null
+          section?: string | null
+          slot_id?: string
+          slot_type?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "installed_packs_business_id_fkey"
+            foreignKeyName: "image_slot_events_business_id_fkey"
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "installed_packs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -2855,161 +2561,89 @@ export type Database = {
           },
         ]
       }
-      intent_events: {
+      intent_bindings: {
         Row: {
-          automation_run_id: string | null
-          automation_triggered: boolean | null
-          binding_id: string | null
-          build_id: string | null
           business_id: string
-          client_actions: Json | null
-          created_at: string | null
-          duration_ms: number | null
-          error_code: string | null
-          error_message: string | null
+          created_at: string
+          created_by: string | null
+          handler: string
           id: string
-          intent_id: string
-          ip_address: unknown
-          ok: boolean
-          page_id: string
-          params: Json | null
-          result: Json | null
-          session_id: string | null
-          site_id: string
-          user_agent: string | null
-          user_id: string | null
+          intent: string
+          payload_defaults: Json
         }
         Insert: {
-          automation_run_id?: string | null
-          automation_triggered?: boolean | null
-          binding_id?: string | null
-          build_id?: string | null
           business_id: string
-          client_actions?: Json | null
-          created_at?: string | null
-          duration_ms?: number | null
-          error_code?: string | null
-          error_message?: string | null
+          created_at?: string
+          created_by?: string | null
+          handler: string
           id?: string
-          intent_id: string
-          ip_address?: unknown
-          ok: boolean
-          page_id: string
-          params?: Json | null
-          result?: Json | null
-          session_id?: string | null
-          site_id: string
-          user_agent?: string | null
-          user_id?: string | null
+          intent: string
+          payload_defaults?: Json
         }
         Update: {
-          automation_run_id?: string | null
-          automation_triggered?: boolean | null
-          binding_id?: string | null
-          build_id?: string | null
           business_id?: string
-          client_actions?: Json | null
-          created_at?: string | null
-          duration_ms?: number | null
-          error_code?: string | null
-          error_message?: string | null
+          created_at?: string
+          created_by?: string | null
+          handler?: string
           id?: string
-          intent_id?: string
-          ip_address?: unknown
-          ok?: boolean
-          page_id?: string
-          params?: Json | null
-          result?: Json | null
-          session_id?: string | null
-          site_id?: string
-          user_agent?: string | null
-          user_id?: string | null
+          intent?: string
+          payload_defaults?: Json
         }
-        Relationships: [
-          {
-            foreignKeyName: "intent_events_build_id_fkey"
-            columns: ["build_id"]
-            isOneToOne: false
-            referencedRelation: "site_builds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "intent_events_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "intent_events_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       intent_execution_log: {
         Row: {
           binding_id: string | null
           business_id: string
-          created_at: string | null
+          created_at: string
           error_message: string | null
           execution_time_ms: number | null
           id: string
           intent: string
-          payload: Json | null
+          payload: Json
           project_id: string | null
-          recipes_triggered: string[] | null
-          result_data: Json | null
+          recipes_triggered: string[]
+          result_data: Json
           result_status: string
-          source: string | null
+          source: string
           source_url: string | null
-          workflows_triggered: string[] | null
+          workflows_triggered: string[]
         }
         Insert: {
           binding_id?: string | null
           business_id: string
-          created_at?: string | null
+          created_at?: string
           error_message?: string | null
           execution_time_ms?: number | null
           id?: string
           intent: string
-          payload?: Json | null
+          payload?: Json
           project_id?: string | null
-          recipes_triggered?: string[] | null
-          result_data?: Json | null
-          result_status: string
-          source?: string | null
+          recipes_triggered?: string[]
+          result_data?: Json
+          result_status?: string
+          source?: string
           source_url?: string | null
-          workflows_triggered?: string[] | null
+          workflows_triggered?: string[]
         }
         Update: {
           binding_id?: string | null
           business_id?: string
-          created_at?: string | null
+          created_at?: string
           error_message?: string | null
           execution_time_ms?: number | null
           id?: string
           intent?: string
-          payload?: Json | null
+          payload?: Json
           project_id?: string | null
-          recipes_triggered?: string[] | null
-          result_data?: Json | null
+          recipes_triggered?: string[]
+          result_data?: Json
           result_status?: string
-          source?: string | null
+          source?: string
           source_url?: string | null
-          workflows_triggered?: string[] | null
+          workflows_triggered?: string[]
         }
-        Relationships: [
-          {
-            foreignKeyName: "intent_execution_log_binding_id_fkey"
-            columns: ["binding_id"]
-            isOneToOne: false
-            referencedRelation: "site_intent_bindings"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       layers: {
         Row: {
@@ -3067,54 +2701,75 @@ export type Database = {
           },
         ]
       }
-      login_history: {
+      leads: {
         Row: {
-          auth_method: string | null
-          blocked: boolean | null
-          city: string | null
-          country_code: string | null
+          business_id: string
           created_at: string
-          device_name: string | null
-          email: string | null
-          failure_reason: string | null
+          email: string
           id: string
-          ip_address: unknown
-          location: string | null
-          success: boolean
-          user_agent: string | null
-          user_id: string | null
+          message: string | null
+          metadata: Json | null
+          name: string | null
+          phone: string | null
+          source: string | null
         }
         Insert: {
-          auth_method?: string | null
-          blocked?: boolean | null
-          city?: string | null
-          country_code?: string | null
+          business_id: string
           created_at?: string
-          device_name?: string | null
-          email?: string | null
-          failure_reason?: string | null
+          email: string
           id?: string
-          ip_address?: unknown
-          location?: string | null
-          success?: boolean
-          user_agent?: string | null
-          user_id?: string | null
+          message?: string | null
+          metadata?: Json | null
+          name?: string | null
+          phone?: string | null
+          source?: string | null
         }
         Update: {
-          auth_method?: string | null
-          blocked?: boolean | null
-          city?: string | null
-          country_code?: string | null
+          business_id?: string
           created_at?: string
-          device_name?: string | null
-          email?: string | null
-          failure_reason?: string | null
+          email?: string
           id?: string
-          ip_address?: unknown
-          location?: string | null
-          success?: boolean
-          user_agent?: string | null
-          user_id?: string | null
+          message?: string | null
+          metadata?: Json | null
+          name?: string | null
+          phone?: string | null
+          source?: string | null
+        }
+        Relationships: []
+      }
+      lucide_icon_registry: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          industry_relevance: string[] | null
+          name: string
+          subcategory: string | null
+          tags: string[] | null
+          use_cases: string[] | null
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          industry_relevance?: string[] | null
+          name: string
+          subcategory?: string | null
+          tags?: string[] | null
+          use_cases?: string[] | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          industry_relevance?: string[] | null
+          name?: string
+          subcategory?: string | null
+          tags?: string[] | null
+          use_cases?: string[] | null
         }
         Relationships: []
       }
@@ -3183,154 +2838,66 @@ export type Database = {
           },
         ]
       }
-      onboarding_state: {
+      orders: {
         Row: {
-          business_name: string | null
-          completed: boolean
-          completed_steps: string[]
-          created_at: string
-          current_step: string
-          industry: string | null
-          project_id: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          business_name?: string | null
-          completed?: boolean
-          completed_steps?: string[]
-          created_at?: string
-          current_step?: string
-          industry?: string | null
-          project_id?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          business_name?: string | null
-          completed?: boolean
-          completed_steps?: string[]
-          created_at?: string
-          current_step?: string
-          industry?: string | null
-          project_id?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "onboarding_state_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      organization_members: {
-        Row: {
-          created_at: string
-          department: string | null
+          business_id: string | null
+          created_at: string | null
+          currency: string | null
+          customer_email: string
+          customer_name: string | null
           id: string
-          invited_by: string | null
-          is_active: boolean
-          joined_at: string
-          organization_id: string
-          role: string
-          title: string | null
-          updated_at: string
-          user_id: string
+          items: Json
+          metadata: Json | null
+          payment_intent_id: string | null
+          payment_method: string | null
+          session_id: string | null
+          shipping_address: Json | null
+          status: string | null
+          subtotal: number
+          tax: number | null
+          total: number
+          updated_at: string | null
+          user_id: string | null
         }
         Insert: {
-          created_at?: string
-          department?: string | null
+          business_id?: string | null
+          created_at?: string | null
+          currency?: string | null
+          customer_email: string
+          customer_name?: string | null
           id?: string
-          invited_by?: string | null
-          is_active?: boolean
-          joined_at?: string
-          organization_id: string
-          role?: string
-          title?: string | null
-          updated_at?: string
-          user_id: string
+          items: Json
+          metadata?: Json | null
+          payment_intent_id?: string | null
+          payment_method?: string | null
+          session_id?: string | null
+          shipping_address?: Json | null
+          status?: string | null
+          subtotal: number
+          tax?: number | null
+          total: number
+          updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
-          created_at?: string
-          department?: string | null
+          business_id?: string | null
+          created_at?: string | null
+          currency?: string | null
+          customer_email?: string
+          customer_name?: string | null
           id?: string
-          invited_by?: string | null
-          is_active?: boolean
-          joined_at?: string
-          organization_id?: string
-          role?: string
-          title?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "organization_members_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      organizations: {
-        Row: {
-          billing: Json
-          created_at: string
-          description: string | null
-          id: string
-          industry: string | null
-          logo: string | null
-          member_count: number
-          name: string
-          owner_id: string | null
-          project_count: number
-          size: string | null
-          slug: string | null
-          status: string
-          storage_used: number
-          updated_at: string
-          website: string | null
-        }
-        Insert: {
-          billing?: Json
-          created_at?: string
-          description?: string | null
-          id?: string
-          industry?: string | null
-          logo?: string | null
-          member_count?: number
-          name: string
-          owner_id?: string | null
-          project_count?: number
-          size?: string | null
-          slug?: string | null
-          status?: string
-          storage_used?: number
-          updated_at?: string
-          website?: string | null
-        }
-        Update: {
-          billing?: Json
-          created_at?: string
-          description?: string | null
-          id?: string
-          industry?: string | null
-          logo?: string | null
-          member_count?: number
-          name?: string
-          owner_id?: string | null
-          project_count?: number
-          size?: string | null
-          slug?: string | null
-          status?: string
-          storage_used?: number
-          updated_at?: string
-          website?: string | null
+          items?: Json
+          metadata?: Json | null
+          payment_intent_id?: string | null
+          payment_method?: string | null
+          session_id?: string | null
+          shipping_address?: Json | null
+          status?: string | null
+          subtotal?: number
+          tax?: number | null
+          total?: number
+          updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -3505,44 +3072,6 @@ export type Database = {
           },
         ]
       }
-      preview_session_pages: {
-        Row: {
-          content: string
-          created_at: string | null
-          id: string
-          path: string
-          session_id: string
-          template_id: string | null
-          updated_at: string | null
-        }
-        Insert: {
-          content: string
-          created_at?: string | null
-          id?: string
-          path: string
-          session_id: string
-          template_id?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          content?: string
-          created_at?: string | null
-          id?: string
-          path?: string
-          session_id?: string
-          template_id?: string | null
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "preview_session_pages_template_id_fkey"
-            columns: ["template_id"]
-            isOneToOne: false
-            referencedRelation: "templates"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       pricing_plans: {
         Row: {
           billing_interval: string | null
@@ -3608,6 +3137,66 @@ export type Database = {
           },
         ]
       }
+      products: {
+        Row: {
+          business_id: string | null
+          category: string | null
+          created_at: string | null
+          currency: string | null
+          description: string | null
+          featured: boolean
+          id: string
+          image_url: string | null
+          inventory_count: number | null
+          is_active: boolean | null
+          metadata: Json | null
+          name: string
+          price: number
+          slug: string | null
+          sort_order: number
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          business_id?: string | null
+          category?: string | null
+          created_at?: string | null
+          currency?: string | null
+          description?: string | null
+          featured?: boolean
+          id?: string
+          image_url?: string | null
+          inventory_count?: number | null
+          is_active?: boolean | null
+          metadata?: Json | null
+          name: string
+          price: number
+          slug?: string | null
+          sort_order?: number
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          business_id?: string | null
+          category?: string | null
+          created_at?: string | null
+          currency?: string | null
+          description?: string | null
+          featured?: boolean
+          id?: string
+          image_url?: string | null
+          inventory_count?: number | null
+          is_active?: boolean | null
+          metadata?: Json | null
+          name?: string
+          price?: number
+          slug?: string | null
+          sort_order?: number
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -3615,7 +3204,6 @@ export type Database = {
           full_name: string | null
           id: string
           updated_at: string | null
-          username: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -3623,7 +3211,6 @@ export type Database = {
           full_name?: string | null
           id: string
           updated_at?: string | null
-          username?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -3631,335 +3218,8 @@ export type Database = {
           full_name?: string | null
           id?: string
           updated_at?: string | null
-          username?: string | null
         }
         Relationships: []
-      }
-      project_assets: {
-        Row: {
-          business_id: string | null
-          created_at: string
-          id: string
-          is_public: boolean | null
-          mime_type: string | null
-          name: string
-          path: string
-          project_id: string | null
-          public_url: string | null
-          size: number | null
-          type: string | null
-          updated_at: string
-          url: string | null
-          user_id: string | null
-        }
-        Insert: {
-          business_id?: string | null
-          created_at?: string
-          id?: string
-          is_public?: boolean | null
-          mime_type?: string | null
-          name: string
-          path: string
-          project_id?: string | null
-          public_url?: string | null
-          size?: number | null
-          type?: string | null
-          updated_at?: string
-          url?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          business_id?: string | null
-          created_at?: string
-          id?: string
-          is_public?: boolean | null
-          mime_type?: string | null
-          name?: string
-          path?: string
-          project_id?: string | null
-          public_url?: string | null
-          size?: number | null
-          type?: string | null
-          updated_at?: string
-          url?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_assets_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_assets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      project_component_bindings: {
-        Row: {
-          binding_key: string
-          component_instance_id: string
-          config: Json
-          created_at: string
-          id: string
-          project_id: string
-          target_kind: string
-          target_ref: string
-          updated_at: string
-        }
-        Insert: {
-          binding_key: string
-          component_instance_id: string
-          config?: Json
-          created_at?: string
-          id?: string
-          project_id: string
-          target_kind: string
-          target_ref: string
-          updated_at?: string
-        }
-        Update: {
-          binding_key?: string
-          component_instance_id?: string
-          config?: Json
-          created_at?: string
-          id?: string
-          project_id?: string
-          target_kind?: string
-          target_ref?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_component_bindings_component_instance_id_fkey"
-            columns: ["component_instance_id"]
-            isOneToOne: false
-            referencedRelation: "project_component_instances"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_component_bindings_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      project_component_instances: {
-        Row: {
-          bindings: Json
-          builder_draft_id: string | null
-          component_type: string
-          created_at: string
-          definition_slug: string | null
-          id: string
-          label: string
-          output_events: Json
-          page_ids: Json
-          project_id: string
-          props: Json
-          required_capabilities: Json
-          source: string
-          source_instance_id: string
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          bindings?: Json
-          builder_draft_id?: string | null
-          component_type: string
-          created_at?: string
-          definition_slug?: string | null
-          id?: string
-          label: string
-          output_events?: Json
-          page_ids?: Json
-          project_id: string
-          props?: Json
-          required_capabilities?: Json
-          source?: string
-          source_instance_id: string
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          bindings?: Json
-          builder_draft_id?: string | null
-          component_type?: string
-          created_at?: string
-          definition_slug?: string | null
-          id?: string
-          label?: string
-          output_events?: Json
-          page_ids?: Json
-          project_id?: string
-          props?: Json
-          required_capabilities?: Json
-          source?: string
-          source_instance_id?: string
-          status?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_component_instances_builder_draft_id_fkey"
-            columns: ["builder_draft_id"]
-            isOneToOne: false
-            referencedRelation: "builder_drafts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_component_instances_definition_slug_fkey"
-            columns: ["definition_slug"]
-            isOneToOne: false
-            referencedRelation: "component_definitions"
-            referencedColumns: ["slug"]
-          },
-          {
-            foreignKeyName: "project_component_instances_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      project_event_log: {
-        Row: {
-          actor_id: string | null
-          component_instance_id: string | null
-          created_at: string
-          event_name: string
-          id: string
-          page_id: string | null
-          payload: Json
-          project_id: string
-          source: string
-        }
-        Insert: {
-          actor_id?: string | null
-          component_instance_id?: string | null
-          created_at?: string
-          event_name: string
-          id?: string
-          page_id?: string | null
-          payload?: Json
-          project_id: string
-          source?: string
-        }
-        Update: {
-          actor_id?: string | null
-          component_instance_id?: string | null
-          created_at?: string
-          event_name?: string
-          id?: string
-          page_id?: string | null
-          payload?: Json
-          project_id?: string
-          source?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_event_log_component_instance_id_fkey"
-            columns: ["component_instance_id"]
-            isOneToOne: false
-            referencedRelation: "project_component_instances"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_event_log_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      project_files: {
-        Row: {
-          content: string | null
-          created_at: string
-          file_content: string | null
-          file_id: string | null
-          id: string
-          kind: string
-          metadata: Json | null
-          mime: string | null
-          mime_type: string | null
-          name: string | null
-          parent_id: string | null
-          path: string
-          project_id: string
-          size: number | null
-          type: string | null
-          updated_at: string
-        }
-        Insert: {
-          content?: string | null
-          created_at?: string
-          file_content?: string | null
-          file_id?: string | null
-          id?: string
-          kind: string
-          metadata?: Json | null
-          mime?: string | null
-          mime_type?: string | null
-          name?: string | null
-          parent_id?: string | null
-          path: string
-          project_id: string
-          size?: number | null
-          type?: string | null
-          updated_at?: string
-        }
-        Update: {
-          content?: string | null
-          created_at?: string
-          file_content?: string | null
-          file_id?: string | null
-          id?: string
-          kind?: string
-          metadata?: Json | null
-          mime?: string | null
-          mime_type?: string | null
-          name?: string | null
-          parent_id?: string | null
-          path?: string
-          project_id?: string
-          size?: number | null
-          type?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_files_file_id_fkey"
-            columns: ["file_id"]
-            isOneToOne: false
-            referencedRelation: "files"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_files_parent_id_fkey"
-            columns: ["parent_id"]
-            isOneToOne: false
-            referencedRelation: "project_files"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_files_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       project_members: {
         Row: {
@@ -4054,38 +3314,6 @@ export type Database = {
         }
         Relationships: []
       }
-      project_revisions: {
-        Row: {
-          created_at: string
-          id: string
-          label: string | null
-          ops: Json
-          project_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          label?: string | null
-          ops: Json
-          project_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          label?: string | null
-          ops?: Json
-          project_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_revisions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       project_seo: {
         Row: {
           business_id: string
@@ -4146,44 +3374,6 @@ export type Database = {
         }
         Relationships: []
       }
-      project_settings: {
-        Row: {
-          automation_config: Json
-          created_at: string
-          crm_config: Json
-          id: string
-          project_id: string
-          settings: Json
-          updated_at: string
-        }
-        Insert: {
-          automation_config?: Json
-          created_at?: string
-          crm_config?: Json
-          id?: string
-          project_id: string
-          settings?: Json
-          updated_at?: string
-        }
-        Update: {
-          automation_config?: Json
-          created_at?: string
-          crm_config?: Json
-          id?: string
-          project_id?: string
-          settings?: Json
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_settings_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       projects: {
         Row: {
           business_id: string | null
@@ -4196,7 +3386,6 @@ export type Database = {
           publish_status: string
           published_at: string | null
           settings: Json
-          site_id: string | null
           slug: string | null
           status: string
           template_type: string | null
@@ -4213,7 +3402,6 @@ export type Database = {
           publish_status?: string
           published_at?: string | null
           settings?: Json
-          site_id?: string | null
           slug?: string | null
           status?: string
           template_type?: string | null
@@ -4230,7 +3418,6 @@ export type Database = {
           publish_status?: string
           published_at?: string | null
           settings?: Json
-          site_id?: string | null
           slug?: string | null
           status?: string
           template_type?: string | null
@@ -4251,84 +3438,51 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "projects_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
-            referencedColumns: ["id"]
-          },
         ]
       }
-      publish_artifacts: {
+      security_events: {
         Row: {
-          assets_checksum: string | null
-          build_id: string
-          bundle_id: string
-          cdn_url: string | null
-          created_at: string | null
-          deploy_id: string | null
-          deploy_url: string | null
-          html_checksum: string | null
+          business_id: string | null
+          created_at: string
+          details: Json | null
+          event_type: string
           id: string
-          mode: string
-          published_at: string | null
-          site_id: string
-          status: string
-          version_number: number
+          ip_address: string | null
+          risk_level: string
+          user_agent: string | null
+          user_email: string | null
+          user_id: string | null
         }
         Insert: {
-          assets_checksum?: string | null
-          build_id: string
-          bundle_id: string
-          cdn_url?: string | null
-          created_at?: string | null
-          deploy_id?: string | null
-          deploy_url?: string | null
-          html_checksum?: string | null
+          business_id?: string | null
+          created_at?: string
+          details?: Json | null
+          event_type: string
           id?: string
-          mode: string
-          published_at?: string | null
-          site_id: string
-          status?: string
-          version_number?: number
+          ip_address?: string | null
+          risk_level?: string
+          user_agent?: string | null
+          user_email?: string | null
+          user_id?: string | null
         }
         Update: {
-          assets_checksum?: string | null
-          build_id?: string
-          bundle_id?: string
-          cdn_url?: string | null
-          created_at?: string | null
-          deploy_id?: string | null
-          deploy_url?: string | null
-          html_checksum?: string | null
+          business_id?: string | null
+          created_at?: string
+          details?: Json | null
+          event_type?: string
           id?: string
-          mode?: string
-          published_at?: string | null
-          site_id?: string
-          status?: string
-          version_number?: number
+          ip_address?: string | null
+          risk_level?: string
+          user_agent?: string | null
+          user_email?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "publish_artifacts_build_id_fkey"
-            columns: ["build_id"]
+            foreignKeyName: "security_events_business_id_fkey"
+            columns: ["business_id"]
             isOneToOne: false
-            referencedRelation: "site_builds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "publish_artifacts_bundle_id_fkey"
-            columns: ["bundle_id"]
-            isOneToOne: false
-            referencedRelation: "site_bundles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "publish_artifacts_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
+            referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
         ]
@@ -4336,35 +3490,53 @@ export type Database = {
       services: {
         Row: {
           business_id: string
+          category: string | null
           created_at: string
           description: string | null
           duration_minutes: number
+          featured: boolean
           id: string
+          image_url: string | null
           is_active: boolean
+          metadata: Json
           name: string
           price_cents: number | null
+          slug: string | null
+          sort_order: number
           updated_at: string
         }
         Insert: {
           business_id: string
+          category?: string | null
           created_at?: string
           description?: string | null
           duration_minutes?: number
+          featured?: boolean
           id?: string
+          image_url?: string | null
           is_active?: boolean
+          metadata?: Json
           name: string
           price_cents?: number | null
+          slug?: string | null
+          sort_order?: number
           updated_at?: string
         }
         Update: {
           business_id?: string
+          category?: string | null
           created_at?: string
           description?: string | null
           duration_minutes?: number
+          featured?: boolean
           id?: string
+          image_url?: string | null
           is_active?: boolean
+          metadata?: Json
           name?: string
           price_cents?: number | null
+          slug?: string | null
+          sort_order?: number
           updated_at?: string
         }
         Relationships: []
@@ -4409,166 +3581,6 @@ export type Database = {
             columns: ["file_id"]
             isOneToOne: false
             referencedRelation: "files"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      site_builds: {
-        Row: {
-          context: Json | null
-          created_at: string | null
-          current_stage: string | null
-          duration_ms: number | null
-          error_message: string | null
-          error_stage: string | null
-          errors_count: number | null
-          finished_at: string | null
-          id: string
-          mode: string
-          site_id: string
-          started_at: string | null
-          status: string
-          version: number
-          warnings_count: number | null
-        }
-        Insert: {
-          context?: Json | null
-          created_at?: string | null
-          current_stage?: string | null
-          duration_ms?: number | null
-          error_message?: string | null
-          error_stage?: string | null
-          errors_count?: number | null
-          finished_at?: string | null
-          id?: string
-          mode?: string
-          site_id: string
-          started_at?: string | null
-          status?: string
-          version?: number
-          warnings_count?: number | null
-        }
-        Update: {
-          context?: Json | null
-          created_at?: string | null
-          current_stage?: string | null
-          duration_ms?: number | null
-          error_message?: string | null
-          error_stage?: string | null
-          errors_count?: number | null
-          finished_at?: string | null
-          id?: string
-          mode?: string
-          site_id?: string
-          started_at?: string | null
-          status?: string
-          version?: number
-          warnings_count?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "site_builds_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      site_bundles: {
-        Row: {
-          build_id: string
-          bundle: Json
-          checksum: string | null
-          compression: string | null
-          created_at: string | null
-          id: string
-          intent_count: number | null
-          page_count: number | null
-          schema_version: number
-          site_id: string
-          version: string
-        }
-        Insert: {
-          build_id: string
-          bundle: Json
-          checksum?: string | null
-          compression?: string | null
-          created_at?: string | null
-          id?: string
-          intent_count?: number | null
-          page_count?: number | null
-          schema_version?: number
-          site_id: string
-          version?: string
-        }
-        Update: {
-          build_id?: string
-          bundle?: Json
-          checksum?: string | null
-          compression?: string | null
-          created_at?: string | null
-          id?: string
-          intent_count?: number | null
-          page_count?: number | null
-          schema_version?: number
-          site_id?: string
-          version?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "site_bundles_build_id_fkey"
-            columns: ["build_id"]
-            isOneToOne: false
-            referencedRelation: "site_builds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "site_bundles_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      site_capabilities: {
-        Row: {
-          capability_id: string
-          configuration: Json
-          created_at: string
-          enabled_by: string | null
-          id: string
-          site_id: string
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          capability_id: string
-          configuration?: Json
-          created_at?: string
-          enabled_by?: string | null
-          id?: string
-          site_id: string
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          capability_id?: string
-          configuration?: Json
-          created_at?: string
-          enabled_by?: string | null
-          id?: string
-          site_id?: string
-          status?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "site_capabilities_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
             referencedColumns: ["id"]
           },
         ]
@@ -4661,67 +3673,59 @@ export type Database = {
       site_intent_bindings: {
         Row: {
           business_id: string
-          created_at: string | null
+          created_at: string
           element_key: string
           element_label: string | null
-          enabled: boolean | null
+          enabled: boolean
           id: string
           intent: string
-          intent_confidence: number | null
+          intent_confidence: number
           last_triggered_at: string | null
           page_path: string
-          payload_schema: Json | null
+          payload_schema: Json
           project_id: string
-          recipe_ids: string[] | null
-          trigger_count: number | null
-          updated_at: string | null
+          recipe_ids: string[]
+          trigger_count: number
+          updated_at: string
           workflow_id: string | null
         }
         Insert: {
           business_id: string
-          created_at?: string | null
+          created_at?: string
           element_key: string
           element_label?: string | null
-          enabled?: boolean | null
+          enabled?: boolean
           id?: string
           intent: string
-          intent_confidence?: number | null
+          intent_confidence?: number
           last_triggered_at?: string | null
           page_path?: string
-          payload_schema?: Json | null
+          payload_schema?: Json
           project_id: string
-          recipe_ids?: string[] | null
-          trigger_count?: number | null
-          updated_at?: string | null
+          recipe_ids?: string[]
+          trigger_count?: number
+          updated_at?: string
           workflow_id?: string | null
         }
         Update: {
           business_id?: string
-          created_at?: string | null
+          created_at?: string
           element_key?: string
           element_label?: string | null
-          enabled?: boolean | null
+          enabled?: boolean
           id?: string
           intent?: string
-          intent_confidence?: number | null
+          intent_confidence?: number
           last_triggered_at?: string | null
           page_path?: string
-          payload_schema?: Json | null
+          payload_schema?: Json
           project_id?: string
-          recipe_ids?: string[] | null
-          trigger_count?: number | null
-          updated_at?: string | null
+          recipe_ids?: string[]
+          trigger_count?: number
+          updated_at?: string
           workflow_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "site_intent_bindings_workflow_id_fkey"
-            columns: ["workflow_id"]
-            isOneToOne: false
-            referencedRelation: "crm_workflows"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       site_revisions: {
         Row: {
@@ -4800,293 +3804,32 @@ export type Database = {
           },
         ]
       }
-      site_runtime_configs: {
+      system_packs: {
         Row: {
-          api_version: string
-          attribution_required: boolean
-          created_at: string
-          external_deploy_allowed: boolean
-          public_runtime_enabled: boolean
-          settings: Json
-          site_id: string
-          updated_at: string
-        }
-        Insert: {
-          api_version?: string
-          attribution_required?: boolean
-          created_at?: string
-          external_deploy_allowed?: boolean
-          public_runtime_enabled?: boolean
-          settings?: Json
-          site_id: string
-          updated_at?: string
-        }
-        Update: {
-          api_version?: string
-          attribution_required?: boolean
-          created_at?: string
-          external_deploy_allowed?: boolean
-          public_runtime_enabled?: boolean
-          settings?: Json
-          site_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "site_runtime_configs_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: true
-            referencedRelation: "sites"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      site_setup_steps: {
-        Row: {
-          business_id: string
-          category: string
-          completed_at: string | null
-          config: Json
           created_at: string
           id: string
-          project_id: string
-          required: boolean
-          site_id: string
-          status: string
-          step_id: string
-          updated_at: string
+          manifest: Json
+          name: string
+          required_intents: string[]
+          version: string
         }
         Insert: {
-          business_id: string
-          category: string
-          completed_at?: string | null
-          config?: Json
+          created_at?: string
+          id: string
+          manifest?: Json
+          name: string
+          required_intents?: string[]
+          version?: string
+        }
+        Update: {
           created_at?: string
           id?: string
-          project_id: string
-          required?: boolean
-          site_id: string
-          status?: string
-          step_id: string
-          updated_at?: string
-        }
-        Update: {
-          business_id?: string
-          category?: string
-          completed_at?: string | null
-          config?: Json
-          created_at?: string
-          id?: string
-          project_id?: string
-          required?: boolean
-          site_id?: string
-          status?: string
-          step_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "site_setup_steps_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "site_setup_steps_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "site_setup_steps_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "sites"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      site_users: {
-        Row: {
-          business_id: string
-          created_at: string | null
-          email: string
-          email_verified: boolean | null
-          id: string
-          last_login_at: string | null
-          metadata: Json | null
-          name: string | null
-          password_hash: string
-          site_id: string
-          updated_at: string | null
-        }
-        Insert: {
-          business_id: string
-          created_at?: string | null
-          email: string
-          email_verified?: boolean | null
-          id?: string
-          last_login_at?: string | null
-          metadata?: Json | null
-          name?: string | null
-          password_hash: string
-          site_id: string
-          updated_at?: string | null
-        }
-        Update: {
-          business_id?: string
-          created_at?: string | null
-          email?: string
-          email_verified?: boolean | null
-          id?: string
-          last_login_at?: string | null
-          metadata?: Json | null
-          name?: string | null
-          password_hash?: string
-          site_id?: string
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "site_users_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "site_users_site_id_fkey"
-            columns: ["site_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sites: {
-        Row: {
-          business_id: string
-          created_at: string | null
-          current_build_id: string | null
-          domain: string | null
-          id: string
-          name: string
-          owner_user_id: string
-          published_build_id: string | null
-          settings: Json | null
-          slug: string | null
-          status: string
-          updated_at: string | null
-        }
-        Insert: {
-          business_id: string
-          created_at?: string | null
-          current_build_id?: string | null
-          domain?: string | null
-          id?: string
-          name: string
-          owner_user_id: string
-          published_build_id?: string | null
-          settings?: Json | null
-          slug?: string | null
-          status?: string
-          updated_at?: string | null
-        }
-        Update: {
-          business_id?: string
-          created_at?: string | null
-          current_build_id?: string | null
-          domain?: string | null
-          id?: string
+          manifest?: Json
           name?: string
-          owner_user_id?: string
-          published_build_id?: string | null
-          settings?: Json | null
-          slug?: string | null
-          status?: string
-          updated_at?: string | null
+          required_intents?: string[]
+          version?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "fk_sites_current_build"
-            columns: ["current_build_id"]
-            isOneToOne: false
-            referencedRelation: "site_builds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "fk_sites_published_build"
-            columns: ["published_build_id"]
-            isOneToOne: false
-            referencedRelation: "site_builds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sites_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      subscriptions: {
-        Row: {
-          billing_interval: string | null
-          business_id: string
-          canceled_at: string | null
-          created_at: string
-          current_period_end: string | null
-          current_period_start: string | null
-          id: string
-          plan: string
-          status: string
-          stripe_customer_id: string | null
-          stripe_subscription_id: string | null
-          trial_ends_at: string | null
-          updated_at: string
-        }
-        Insert: {
-          billing_interval?: string | null
-          business_id: string
-          canceled_at?: string | null
-          created_at?: string
-          current_period_end?: string | null
-          current_period_start?: string | null
-          id?: string
-          plan?: string
-          status?: string
-          stripe_customer_id?: string | null
-          stripe_subscription_id?: string | null
-          trial_ends_at?: string | null
-          updated_at?: string
-        }
-        Update: {
-          billing_interval?: string | null
-          business_id?: string
-          canceled_at?: string | null
-          created_at?: string
-          current_period_end?: string | null
-          current_period_start?: string | null
-          id?: string
-          plan?: string
-          status?: string
-          stripe_customer_id?: string | null
-          stripe_subscription_id?: string | null
-          trial_ends_at?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "subscriptions_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: true
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       tasks: {
         Row: {
@@ -5199,99 +3942,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      templates: {
-        Row: {
-          background_color: string | null
-          category: string | null
-          created_at: string | null
-          description: string | null
-          download_count: number | null
-          frames: Json | null
-          height: number
-          id: string
-          is_featured: boolean | null
-          is_premium: boolean | null
-          layers: Json
-          like_count: number | null
-          name: string
-          owner_id: string
-          payment: Json | null
-          preview_images: string[] | null
-          project_id: string | null
-          redirects: Json | null
-          requires_auth: boolean | null
-          scheduling: Json | null
-          status: string | null
-          tags: string[] | null
-          thumbnail: string | null
-          updated_at: string | null
-          usage_count: number | null
-          version: string | null
-          visibility: string | null
-          width: number
-        }
-        Insert: {
-          background_color?: string | null
-          category?: string | null
-          created_at?: string | null
-          description?: string | null
-          download_count?: number | null
-          frames?: Json | null
-          height?: number
-          id?: string
-          is_featured?: boolean | null
-          is_premium?: boolean | null
-          layers?: Json
-          like_count?: number | null
-          name: string
-          owner_id: string
-          payment?: Json | null
-          preview_images?: string[] | null
-          project_id?: string | null
-          redirects?: Json | null
-          requires_auth?: boolean | null
-          scheduling?: Json | null
-          status?: string | null
-          tags?: string[] | null
-          thumbnail?: string | null
-          updated_at?: string | null
-          usage_count?: number | null
-          version?: string | null
-          visibility?: string | null
-          width?: number
-        }
-        Update: {
-          background_color?: string | null
-          category?: string | null
-          created_at?: string | null
-          description?: string | null
-          download_count?: number | null
-          frames?: Json | null
-          height?: number
-          id?: string
-          is_featured?: boolean | null
-          is_premium?: boolean | null
-          layers?: Json
-          like_count?: number | null
-          name?: string
-          owner_id?: string
-          payment?: Json | null
-          preview_images?: string[] | null
-          project_id?: string | null
-          redirects?: Json | null
-          requires_auth?: boolean | null
-          scheduling?: Json | null
-          status?: string | null
-          tags?: string[] | null
-          thumbnail?: string | null
-          updated_at?: string | null
-          usage_count?: number | null
-          version?: string | null
-          visibility?: string | null
-          width?: number
-        }
-        Relationships: []
       }
       testimonials: {
         Row: {
@@ -5413,112 +4063,6 @@ export type Database = {
           },
         ]
       }
-      usage_events: {
-        Row: {
-          billing_period: string | null
-          business_id: string
-          created_at: string | null
-          event_type: string
-          id: string
-          metadata: Json | null
-          quantity: number | null
-          resource_id: string | null
-          resource_type: string | null
-        }
-        Insert: {
-          billing_period?: string | null
-          business_id: string
-          created_at?: string | null
-          event_type: string
-          id?: string
-          metadata?: Json | null
-          quantity?: number | null
-          resource_id?: string | null
-          resource_type?: string | null
-        }
-        Update: {
-          billing_period?: string | null
-          business_id?: string
-          created_at?: string | null
-          event_type?: string
-          id?: string
-          metadata?: Json | null
-          quantity?: number | null
-          resource_id?: string | null
-          resource_type?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "usage_events_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      usage_summary: {
-        Row: {
-          ai_generations: number | null
-          billing_period: string
-          builds_count: number | null
-          builds_limit: number | null
-          business_id: string
-          id: string
-          intent_executions: number | null
-          intent_limit: number | null
-          sites_count: number | null
-          sites_limit: number | null
-          storage_bytes: number | null
-          storage_limit_bytes: number | null
-          updated_at: string | null
-          workflow_limit: number | null
-          workflow_runs: number | null
-        }
-        Insert: {
-          ai_generations?: number | null
-          billing_period: string
-          builds_count?: number | null
-          builds_limit?: number | null
-          business_id: string
-          id?: string
-          intent_executions?: number | null
-          intent_limit?: number | null
-          sites_count?: number | null
-          sites_limit?: number | null
-          storage_bytes?: number | null
-          storage_limit_bytes?: number | null
-          updated_at?: string | null
-          workflow_limit?: number | null
-          workflow_runs?: number | null
-        }
-        Update: {
-          ai_generations?: number | null
-          billing_period?: string
-          builds_count?: number | null
-          builds_limit?: number | null
-          business_id?: string
-          id?: string
-          intent_executions?: number | null
-          intent_limit?: number | null
-          sites_count?: number | null
-          sites_limit?: number | null
-          storage_bytes?: number | null
-          storage_limit_bytes?: number | null
-          updated_at?: string | null
-          workflow_limit?: number | null
-          workflow_runs?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "usage_summary_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: false
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       user_roles: {
         Row: {
           created_at: string
@@ -5536,87 +4080,6 @@ export type Database = {
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
-          user_id?: string
-        }
-        Relationships: []
-      }
-      user_sessions: {
-        Row: {
-          browser: string | null
-          city: string | null
-          country_code: string | null
-          created_at: string
-          device_info: Json | null
-          device_name: string | null
-          expires_at: string | null
-          id: string
-          ip_address: unknown
-          is_active: boolean | null
-          last_active: string | null
-          location: string | null
-          session_id: string | null
-          session_token: string | null
-          user_agent: string | null
-          user_id: string
-        }
-        Insert: {
-          browser?: string | null
-          city?: string | null
-          country_code?: string | null
-          created_at?: string
-          device_info?: Json | null
-          device_name?: string | null
-          expires_at?: string | null
-          id?: string
-          ip_address?: unknown
-          is_active?: boolean | null
-          last_active?: string | null
-          location?: string | null
-          session_id?: string | null
-          session_token?: string | null
-          user_agent?: string | null
-          user_id: string
-        }
-        Update: {
-          browser?: string | null
-          city?: string | null
-          country_code?: string | null
-          created_at?: string
-          device_info?: Json | null
-          device_name?: string | null
-          expires_at?: string | null
-          id?: string
-          ip_address?: unknown
-          is_active?: boolean | null
-          last_active?: string | null
-          location?: string | null
-          session_id?: string | null
-          session_token?: string | null
-          user_agent?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
-      user_settings: {
-        Row: {
-          created_at: string
-          id: string
-          settings: Json
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          settings?: Json
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          settings?: Json
-          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -5678,102 +4141,63 @@ export type Database = {
         }
         Relationships: []
       }
-      workspace_members: {
+      vfs_snapshots: {
         Row: {
-          created_at: string | null
-          display_name: string | null
-          invited_by: string | null
-          invited_email: string | null
-          is_active: boolean
-          permissions: Json
-          role: string | null
-          updated_at: string
+          business_id: string | null
+          created_at: string
+          files: Json
+          id: string
+          label: string
+          metadata: Json | null
+          project_id: string | null
+          source: string
           user_id: string
-          workspace_id: string
         }
         Insert: {
-          created_at?: string | null
-          display_name?: string | null
-          invited_by?: string | null
-          invited_email?: string | null
-          is_active?: boolean
-          permissions?: Json
-          role?: string | null
-          updated_at?: string
+          business_id?: string | null
+          created_at?: string
+          files?: Json
+          id?: string
+          label?: string
+          metadata?: Json | null
+          project_id?: string | null
+          source?: string
           user_id: string
-          workspace_id: string
         }
         Update: {
-          created_at?: string | null
-          display_name?: string | null
-          invited_by?: string | null
-          invited_email?: string | null
-          is_active?: boolean
-          permissions?: Json
-          role?: string | null
-          updated_at?: string
+          business_id?: string | null
+          created_at?: string
+          files?: Json
+          id?: string
+          label?: string
+          metadata?: Json | null
+          project_id?: string | null
+          source?: string
           user_id?: string
-          workspace_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vfs_snapshots_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vfs_snapshots_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      check_project_access: {
-        Args: { p_project_id: string; p_user_id: string }
-        Returns: boolean
-      }
-      check_project_business_ownership: {
-        Args: { p_project_id: string; p_user_id: string }
-        Returns: boolean
-      }
-      check_project_membership_role: {
-        Args: { p_project_id: string; p_roles: string[]; p_user_id: string }
-        Returns: boolean
-      }
-      check_project_ownership: {
-        Args: { p_project_id: string; p_user_id: string }
-        Returns: boolean
-      }
-      check_project_visibility: {
-        Args: { p_project_id: string; p_user_id: string }
-        Returns: boolean
-      }
-      check_usage_limit: {
-        Args: { p_business_id: string; p_event_type: string }
-        Returns: boolean
-      }
-      cleanup_old_preview_pages: { Args: never; Returns: undefined }
       current_session_id: { Args: never; Returns: string }
-      get_design_schema_by_keyword: {
-        Args: { search_keyword: string }
-        Returns: {
-          color_scheme: Json
-          description: string
-          guidelines: string[]
-          pattern_name: string
-          pattern_type: string
-        }[]
-      }
-      get_page_intent_bindings: {
-        Args: { p_page_path?: string; p_project_id: string }
-        Returns: {
-          binding_id: string
-          element_key: string
-          element_label: string
-          enabled: boolean
-          intent: string
-          intent_confidence: number
-          last_triggered_at: string
-          recipe_ids: string[]
-          trigger_count: number
-          workflow_id: string
-          workflow_name: string
-        }[]
-      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -5789,44 +4213,17 @@ export type Database = {
         Args: { _business_id: string; _user_id: string }
         Returns: boolean
       }
-      is_business_member: { Args: { p_business_id: string }; Returns: boolean }
-      is_profile_owner: { Args: { profile_id: string }; Returns: boolean }
+      is_business_member: { Args: { _business_id: string }; Returns: boolean }
       is_project_member: {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
       }
-      is_project_owner: {
-        Args: { p_project_id: string; p_user_id: string }
-        Returns: boolean
-      }
-      is_username_available: {
-        Args: { desired_username: string; excluding_user_id?: string }
-        Returns: boolean
-      }
+      jsonb_is_object: { Args: { j: Json }; Returns: boolean }
+      jsonb_is_string_array: { Args: { j: Json }; Returns: boolean }
       reassign_project_business: {
         Args: { _project_id: string; _target_business_id: string }
         Returns: undefined
       }
-      record_usage_event: {
-        Args: {
-          p_business_id: string
-          p_event_type: string
-          p_metadata?: Json
-          p_quantity?: number
-          p_resource_id?: string
-          p_resource_type?: string
-        }
-        Returns: string
-      }
-      rename_project_path: {
-        Args: { p_from_path: string; p_project_id: string; p_to_path: string }
-        Returns: number
-      }
-      update_intent_binding_stats: {
-        Args: { p_binding_id: string }
-        Returns: undefined
-      }
-      update_username: { Args: { new_username: string }; Returns: Json }
       user_business_role: {
         Args: { _business_id: string; _user_id: string }
         Returns: string
@@ -5837,6 +4234,14 @@ export type Database = {
       }
     }
     Enums: {
+      agent_event_status:
+        | "pending"
+        | "processing"
+        | "completed"
+        | "failed"
+        | "cancelled"
+      agent_tier: "free" | "pro" | "enterprise" | "system"
+      agent_ui_kind: "hidden" | "widget" | "modal" | "inline"
       ai_builder_proposal_kind:
         | "sql_migration"
         | "edge_function"
@@ -5991,6 +4396,15 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      agent_event_status: [
+        "pending",
+        "processing",
+        "completed",
+        "failed",
+        "cancelled",
+      ],
+      agent_tier: ["free", "pro", "enterprise", "system"],
+      agent_ui_kind: ["hidden", "widget", "modal", "inline"],
       ai_builder_proposal_kind: [
         "sql_migration",
         "edge_function",

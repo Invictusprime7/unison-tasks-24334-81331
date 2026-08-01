@@ -16,6 +16,7 @@ export interface CapabilityMigrationPreview {
   statements: MigrationStatement[];
   sql: string;
   tables: string[];
+  lint: MigrationLintResult;
 }
 
 export interface CapabilityMigrationResult {

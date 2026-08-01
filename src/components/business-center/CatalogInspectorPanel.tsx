@@ -36,9 +36,12 @@ import type {
 interface CatalogInspectorPanelProps {
   projectId: string | null | undefined;
   sectionTypeMap?: Record<string, string>;
+  /** Canonical snapshot — lets the gate see unbound + profile-backed sections. */
+  snapshot?: SiteBundleSnapshot | null;
   onClose?: () => void;
   className?: string;
 }
+
 
 type RowRec = Record<string, unknown>;
 

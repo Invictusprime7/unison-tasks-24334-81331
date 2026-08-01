@@ -85,20 +85,19 @@ export function resolveConfiguredProviders(
   // Gemini is the default text provider. Explicit model namespaces override
   // the default while preserving the other configured providers as fallbacks.
   const providers: Provider[] = [];
-  // The managed Lovable AI Gateway is the primary text provider: it accepts the
-  // canonical `vendor/model` ids this codebase already plans with, and it is not
-  // subject to the per-account rate limits that made direct OpenAI calls fail.
-  if (readEnv("LOVABLE_API_KEY")) providers.push("lovable");
   if (readGeminiApiKey(readEnv)) providers.push("gemini");
   if (readEnv("OPENAI_API_KEY")) providers.push("openai");
   if (readEnv("ANTHROPIC_API_KEY")) providers.push("anthropic");
 
-  // The gateway serves every namespace, so it always stays first when configured.
-  if (providers[0] === "lovable") return providers;
-
   const preferred = requestedProvider(model);
-  if (!preferred || !providers.includes(preferred)) return providers;
-  return [preferred, ...providers.filter((provider) => provider !== preferred)];
+  const ordered = preferred && providers.includes(preferred)
+    ? [preferred, ...providers.filter((provider) => provider !== preferred)]
+    : providers;
+
+  // The managed Lovable AI Gateway is NEVER primary. It is only appended as a
+  // last-resort fallback after every directly configured provider key.
+  if (readEnv("LOVABLE_API_KEY")) ordered.push("lovable");
+  return ordered;
 }
 
 export function isTextGenerationConfigured(): boolean {

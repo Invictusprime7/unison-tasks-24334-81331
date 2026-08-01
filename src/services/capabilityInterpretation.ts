@@ -20,6 +20,7 @@ import type {
 } from '@/types/builderRequestEnvelope';
 import { ABSTRACT_GOALS } from '@/platform/core/abstractGoalRegistry';
 import type { BusinessCapability } from '@/platform/core/capabilityRegistry';
+import { capabilitiesForSurfaces } from '@/services/catalog/catalogCapabilityResolution';
 
 export type BuilderScope = 'website' | 'business-system' | 'developer';
 

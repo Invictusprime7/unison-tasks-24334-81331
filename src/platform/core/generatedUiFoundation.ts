@@ -348,7 +348,7 @@ ${UNISON_VFS_STYLE_BRIDGE}`,
 export { Button, type ButtonProps } from './button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
 export { cn } from './cn';
-export { FieldLabel, Input, Textarea } from './form-fields';
+export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea } from './form-fields';
 export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
 export { ImageLightbox } from './media';

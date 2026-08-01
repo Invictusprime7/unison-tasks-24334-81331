@@ -7,6 +7,11 @@
  * `site_data_bindings` rows.
  */
 import { upsertBinding } from '@/services/sectionDataBindingService';
+import {
+  planArtifactHydration,
+  plannedBindingsFromHydration,
+} from '@/services/artifactHydrationPlan';
+
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import {
   buildDisplayMappingForBinding,

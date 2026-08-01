@@ -91,39 +91,17 @@ export interface PlannedSectionDataBinding {
   fallbackMode: SectionDataFallback;
 }
 
+/**
+ * Phase 2: the snapshot walk now lives in `artifactHydrationPlan`, which covers
+ * catalog AND business-profile artifacts in one pass. This stays the catalog
+ * projection of that plan, so section ids and binding payloads are unchanged.
+ */
 export function planSectionDataBindings(
   snapshot: SiteBundleSnapshot | null | undefined,
 ): PlannedSectionDataBinding[] {
-  const planned: PlannedSectionDataBinding[] = [];
-  if (!snapshot?.pageRegistry?.pages) return planned;
-
-  for (const page of Object.values(snapshot.pageRegistry.pages)) {
-    const sectionTypes = (page as unknown as { sectionTypes?: unknown }).sectionTypes;
-    if (!Array.isArray(sectionTypes)) continue;
-
-    for (let index = 0; index < sectionTypes.length; index++) {
-      const surface = getCatalogSurface(String(sectionTypes[index] ?? '').trim());
-      if (!surface) continue;
-      planned.push({
-        snapshotId: snapshot.snapshotId,
-        pagePath: page.path || `/${page.pageId}`,
-        sectionId: `${surface.bindingPrefix}-${index}`,
-        slotKey: null,
-        bindingType: 'section',
-        sourceKind: surface.catalogKind,
-        sourceTable: surface.sourceTable,
-        collectionId: null,
-        filters: surface.defaultFilters,
-        sort: surface.defaultSort,
-        limitCount: surface.defaultLimit,
-        displayMapping: buildDisplayMappingForBinding(surface),
-        fallbackMode: surface.fallbackMode,
-      });
-    }
-  }
-
-  return planned;
+  return plannedBindingsFromHydration(planArtifactHydration(snapshot));
 }
+
 
 export async function autoEmitSectionBindings(
   opts: AutoEmitOptions,

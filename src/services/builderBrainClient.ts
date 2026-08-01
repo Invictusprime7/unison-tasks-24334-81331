@@ -177,12 +177,13 @@ export async function runBuilderTurn<TResponse = any>(
         body: sentPayload,
       });
 
-      if (error && isTransportError(error) && attempt < maxAttempts) {
+      if (error && (isTransportError(error) || isRateLimitError(error)) && attempt < maxAttempts) {
         lastError = error;
+        const rateLimited = isRateLimitError(error);
         const jitter = Math.floor(Math.random() * 250);
-        const delay = baseDelays[attempt - 1] + jitter;
+        const delay = (rateLimited ? rateLimitDelays : baseDelays)[attempt - 1] + jitter;
         console.warn(
-          `[builderBrainClient] transport error on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
+          `[builderBrainClient] ${rateLimited ? "rate limit" : "transport error"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (error as { message?: string })?.message,
         );
         await sleep(delay, options.signal);
@@ -192,12 +193,13 @@ export async function runBuilderTurn<TResponse = any>(
 
       return { data: data as TResponse, error };
     } catch (thrown) {
-      if (isTransportError(thrown) && attempt < maxAttempts) {
+      if ((isTransportError(thrown) || isRateLimitError(thrown)) && attempt < maxAttempts) {
         lastError = thrown;
+        const rateLimited = isRateLimitError(thrown);
         const jitter = Math.floor(Math.random() * 250);
-        const delay = baseDelays[attempt - 1] + jitter;
+        const delay = (rateLimited ? rateLimitDelays : baseDelays)[attempt - 1] + jitter;
         console.warn(
-          `[builderBrainClient] transport throw on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
+          `[builderBrainClient] ${rateLimited ? "rate limit" : "transport throw"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (thrown as { message?: string })?.message,
         );
         await sleep(delay, options.signal);
@@ -206,6 +208,7 @@ export async function runBuilderTurn<TResponse = any>(
       return { data: null as TResponse, error: thrown };
     }
   }
+
 
   // Last-ditch: bypass the wrapped supabase-js fetch and hit the edge
   // function directly via native fetch. This recovers from cases where the

@@ -106,6 +106,7 @@ function toRowDraft(row: RowRec): RowDraft {
 export function CatalogInspectorPanel({
   projectId,
   sectionTypeMap,
+  snapshot,
   onClose,
   className,
 }: CatalogInspectorPanelProps) {
@@ -114,6 +115,7 @@ export function CatalogInspectorPanel({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
   const [reloadKey, setReloadKey] = useState(0);
+  const { profile } = useBusinessProfile();
 
   useEffect(() => {
     let cancelled = false;
@@ -122,7 +124,7 @@ export function CatalogInspectorPanel({
       return;
     }
     setLoading(true);
-    evaluateCatalogReadinessGate(projectId, sectionTypeMap ?? {})
+    evaluateCatalogReadinessGate(projectId, sectionTypeMap ?? {}, { snapshot, profile })
       .then((v) => {
         if (!cancelled) setVerdict(v);
       })
@@ -132,7 +134,8 @@ export function CatalogInspectorPanel({
     return () => {
       cancelled = true;
     };
-  }, [projectId, sectionTypeMap, reloadKey]);
+  }, [projectId, sectionTypeMap, snapshot, profile, reloadKey]);
+
 
   // Auto-reload when the System Launcher (or any downstream service) reports
   // that fresh catalog rows have been seeded for this project. Keeps the

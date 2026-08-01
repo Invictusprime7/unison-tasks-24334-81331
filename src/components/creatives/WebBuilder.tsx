@@ -7513,8 +7513,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                 <CatalogInspectorPanel
                   projectId={projectId}
                   sectionTypeMap={catalogSectionTypeMap}
+                  snapshot={effectiveRouteState?.siteBundleSnapshot ?? null}
                   onClose={() => setCatalogPanelOpen(false)}
                 />
+
               </div>
             )}
           </>

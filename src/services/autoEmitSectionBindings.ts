@@ -43,26 +43,23 @@ export const WIZARD_TYPE_TO_REQUIREMENT: Record<string, string> = (() => {
 
 /**
  * Build the sectionId → componentType map used by inspector/readiness panels.
- * Mirrors the emission scheme: `${surface.bindingPrefix}-${index}`.
+ * Derived from the single artifact hydration walk so section ids can never
+ * drift from the ids `autoEmitSectionBindings` actually persists.
  */
 export function buildSectionTypeMap(
   snapshot: SiteBundleSnapshot | null | undefined,
 ): Record<string, string> {
   const map: Record<string, string> = {};
-  const pages = snapshot?.pageRegistry?.pages;
-  if (!pages) return map;
-  for (const page of Object.values(pages)) {
-    const sectionTypes = (page as unknown as { sectionTypes?: unknown }).sectionTypes;
-    if (!Array.isArray(sectionTypes)) continue;
-    for (let index = 0; index < sectionTypes.length; index++) {
-      const raw = String(sectionTypes[index] ?? '').trim();
-      const surface = getCatalogSurface(raw);
-      if (!surface) continue;
-      map[`${surface.bindingPrefix}-${index}`] = surface.componentType;
-    }
+  for (const entry of planArtifactHydration(snapshot)) {
+    if (entry.dataSourceKind !== 'catalog') continue;
+    const componentType =
+      entry.artifact?.catalogSurface?.componentType ??
+      getCatalogSurface(entry.rawSectionType)?.componentType;
+    if (componentType) map[entry.sectionId] = componentType;
   }
   return map;
 }
+
 
 export interface AutoEmitOptions {
   businessId: string;

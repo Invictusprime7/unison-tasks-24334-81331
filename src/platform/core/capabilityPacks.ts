@@ -104,6 +104,13 @@ const PUBLIC_SUBMIT_GRANTS: PackGrant[] = [
   ...OWNER_MANAGED_GRANTS,
 ];
 
+/** Guest-cart tables: visitors own their rows through `current_session_id()`. */
+const PUBLIC_SESSION_GRANTS: PackGrant[] = [
+  { role: 'anon', privileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+  ...OWNER_MANAGED_GRANTS,
+];
+
+
 // ============================================================================
 // Pack 1 — Business profile
 // ============================================================================

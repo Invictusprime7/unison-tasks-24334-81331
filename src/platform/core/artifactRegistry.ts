@@ -59,10 +59,12 @@ export interface ArtifactDataSource {
   /** Present when `kind === 'catalog'`. Resolves through catalogSurfaceRegistry. */
   surfaceId?: string;
   /**
-   * Business-profile fields this artifact reads. Keys are `BusinessProfileDTO`
-   * props — used by readiness chips and the AI context engine.
+   * Business-profile fields this artifact reads. Typed against
+   * `BusinessProfileDTO` so a renamed column is a compile error, never a
+   * silently dead binding. Used by readiness chips and the AI context engine.
    */
-  profileFields?: readonly string[];
+  profileFields?: readonly BusinessProfileField[];
+
   /** Rows required before the artifact is considered publish-ready. */
   minRows: number;
   fallbackMode: CatalogFallbackMode;

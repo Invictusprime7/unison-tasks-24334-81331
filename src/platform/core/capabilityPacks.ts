@@ -257,7 +257,7 @@ const CRM_LEADS_PACK: CapabilityPack = {
   name: 'Lead Capture & CRM',
   description:
     'Captures form submissions from the public site into durable lead, contact and activity records the owner can work.',
-  provides: ['crm.leads', 'crm.contacts', 'forms.contact', 'notifications.email'],
+  provides: ['crm.leads', 'crm.contacts', 'forms.contact', 'forms.quote', 'notifications.email'],
   dependsOn: ['business_profile'],
   relatedOperationalPacks: ['contact', 'lead-capture'],
   database: {

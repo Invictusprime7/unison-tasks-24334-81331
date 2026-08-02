@@ -206,7 +206,9 @@ export function buildProviderPlan(
         // leave time for response validation/persistence. Large sites are
         // already page-batched by the Wizard rather than buying reliability
         // with an unbounded single provider call.
-        perModelTimeoutMs: 55_000,
+        // Two attempts must finish inside the provider loop's 105 s hard cap.
+        // A 45 s slice preserves enough room for failover and response work.
+        perModelTimeoutMs: 45_000,
         fallbackMaxTokens: 36000,
       };
       break;

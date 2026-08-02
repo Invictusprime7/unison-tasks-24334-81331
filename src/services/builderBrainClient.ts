@@ -14,6 +14,11 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import {
+  isSupabaseEnvConfigured,
+  SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_URL,
+} from "@/integrations/supabase/env";
 import { shrinkBuilderTurnPayload, BUILDER_BODY_RETRY_BUDGETS } from "@/services/builderPayloadBudget";
 import type { UnisonAIContext } from "@/unison/aiContext";
 export type BuilderTurnResponse<T = unknown> = { data: T | null; error: unknown };
@@ -160,11 +165,11 @@ export async function runBuilderTurn<TResponse = any>(
   const remainingMs = () => deadlineAt - Date.now();
 
   const invokeWithSignal = async (payload: Record<string, unknown>, signal: AbortSignal) => {
-    const url = (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_URL;
-    const anon =
-      (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-      (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_ANON_KEY;
-    if (!url || !anon) throw new Error("Builder backend configuration is unavailable");
+    if (!isSupabaseEnvConfigured) {
+      throw new Error("Builder backend configuration is unavailable");
+    }
+    const url = SUPABASE_URL.replace(/\/$/, "");
+    const anon = SUPABASE_PUBLISHABLE_KEY;
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token || anon;
     const response = await fetch(`${url}/functions/v1/ai-code-assistant`, {

@@ -5,7 +5,7 @@
 
 import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
-import { createChatCompletion } from "../_shared/ai/providerClient.ts";
+import { createPlannedChatCompletion } from "../_shared/ai/providerClient.ts";
 import type { ModelSpec } from './providerRouter.ts';
 
 export interface ProviderEarlyError {
@@ -83,9 +83,11 @@ export async function runProviderLoop(opts: {
   let providerUsed: string | undefined;
   let toolCalls: RawToolCall[] | undefined;
 
-  // Global wall-clock budget so we don't exceed the client's timeout window.
-  // Client global abort fires at 240s; reserve ~35s for response packaging/network.
-  const TOTAL_BUDGET_MS = 205_000;
+  // Hard server deadline. Keep enough headroom for validation, one targeted
+  // repair, persistence and the response trip before the browser deadline.
+  // Provider failover is owned here; providerClient must not nest another
+  // fallback chain inside these attempts.
+  const TOTAL_BUDGET_MS = 135_000;
   const startedAt = Date.now();
   const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
   const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));
@@ -381,7 +383,7 @@ export async function runProviderLoop(opts: {
           toolChoice: effectiveToolChoice,
         });
 
-        const resp = await createChatCompletion(reqBody as Parameters<typeof createChatCompletion>[0], controller.signal);
+        const resp = await createPlannedChatCompletion(reqBody, controller.signal);
         clearTimeout(timeoutId);
 
         if (resp.status === 429 || resp.status === 402) {
@@ -553,7 +555,7 @@ export async function runProviderLoop(opts: {
           tools: hasTools ? tools : undefined,
           toolChoice: effectiveToolChoice,
         });
-        const resp = await createChatCompletion(reqBody as Parameters<typeof createChatCompletion>[0], controller.signal);
+        const resp = await createPlannedChatCompletion(reqBody, controller.signal);
         clearTimeout(timeoutId);
         if (resp.ok) {
           const data = await resp.json().catch(() => null);

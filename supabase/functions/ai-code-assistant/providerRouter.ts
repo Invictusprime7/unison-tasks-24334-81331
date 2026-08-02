@@ -202,7 +202,11 @@ export function buildProviderPlan(
           m(MODELS.geminiFlash, 36000),   // primary
           m(MODELS.gpt4oMini,   32000),   // fallback — same JSON contract
         ],
-        perModelTimeoutMs: 110000,
+        // Two bounded attempts fit inside the provider loop's hard deadline and
+        // leave time for response validation/persistence. Large sites are
+        // already page-batched by the Wizard rather than buying reliability
+        // with an unbounded single provider call.
+        perModelTimeoutMs: 55_000,
         fallbackMaxTokens: 36000,
       };
       break;

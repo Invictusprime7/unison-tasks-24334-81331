@@ -55,6 +55,8 @@ export interface BuilderTurnInput {
 export interface BuilderTurnOptions {
   /** Abort the in-flight invoke. */
   signal?: AbortSignal;
+  /** Absolute budget across invocation, backoff, retries and raw fallback. */
+  timeoutMs?: number;
 }
 
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
@@ -146,16 +148,51 @@ export async function runBuilderTurn<TResponse = any>(
   input: BuilderTurnInput,
   options: BuilderTurnOptions = {},
 ): Promise<{ data: TResponse; error: any }> {
-  const maxAttempts = 4;
+  const maxAttempts = 2;
   const baseDelays = [600, 1400, 2800];
   // Provider cooldowns are seconds-scale; back off harder than transport retries.
   const rateLimitDelays = [4000, 9000, 18000];
 
   let lastError: unknown = null;
   let sentPayload: Record<string, unknown> = input as unknown as Record<string, unknown>;
+  const deadlineAt = Date.now() + (options.timeoutMs ?? 175_000);
+
+  const remainingMs = () => deadlineAt - Date.now();
+
+  const invokeWithSignal = async (payload: Record<string, unknown>, signal: AbortSignal) => {
+    const url = (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_URL;
+    const anon =
+      (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
+      (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_ANON_KEY;
+    if (!url || !anon) throw new Error("Builder backend configuration is unavailable");
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token || anon;
+    const response = await fetch(`${url}/functions/v1/ai-code-assistant`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: anon,
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+    const text = await response.text();
+    let data: TResponse | null = null;
+    try { data = text ? JSON.parse(text) as TResponse : null; } catch { data = null; }
+    if (response.ok) return { data, error: null };
+    const parsedError = data as { error?: string } | null;
+    return {
+      data,
+      error: Object.assign(
+        new Error(parsedError?.error || `AI generation failed (${response.status})`),
+        { context: { status: response.status, body: text } },
+      ),
+    };
+  };
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (options.signal?.aborted) {
+    if (options.signal?.aborted || remainingMs() <= 0) {
       return { data: null as TResponse, error: new DOMException("Aborted", "AbortError") };
     }
 
@@ -173,9 +210,19 @@ export async function runBuilderTurn<TResponse = any>(
     }
 
     try {
-      const { data, error } = await supabase.functions.invoke<TResponse>("ai-code-assistant", {
-        body: sentPayload,
-      });
+      const attemptController = new AbortController();
+      const onOuterAbort = () => attemptController.abort(options.signal?.reason);
+      if (options.signal) {
+        if (options.signal.aborted) attemptController.abort(options.signal.reason);
+        else options.signal.addEventListener("abort", onOuterAbort, { once: true });
+      }
+      const attemptTimer = setTimeout(
+        () => attemptController.abort(new DOMException("Builder turn deadline exceeded", "TimeoutError")),
+        Math.max(1, remainingMs()),
+      );
+      const { data, error } = await invokeWithSignal(sentPayload, attemptController.signal);
+      clearTimeout(attemptTimer);
+      options.signal?.removeEventListener("abort", onOuterAbort);
 
       if (error && (isTransportError(error) || isRateLimitError(error)) && attempt < maxAttempts) {
         lastError = error;
@@ -186,6 +233,7 @@ export async function runBuilderTurn<TResponse = any>(
           `[builderBrainClient] ${rateLimited ? "rate limit" : "transport error"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (error as { message?: string })?.message,
         );
+        if (remainingMs() <= delay + 5_000) return { data: null as TResponse, error };
         await sleep(delay, options.signal);
         continue;
       }
@@ -202,6 +250,7 @@ export async function runBuilderTurn<TResponse = any>(
           `[builderBrainClient] ${rateLimited ? "rate limit" : "transport throw"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (thrown as { message?: string })?.message,
         );
+        if (remainingMs() <= delay + 5_000) return { data: null as TResponse, error: thrown };
         await sleep(delay, options.signal);
         continue;
       }
@@ -209,45 +258,6 @@ export async function runBuilderTurn<TResponse = any>(
     }
   }
 
-
-  // Last-ditch: bypass the wrapped supabase-js fetch and hit the edge
-  // function directly via native fetch. This recovers from cases where the
-  // SDK's fetch wrapper (interceptors, session-recovery) throws before it
-  // ever touches the network, while the edge itself is healthy.
-  try {
-    const url = (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_URL;
-    const anon =
-      (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-      (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_ANON_KEY;
-    if (url && anon) {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess?.session?.access_token || anon;
-      console.warn("[builderBrainClient] SDK invoke failed; attempting raw fetch fallback");
-      const res = await fetch(`${url}/functions/v1/ai-code-assistant`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: anon,
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(sentPayload),
-        signal: options.signal,
-      });
-      const text = await res.text();
-      let parsed: unknown = null;
-      try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
-      if (!res.ok) {
-        return {
-          data: null as TResponse,
-          error: Object.assign(new Error(`Edge function ${res.status}: ${typeof parsed === "string" ? parsed : (parsed as { error?: string })?.error || res.statusText}`), { context: { status: res.status, body: text } }),
-        };
-      }
-      return { data: parsed as TResponse, error: null };
-    }
-  } catch (rawErr) {
-    console.warn("[builderBrainClient] raw fetch fallback failed", (rawErr as { message?: string })?.message);
-    lastError = rawErr;
-  }
 
   return { data: null as TResponse, error: lastError ?? new Error("Unknown transport failure") };
 }

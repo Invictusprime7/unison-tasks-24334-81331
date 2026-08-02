@@ -293,3 +293,22 @@ export async function createChatCompletion(request: ChatCompletionRequest, signa
   if (lastResponse) return lastResponse;
   throw lastError instanceof Error ? lastError : new Error("All configured AI providers failed");
 }
+
+/**
+ * Execute exactly the provider named by the model id.
+ *
+ * The higher-level AI orchestrator already owns model/provider failover. Letting
+ * this client run its own fallback chain inside each orchestrator attempt
+ * multiplies deadlines (model attempts × provider attempts) and was the source
+ * of Wizard requests surviving until the 240 second browser timeout.
+ */
+export async function createPlannedChatCompletion(
+  request: ChatCompletionRequest,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const provider = requestedProvider(request.model);
+  if (!provider || provider === "anthropic") {
+    throw new Error(`Unsupported planned chat model: ${request.model ?? "unknown"}`);
+  }
+  return callOpenAICompatible(provider, request, signal);
+}

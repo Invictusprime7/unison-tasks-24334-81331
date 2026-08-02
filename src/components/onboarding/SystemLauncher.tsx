@@ -515,7 +515,9 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
 const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
-const WIZARD_AI_TIMEOUT_MS = 240_000;
+// Fail deterministically before browser/proxy ceilings. The edge provider loop
+// owns 135s; this leaves 40s for validation, persistence and transport.
+const WIZARD_AI_TIMEOUT_MS = 175_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   timeoutMs: 120_000,
@@ -755,14 +757,22 @@ function getGenerationCategory(
   return (templateCategory || system.templateCategories[0]) as LayoutCategory;
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+async function withTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  const controller = new AbortController();
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    timeoutHandle = setTimeout(() => {
+      controller.abort(new DOMException(timeoutMessage, 'TimeoutError'));
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
   });
 
   try {
-    return await Promise.race([promise, timeoutPromise]);
+    return await Promise.race([operation(controller.signal), timeoutPromise]);
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
@@ -2115,6 +2125,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         structured: LauncherPayload;
         sanitized: SanitizedGeneratedFiles;
       } | null = null;
+      // One deadline governs the entire AI generation lifecycle: initial turn,
+      // batches, contract repair, missing-page repair and page completion.
+      // No downstream step may reset the clock and extend the user journey.
+      const wizardGenerationDeadlineAt = Date.now() + WIZARD_AI_TIMEOUT_MS;
+      const takeWizardGenerationBudget = (stepCapMs = WIZARD_AI_TIMEOUT_MS): number => {
+        const remaining = wizardGenerationDeadlineAt - Date.now();
+        if (remaining < 5_000) {
+          throw new Error('Wizard AI generation deadline exhausted before the next generation step.');
+        }
+        return Math.min(stepCapMs, remaining);
+      };
       let aiError: unknown = null;
       const deferredPageCompletions = new Set<string>();
       let lastPayloadIssue: {
@@ -2148,8 +2169,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           industry_context: blueprint.industry_context,
         };
 
+        const initialGenerationBudgetMs = takeWizardGenerationBudget();
         const result = await withTimeout(
-          runBuilderTurn<any>({
+          (signal) => runBuilderTurn<any>({
             messages: [{ role: 'user', content: aiUserPrompt }],
             mode: 'wizard-seed',
             currentCode: wizardCurrentCode,
@@ -2168,9 +2190,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               .filter((path): path is string => Boolean(path)),
             gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
             wizardSeed,
-          }),
-          WIZARD_AI_TIMEOUT_MS,
-          `AI generation timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
+          }, { signal, timeoutMs: initialGenerationBudgetMs - 2_000 }),
+          initialGenerationBudgetMs,
+          `AI generation exceeded the Wizard generation deadline.`,
         );
         aiError = result.error;
 
@@ -2224,8 +2246,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 'Do not emit /src/App.tsx, /src/index.css, SiteNavbar, SiteFooter, or any page outside the list.',
               ].join('\n');
               try {
+                const batchBudgetMs = takeWizardGenerationBudget(
+                  Math.max(30_000, Math.round(batchPlan.estimatedMsPerBatch * 1.5)),
+                );
                 const batchResult = await withTimeout(
-                  runBuilderTurn<any>({
+                  (signal) => runBuilderTurn<any>({
                     messages: [{ role: 'user', content: batchPrompt }],
                     mode: 'wizard-seed',
                     currentCode: wizardCurrentCode,
@@ -2242,9 +2267,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     recentChangedFiles: batch,
                     gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
                     wizardSeed,
-                  }),
-                  WIZARD_AI_TIMEOUT_MS,
-                  `Lane B batch ${i + 1} timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
+                  }, { signal, timeoutMs: batchBudgetMs - 2_000 }),
+                  batchBudgetMs,
+                  `Lane B batch ${i + 1} exceeded the remaining Wizard generation deadline.`,
                 );
                 if (batchResult.error) {
                   batchFailure = batchResult.error;
@@ -2351,8 +2376,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   'Keep all existing wizard sections, semantic Stage 4b token classes, accessible image alt text, and data-ut-intent attributes.',
                 ].join('\n');
                 try {
+                  const uiRepairBudgetMs = takeWizardGenerationBudget();
                   const uiRepair = await withTimeout(
-                    runBuilderTurn<any>({
+                    (signal) => runBuilderTurn<any>({
                       messages: [{ role: 'user', content: uiRepairPrompt }],
                       mode: 'wizard-seed',
                       currentCode: wizardCurrentCode,
@@ -2371,9 +2397,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                         .filter((path): path is string => Boolean(path)),
                       gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
                       wizardSeed,
-                    }),
-                    WIZARD_AI_TIMEOUT_MS,
-                    `Lane B UI foundation repair timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
+                    }, { signal, timeoutMs: uiRepairBudgetMs - 2_000 }),
+                    uiRepairBudgetMs,
+                    `Lane B UI foundation repair exceeded the remaining Wizard generation deadline.`,
                   );
                   if (uiRepair.error) {
                     throw uiRepair.error;
@@ -2895,8 +2921,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           missingPageDetails,
         ].join('\n');
         try {
+          const repairBudgetMs = takeWizardGenerationBudget();
           const retry = await withTimeout(
-            runBuilderTurn<any>({
+            (signal) => runBuilderTurn<any>({
               messages: [{ role: 'user', content: retryPrompt }],
               mode: 'wizard-seed',
               currentCode: wizardCurrentCode,
@@ -2923,9 +2950,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               recentChangedFiles: normalizedMissing,
               gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
               wizardSeed,
-            }),
-            WIZARD_AI_TIMEOUT_MS,
-            `Lane B repair turn timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
+            }, { signal, timeoutMs: repairBudgetMs - 2_000 }),
+            repairBudgetMs,
+            `Lane B repair turn exceeded the remaining Wizard generation deadline.`,
           );
           if (!retry.error) {
             const { structured: retryStructured } = extractLaneBLauncherPayload(
@@ -3009,8 +3036,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           ].join('\n');
 
           try {
+            const completionBudgetMs = takeWizardGenerationBudget();
             const completion = await withTimeout(
-              runBuilderTurn<any>({
+              (signal) => runBuilderTurn<any>({
                 messages: [{ role: 'user', content: pageCompletionPrompt }],
                 mode: 'wizard-seed',
                 currentCode: wizardCurrentCode,
@@ -3037,9 +3065,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 recentChangedFiles: [missingPath],
                 gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
                 wizardSeed,
-              }),
-              WIZARD_AI_TIMEOUT_MS,
-              `Lane B page completion timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
+              }, { signal, timeoutMs: completionBudgetMs - 2_000 }),
+              completionBudgetMs,
+              `Lane B page completion exceeded the remaining Wizard generation deadline.`,
             );
             if (completion.error) {
               laneBCompletionDiagnostics.push({

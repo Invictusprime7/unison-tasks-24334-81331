@@ -6,6 +6,7 @@
 import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
 import { createPlannedChatCompletion } from "../_shared/ai/providerClient.ts";
+import type { ChatCompletionRequest } from "../_shared/ai/providerClient.ts";
 import type { ModelSpec } from './providerRouter.ts';
 
 export interface ProviderEarlyError {
@@ -40,10 +41,10 @@ export function buildPlannedChatCompletionRequest(opts: {
   reasoningEffort?: "none" | "low" | "medium" | "high";
   tools?: unknown[];
   toolChoice?: unknown;
-}): Record<string, unknown> {
+}): ChatCompletionRequest {
   const { model, aiMessages, reasoningEffort, tools, toolChoice } = opts;
   const usesCompletionTokens = model.id.includes('gpt-5');
-  const request: Record<string, unknown> = {
+  const request: ChatCompletionRequest = {
     model: model.id,
     ...(usesCompletionTokens
       ? { max_completion_tokens: model.maxTokens }

@@ -312,3 +312,21 @@ export async function createPlannedChatCompletion(
   }
   return callOpenAICompatible(provider, request, signal);
 }
+
+/**
+ * Execute one bounded request through the managed gateway.
+ *
+ * The orchestrator calls this only after every configured direct provider has
+ * failed. Keeping it separate from createPlannedChatCompletion guarantees the
+ * gateway can never become the primary provider or create a nested fallback
+ * chain inside a planned direct-provider attempt.
+ */
+export async function createLastResortGatewayChatCompletion(
+  request: ChatCompletionRequest,
+  signal?: AbortSignal,
+): Promise<Response> {
+  if (!Deno.env.get("LOVABLE_API_KEY")) {
+    throw new Error("Managed AI gateway is not configured");
+  }
+  return callOpenAICompatible("lovable", request, signal);
+}

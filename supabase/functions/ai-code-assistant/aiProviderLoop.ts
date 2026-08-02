@@ -5,7 +5,10 @@
 
 import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
-import { createPlannedChatCompletion } from "../_shared/ai/providerClient.ts";
+import {
+  createLastResortGatewayChatCompletion,
+  createPlannedChatCompletion,
+} from "../_shared/ai/providerClient.ts";
 import type { ChatCompletionRequest } from "../_shared/ai/providerClient.ts";
 import type { ModelSpec } from './providerRouter.ts';
 
@@ -95,6 +98,7 @@ export async function runProviderLoop(opts: {
   const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
   const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));
   const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY'));
+  const hasLastResortGateway = allowDirectFallbacks && Boolean(Deno.env.get('LOVABLE_API_KEY'));
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
   const recordProviderError = (label: string, detail: string) => {
@@ -492,15 +496,18 @@ export async function runProviderLoop(opts: {
   }
 
   // ── Phase 2–3: Provider-native fallback models ───────────────────────
-  // Preserve the weighted preference after the planned models are exhausted.
+  // Planned models already exercise both direct provider families. Repeating
+  // both complete provider-native lists after that used the entire wall-clock
+  // budget during 429/timeout storms and starved the true last-resort path.
+  // Only use the native list for a configured family that had no planned model.
+  const plannedProviders = new Set(providerPlan.gatewayModels.map((model) => (
+    model.id.startsWith('openai/') || model.id.startsWith('gpt-') ? 'openai' :
+    model.id.startsWith('google/') || model.id.startsWith('gemini-') ? 'gemini' :
+    'other'
+  )));
   if (!content && allowDirectFallbacks) {
-    if (providerPlan.primaryProvider === 'openai') {
-      await runDirectOpenAI();
-      if (!content) await runDirectGemini();
-    } else {
-      await runDirectGemini();
-      if (!content) await runDirectOpenAI();
-    }
+    if (hasDirectOpenAI && !plannedProviders.has('openai')) await runDirectOpenAI();
+    if (!content && hasDirectGemini && !plannedProviders.has('gemini')) await runDirectGemini();
   }
 
   // ── Phase 4: Direct Anthropic API ─────────────────────────────────────
@@ -556,6 +563,62 @@ export async function runProviderLoop(opts: {
           throwIfCancelled();
           recordProviderError('Anthropic claude-sonnet-4-5', err instanceof Error ? err.message : 'unknown');
         }
+      }
+    }
+  }
+
+  // ── Phase 5: Managed gateway, strictly last resort ───────────────────
+  // This path is intentionally unreachable until all configured direct
+  // provider models (and Anthropic, when present) have failed. It prevents a
+  // temporary direct-provider 429 from blocking the Wizard while preserving
+  // the product rule that the managed gateway is never primary.
+  if (!content && hasLastResortGateway) {
+    const remaining = budgetRemaining();
+    if (remaining >= 8_000) {
+      const perModelMs = Math.min(25_000, Math.max(8_000, remaining - 2_000));
+      const gatewayModel: ModelSpec = {
+        id: 'google/gemini-3.6-flash',
+        maxTokens: Math.min(providerPlan.fallbackMaxTokens, 32_000),
+        label: 'Managed gateway fallback',
+      };
+      try {
+        console.log(`[AI-Hybrid] Trying managed gateway as final fallback (timeout: ${perModelMs / 1000}s)...`);
+        const attempt = createAttemptSignal(perModelMs);
+        const resp = await createLastResortGatewayChatCompletion(
+          buildPlannedChatCompletionRequest({
+            model: gatewayModel,
+            aiMessages,
+            reasoningEffort,
+            tools: hasTools ? tools : undefined,
+            toolChoice: effectiveToolChoice,
+          }),
+          attempt.signal,
+        );
+        attempt.cleanup();
+        if (resp.ok) {
+          const data = await resp.json();
+          const message = data.choices?.[0]?.message ?? {};
+          const parsedContent = message.content || '';
+          const parsedToolCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as RawToolCall[]) : undefined;
+          if (parsedContent || (parsedToolCalls && parsedToolCalls.length > 0)) {
+            const extracted = extractThinkingTags(parsedContent);
+            content = extracted.content;
+            reasoning = extracted.reasoning || reasoning;
+            modelUsed = gatewayModel.id;
+            providerUsed = 'lovable';
+            if (parsedToolCalls?.length) toolCalls = parsedToolCalls;
+            console.log('[AI-Hybrid] Success with managed gateway final fallback');
+          }
+        } else {
+          const errText = await resp.text().catch(() => '');
+          recordProviderError(gatewayModel.label, `${resp.status} ${errText.substring(0, 200)}`);
+          if (resp.status === 402) {
+            deferredEarlyError = { status: 402, error: 'AI credits are exhausted. Please add workspace credits and try again.' };
+          }
+        }
+      } catch (err) {
+        throwIfCancelled();
+        recordProviderError(gatewayModel.label, err instanceof Error ? err.message : 'unknown');
       }
     }
   }

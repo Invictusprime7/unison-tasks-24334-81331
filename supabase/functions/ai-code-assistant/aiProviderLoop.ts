@@ -99,6 +99,7 @@ export async function runProviderLoop(opts: {
   const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));
   const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY'));
   const hasLastResortGateway = allowDirectFallbacks && Boolean(Deno.env.get('LOVABLE_API_KEY'));
+  const lastResortReserveMs = hasLastResortGateway ? 20_000 : 0;
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
   const recordProviderError = (label: string, detail: string) => {
@@ -394,7 +395,7 @@ export async function runProviderLoop(opts: {
       // Reserve ~40% of the remaining window for the fallback chain.
       const isLeadModel = model.id === providerPlan.gatewayModels[0]?.id;
       const cap = providerPlan.perModelTimeoutMs;
-      const headroom = Math.max(8000, remaining - 2000);
+      const headroom = Math.max(8000, remaining - 2000 - lastResortReserveMs);
       const leadShare = Math.max(30000, Math.floor(headroom * 0.6));
       const perModelMs = isLeadModel
         ? Math.min(cap, headroom, leadShare)
@@ -515,8 +516,9 @@ export async function runProviderLoop(opts: {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (ANTHROPIC_API_KEY) {
       const remaining = budgetRemaining();
-      if (remaining >= 8000) {
-        const perModelMs = Math.min(28000, Math.max(8000, remaining - 2000));
+      const anthropicBudget = remaining - (hasLastResortGateway ? 10_000 : 2_000);
+      if (anthropicBudget >= 8000) {
+        const perModelMs = Math.min(28000, anthropicBudget);
         try {
           const systemMsg = (aiMessages.find((m) => m.role === 'system')?.content as string) || '';
           const userMsgs = aiMessages.filter((m) => m.role !== 'system');

@@ -39,7 +39,10 @@ export interface ProviderDistribution {
   openai: number;
 }
 
-const DEFAULT_PROVIDER_DISTRIBUTION: ProviderDistribution = { gemini: 50, openai: 50 };
+// Gemini is the default direct provider. OpenAI is retained as a fallback
+// but given a small share so a persistent OpenAI 429 storm doesn't eat ~half
+// the wizard generation budget before Gemini is tried.
+const DEFAULT_PROVIDER_DISTRIBUTION: ProviderDistribution = { gemini: 85, openai: 15 };
 
 /** Parses `gemini=50,openai=50` or `gemini:50,openai:50`. */
 export function parseProviderDistribution(raw?: string): ProviderDistribution {
@@ -207,8 +210,9 @@ export function buildProviderPlan(
         // already page-batched by the Wizard rather than buying reliability
         // with an unbounded single provider call.
         // Two attempts must finish inside the provider loop's 105 s hard cap.
-        // A 45 s slice preserves enough room for failover and response work.
-        perModelTimeoutMs: 45_000,
+        // A 35 s slice preserves enough room for the last-resort gateway
+        // (which needs ~30 s to succeed) and response validation/persistence.
+        perModelTimeoutMs: 35_000,
         fallbackMaxTokens: 36000,
       };
       break;

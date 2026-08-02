@@ -108,9 +108,10 @@ export function isTransportError(err: unknown): boolean {
 const RATE_LIMIT_PATTERN = /rate limit|too many requests|429/i;
 
 /**
- * A 429 from the AI edge chain is transient (per-model/tier cooldown), not a
- * contract failure. Treat it as retryable so Lane B does not hard-block the
- * launch on the first rate limit.
+ * Detect a provider-chain 429 so callers can surface the real failure. The
+ * edge function already exhausts its bounded provider failover before it
+ * returns 429; replaying the whole request here only consumes the Wizard's
+ * remaining deadline and masks the rate limit as a timeout.
  */
 export function isRateLimitError(err: unknown): boolean {
   if (!err) return false;
@@ -156,7 +157,6 @@ export async function runBuilderTurn<TResponse = any>(
   const maxAttempts = 2;
   const baseDelays = [600, 1400, 2800];
   // Provider cooldowns are seconds-scale; back off harder than transport retries.
-  const rateLimitDelays = [4000, 9000, 18000];
 
   let lastError: unknown = null;
   let sentPayload: Record<string, unknown> = input as unknown as Record<string, unknown>;
@@ -207,6 +207,21 @@ export async function runBuilderTurn<TResponse = any>(
     const budget = BUILDER_BODY_RETRY_BUDGETS[Math.min(attempt - 1, BUILDER_BODY_RETRY_BUDGETS.length - 1)];
     const shrunk = shrinkBuilderTurnPayload(input as unknown as Record<string, unknown>, budget);
     sentPayload = shrunk.payload;
+    const remainingBeforeInvoke = remainingMs();
+    const gatewayOptions = sentPayload.gatewayOptions;
+    if (gatewayOptions && typeof gatewayOptions === "object" && !Array.isArray(gatewayOptions)) {
+      const configuredTimeout = typeof (gatewayOptions as { timeoutMs?: unknown }).timeoutMs === "number"
+        ? (gatewayOptions as { timeoutMs: number }).timeoutMs
+        : remainingBeforeInvoke;
+      sentPayload = {
+        ...sentPayload,
+        gatewayOptions: {
+          ...gatewayOptions,
+          // The edge provider loop must finish before this client's abort fires.
+          timeoutMs: Math.max(1_000, Math.min(configuredTimeout, remainingBeforeInvoke - 5_000)),
+        },
+      };
+    }
     if (shrunk.trimmed.length > 0) {
       console.warn(
         `[builderBrainClient] payload ${shrunk.originalBytes}B > budget ${budget}B — trimmed to ${shrunk.finalBytes}B`,
@@ -229,13 +244,12 @@ export async function runBuilderTurn<TResponse = any>(
       clearTimeout(attemptTimer);
       options.signal?.removeEventListener("abort", onOuterAbort);
 
-      if (error && (isTransportError(error) || isRateLimitError(error)) && attempt < maxAttempts) {
+      if (error && isTransportError(error) && attempt < maxAttempts) {
         lastError = error;
-        const rateLimited = isRateLimitError(error);
         const jitter = Math.floor(Math.random() * 250);
-        const delay = (rateLimited ? rateLimitDelays : baseDelays)[attempt - 1] + jitter;
+        const delay = baseDelays[attempt - 1] + jitter;
         console.warn(
-          `[builderBrainClient] ${rateLimited ? "rate limit" : "transport error"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
+          `[builderBrainClient] transport error on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (error as { message?: string })?.message,
         );
         if (remainingMs() <= delay + 5_000) return { data: null as TResponse, error };
@@ -246,13 +260,12 @@ export async function runBuilderTurn<TResponse = any>(
 
       return { data: data as TResponse, error };
     } catch (thrown) {
-      if ((isTransportError(thrown) || isRateLimitError(thrown)) && attempt < maxAttempts) {
+      if (isTransportError(thrown) && attempt < maxAttempts) {
         lastError = thrown;
-        const rateLimited = isRateLimitError(thrown);
         const jitter = Math.floor(Math.random() * 250);
-        const delay = (rateLimited ? rateLimitDelays : baseDelays)[attempt - 1] + jitter;
+        const delay = baseDelays[attempt - 1] + jitter;
         console.warn(
-          `[builderBrainClient] ${rateLimited ? "rate limit" : "transport throw"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
+          `[builderBrainClient] transport throw on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (thrown as { message?: string })?.message,
         );
         if (remainingMs() <= delay + 5_000) return { data: null as TResponse, error: thrown };

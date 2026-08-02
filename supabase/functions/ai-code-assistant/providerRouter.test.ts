@@ -21,6 +21,11 @@ const task: ClassifiedTask = {
   skipThinking: false,
 };
 
+const wizardTask: ClassifiedTask = {
+  ...task,
+  type: "wizard_seed_generation",
+};
+
 const bothProviders = (name: string): string | undefined => ({
   GEMINI_API_KEY: "gemini-test-key",
   OPENAI_API_KEY: "openai-test-key",
@@ -93,4 +98,18 @@ Deno.test("uses the only configured text provider", () => {
   );
 
   assertEquals(plan.primaryProvider, "openai");
+});
+
+Deno.test("keeps Wizard provider slices within the bounded failover window", () => {
+  const plan = buildProviderPlan(
+    wizardTask,
+    true,
+    { timeoutMs: 120_000 },
+    "advanced",
+    "wizard-route",
+    bothProviders,
+  );
+
+  assertEquals(plan.gatewayModels.length, 2);
+  assertEquals(plan.perModelTimeoutMs, 45_000);
 });

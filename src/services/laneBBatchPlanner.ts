@@ -22,7 +22,7 @@ export const LANE_B_FIXED_OVERHEAD_MS = 18_000;
 /** Observed generation cost of one full production-quality page. */
 export const LANE_B_MS_PER_PAGE = 34_000;
 /** Wall-clock we allow a single Lane B turn to consume before splitting. */
-export const LANE_B_WALL_CLOCK_BUDGET_MS = 110_000;
+export const LANE_B_WALL_CLOCK_BUDGET_MS = 105_000;
 /** Response bytes a generated page is expected to contribute. */
 export const LANE_B_RESPONSE_BYTES_PER_PAGE = 9_000;
 /** Never exceed this many pages in one turn regardless of the estimates. */

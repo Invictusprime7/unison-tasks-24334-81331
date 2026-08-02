@@ -638,7 +638,12 @@ export async function runProviderLoop(opts: {
 
   if (!content) {
 
-    if (deferredEarlyError) {
+    // Only surface a deferred 429/402 as the early error when every provider
+    // failed for rate-limit / billing reasons. If any provider failed for a
+    // different reason (timeout, 500, empty response), the 429 from one
+    // provider is misleading — fall through to the detailed "all providers
+    // failed" error so the client shows the real failure.
+    if (deferredEarlyError && !hadNonRateLimitError) {
       return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
     }
     const configuredProviders = [

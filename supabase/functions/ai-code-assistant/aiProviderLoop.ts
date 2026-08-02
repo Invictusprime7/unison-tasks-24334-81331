@@ -397,16 +397,19 @@ export async function runProviderLoop(opts: {
         lastError = lastError || 'budget exhausted before all models tried';
         break;
       }
-      // Per-model timeout: the LEAD model gets the largest slice, but never the
-      // entire remaining budget — otherwise a slow 429/retry walk on the lead
-      // provider starves every fallback and the whole turn dies on a timeout.
-      // Reserve ~40% of the remaining window for the fallback chain.
+      // Most turns reserve room for failover. Wizard generation is different:
+      // a valid 20k+ token Gemini response routinely needs 80–90 seconds. Give
+      // that funded lead path nearly the full turn; auth/rate-limit failures
+      // return quickly and can still fall through to the remaining providers.
       const isLeadModel = model.id === providerPlan.gatewayModels[0]?.id;
       const cap = providerPlan.perModelTimeoutMs;
-      const headroom = Math.max(8000, remaining - 2000 - lastResortReserveMs);
+      const reserveMs = providerPlan.preferLongLeadAttempt && isLeadModel
+        ? 8_000
+        : lastResortReserveMs;
+      const headroom = Math.max(8000, remaining - 2000 - reserveMs);
       const leadShare = Math.max(30000, Math.floor(headroom * 0.6));
       const perModelMs = isLeadModel
-        ? Math.min(cap, headroom, leadShare)
+        ? Math.min(cap, headroom, providerPlan.preferLongLeadAttempt ? headroom : leadShare)
         : Math.min(cap, Math.max(12000, headroom));
 
 

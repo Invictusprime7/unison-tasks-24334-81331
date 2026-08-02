@@ -111,5 +111,7 @@ Deno.test("keeps Wizard provider slices within the bounded failover window", () 
   );
 
   assertEquals(plan.gatewayModels.length, 2);
-  assertEquals(plan.perModelTimeoutMs, 45_000);
+  assertEquals(plan.gatewayModels[0]?.id, "google/gemini-3-flash-preview");
+  assertEquals(plan.perModelTimeoutMs, 95_000);
+  assertEquals(plan.preferLongLeadAttempt, true);
 });

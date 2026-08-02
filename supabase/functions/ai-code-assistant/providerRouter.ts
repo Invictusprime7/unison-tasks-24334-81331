@@ -21,6 +21,8 @@ export interface ProviderPlan {
   perModelTimeoutMs: number;
   /** Max tokens hint for direct fallback APIs */
   fallbackMaxTokens: number;
+  /** Give the lead model nearly the whole turn; quick failures may still fall through. */
+  preferLongLeadAttempt?: boolean;
 }
 
 export interface GatewayOverrides {
@@ -205,15 +207,13 @@ export function buildProviderPlan(
           m(MODELS.geminiFlash, 36000),   // primary
           m(MODELS.gpt4oMini,   32000),   // fallback — same JSON contract
         ],
-        // Two bounded attempts fit inside the provider loop's hard deadline and
-        // leave time for response validation/persistence. Large sites are
-        // already page-batched by the Wizard rather than buying reliability
-        // with an unbounded single provider call.
-        // Two attempts must finish inside the provider loop's 105 s hard cap.
-        // A 35 s slice preserves enough room for the last-resort gateway
-        // (which needs ~30 s to succeed) and response validation/persistence.
-        perModelTimeoutMs: 35_000,
+        // Production Wizard responses commonly exceed 20k output tokens.
+        // Observed successful Gemini generations take 80–90 seconds, so a
+        // 35-second slice deterministically cancels valid funded requests.
+        // Fast failures (auth/429) still fall through to the next provider.
+        perModelTimeoutMs: 95_000,
         fallbackMaxTokens: 36000,
+        preferLongLeadAttempt: true,
       };
       break;
 
@@ -310,11 +310,17 @@ export function buildProviderPlan(
     }
   }
 
-  // Explicit user model selections always win. Automatic selections use the
-  // stable weighted split and retain the other provider models as fallbacks.
+  // Explicit user model selections always win. Wizard generation always leads
+  // with configured Gemini: it is the long-output provider selected for this
+  // contract, while OpenAI remains a quick-failure fallback only. Other tasks
+  // use the stable weighted split.
   const hasExplicitModel = overrides?.autoModelSelection === false && Boolean(overrides.selectedModelId);
   if (!hasExplicitModel) {
-    plan.primaryProvider = selectPrimaryProvider(routingKey, readEnv);
+    const wizardGeminiConfigured = task.type === "wizard_seed_generation"
+      && Boolean(readEnv('GEMINI_API_KEY') || readEnv('GOOGLE_API_KEY') || readEnv('UNISONGEMINI_API_KEY'));
+    plan.primaryProvider = wizardGeminiConfigured
+      ? 'gemini'
+      : selectPrimaryProvider(routingKey, readEnv);
     plan.gatewayModels = prioritizeProviderModels(plan.gatewayModels, plan.primaryProvider);
   }
 

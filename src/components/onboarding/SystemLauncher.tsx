@@ -1570,6 +1570,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       toast.error("Please enter your business name");
       return;
     }
+    const selectedStyle = selectedTheme;
+    if (!selectedStyle?.id) {
+      toast.error('Please select a visual style before launching.');
+      return;
+    }
 
     setIsLaunching(true);
     setValidationAttempts([]);
@@ -1658,25 +1663,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // Must run before commitToPipeline so the canonical pipeline can lock the
       // themed `/src/index.css` into siteBundleSnapshot.vfsFiles (preview, VFS,
       // playground, and AIBuilder continuity all read from the snapshot).
-      if (!selectedTheme) {
-        toast.error('Please select a visual style before launching.');
-        throw new Error('[SystemLauncher] A Style card selection is required for Lane B generation.');
-      }
-      const earlyResolvedPreset = selectedTheme;
+      const earlyResolvedPreset = selectedStyle;
       const earlyThemeTokens = themePresetToThemeTokens(earlyResolvedPreset);
       const industryTemplateGuidance = buildTemplateGuidance(effectiveTemplate);
-
-      // The selected Style card is mandatory and its resolved token payload is
-      // passed directly into Stage 4b. No default preset may be substituted.
-      if (!earlyResolvedPreset || !earlyResolvedPreset.id) {
-        const msg =
-          '[SystemLauncher] Style card assertion failed: selected theme has no id. ' +
-          'Every launch must carry an explicit Style card selection. ' +
-          'Aborting build to prevent shipping an un-themed scaffold.';
-        console.error(msg, { selectedTheme, generationCategory });
-        toast.error('Build aborted: theme preset could not be resolved.');
-        throw new Error(msg);
-      }
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};
@@ -2788,6 +2777,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         accepted: boolean;
         reason: string;
       }> = [];
+      const rejectedPageCandidates: Record<string, string> = {};
 
       const acceptCompletedWizardPage = (
         path: string,
@@ -2861,6 +2851,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           { isolatedPage: true },
         );
         if (!quality.ok) {
+          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
             attempt,
@@ -2876,6 +2867,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           vocabulary.length > 0 &&
           !vocabulary.some((term) => repairedCandidate.toLowerCase().includes(term.toLowerCase()))
         ) {
+          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
             attempt,
@@ -3019,11 +3011,27 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
         for (let attempt = 2; attempt <= 3 && !aiSourcedFiles[missingPath]; attempt++) {
           setLaunchStatus(`Completing ${page?.title || missingPath} (${attempt - 1}/2)…`);
+          const rejectedCandidate = rejectedPageCandidates[missingPath];
+          const previousFailure = [...laneBCompletionDiagnostics]
+            .reverse()
+            .find((diagnostic) => diagnostic.path === missingPath && !diagnostic.accepted)?.reason;
+          const isolatedWizardSeed = {
+            ...wizardSeed,
+            canonical: {
+              ...wizardSeed.canonical,
+              pages: wizardSeed.canonical.pages.filter((canonicalPage) => {
+                const filePath = canonicalPage.path.startsWith('/')
+                  ? canonicalPage.path
+                  : `/${canonicalPage.path}`;
+                return filePath === missingPath;
+              }),
+            },
+          };
           const pageCompletionPrompt = [
-            aiUserPrompt,
-            '',
             '── LANE B PAGE COMPLETION TURN ──',
-            `Generate exactly one missing selected wizard page: ${missingPath}.`,
+            rejectedCandidate
+              ? `Improve the supplied near-complete page without replacing its working content: ${missingPath}.`
+              : `Generate exactly one missing selected wizard page: ${missingPath}.`,
             `Page title: ${page?.title || 'Page'}`,
             `Route: ${page?.path || '/'}`,
             `Page type/role: ${page?.pageType || 'generic'}`,
@@ -3035,21 +3043,26 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             `Required industry behaviors/intents: ${requiredIntents}`,
             `Forbidden industry intents: ${(behaviorContract?.forbidden || []).join(', ') || 'none'}`,
             `Industry vocabulary/context: ${industryVocabulary || generationCategory}`,
+            previousFailure ? `Exact validation failure to repair: ${previousFailure}` : '',
             '',
             'Return ONLY this file in the WizardSeed multi-file JSON contract.',
             'The page must contain at least 3 complete semantic sections and 1200+ characters of real copy.',
+            rejectedCandidate
+              ? 'Preserve all valid existing sections and behavior; add or repair only what the validation failure requires.'
+              : '',
             'Use only semantic theme classes backed by the supplied Stage 4b HSL tokens.',
             'Include working data-ut-intent behavior appropriate to this page role.',
             'Do not emit App.tsx, shared chrome, placeholder copy, quarantine UI, or a preset scaffold.',
+            rejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
           ].join('\n');
 
           try {
-            const completionBudgetMs = takeWizardGenerationBudget();
+            const completionBudgetMs = takeWizardGenerationBudget(attempt === 2 ? 40_000 : 50_000);
             const completion = await withTimeout(
               (signal) => runBuilderTurn<any>({
                 messages: [{ role: 'user', content: pageCompletionPrompt }],
                 mode: 'wizard-seed',
-                currentCode: wizardCurrentCode,
+                currentCode: rejectedCandidate || '',
                 editMode: false,
                 templateName: effectiveTemplate?.label || system.name,
                 aesthetic: resolvedPreset.id,
@@ -3067,12 +3080,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   template_intents: blueprint.template_intents,
                 },
                 userDesignProfile: laneBDesignProfile,
-                siteElementsLibraryContext,
-                vfsFiles: wizardVfsPayload,
-                previewSnapshot: wizardPreviewSnapshot,
+                vfsFiles: rejectedCandidate ? { [missingPath]: rejectedCandidate } : undefined,
                 recentChangedFiles: [missingPath],
-                gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
-                wizardSeed,
+                gatewayOptions: {
+                  ...WIZARD_LANE_B_GATEWAY_OPTIONS,
+                  timeoutMs: Math.min(45_000, completionBudgetMs - 5_000),
+                  maxTokens: 24_000,
+                },
+                wizardSeed: isolatedWizardSeed,
               }, { signal, timeoutMs: completionBudgetMs - 2_000 }),
               completionBudgetMs,
               `Lane B page completion exceeded the remaining Wizard generation deadline.`,

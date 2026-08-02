@@ -620,7 +620,56 @@ async function runBuilderLane(
     }
   };
 
+  let repairAttempted = false;
+  let repairAccepted = false;
   let outcome = runReviewPass(content);
+
+  // A provider can occasionally follow the visual brief but ignore the
+  // WizardSeed transport contract and emit one raw TSX/HTML document. The
+  // generic envelope repair below only runs after JSON parsing succeeds, so
+  // repair this specific contract miss before verification.
+  if (task.type === 'wizard_seed_generation' && !outcome && content.trim()) {
+    repairAttempted = true;
+    console.warn('[orchestrator] wizard output was not multi-file JSON — running contract repair');
+    try {
+      const contractRepairResult = await runProviderLoop({
+        aiMessages: [
+          ...aiMessagesForCall,
+          { role: 'assistant', content },
+          {
+            role: 'user',
+            content: [
+              'Your previous response violated the WizardSeed output contract.',
+              'Convert it into the complete required multi-page payload now.',
+              'Return ONLY raw JSON shaped as {"files":{"/src/pages/Home.tsx":"..."}}.',
+              'Include one body-only TSX file for every canonical WizardSeed page.',
+              'Do not return markdown, prose, HTML documents, /src/App.tsx, SiteNavbar, or SiteFooter.',
+            ].join('\n'),
+          },
+        ],
+        providerPlan,
+        navPageGen,
+        reasoningEffort: effectiveReasoningEffort,
+        allowDirectFallbacks: true,
+        signal,
+      });
+      if (!contractRepairResult.earlyError && contractRepairResult.content) {
+        const repairedContent = postProcessContent(contractRepairResult.content);
+        const repairedOutcome = runReviewPass(repairedContent);
+        if (repairedOutcome && Object.keys(repairedOutcome.files).length > 0) {
+          content = repairedContent;
+          outcome = repairedOutcome;
+          repairAccepted = true;
+          console.log('[orchestrator] wizard contract repair accepted', {
+            files: Object.keys(repairedOutcome.files).length,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn('[orchestrator] wizard contract repair failed:', error);
+    }
+  }
+
   let verification = verifyAgainstEnvelope({
     envelope: requestEnvelope,
     files: outcome?.files ?? {},
@@ -628,8 +677,6 @@ async function runBuilderLane(
   });
 
   // ── Milestone 3: one targeted repair turn keyed to unmet goals ───────────
-  let repairAttempted = false;
-  let repairAccepted = false;
   if (outcome && verification.checked && !verification.passed) {
     repairAttempted = true;
     const allowedTargets = Array.isArray(requestEnvelope?.scope?.targets)

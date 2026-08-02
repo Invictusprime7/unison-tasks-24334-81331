@@ -102,10 +102,18 @@ export async function runProviderLoop(opts: {
   const lastResortReserveMs = hasLastResortGateway ? 20_000 : 0;
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
+  // Tracks whether any provider failed for a non-rate-limit reason (timeout,
+  // 500, empty response, etc.). When true, a deferred 429 from one provider
+  // must NOT mask the real failure — the client would show "rate limited" even
+  // though the actual cause was a timeout on a different provider.
+  let hadNonRateLimitError = false;
   const recordProviderError = (label: string, detail: string) => {
     const message = `${label}: ${detail}`;
     providerErrors.push(message);
     lastError = message;
+    if (!/429|rate limit|402|payment required/i.test(detail)) {
+      hadNonRateLimitError = true;
+    }
   };
   const createAttemptSignal = (timeoutMs: number) => {
     const controller = new AbortController();
@@ -577,7 +585,10 @@ export async function runProviderLoop(opts: {
   if (!content && hasLastResortGateway) {
     const remaining = budgetRemaining();
     if (remaining >= 8_000) {
-      const perModelMs = Math.min(25_000, Math.max(8_000, remaining - 2_000));
+      // The gateway needs ~30 s to respond for large wizard-seed prompts
+      // (observed: success at 29 s with a 30 s planned-model timeout). The
+      // previous 25 s cap aborted the gateway just before it could complete.
+      const perModelMs = Math.min(35_000, Math.max(8_000, remaining - 2_000));
       const gatewayModel: ModelSpec = {
         id: 'google/gemini-3.6-flash',
         maxTokens: Math.min(providerPlan.fallbackMaxTokens, 32_000),
@@ -627,7 +638,12 @@ export async function runProviderLoop(opts: {
 
   if (!content) {
 
-    if (deferredEarlyError) {
+    // Only surface a deferred 429/402 as the early error when every provider
+    // failed for rate-limit / billing reasons. If any provider failed for a
+    // different reason (timeout, 500, empty response), the 429 from one
+    // provider is misleading — fall through to the detailed "all providers
+    // failed" error so the client shows the real failure.
+    if (deferredEarlyError && !hadNonRateLimitError) {
       return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
     }
     const configuredProviders = [

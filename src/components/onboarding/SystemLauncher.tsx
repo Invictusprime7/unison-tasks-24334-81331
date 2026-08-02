@@ -50,7 +50,7 @@ import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import { runBuilderTurn, isTransportError } from "@/services/builderBrainClient";
+import { runBuilderTurn, isRateLimitError, isTransportError } from "@/services/builderBrainClient";
 import { planLaneBBatches, measurePayloadBytes } from "@/services/laneBBatchPlanner";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -2727,6 +2727,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (aiError) {
         launchReliabilityMode = 'lane-b-blocked';
         const details = await getFunctionErrorMessage(aiError);
+        if (isRateLimitError(aiError)) {
+          console.warn('[SystemLauncher] All AI providers are temporarily rate limited; preserving Wizard state for retry');
+          toast.error('AI providers are temporarily busy. Your Wizard selections are preserved—please try Generate again shortly.');
+          return;
+        }
         const transportHint = isTransportError(aiError)
           ? ' This was a transport failure (the AI edge connection dropped, usually a long generation exceeding the runtime budget), not a contract violation — retrying the launch is safe.'
           : '';

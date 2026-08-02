@@ -5,7 +5,10 @@
 
 import type { ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
-import { createPlannedChatCompletion } from "../_shared/ai/providerClient.ts";
+import {
+  createLastResortGatewayChatCompletion,
+  createPlannedChatCompletion,
+} from "../_shared/ai/providerClient.ts";
 import type { ChatCompletionRequest } from "../_shared/ai/providerClient.ts";
 import type { ModelSpec } from './providerRouter.ts';
 
@@ -95,6 +98,8 @@ export async function runProviderLoop(opts: {
   const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
   const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));
   const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY'));
+  const hasLastResortGateway = allowDirectFallbacks && Boolean(Deno.env.get('LOVABLE_API_KEY'));
+  const lastResortReserveMs = hasLastResortGateway ? 20_000 : 0;
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
   const recordProviderError = (label: string, detail: string) => {
@@ -139,15 +144,15 @@ export async function runProviderLoop(opts: {
     const fallbackTokens = providerPlan.fallbackMaxTokens;
     // Model-specific output token limits (max_completion_tokens caps).
     // gpt-4.1 supports 32 768 — enough for a full wizard seed (9+ pages).
-    // gpt-4o and gpt-4o-mini top out at 16 384.
+    // Keep this native fallback list short: planned routing owns normal model
+    // selection, while this branch only covers a provider family omitted from
+    // the plan.
     const openaiModels = [
       ...(configuredOpenAIModel
         ? [{ id: configuredOpenAIModel, maxTokens: Math.min(fallbackTokens, 32768), label: `OpenAI ${configuredOpenAIModel}` }]
         : []),
       // gpt-4.1: faster throughput + 32 k output — primary direct-API choice.
       { id: 'gpt-4.1', maxTokens: Math.min(fallbackTokens, 32768), label: 'OpenAI gpt-4.1' },
-      { id: 'gpt-4o', maxTokens: Math.min(fallbackTokens, 16384), label: 'OpenAI gpt-4o' },
-      { id: 'gpt-4o-mini', maxTokens: Math.min(fallbackTokens, 16384), label: 'OpenAI gpt-4o-mini' },
     ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
     
     for (const model of openaiModels) {
@@ -274,7 +279,7 @@ export async function runProviderLoop(opts: {
     const geminiModels = [
       // 65 536 output tokens — ideal for multi-page wizard generation
       { id: 'gemini-2.5-flash', maxTokens: Math.min(providerPlan.fallbackMaxTokens, 65536), label: 'Gemini 2.5 Flash' },
-      { id: 'gemini-2.0-flash', maxTokens: Math.min(providerPlan.fallbackMaxTokens, 8192), label: 'Gemini 2.0 Flash' },
+      { id: 'gemini-2.5-flash-lite', maxTokens: Math.min(providerPlan.fallbackMaxTokens, 8192), label: 'Gemini 2.5 Flash Lite' },
     ];
 
     for (const model of geminiModels) {
@@ -390,7 +395,7 @@ export async function runProviderLoop(opts: {
       // Reserve ~40% of the remaining window for the fallback chain.
       const isLeadModel = model.id === providerPlan.gatewayModels[0]?.id;
       const cap = providerPlan.perModelTimeoutMs;
-      const headroom = Math.max(8000, remaining - 2000);
+      const headroom = Math.max(8000, remaining - 2000 - lastResortReserveMs);
       const leadShare = Math.max(30000, Math.floor(headroom * 0.6));
       const perModelMs = isLeadModel
         ? Math.min(cap, headroom, leadShare)
@@ -492,15 +497,18 @@ export async function runProviderLoop(opts: {
   }
 
   // ── Phase 2–3: Provider-native fallback models ───────────────────────
-  // Preserve the weighted preference after the planned models are exhausted.
+  // Planned models already exercise both direct provider families. Repeating
+  // both complete provider-native lists after that used the entire wall-clock
+  // budget during 429/timeout storms and starved the true last-resort path.
+  // Only use the native list for a configured family that had no planned model.
+  const plannedProviders = new Set(providerPlan.gatewayModels.map((model) => (
+    model.id.startsWith('openai/') || model.id.startsWith('gpt-') ? 'openai' :
+    model.id.startsWith('google/') || model.id.startsWith('gemini-') ? 'gemini' :
+    'other'
+  )));
   if (!content && allowDirectFallbacks) {
-    if (providerPlan.primaryProvider === 'openai') {
-      await runDirectOpenAI();
-      if (!content) await runDirectGemini();
-    } else {
-      await runDirectGemini();
-      if (!content) await runDirectOpenAI();
-    }
+    if (hasDirectOpenAI && !plannedProviders.has('openai')) await runDirectOpenAI();
+    if (!content && hasDirectGemini && !plannedProviders.has('gemini')) await runDirectGemini();
   }
 
   // ── Phase 4: Direct Anthropic API ─────────────────────────────────────
@@ -508,8 +516,9 @@ export async function runProviderLoop(opts: {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (ANTHROPIC_API_KEY) {
       const remaining = budgetRemaining();
-      if (remaining >= 8000) {
-        const perModelMs = Math.min(28000, Math.max(8000, remaining - 2000));
+      const anthropicBudget = remaining - (hasLastResortGateway ? 10_000 : 2_000);
+      if (anthropicBudget >= 8000) {
+        const perModelMs = Math.min(28000, anthropicBudget);
         try {
           const systemMsg = (aiMessages.find((m) => m.role === 'system')?.content as string) || '';
           const userMsgs = aiMessages.filter((m) => m.role !== 'system');
@@ -556,6 +565,62 @@ export async function runProviderLoop(opts: {
           throwIfCancelled();
           recordProviderError('Anthropic claude-sonnet-4-5', err instanceof Error ? err.message : 'unknown');
         }
+      }
+    }
+  }
+
+  // ── Phase 5: Managed gateway, strictly last resort ───────────────────
+  // This path is intentionally unreachable until all configured direct
+  // provider models (and Anthropic, when present) have failed. It prevents a
+  // temporary direct-provider 429 from blocking the Wizard while preserving
+  // the product rule that the managed gateway is never primary.
+  if (!content && hasLastResortGateway) {
+    const remaining = budgetRemaining();
+    if (remaining >= 8_000) {
+      const perModelMs = Math.min(25_000, Math.max(8_000, remaining - 2_000));
+      const gatewayModel: ModelSpec = {
+        id: 'google/gemini-3.6-flash',
+        maxTokens: Math.min(providerPlan.fallbackMaxTokens, 32_000),
+        label: 'Managed gateway fallback',
+      };
+      try {
+        console.log(`[AI-Hybrid] Trying managed gateway as final fallback (timeout: ${perModelMs / 1000}s)...`);
+        const attempt = createAttemptSignal(perModelMs);
+        const resp = await createLastResortGatewayChatCompletion(
+          buildPlannedChatCompletionRequest({
+            model: gatewayModel,
+            aiMessages,
+            reasoningEffort,
+            tools: hasTools ? tools : undefined,
+            toolChoice: effectiveToolChoice,
+          }),
+          attempt.signal,
+        );
+        attempt.cleanup();
+        if (resp.ok) {
+          const data = await resp.json();
+          const message = data.choices?.[0]?.message ?? {};
+          const parsedContent = message.content || '';
+          const parsedToolCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as RawToolCall[]) : undefined;
+          if (parsedContent || (parsedToolCalls && parsedToolCalls.length > 0)) {
+            const extracted = extractThinkingTags(parsedContent);
+            content = extracted.content;
+            reasoning = extracted.reasoning || reasoning;
+            modelUsed = gatewayModel.id;
+            providerUsed = 'lovable';
+            if (parsedToolCalls?.length) toolCalls = parsedToolCalls;
+            console.log('[AI-Hybrid] Success with managed gateway final fallback');
+          }
+        } else {
+          const errText = await resp.text().catch(() => '');
+          recordProviderError(gatewayModel.label, `${resp.status} ${errText.substring(0, 200)}`);
+          if (resp.status === 402) {
+            deferredEarlyError = { status: 402, error: 'AI credits are exhausted. Please add workspace credits and try again.' };
+          }
+        }
+      } catch (err) {
+        throwIfCancelled();
+        recordProviderError(gatewayModel.label, err instanceof Error ? err.message : 'unknown');
       }
     }
   }

@@ -84,8 +84,8 @@ export async function runProviderLoop(opts: {
   let toolCalls: RawToolCall[] | undefined;
 
   // Global wall-clock budget so we don't exceed the client's timeout window.
-  // Client global abort fires at 150s; reserve ~15s for response packaging/network.
-  const TOTAL_BUDGET_MS = 135_000;
+  // Client global abort fires at 240s; reserve ~35s for response packaging/network.
+  const TOTAL_BUDGET_MS = 205_000;
   const startedAt = Date.now();
   const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
   const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));

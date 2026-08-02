@@ -24,7 +24,9 @@ const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
 const MAX_RATE_LIMIT_RETRY_MS = 2_500;
 /** Per-provider slice so a single hanging provider cannot eat the whole window. */
-const PROVIDER_ATTEMPT_TIMEOUT_MS = 45_000;
+const PROVIDER_ATTEMPT_TIMEOUT_MS = 75_000;
+/** Even the final provider is bounded so a hung socket cannot hang the turn. */
+const FINAL_PROVIDER_ATTEMPT_TIMEOUT_MS = 120_000;
 
 export function getShortRateLimitRetryMs(headers: Headers, now = Date.now()): number | null {
   const retryAfter = headers.get("retry-after");
@@ -265,9 +267,10 @@ export async function createChatCompletion(request: ChatCompletionRequest, signa
       if (signal.aborted) child.abort(signal.reason);
       else signal.addEventListener("abort", onOuterAbort, { once: true });
     }
-    const sliceTimer = isLast
-      ? undefined
-      : setTimeout(() => child.abort(new DOMException("provider slice timeout", "AbortError")), PROVIDER_ATTEMPT_TIMEOUT_MS);
+    const sliceTimer = setTimeout(
+      () => child.abort(new DOMException("provider slice timeout", "AbortError")),
+      isLast ? FINAL_PROVIDER_ATTEMPT_TIMEOUT_MS : PROVIDER_ATTEMPT_TIMEOUT_MS,
+    );
 
     try {
       const response = provider === "anthropic"

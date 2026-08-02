@@ -105,7 +105,8 @@ export function isTransportError(err: unknown): boolean {
   return false;
 }
 
-const RATE_LIMIT_PATTERN = /rate limit|too many requests|429/i;
+
+
 
 /**
  * Detect a provider-chain 429 so callers can surface the real failure. The

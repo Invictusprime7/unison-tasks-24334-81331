@@ -112,13 +112,17 @@ const RATE_LIMIT_PATTERN = /rate limit|too many requests|429/i;
  * edge function already exhausts its bounded provider failover before it
  * returns 429; replaying the whole request here only consumes the Wizard's
  * remaining deadline and masks the rate limit as a timeout.
+ *
+ * IMPORTANT: only match on the actual HTTP status, not the message text. A
+ * 500 "all providers failed" response includes provider error trails that
+ * contain "429" from one provider's rate limit, but the overall failure is a
+ * mixed timeout/429 — showing the rate-limit toast would be misleading.
  */
 export function isRateLimitError(err: unknown): boolean {
   if (!err) return false;
   const anyErr = err as { message?: string; status?: number; context?: { status?: number } };
   if (anyErr?.status === 429 || anyErr?.context?.status === 429) return true;
-  const msg = typeof anyErr?.message === "string" ? anyErr.message : "";
-  return Boolean(msg) && RATE_LIMIT_PATTERN.test(msg);
+  return false;
 }
 
 

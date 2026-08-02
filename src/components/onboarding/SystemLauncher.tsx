@@ -2362,7 +2362,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 ].join('\n');
                 try {
                   const uiRepair = await withTimeout(
-                    runBuilderTurn<any>({
+                    (signal) => runBuilderTurn<any>({
                       messages: [{ role: 'user', content: uiRepairPrompt }],
                       mode: 'wizard-seed',
                       currentCode: wizardCurrentCode,
@@ -2381,7 +2381,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                         .filter((path): path is string => Boolean(path)),
                       gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
                       wizardSeed,
-                    }),
+                    }, { signal, timeoutMs: WIZARD_AI_TIMEOUT_MS - 5_000 }),
                     WIZARD_AI_TIMEOUT_MS,
                     `Lane B UI foundation repair timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
                   );
@@ -2906,7 +2906,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ].join('\n');
         try {
           const retry = await withTimeout(
-            runBuilderTurn<any>({
+            (signal) => runBuilderTurn<any>({
               messages: [{ role: 'user', content: retryPrompt }],
               mode: 'wizard-seed',
               currentCode: wizardCurrentCode,
@@ -2933,7 +2933,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               recentChangedFiles: normalizedMissing,
               gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
               wizardSeed,
-            }),
+            }, { signal, timeoutMs: WIZARD_AI_TIMEOUT_MS - 5_000 }),
             WIZARD_AI_TIMEOUT_MS,
             `Lane B repair turn timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
           );
@@ -3020,7 +3020,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
           try {
             const completion = await withTimeout(
-              runBuilderTurn<any>({
+              (signal) => runBuilderTurn<any>({
                 messages: [{ role: 'user', content: pageCompletionPrompt }],
                 mode: 'wizard-seed',
                 currentCode: wizardCurrentCode,
@@ -3047,7 +3047,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 recentChangedFiles: [missingPath],
                 gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
                 wizardSeed,
-              }),
+              }, { signal, timeoutMs: WIZARD_AI_TIMEOUT_MS - 5_000 }),
               WIZARD_AI_TIMEOUT_MS,
               `Lane B page completion timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
             );

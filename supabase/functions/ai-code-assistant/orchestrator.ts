@@ -103,12 +103,13 @@ export function runAssistantOrchestrator(
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
   userId?: string,
+  signal?: AbortSignal,
 ): Promise<Response> {
   if (task.type === "launch_desk") {
-    return runLaunchDeskLane(parsed, task, corsHeaders);
+    return runLaunchDeskLane(parsed, task, corsHeaders, signal);
   }
   // All wizard launches now route through Lane B as `wizard_seed_generation`.
-  return runBuilderLane(parsed, task, corsHeaders, userId);
+  return runBuilderLane(parsed, task, corsHeaders, userId, signal);
 }
 
 // ============================================================================
@@ -127,6 +128,7 @@ async function runLaunchDeskLane(
   parsed: AIRequest,
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<Response> {
   console.log('[orchestrator] LANE C: launch_desk');
 
@@ -164,6 +166,7 @@ async function runLaunchDeskLane(
     providerPlan,
     navPageGen: false,
     reasoningEffort: launchReasoningEffort,
+    signal,
   });
 
   if (providerResult.earlyError) {
@@ -214,6 +217,7 @@ async function runBuilderLane(
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
   userId?: string,
+  signal?: AbortSignal,
 ): Promise<Response> {
   console.log(`[orchestrator] LANE B: ${task.type} (sub-behavior: ${
     task.type === 'debug_fix' ? 'builder_debug' :
@@ -542,6 +546,7 @@ async function runBuilderLane(
     allowDirectFallbacks: true,
     tools: enableCatalogTools ? CATALOG_CHAT_TOOLS : undefined,
     toolChoice: enableCatalogTools ? 'auto' : undefined,
+    signal,
   });
 
   if (providerResult.earlyError) {
@@ -646,6 +651,7 @@ async function runBuilderLane(
         navPageGen,
         reasoningEffort: effectiveReasoningEffort,
         allowDirectFallbacks: true,
+        signal,
       });
 
       if (!repairResult.earlyError && repairResult.content) {

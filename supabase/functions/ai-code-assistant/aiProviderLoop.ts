@@ -72,8 +72,10 @@ export async function runProviderLoop(opts: {
   tools?: unknown[];
   /** `tool_choice` forwarded to the provider. Defaults to `"auto"` when tools are present. */
   toolChoice?: "auto" | "none" | "required";
+  /** Cancels provider work when the browser request disconnects or expires. */
+  signal?: AbortSignal;
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, reasoningEffort, allowDirectFallbacks = true, tools, toolChoice } = opts;
+  const { aiMessages, providerPlan, reasoningEffort, allowDirectFallbacks = true, tools, toolChoice, signal } = opts;
   const hasTools = Array.isArray(tools) && tools.length > 0;
   const effectiveToolChoice = hasTools ? (toolChoice ?? "auto") : undefined;
   let content = '';
@@ -98,6 +100,27 @@ export async function runProviderLoop(opts: {
     const message = `${label}: ${detail}`;
     providerErrors.push(message);
     lastError = message;
+  };
+  const createAttemptSignal = (timeoutMs: number) => {
+    const controller = new AbortController();
+    const onOuterAbort = () => controller.abort(signal?.reason);
+    if (signal) {
+      if (signal.aborted) controller.abort(signal.reason);
+      else signal.addEventListener('abort', onOuterAbort, { once: true });
+    }
+    const timeoutId = setTimeout(() => controller.abort(new DOMException('Provider attempt timed out', 'TimeoutError')), timeoutMs);
+    return {
+      signal: controller.signal,
+      cleanup: () => {
+        clearTimeout(timeoutId);
+        signal?.removeEventListener('abort', onOuterAbort);
+      },
+    };
+  };
+  const throwIfCancelled = () => {
+    if (signal?.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new DOMException('Request aborted', 'AbortError');
+    }
   };
 
   const runDirectOpenAI = async (): Promise<void> => {
@@ -127,6 +150,7 @@ export async function runProviderLoop(opts: {
     ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
     
     for (const model of openaiModels) {
+      throwIfCancelled();
       const remaining = budgetRemaining();
       if (remaining < 8000) {
         console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining OpenAI models`);
@@ -138,8 +162,7 @@ export async function runProviderLoop(opts: {
       const perModelMs = Math.min(providerPlan.perModelTimeoutMs, Math.max(8000, remaining - 2000));
       try {
         console.log(`[AI-Hybrid] Trying ${role} ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+        const attempt = createAttemptSignal(perModelMs);
         
         const requestBody: Record<string, unknown> = {
           model: model.id,
@@ -158,9 +181,9 @@ export async function runProviderLoop(opts: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(requestBody),
-          signal: controller.signal,
+          signal: attempt.signal,
         });
-        clearTimeout(timeoutId);
+        attempt.cleanup();
 
         if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
@@ -224,6 +247,7 @@ export async function runProviderLoop(opts: {
         console.log(`[AI-Hybrid] Success with fallback ${model.label}`);
         break;
       } catch (err) {
+        throwIfCancelled();
         if (err instanceof Error && err.name === 'AbortError') {
           console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
           recordProviderError(model.label, 'timeout');
@@ -253,6 +277,7 @@ export async function runProviderLoop(opts: {
     ];
 
     for (const model of geminiModels) {
+      throwIfCancelled();
       const remaining = budgetRemaining();
       if (remaining < 8000) {
         console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining Gemini models`);
@@ -262,8 +287,7 @@ export async function runProviderLoop(opts: {
       const perModelMs = Math.min(providerPlan.perModelTimeoutMs, Math.max(8000, remaining - 2000));
       try {
         console.log(`[AI-Hybrid] Trying ${role} ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+        const attempt = createAttemptSignal(perModelMs);
 
         const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
           method: 'POST',
@@ -277,9 +301,9 @@ export async function runProviderLoop(opts: {
             max_tokens: model.maxTokens,
             ...(hasTools ? { tools, tool_choice: effectiveToolChoice } : {}),
           }),
-          signal: controller.signal,
+          signal: attempt.signal,
         });
-        clearTimeout(timeoutId);
+        attempt.cleanup();
 
         if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
@@ -332,6 +356,7 @@ export async function runProviderLoop(opts: {
         console.log(`[AI-Hybrid] Success with ${role} ${model.label}`);
         break;
       } catch (err) {
+        throwIfCancelled();
         if (err instanceof Error && err.name === 'AbortError') {
           console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
           recordProviderError(model.label, 'timeout');
@@ -351,6 +376,7 @@ export async function runProviderLoop(opts: {
     console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
     
     for (const model of providerPlan.gatewayModels) {
+      throwIfCancelled();
       const remaining = budgetRemaining();
       if (remaining < 8000) {
         console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining gateway models`);
@@ -372,8 +398,7 @@ export async function runProviderLoop(opts: {
 
       try {
         console.log(`[AI-Hybrid] Trying planned direct model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+        const attempt = createAttemptSignal(perModelMs);
 
         const reqBody = buildPlannedChatCompletionRequest({
           model,
@@ -383,8 +408,8 @@ export async function runProviderLoop(opts: {
           toolChoice: effectiveToolChoice,
         });
 
-        const resp = await createPlannedChatCompletion(reqBody, controller.signal);
-        clearTimeout(timeoutId);
+        const resp = await createPlannedChatCompletion(reqBody, attempt.signal);
+        attempt.cleanup();
 
         if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
@@ -452,6 +477,7 @@ export async function runProviderLoop(opts: {
         console.log(`[AI-Hybrid] Success with planned direct model ${model.label}`);
         break;
       } catch (err) {
+        throwIfCancelled();
         if (err instanceof Error && err.name === 'AbortError') {
           console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
           recordProviderError(model.label, 'timeout');
@@ -488,8 +514,7 @@ export async function runProviderLoop(opts: {
           const userMsgs = aiMessages.filter((m) => m.role !== 'system');
           console.log(`[AI-Hybrid] Trying direct Anthropic claude-sonnet-4-5 (timeout: ${perModelMs / 1000}s)...`);
 
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+          const attempt = createAttemptSignal(perModelMs);
           const resp = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
@@ -503,9 +528,9 @@ export async function runProviderLoop(opts: {
               system: systemMsg,
               messages: userMsgs,
             }),
-            signal: controller.signal,
+            signal: attempt.signal,
           });
-          clearTimeout(timeoutId);
+          attempt.cleanup();
 
           if (!resp.ok) {
             const errText = await resp.text();
@@ -527,6 +552,7 @@ export async function runProviderLoop(opts: {
             }
           }
         } catch (err) {
+          throwIfCancelled();
           recordProviderError('Anthropic claude-sonnet-4-5', err instanceof Error ? err.message : 'unknown');
         }
       }

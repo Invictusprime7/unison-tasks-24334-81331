@@ -55,6 +55,8 @@ export interface BuilderTurnInput {
 export interface BuilderTurnOptions {
   /** Abort the in-flight invoke. */
   signal?: AbortSignal;
+  /** Absolute budget across invocation, backoff, retries and raw fallback. */
+  timeoutMs?: number;
 }
 
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
@@ -146,16 +148,19 @@ export async function runBuilderTurn<TResponse = any>(
   input: BuilderTurnInput,
   options: BuilderTurnOptions = {},
 ): Promise<{ data: TResponse; error: any }> {
-  const maxAttempts = 4;
+  const maxAttempts = 2;
   const baseDelays = [600, 1400, 2800];
   // Provider cooldowns are seconds-scale; back off harder than transport retries.
   const rateLimitDelays = [4000, 9000, 18000];
 
   let lastError: unknown = null;
   let sentPayload: Record<string, unknown> = input as unknown as Record<string, unknown>;
+  const deadlineAt = Date.now() + (options.timeoutMs ?? 175_000);
+
+  const remainingMs = () => deadlineAt - Date.now();
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (options.signal?.aborted) {
+    if (options.signal?.aborted || remainingMs() <= 0) {
       return { data: null as TResponse, error: new DOMException("Aborted", "AbortError") };
     }
 
@@ -173,9 +178,22 @@ export async function runBuilderTurn<TResponse = any>(
     }
 
     try {
+      const attemptController = new AbortController();
+      const onOuterAbort = () => attemptController.abort(options.signal?.reason);
+      if (options.signal) {
+        if (options.signal.aborted) attemptController.abort(options.signal.reason);
+        else options.signal.addEventListener("abort", onOuterAbort, { once: true });
+      }
+      const attemptTimer = setTimeout(
+        () => attemptController.abort(new DOMException("Builder turn deadline exceeded", "TimeoutError")),
+        Math.max(1, remainingMs()),
+      );
       const { data, error } = await supabase.functions.invoke<TResponse>("ai-code-assistant", {
         body: sentPayload,
+        signal: attemptController.signal,
       });
+      clearTimeout(attemptTimer);
+      options.signal?.removeEventListener("abort", onOuterAbort);
 
       if (error && (isTransportError(error) || isRateLimitError(error)) && attempt < maxAttempts) {
         lastError = error;
@@ -186,6 +204,7 @@ export async function runBuilderTurn<TResponse = any>(
           `[builderBrainClient] ${rateLimited ? "rate limit" : "transport error"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (error as { message?: string })?.message,
         );
+        if (remainingMs() <= delay + 5_000) return { data: null as TResponse, error };
         await sleep(delay, options.signal);
         continue;
       }
@@ -202,6 +221,7 @@ export async function runBuilderTurn<TResponse = any>(
           `[builderBrainClient] ${rateLimited ? "rate limit" : "transport throw"} on attempt ${attempt}/${maxAttempts}; retrying in ${delay}ms`,
           (thrown as { message?: string })?.message,
         );
+        if (remainingMs() <= delay + 5_000) return { data: null as TResponse, error: thrown };
         await sleep(delay, options.signal);
         continue;
       }
@@ -215,6 +235,9 @@ export async function runBuilderTurn<TResponse = any>(
   // SDK's fetch wrapper (interceptors, session-recovery) throws before it
   // ever touches the network, while the edge itself is healthy.
   try {
+    if (options.signal?.aborted || remainingMs() <= 5_000) {
+      return { data: null as TResponse, error: lastError ?? new DOMException("Builder turn deadline exceeded", "TimeoutError") };
+    }
     const url = (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_URL;
     const anon =
       (import.meta as { env?: Record<string, string> })?.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||

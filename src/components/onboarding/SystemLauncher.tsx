@@ -515,7 +515,9 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
 const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
-const WIZARD_AI_TIMEOUT_MS = 240_000;
+// Fail deterministically before browser/proxy ceilings. The edge provider loop
+// owns 135s; this leaves 40s for validation, persistence and transport.
+const WIZARD_AI_TIMEOUT_MS = 175_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   timeoutMs: 120_000,
@@ -755,14 +757,22 @@ function getGenerationCategory(
   return (templateCategory || system.templateCategories[0]) as LayoutCategory;
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+async function withTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  const controller = new AbortController();
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    timeoutHandle = setTimeout(() => {
+      controller.abort(new DOMException(timeoutMessage, 'TimeoutError'));
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
   });
 
   try {
-    return await Promise.race([promise, timeoutPromise]);
+    return await Promise.race([operation(controller.signal), timeoutPromise]);
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
@@ -2149,7 +2159,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         };
 
         const result = await withTimeout(
-          runBuilderTurn<any>({
+          (signal) => runBuilderTurn<any>({
             messages: [{ role: 'user', content: aiUserPrompt }],
             mode: 'wizard-seed',
             currentCode: wizardCurrentCode,
@@ -2168,7 +2178,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               .filter((path): path is string => Boolean(path)),
             gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
             wizardSeed,
-          }),
+          }, { signal, timeoutMs: WIZARD_AI_TIMEOUT_MS - 5_000 }),
           WIZARD_AI_TIMEOUT_MS,
           `AI generation timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
         );
@@ -2225,7 +2235,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               ].join('\n');
               try {
                 const batchResult = await withTimeout(
-                  runBuilderTurn<any>({
+                  (signal) => runBuilderTurn<any>({
                     messages: [{ role: 'user', content: batchPrompt }],
                     mode: 'wizard-seed',
                     currentCode: wizardCurrentCode,
@@ -2242,7 +2252,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     recentChangedFiles: batch,
                     gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
                     wizardSeed,
-                  }),
+                  }, { signal, timeoutMs: WIZARD_AI_TIMEOUT_MS - 5_000 }),
                   WIZARD_AI_TIMEOUT_MS,
                   `Lane B batch ${i + 1} timed out after ${Math.round(WIZARD_AI_TIMEOUT_MS / 1000)} seconds.`,
                 );

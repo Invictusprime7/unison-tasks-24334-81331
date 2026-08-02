@@ -207,6 +207,21 @@ export async function runBuilderTurn<TResponse = any>(
     const budget = BUILDER_BODY_RETRY_BUDGETS[Math.min(attempt - 1, BUILDER_BODY_RETRY_BUDGETS.length - 1)];
     const shrunk = shrinkBuilderTurnPayload(input as unknown as Record<string, unknown>, budget);
     sentPayload = shrunk.payload;
+    const remainingBeforeInvoke = remainingMs();
+    const gatewayOptions = sentPayload.gatewayOptions;
+    if (gatewayOptions && typeof gatewayOptions === "object" && !Array.isArray(gatewayOptions)) {
+      const configuredTimeout = typeof (gatewayOptions as { timeoutMs?: unknown }).timeoutMs === "number"
+        ? (gatewayOptions as { timeoutMs: number }).timeoutMs
+        : remainingBeforeInvoke;
+      sentPayload = {
+        ...sentPayload,
+        gatewayOptions: {
+          ...gatewayOptions,
+          // The edge provider loop must finish before this client's abort fires.
+          timeoutMs: Math.max(1_000, Math.min(configuredTimeout, remainingBeforeInvoke - 5_000)),
+        },
+      };
+    }
     if (shrunk.trimmed.length > 0) {
       console.warn(
         `[builderBrainClient] payload ${shrunk.originalBytes}B > budget ${budget}B — trimmed to ${shrunk.finalBytes}B`,

@@ -518,6 +518,7 @@ const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
 // Fail deterministically before browser/proxy ceilings. The edge provider loop
 // owns 135s; this leaves 40s for validation, persistence and transport.
 const WIZARD_AI_TIMEOUT_MS = 175_000;
+const WIZARD_MIN_AI_TURN_MS = 15_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   timeoutMs: 120_000,
@@ -2131,8 +2132,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const wizardGenerationDeadlineAt = Date.now() + WIZARD_AI_TIMEOUT_MS;
       const takeWizardGenerationBudget = (stepCapMs = WIZARD_AI_TIMEOUT_MS): number => {
         const remaining = wizardGenerationDeadlineAt - Date.now();
-        if (remaining < 5_000) {
-          throw new Error('Wizard AI generation deadline exhausted before the next generation step.');
+        if (remaining < WIZARD_MIN_AI_TURN_MS) {
+          throw new Error(
+            `Wizard AI generation stopped before starting a doomed repair turn (${Math.max(0, remaining)}ms remained).`,
+          );
         }
         return Math.min(stepCapMs, remaining);
       };

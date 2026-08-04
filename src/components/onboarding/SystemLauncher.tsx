@@ -123,6 +123,7 @@ import {
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
 import { validateGeneratedUiContract } from "@/platform/core/generatedUiFoundation";
+import { countWizardPageSections } from "@/services/wizardPageQuality";
 import { loadBusinessProfile } from '@/services/businessProfileService';
 import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
@@ -882,13 +883,7 @@ function assessWizardGenerationQuality(
   const tsxEntries = Object.entries(files).filter(([path]) => /\.(tsx|jsx)$/.test(path));
   const combined = tsxEntries.map(([, content]) => content).join('\n');
   const totalChars = combined.trim().length;
-  const semanticSectionCount = (
-    combined.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
-  ).length;
-  const classSectionCount = (
-    combined.match(/className=["'][^"']*(hero|section|services|features|testimonials|pricing|gallery|contact|booking|cta|footer|nav)[^"']*["']/gi) || []
-  ).length;
-  const sectionCount = Math.max(semanticSectionCount, classSectionCount);
+  const sectionCount = countWizardPageSections(combined);
   const intentCount = (combined.match(/data-ut-intent=/g) || []).length;
   const placeholderPattern = /AI-generated code will appear here|This page is ready to be edited|Generating page content|Welcome to AI Web Builder|Lorem ipsum|Coming soon|New site preview|refined launch page ready for your next edit|fallback keeps the experience polished|generated content, bindings, and business data continue to hydrate/i;
   const hasRenderablePage = tsxEntries.some(([path, content]) => {
@@ -920,9 +915,7 @@ function assessWizardGenerationQuality(
   }
 
   for (const [path, content] of pageEntries) {
-    const pageSectionCount = (
-      content.match(/<\s*(section|header|main|footer|nav)\b/gi) || []
-    ).length;
+    const pageSectionCount = countWizardPageSections(content);
     const isHomePage = /\/Home\.(tsx|jsx)$/i.test(path);
     const minimumSections = isHomePage ? expectedSections : 3;
     if (content.trim().length < 1200) {
@@ -998,7 +991,7 @@ function findUnderGeneratedWizardPages(
     const content = files[path] || files[path.replace(/^\//, '')];
     if (!content?.trim()) return [];
 
-    const semanticSections = (content.match(/<\s*(section|header|main|footer|nav)\b/gi) || []).length;
+    const semanticSections = countWizardPageSections(content);
     const minimumSections = /\/Home\.(tsx|jsx)$/i.test(path) ? homeMinimum : 3;
     if (content.trim().length < 1200) {
       return [{ path, reason: `too small (${content.trim().length} chars; minimum 1200)` }];
@@ -3064,6 +3057,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             '',
             'Return ONLY this file in the WizardSeed multi-file JSON contract.',
             'The page must contain at least 3 complete semantic sections and 1200+ characters of real copy.',
+            'The validator must count at least 3 literal sectioning regions: use <section>, <article>, or <aside> elements rather than only nested <div> blocks.',
+            previousFailure?.includes('too few sections')
+              ? `STRUCTURAL REPAIR REQUIRED: ${previousFailure}. Add distinct literal sectioning elements until the page count is at least 3.`
+              : '',
             rejectedCandidate
               ? 'Preserve all valid existing sections and behavior; add or repair only what the validation failure requires.'
               : '',

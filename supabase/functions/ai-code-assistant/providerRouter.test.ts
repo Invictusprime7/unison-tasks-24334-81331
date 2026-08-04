@@ -33,7 +33,7 @@ const bothProviders = (name: string): string | undefined => ({
 
 Deno.test("parses explicit Gemini/OpenAI traffic weights", () => {
   assertEquals(parseProviderDistribution("gemini=70,openai=30"), { gemini: 70, openai: 30 });
-  assertEquals(parseProviderDistribution("invalid"), { gemini: 50, openai: 50 });
+  assertEquals(parseProviderDistribution("invalid"), { gemini: 85, openai: 15 });
 });
 
 Deno.test("honors fixed Gemini and OpenAI distributions", () => {
@@ -111,7 +111,27 @@ Deno.test("keeps Wizard provider slices within the bounded failover window", () 
   );
 
   assertEquals(plan.gatewayModels.length, 2);
-  assertEquals(plan.gatewayModels[0]?.id, "google/gemini-3-flash-preview");
+  assertEquals(plan.gatewayModels[0]?.id, "google/gemini-3.6-flash");
+  assertEquals(plan.gatewayModels[1]?.id, "openai/gpt-4.1");
   assertEquals(plan.perModelTimeoutMs, 95_000);
   assertEquals(plan.preferLongLeadAttempt, true);
+});
+
+Deno.test("honors lower Wizard resource caps without changing its model lineup", () => {
+  const plan = buildProviderPlan(
+    wizardTask,
+    true,
+    { timeoutMs: 50_000, maxTokens: 12_000 },
+    "advanced",
+    "wizard-page-route",
+    bothProviders,
+  );
+
+  assertEquals(plan.gatewayModels.map((model) => model.id), [
+    "google/gemini-3.6-flash",
+    "openai/gpt-4.1",
+  ]);
+  assertEquals(plan.gatewayModels.map((model) => model.maxTokens), [12_000, 12_000]);
+  assertEquals(plan.fallbackMaxTokens, 12_000);
+  assertEquals(plan.perModelTimeoutMs, 50_000);
 });

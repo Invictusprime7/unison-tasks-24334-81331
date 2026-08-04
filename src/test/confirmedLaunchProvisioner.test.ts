@@ -1,9 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
+const { invoke, maybeSingle } = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  maybeSingle: vi.fn(),
+}));
 
 vi.mock('@/integrations/supabase/client', () => ({
-  supabase: { functions: { invoke } },
+  supabase: {
+    functions: { invoke },
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({ maybeSingle })),
+      })),
+    })),
+  },
 }));
 
 import {
@@ -47,6 +57,8 @@ const generatedSiteRuntimeManifest = {
   components: [],
   reads: [],
   intents: [],
+  controllers: [],
+  requiredBackendFunctions: [],
   readiness: { status: 'ready' as const, blockers: [] },
   generatedAt: '2026-07-28T13:00:00.000Z',
 };
@@ -54,6 +66,10 @@ const generatedSiteRuntimeManifest = {
 describe('provisionConfirmedLaunchSite', () => {
   it('sends the complete live-site capability contract to the confirmed launch endpoint', async () => {
     invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
+    maybeSingle.mockResolvedValueOnce({
+      data: { id: ids.draftId, vfs_files: { '/src/App.tsx': 'export default function App() {}' } },
+      error: null,
+    });
 
     await expect(provisionConfirmedLaunchSite({
       ids,

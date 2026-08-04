@@ -47,6 +47,9 @@ export function buildPlannedChatCompletionRequest(opts: {
 }): ChatCompletionRequest {
   const { model, aiMessages, reasoningEffort, tools, toolChoice } = opts;
   const usesCompletionTokens = model.id.includes('gpt-5');
+  const supportsReasoningEffort = usesCompletionTokens
+    || model.id.startsWith('google/')
+    || model.id.startsWith('gemini-');
   const request: ChatCompletionRequest = {
     model: model.id,
     ...(usesCompletionTokens
@@ -55,7 +58,7 @@ export function buildPlannedChatCompletionRequest(opts: {
     messages: aiMessages,
   };
 
-  if (reasoningEffort && reasoningEffort !== 'none') {
+  if (supportsReasoningEffort && reasoningEffort && reasoningEffort !== 'none') {
     request.reasoning_effort = reasoningEffort;
   }
   if (tools && tools.length > 0) {
@@ -654,7 +657,10 @@ export async function runProviderLoop(opts: {
       hasDirectOpenAI ? 'openai' : '',
     ].filter(Boolean);
     const errorTrail = providerErrors.slice(-10).join(' | ') || lastError || 'no provider attempts completed';
-    throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure the managed AI gateway secret is valid and available to backend functions.`);
+    const gatewayStatus = hasLastResortGateway
+      ? 'The managed AI gateway fallback was configured but did not recover the request.'
+      : 'No managed AI gateway fallback is configured.';
+    throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. ${gatewayStatus}`);
   }
 
   return { content, reasoning, modelUsed, providerUsed, toolCalls };

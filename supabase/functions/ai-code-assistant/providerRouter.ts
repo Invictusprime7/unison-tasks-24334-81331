@@ -115,12 +115,14 @@ function prioritizeProviderModels(models: ModelSpec[], primaryProvider?: Paralle
 // ── Model tiers ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // Direct provider model choices. Gemini Flash is much faster than GPT-5
-  // (which uses heavy reasoning + frequently times out at 50s).
-  geminiFlash: { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
+  // Use the stable production Gemini model for long Wizard generations. The
+  // former preview model is more capacity-constrained and is no longer the
+  // recommended production target.
+  geminiFlash: { id: "google/gemini-3.6-flash", label: "Gemini 3.6 Flash" },
   gemini25Flash: { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   geminiFlashLite: { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
   geminiPro: { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+  gpt41: { id: "openai/gpt-4.1", label: "GPT-4.1" },
   gpt4oMini: { id: "openai/gpt-5-mini", label: "GPT-5 Mini" },
   gpt4o: { id: "openai/gpt-5", label: "GPT-5" },
 } as const;
@@ -205,7 +207,9 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 36000),   // primary
-          m(MODELS.gpt4oMini,   32000),   // fallback — same JSON contract
+          // GPT-4.1 has a 32k output window without a reasoning phase, making
+          // it a better bounded fallback for this large structured response.
+          m(MODELS.gpt41, 32_000),
         ],
         // Production Wizard responses commonly exceed 20k output tokens.
         // Observed successful Gemini generations take 80–90 seconds, so a
@@ -295,9 +299,16 @@ export function buildProviderPlan(
     plan.perModelTimeoutMs += upgrade.timeoutBoostMs;
   }
 
-  // Apply user overrides (wizard seed is protected from model swaps)
-  if (overrides && task.type !== "wizard_seed_generation") {
-    if (overrides.autoModelSelection === false && overrides.selectedModelId) {
+  // Wizard seed generation is protected from model swaps, but focused page
+  // completion requests must still be able to lower resource ceilings. If
+  // these caps are ignored, the server keeps producing a 36k/95s response
+  // after the browser's shorter isolated-page deadline has already aborted.
+  if (overrides) {
+    if (
+      task.type !== "wizard_seed_generation"
+      && overrides.autoModelSelection === false
+      && overrides.selectedModelId
+    ) {
       const tokens = overrides.maxTokens ?? plan.gatewayModels[0]?.maxTokens ?? 32000;
       const modelId = overrides.selectedModelId;
       const label = modelId.split("/").pop() ?? modelId;
@@ -306,7 +317,16 @@ export function buildProviderPlan(
       plan.gatewayModels = [userModel, ...fallbacks];
     }
     if (overrides.timeoutMs) {
-      plan.perModelTimeoutMs = overrides.timeoutMs;
+      plan.perModelTimeoutMs = task.type === "wizard_seed_generation"
+        ? Math.min(plan.perModelTimeoutMs, overrides.timeoutMs)
+        : overrides.timeoutMs;
+    }
+    if (overrides.maxTokens) {
+      plan.gatewayModels = plan.gatewayModels.map((model) => ({
+        ...model,
+        maxTokens: Math.min(model.maxTokens, overrides.maxTokens!),
+      }));
+      plan.fallbackMaxTokens = Math.min(plan.fallbackMaxTokens, overrides.maxTokens);
     }
   }
 

@@ -22,6 +22,7 @@ const OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations";
 const GEMINI_CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
+const DEFAULT_TRANSIENT_RETRY_MS = 1_000;
 const MAX_RATE_LIMIT_RETRY_MS = 2_500;
 /** Per-provider slice so a single hanging provider cannot eat the whole window. */
 const PROVIDER_ATTEMPT_TIMEOUT_MS = 75_000;
@@ -60,12 +61,15 @@ export async function fetchWithShortRateLimitRetry(
   fetcher: typeof fetch = fetch,
 ): Promise<Response> {
   const response = await fetcher(input, init);
-  if (response.status !== 429) return response;
+  const retryableStatus = response.status === 429 || response.status === 503;
+  if (!retryableStatus) return response;
 
-  const retryMs = getShortRateLimitRetryMs(response.headers);
+  const retryMs = response.status === 503 && !response.headers.has("retry-after")
+    ? DEFAULT_TRANSIENT_RETRY_MS
+    : getShortRateLimitRetryMs(response.headers);
   if (retryMs === null || signal?.aborted) return response;
 
-  console.warn(`[providerClient] Provider rate limited; retrying once after ${retryMs}ms`);
+  console.warn(`[providerClient] Provider returned ${response.status}; retrying once after ${retryMs}ms`);
   await waitForRetry(retryMs, signal);
   return fetcher(input, init);
 }

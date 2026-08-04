@@ -105,7 +105,7 @@ describe('resolveCapabilityPacks', () => {
       'businesses', 'services', 'leads', 'crm_leads', 'crm_contacts', 'availability_slots', 'bookings',
     ]));
     expect(packSlots(order)).toContain('service-card.primary-action');
-    expect(packFunctions(order)).toEqual(expect.arrayContaining(['create-lead', 'create-booking']));
+    expect(packFunctions(order)).toEqual(expect.arrayContaining(['create-lead', 'site-runtime']));
     expect(packSettings(order).accountFields).toEqual(expect.arrayContaining([
       'business.notificationEmail', 'business.timezone',
     ]));
@@ -129,7 +129,7 @@ describe('planner pack integration', () => {
       'crm.leads',
       'booking.appointments',
     ]);
-    expect(plan.proposal.edgeFunctions).toContain('create-booking');
+    expect(plan.proposal.edgeFunctions).toContain('site-runtime');
     expect(plan.proposal.dataAffected).toEqual(expect.arrayContaining(['businesses', 'availability_slots']));
     expect(plan.proposal.readinessAssertions).toContain('booking-handler-installed');
     expect(plan.bindableSlots).toContain('booking-form.submit');

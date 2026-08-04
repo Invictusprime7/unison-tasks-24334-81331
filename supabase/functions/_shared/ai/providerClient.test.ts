@@ -88,6 +88,24 @@ Deno.test("does not retry a long provider cooldown", async () => {
   if (response.status !== 429) throw new Error(`Expected original 429, received ${response.status}`);
 });
 
+Deno.test("retries a transient provider capacity response once", async () => {
+  let calls = 0;
+  const response = await fetchWithShortRateLimitRetry(
+    "https://provider.example.test/chat",
+    undefined,
+    undefined,
+    () => {
+      calls += 1;
+      return Promise.resolve(calls === 1
+        ? new Response("temporarily unavailable", { status: 503, headers: { "retry-after": "0" } })
+        : new Response("ok", { status: 200 }));
+    },
+  );
+
+  if (calls !== 2) throw new Error(`Expected two provider calls, received ${calls}`);
+  if (response.status !== 200) throw new Error(`Expected retry success, received ${response.status}`);
+});
+
 Deno.test("parses a short HTTP-date Retry-After value", () => {
   const now = Date.parse("2026-07-17T00:00:00Z");
   const retryMs = getShortRateLimitRetryMs(

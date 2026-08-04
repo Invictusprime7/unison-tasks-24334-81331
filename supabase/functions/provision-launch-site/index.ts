@@ -90,6 +90,8 @@ const FormDefinitionSchema = z.object({
   message: 'Public form definition id must match its intent.',
 });
 
+const PUBLIC_RUNTIME_FUNCTIONS = new Set(['site-runtime', 'intent-exec', 'create-order-checkout']);
+
 const GeneratedRuntimeManifestSchema = z.object({
   version: z.literal('1.0'),
   siteId: z.string().uuid().nullable(),
@@ -125,11 +127,58 @@ const GeneratedRuntimeManifestSchema = z.object({
     requiredCapabilities: z.array(z.string().min(1).max(120)).max(32),
     componentIds: z.array(z.string().min(1).max(200)).min(1).max(200),
   })).max(200),
+  controllers: z.array(z.object({
+    handler: z.enum(['client', 'intent-exec', 'workflow-trigger', 'stripe-checkout', 'auth-overlay', 'webhook']),
+    transport: z.enum(['client', 'supabase-function', 'external']),
+    functionName: z.string().min(1).max(80).nullable(),
+    intents: z.array(z.string().min(1).max(160)).max(200),
+    requiredCapabilities: z.array(z.string().min(1).max(120)).max(32),
+  })).max(16).default([]),
+  requiredBackendFunctions: z.array(z.string().min(1).max(80)).max(64).default([]),
   readiness: z.object({
     status: z.enum(['ready', 'blocked']),
     blockers: z.array(z.string().min(1).max(300)).max(256),
   }),
   generatedAt: z.string().datetime(),
+}).superRefine((manifest, context) => {
+  // Controller metadata is additive within manifest v1.0. Continue accepting
+  // already-open launch sessions produced before this field existed.
+  if (manifest.controllers.length === 0 && manifest.requiredBackendFunctions.length === 0) return;
+  for (const intent of manifest.intents) {
+    const controller = manifest.controllers.find((candidate) =>
+      candidate.handler === intent.handler && candidate.intents.includes(intent.intent)
+    );
+    if (!controller) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['controllers'],
+        message: `Runtime intent ${intent.intent} has no matching controller.`,
+      });
+    }
+  }
+  for (const controller of manifest.controllers) {
+    if (controller.transport === 'supabase-function') {
+      if (!controller.functionName || !PUBLIC_RUNTIME_FUNCTIONS.has(controller.functionName)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['controllers'],
+          message: `Runtime controller ${controller.handler} is not public or allowlisted.`,
+        });
+      } else if (!manifest.requiredBackendFunctions.includes(controller.functionName)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['requiredBackendFunctions'],
+          message: `Runtime controller function ${controller.functionName} is not declared as required.`,
+        });
+      }
+    } else if (controller.functionName !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['controllers'],
+        message: `Non-Supabase controller ${controller.handler} cannot declare a function endpoint.`,
+      });
+    }
+  }
 });
 
 const BodySchema = z.object({

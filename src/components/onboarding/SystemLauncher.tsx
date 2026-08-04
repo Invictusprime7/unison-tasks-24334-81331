@@ -515,10 +515,19 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
 const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
-// Fail deterministically before browser/proxy ceilings. The edge provider loop
-// owns 135s; this leaves 40s for validation, persistence and transport.
-const WIZARD_AI_TIMEOUT_MS = 175_000;
+// The overall Wizard lifecycle can span several Edge requests, but each request
+// stays below Supabase's 150s request-idle ceiling. Capping the broad turns keeps
+// them from consuming the page-specific completion window.
+const WIZARD_AI_TIMEOUT_MS = 460_000;
 const WIZARD_MIN_AI_TURN_MS = 15_000;
+const WIZARD_INITIAL_AI_TURN_MS = 115_000;
+const WIZARD_UI_REPAIR_MAX_MS = 65_000;
+const WIZARD_BATCH_REPAIR_MAX_MS = 65_000;
+const WIZARD_BATCH_REPAIR_MAX_PAGES = 2;
+const WIZARD_PAGE_COMPLETION_FIRST_MS = 60_000;
+const WIZARD_PAGE_COMPLETION_RETRY_MS = 70_000;
+const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 4;
+const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   timeoutMs: 120_000,
@@ -668,7 +677,7 @@ function buildWizardAiSeedPrompt(opts: {
     ``,
     `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
     `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
-    `GENERATED UI CONTRACT: Prefer snapshot-owned VFS imports over raw packages: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
+    `GENERATED UI CONTRACT: Prefer snapshot-owned VFS imports over raw packages: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. From @/unison/ui/form-fields, import only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, FormField, or FormFields. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
     opts.designIntervention
       ? `DESIGN INTERVENTION (LOCKED): Use ${opts.designIntervention.layoutRecipe}; prioritize ${opts.designIntervention.sectionVariants.join(', ')}; use ${opts.designIntervention.motionRecipes.join(', ')} within a ${opts.designIntervention.motionBudget} motion budget; and compose only these interactions: ${opts.designIntervention.interactionRecipes.join(', ')}. ${opts.designIntervention.aiDirective}`
       : '',
@@ -2161,7 +2170,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           industry_context: blueprint.industry_context,
         };
 
-        const initialGenerationBudgetMs = takeWizardGenerationBudget();
+        const initialGenerationBudgetMs = takeWizardGenerationBudget(WIZARD_INITIAL_AI_TURN_MS);
         const result = await withTimeout(
           (signal) => runBuilderTurn<any>({
             messages: [{ role: 'user', content: aiUserPrompt }],
@@ -2368,7 +2377,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   'Keep all existing wizard sections, semantic Stage 4b token classes, accessible image alt text, and data-ut-intent attributes.',
                 ].join('\n');
                 try {
-                  const uiRepairBudgetMs = takeWizardGenerationBudget();
+                  const uiRepairBudgetMs = takeWizardGenerationBudget(WIZARD_UI_REPAIR_MAX_MS);
                   const uiRepair = await withTimeout(
                     (signal) => runBuilderTurn<any>({
                       messages: [{ role: 'user', content: uiRepairPrompt }],
@@ -2892,7 +2901,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         return true;
       };
 
-      if (missingWizardPageFiles.length > 0) {
+      if (
+        missingWizardPageFiles.length > 0 &&
+        missingWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES
+      ) {
         setLaunchStatus(`Generating ${missingWizardPageFiles.length} remaining page(s)…`);
         const normalizedMissing = missingWizardPageFiles.map((p) => (p.startsWith('/') ? p : `/${p}`));
         const missingPageDetails = Object.values(siteBundleSnapshot.pageRegistry.pages)
@@ -2921,7 +2933,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           missingPageDetails,
         ].join('\n');
         try {
-          const repairBudgetMs = takeWizardGenerationBudget();
+          const repairBudgetMs = takeWizardGenerationBudget(WIZARD_BATCH_REPAIR_MAX_MS);
           const retry = await withTimeout(
             (signal) => runBuilderTurn<any>({
               messages: [{ role: 'user', content: retryPrompt }],
@@ -2974,6 +2986,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         } catch (retryErr) {
           console.warn('[SystemLauncher] Lane B repair pass threw:', retryErr);
         }
+      } else if (missingWizardPageFiles.length > WIZARD_BATCH_REPAIR_MAX_PAGES) {
+        console.info('[SystemLauncher] Skipping oversized Lane B batch repair; using isolated page completion', {
+          missingPageCount: missingWizardPageFiles.length,
+          batchRepairLimit: WIZARD_BATCH_REPAIR_MAX_PAGES,
+        });
       }
 
       // Recompute missing after the repair pass — Lane B is the sole author.
@@ -2992,7 +3009,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // page being returned correctly in one model response. Complete each
       // unresolved registry page independently, carrying the exact wizard
       // template/theme identity and the full industry behavior contract.
-      for (const missingPath of stillMissing) {
+      const completeMissingWizardPage = async (missingPath: string, attempt: 2 | 3): Promise<void> => {
         const page = Object.values(siteBundleSnapshot.pageRegistry.pages).find((candidatePage) => {
           const filePath = (candidatePage as { filePath?: string }).filePath;
           if (!filePath) return false;
@@ -3009,7 +3026,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const requiredIntents = (industryRequirements?.requiredIntents || []).join(', ') || 'nav.goto';
         const industryVocabulary = (industryRequirements?.vocabulary || []).slice(0, 16).join(', ');
 
-        for (let attempt = 2; attempt <= 3 && !aiSourcedFiles[missingPath]; attempt++) {
+        if (!aiSourcedFiles[missingPath]) {
           setLaunchStatus(`Completing ${page?.title || missingPath} (${attempt - 1}/2)…`);
           const rejectedCandidate = rejectedPageCandidates[missingPath];
           const previousFailure = [...laneBCompletionDiagnostics]
@@ -3057,7 +3074,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           ].join('\n');
 
           try {
-            const completionBudgetMs = takeWizardGenerationBudget(attempt === 2 ? 40_000 : 50_000);
+            const completionBudgetMs = takeWizardGenerationBudget(
+              attempt === 2
+                ? WIZARD_PAGE_COMPLETION_FIRST_MS
+                : WIZARD_PAGE_COMPLETION_RETRY_MS,
+            );
             const completion = await withTimeout(
               (signal) => runBuilderTurn<any>({
                 messages: [{ role: 'user', content: pageCompletionPrompt }],
@@ -3084,8 +3105,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 recentChangedFiles: [missingPath],
                 gatewayOptions: {
                   ...WIZARD_LANE_B_GATEWAY_OPTIONS,
-                  timeoutMs: Math.min(45_000, completionBudgetMs - 5_000),
-                  maxTokens: 24_000,
+                  reasoningEffort: 'low',
+                  timeoutMs: Math.min(attempt === 2 ? 50_000 : 60_000, completionBudgetMs - 5_000),
+                  maxTokens: 12_000,
                 },
                 wizardSeed: isolatedWizardSeed,
               }, { signal, timeoutMs: completionBudgetMs - 2_000 }),
@@ -3099,7 +3121,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 accepted: false,
                 reason: await getFunctionErrorMessage(completion.error),
               });
-              continue;
+              return;
             }
             const { structured: completionStructured } = extractLaneBLauncherPayload(
               completion.data as Record<string, unknown> | null,
@@ -3112,7 +3134,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 accepted: false,
                 reason: 'Lane B page completion returned no structured files',
               });
-              continue;
+              return;
             }
             const completionSanitized = sanitizeGeneratedFiles(omitSnapshotOwnedSharedChrome(completionStructured.files));
             acceptCompletedWizardPage(missingPath, completionSanitized.files, attempt);
@@ -3124,6 +3146,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               reason: completionError instanceof Error ? completionError.message : String(completionError),
             });
           }
+        }
+      };
+      if (stillMissing.length > 0) {
+        setLaunchStatus(`Completing ${stillMissing.length} remaining page(s) in parallel`);
+      }
+      for (const attempt of [2, 3] as const) {
+        const roundTargets = stillMissing.filter(
+          (path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')],
+        );
+        for (
+          let pageOffset = 0;
+          pageOffset < roundTargets.length;
+          pageOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
+        ) {
+          const completionWave = roundTargets.slice(
+            pageOffset,
+            pageOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS,
+          );
+          await Promise.all(completionWave.map((path) => completeMissingWizardPage(path, attempt)));
         }
       }
 

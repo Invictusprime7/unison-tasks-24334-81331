@@ -164,11 +164,11 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     database: {
       migrations: ['businesses', 'services', 'staff', 'availability_slots', 'bookings', 'crm_contacts'],
       requiredTables: ['services', 'staff', 'availability_slots', 'bookings', 'crm_contacts'],
-      requiredColumns: ['services.duration_minutes', 'services.price_cents', 'availability_slots.starts_at', 'availability_slots.ends_at', 'bookings.customer_id'],
+      requiredColumns: ['services.duration_minutes', 'services.price_cents', 'availability_slots.starts_at', 'availability_slots.ends_at', 'bookings.site_id', 'bookings.session_id', 'bookings.availability_slot_id', 'bookings.idempotency_key'],
       rlsPolicies: ['services_read_public', 'booking_owner_access', 'booking_customer_access'],
     },
     backend: {
-      functions: ['create-booking', 'intent-exec', 'automation-event'],
+      functions: ['site-runtime', 'automation-event'],
       events: ['booking.created', 'booking.confirmed'],
       permissions: ['business.booking.manage', 'customer.booking.create'],
     },

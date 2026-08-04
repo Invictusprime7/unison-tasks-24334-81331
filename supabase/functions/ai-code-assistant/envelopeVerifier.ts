@@ -138,6 +138,18 @@ const HARDCODED_COLLECTION_RE =
 
 const RUNTIME_CLIENT_RE = /(integrations\/supabase|runtime-client|useCatalog|CatalogRuntime|supabase\s*\.\s*from)/i;
 
+// Interpreter domains describe where work happens; they are not installable
+// database packs. Keep them in the envelope for routing/scope, but never ask
+// capability-pack verification to provision them.
+const NON_BACKEND_PACK_CAPABILITIES = new Set([
+  "layout",
+  "visual_design",
+  "copy",
+  "navigation",
+  "database",
+  "runtime",
+]);
+
 /**
  * Step 7 — backend-aware verification.
  *
@@ -150,8 +162,11 @@ function verifyBackendWiring(
   capabilities: string[],
   files: Record<string, string>,
 ): GoalVerdict[] {
-  const { order, unsupported } = resolveDatabaseContracts(capabilities);
-  if (order.length === 0) return [];
+  const backendCapabilities = capabilities.filter((capability) => (
+    !NON_BACKEND_PACK_CAPABILITIES.has(capability.trim().toLowerCase())
+  ));
+  const { order, unsupported } = resolveDatabaseContracts(backendCapabilities);
+  if (order.length === 0 && unsupported.length === 0) return [];
 
   const markup = Object.entries(files)
     .filter(([path]) => /\.(tsx|jsx|ts)$/i.test(path))

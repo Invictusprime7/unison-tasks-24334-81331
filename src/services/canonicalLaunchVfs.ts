@@ -67,6 +67,7 @@ export interface PublishedRuntimeConfig {
   endpoint: string | null;
   runtimeEndpoint: string | null;
   formEndpoint: string | null;
+  controllerEndpoints: Record<string, string>;
 }
 
 const DEFAULT_PUBLIC_SUPABASE_URL = 'https://nfrdomdvyrbwuokathtw.supabase.co';
@@ -138,6 +139,12 @@ export function buildPublishedRuntimeConfig(
     endpoint: supabaseUrl ? `${supabaseUrl}/functions/v1/site-runtime-read` : null,
     runtimeEndpoint: supabaseUrl ? `${supabaseUrl}/functions/v1/site-runtime` : null,
     formEndpoint: supabaseUrl ? `${supabaseUrl}/functions/v1/form-submit` : null,
+    controllerEndpoints: supabaseUrl
+      ? {
+          'intent-exec': `${supabaseUrl}/functions/v1/intent-exec`,
+          'create-order-checkout': `${supabaseUrl}/functions/v1/create-order-checkout`,
+        }
+      : {},
   };
 }
 

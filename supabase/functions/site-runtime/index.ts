@@ -37,9 +37,13 @@ type RuntimeContext = {
   manifest: PersistedRuntimeManifest;
 };
 
+type ServerSupabaseClient = ReturnType<typeof createClient<any>>;
+
 type BookingActionPayload = {
   componentId: string;
   slot: string;
+  idempotencyKey: string;
+  sessionId: string;
   serviceId: string;
   slotId: string;
   customerName: string;
@@ -96,7 +100,7 @@ function parseManifest(value: unknown, siteId: string): PersistedRuntimeManifest
   };
 }
 
-async function loadRuntimeManifest(supabase: ReturnType<typeof createClient>, siteId: string) {
+async function loadRuntimeManifest(supabase: ServerSupabaseClient, siteId: string) {
   const [siteResult, runtimeResult] = await Promise.all([
     supabase.from("sites").select("id,business_id,status").eq("id", siteId).maybeSingle(),
     supabase.from("site_runtime_configs").select("site_id,public_runtime_enabled,settings").eq("site_id", siteId).maybeSingle(),
@@ -165,6 +169,42 @@ function buildReadPayload(body: Record<string, unknown>, siteId: string): Record
   };
 }
 
+async function loadBookingState(
+  supabase: ServerSupabaseClient,
+  context: RuntimeContext,
+  siteId: string,
+  sessionId: string,
+) {
+  const [servicesResult, slotsResult, bookingsResult] = await Promise.all([
+    supabase.from("services")
+      .select("id,name,duration_minutes,price_cents,currency")
+      .eq("business_id", context.businessId)
+      .eq("is_active", true)
+      .order("name", { ascending: true }),
+    supabase.from("availability_slots")
+      .select("id,service_id,starts_at,ends_at")
+      .eq("business_id", context.businessId)
+      .eq("is_booked", false)
+      .gt("starts_at", new Date().toISOString())
+      .order("starts_at", { ascending: true })
+      .limit(100),
+    supabase.from("bookings")
+      .select("id,service_id,service_name,starts_at,ends_at,status")
+      .eq("site_id", siteId)
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(10),
+  ]);
+  if (servicesResult.error || slotsResult.error || bookingsResult.error) {
+    throw new RuntimeActionError(503, "Booking availability is unavailable");
+  }
+  return {
+    services: servicesResult.data ?? [],
+    slots: slotsResult.data ?? [],
+    bookings: bookingsResult.data ?? [],
+  };
+}
+
 function parseBookingAction(body: Record<string, unknown>): BookingActionPayload | null {
   const action = asRecord(body.action);
   const payload = asRecord(action?.payload);
@@ -177,6 +217,12 @@ function parseBookingAction(body: Record<string, unknown>): BookingActionPayload
     typeof action.slot !== "string" ||
     action.slot.length === 0 ||
     action.slot.length > 120 ||
+    typeof action.idempotencyKey !== "string" ||
+    action.idempotencyKey.length < 8 ||
+    action.idempotencyKey.length > 200 ||
+    typeof action.sessionId !== "string" ||
+    action.sessionId.length < 8 ||
+    action.sessionId.length > 200 ||
     !payload ||
     !isUuid(payload.serviceId) ||
     !isUuid(payload.slotId) ||
@@ -197,6 +243,8 @@ function parseBookingAction(body: Record<string, unknown>): BookingActionPayload
   return {
     componentId: action.componentId,
     slot: action.slot,
+    idempotencyKey: action.idempotencyKey,
+    sessionId: action.sessionId,
     serviceId: payload.serviceId,
     slotId: payload.slotId,
     customerName: payload.customerName.trim(),
@@ -218,7 +266,7 @@ function isBookingActionAuthorized(manifest: PersistedRuntimeManifest, action: B
 }
 
 async function bookingCapabilityIsEnabled(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ServerSupabaseClient,
   siteId: string,
 ): Promise<boolean> {
   const { data, error } = await supabase
@@ -235,13 +283,44 @@ async function createAtomicBooking(
   businessId: string,
   siteId: string,
   action: BookingActionPayload,
-): Promise<{ id: string; startsAt: string; endsAt: string; serviceName: string }> {
+): Promise<{ booking: { id: string; startsAt: string; endsAt: string; serviceName: string; status: string }; duplicate: boolean }> {
   const databaseUrl = Deno.env.get("SUPABASE_DB_URL");
   if (!databaseUrl) throw new RuntimeActionError(503, "Runtime booking service is unavailable");
   const pg = new PgClient(databaseUrl);
   await pg.connect();
   try {
     await pg.queryArray("BEGIN");
+    await pg.queryArray(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [`${siteId}:${action.idempotencyKey}`],
+    );
+    const existingResult = await pg.queryObject<{
+      id: string;
+      starts_at: string;
+      ends_at: string;
+      service_name: string;
+      status: string;
+    }>(
+      `SELECT id, starts_at, ends_at, service_name, status
+       FROM public.bookings
+       WHERE site_id = $1 AND idempotency_key = $2
+       FOR UPDATE`,
+      [siteId, action.idempotencyKey],
+    );
+    const existing = existingResult.rows[0];
+    if (existing) {
+      await pg.queryArray("COMMIT");
+      return {
+        booking: {
+          id: existing.id,
+          startsAt: new Date(existing.starts_at).toISOString(),
+          endsAt: new Date(existing.ends_at).toISOString(),
+          serviceName: existing.service_name,
+          status: existing.status,
+        },
+        duplicate: true,
+      };
+    }
     const slotResult = await pg.queryObject<{
       id: string;
       business_id: string;
@@ -284,14 +363,20 @@ async function createAtomicBooking(
     const endsAt = new Date(slot.ends_at).toISOString();
     const booking = await pg.queryObject<{ id: string }>(
       `INSERT INTO public.bookings
-        (business_id, service_id, service_name, customer_name, customer_email, customer_phone,
-         booking_date, booking_time, starts_at, ends_at, duration_minutes, status, notes, metadata)
+        (business_id, site_id, service_id, availability_slot_id, session_id, idempotency_key,
+         service_name, customer_name, customer_email, customer_phone, booking_date, booking_time,
+         starts_at, ends_at, duration_minutes, status, notes, metadata)
        VALUES
-        ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::timestamptz, $10::timestamptz, $11, 'confirmed', $12, $13::jsonb)
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::date, $12::time,
+         $13::timestamptz, $14::timestamptz, $15, 'confirmed', $16, $17::jsonb)
        RETURNING id`,
       [
         businessId,
+        siteId,
         service.id,
+        slot.id,
+        action.sessionId,
+        action.idempotencyKey,
         service.name,
         action.customerName,
         action.customerEmail,
@@ -306,7 +391,10 @@ async function createAtomicBooking(
       ],
     );
     await pg.queryArray("COMMIT");
-    return { id: booking.rows[0].id, startsAt, endsAt, serviceName: service.name };
+    return {
+      booking: { id: booking.rows[0].id, startsAt, endsAt, serviceName: service.name, status: "confirmed" },
+      duplicate: false,
+    };
   } catch (error) {
     try { await pg.queryArray("ROLLBACK"); } catch { /* connection already closed */ }
     throw error;
@@ -360,14 +448,35 @@ Deno.serve(async (req) => {
       return errorResponse("This runtime action is not configured for the site", 409, publicCorsHeaders);
     }
     try {
-      const booking = await createAtomicBooking(context.businessId, body.siteId, bookingAction);
-      return secureJsonResponse({ success: true, booking }, 201, publicCorsHeaders, rateHeaders);
+      const state = await createAtomicBooking(context.businessId, body.siteId, bookingAction);
+      return secureJsonResponse({ success: true, state }, state.duplicate ? 200 : 201, publicCorsHeaders, rateHeaders);
     } catch (error) {
       if (error instanceof RuntimeActionError) {
         return errorResponse(error.message, error.status, publicCorsHeaders);
       }
       console.error("[site-runtime] booking action failed", error);
       return errorResponse("Runtime booking service is unavailable", 503, publicCorsHeaders);
+    }
+  }
+
+  const read = asRecord(body.read);
+  if (read?.type === "booking") {
+    if (
+      typeof read.sessionId !== "string" ||
+      read.sessionId.length < 8 ||
+      read.sessionId.length > 200 ||
+      !context.manifest.enabledCapabilities.includes("booking") ||
+      !(await bookingCapabilityIsEnabled(supabase, body.siteId))
+    ) {
+      return errorResponse("Booking runtime is unavailable", 409, publicCorsHeaders);
+    }
+    try {
+      const state = await loadBookingState(supabase, context, body.siteId, read.sessionId);
+      return secureJsonResponse({ success: true, state }, 200, publicCorsHeaders, rateHeaders);
+    } catch (error) {
+      if (error instanceof RuntimeActionError) return errorResponse(error.message, error.status, publicCorsHeaders);
+      console.error("[site-runtime] booking read failed", error);
+      return errorResponse("Booking availability is unavailable", 503, publicCorsHeaders);
     }
   }
 

@@ -6,7 +6,7 @@ import {
   type SectionType,
   type SlotRole,
 } from '@/platform/core/slotBindingPolicy';
-import type { CapabilityId } from '@/platform/core/capabilityRegistry';
+import { CAPABILITY_REGISTRY, type CapabilityId } from '@/platform/core/capabilityRegistry';
 import { resolveComponentRuntimeContract, type ComponentRuntimeContract } from '@/services/componentRuntimeContract';
 import type { CreatorComponentInstance } from '@/types/creatorData';
 
@@ -36,6 +36,34 @@ export interface GeneratedRuntimeIntent {
   componentIds: string[];
 }
 
+export interface GeneratedRuntimeController {
+  handler: IntentHandler;
+  transport: 'client' | 'supabase-function' | 'external';
+  functionName: string | null;
+  intents: string[];
+  requiredCapabilities: CapabilityId[];
+}
+
+const CONTROLLER_BY_HANDLER: Record<IntentHandler, Pick<GeneratedRuntimeController, 'transport' | 'functionName'>> = {
+  client: { transport: 'client', functionName: null },
+  'auth-overlay': { transport: 'client', functionName: null },
+  'intent-exec': { transport: 'supabase-function', functionName: 'intent-exec' },
+  // Public generated sites dispatch workflow-backed intents through the
+  // entitlement-aware executor; workflow-trigger itself requires owner auth.
+  'workflow-trigger': { transport: 'supabase-function', functionName: 'intent-exec' },
+  'stripe-checkout': { transport: 'supabase-function', functionName: 'create-order-checkout' },
+  webhook: { transport: 'external', functionName: null },
+};
+
+function controllerForIntent(
+  intent: GeneratedRuntimeIntent,
+): Pick<GeneratedRuntimeController, 'transport' | 'functionName'> {
+  if (intent.intent === 'booking.create') {
+    return { transport: 'supabase-function', functionName: 'site-runtime' };
+  }
+  return CONTROLLER_BY_HANDLER[intent.handler];
+}
+
 /**
  * The persisted contract consumed by both Preview and published-site adapters.
  * It is intentionally transport-agnostic: it authorizes what a component may
@@ -49,6 +77,8 @@ export interface GeneratedSiteRuntimeManifest {
   components: GeneratedRuntimeComponentContract[];
   reads: string[];
   intents: GeneratedRuntimeIntent[];
+  controllers: GeneratedRuntimeController[];
+  requiredBackendFunctions: string[];
   readiness: {
     status: 'ready' | 'blocked';
     blockers: string[];
@@ -196,6 +226,27 @@ export function compileGeneratedSiteRuntimeManifest(
   }
 
   const blockers = components.flatMap((component) => component.blockers);
+  const intents = Array.from(intentsByName.values()).sort((left, right) => left.intent.localeCompare(right.intent));
+  const controllerGroups = new Map<string, GeneratedRuntimeIntent[]>();
+  for (const intent of intents) {
+    const controller = controllerForIntent(intent);
+    const key = `${intent.handler}:${controller.transport}:${controller.functionName || ''}`;
+    controllerGroups.set(key, [...(controllerGroups.get(key) || []), intent]);
+  }
+  const controllers = Array.from(controllerGroups.values())
+    .map((controllerIntents): GeneratedRuntimeController => ({
+      handler: controllerIntents[0].handler,
+      ...controllerForIntent(controllerIntents[0]),
+      intents: controllerIntents.map((intent) => intent.intent).sort(),
+      requiredCapabilities: Array.from(new Set(
+        controllerIntents.flatMap((intent) => intent.requiredCapabilities),
+      )).sort(),
+    }))
+    .sort((left, right) => left.handler.localeCompare(right.handler));
+  const requiredBackendFunctions = Array.from(new Set([
+    ...enabledCapabilities.flatMap((capability) => CAPABILITY_REGISTRY[capability]?.backend.functions || []),
+    ...controllers.flatMap((controller) => controller.functionName ? [controller.functionName] : []),
+  ])).sort();
   return {
     version: GENERATED_SITE_RUNTIME_MANIFEST_VERSION,
     siteId: input.siteId || null,
@@ -203,7 +254,9 @@ export function compileGeneratedSiteRuntimeManifest(
     enabledCapabilities,
     components,
     reads,
-    intents: Array.from(intentsByName.values()).sort((left, right) => left.intent.localeCompare(right.intent)),
+    intents,
+    controllers,
+    requiredBackendFunctions,
     readiness: {
       status: blockers.length === 0 ? 'ready' : 'blocked',
       blockers,

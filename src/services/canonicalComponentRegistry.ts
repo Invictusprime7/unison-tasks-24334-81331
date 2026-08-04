@@ -138,16 +138,15 @@ const registry: CanonicalComponentDefinition[] = [
     </div>
     <form data-intent-form="booking.create" class="space-y-4">
       <select name="serviceId" required class="w-full px-4 py-3 bg-background border rounded-xl">
-        <option value="">Select a service</option>
-        <option value="consultation">Consultation</option>
-        <option value="full-session">Full Session</option>
+        <option value="">Loading services...</option>
       </select>
-      <div class="grid grid-cols-2 gap-4">
-        <input type="date" name="date" required class="w-full px-4 py-3 bg-background border rounded-xl" />
-        <input type="time" name="time" required class="w-full px-4 py-3 bg-background border rounded-xl" />
-      </div>
+      <select name="slotId" required class="w-full px-4 py-3 bg-background border rounded-xl">
+        <option value="">Loading availability...</option>
+      </select>
       <input type="text" name="customerName" required placeholder="Full name" class="w-full px-4 py-3 bg-background border rounded-xl" />
       <input type="email" name="customerEmail" required placeholder="Email" class="w-full px-4 py-3 bg-background border rounded-xl" />
+      <input type="tel" name="customerPhone" placeholder="Phone (optional)" class="w-full px-4 py-3 bg-background border rounded-xl" />
+      <textarea name="notes" placeholder="Notes (optional)" class="w-full px-4 py-3 bg-background border rounded-xl"></textarea>
       <button type="submit" data-intent-trigger="booking.create" class="w-full bg-primary text-primary-foreground py-4 px-6 rounded-xl font-semibold">Confirm Booking</button>
     </form>
   </div>

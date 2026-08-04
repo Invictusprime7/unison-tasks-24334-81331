@@ -21,6 +21,8 @@ describe('generated UI foundation', () => {
     expect(foundation.files['/src/unison/ui/card.tsx']).toContain('export function CardTitle');
     expect(foundation.files['/src/unison/ui/card.tsx']).toContain('export function CardDescription');
     expect(foundation.files['/src/unison/ui/card.tsx']).toContain('export function CardFooter');
+    expect(foundation.files['/src/unison/ui/form-fields.tsx']).toContain('export function FormField');
+    expect(foundation.files['/src/unison/ui/form-fields.tsx']).toContain('export function FormFields');
     expect(foundation.files['/src/unison/ui/navigation.tsx']).toContain("from './radix/dialog'");
     expect(foundation.files['/src/unison/ui/radix/dialog.ts']).toContain("@radix-ui/react-dialog");
     expect(foundation.files['/src/unison/ui/icon.tsx']).toContain('LucideIcon');
@@ -33,6 +35,7 @@ describe('generated UI foundation', () => {
     // Root barrel must expose the full surface of every foundation module, or
     // a page importing e.g. CardHeader from '@/unison/ui' renders undefined.
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';");
+    expect(foundation.files['/src/unison/ui/index.ts']).toContain("FormField, FormFields } from './form-fields';");
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Slot, Slottable } from './radix/slot';");
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { cn } from './cn';");
     // Animation aliases must stay layout-transparent like motion.tsx Stagger.
@@ -267,6 +270,39 @@ export default function Experience(){ const form = useForm({ resolver: zodResolv
     expect(prepared['/components/ContactForm.tsx']).not.toContain('export const ContactForm = ContactForm');
     expect(prepared['/unison/ui/index.ts']).toContain("export * from './icons';");
     expect(prepared['/unison/ui.tsx']).toBeUndefined();
+  });
+
+  it('supports generated Contact form field wrappers during strict VFS preflight', () => {
+    const prepared = prepareSandpackFiles({
+      ...foundation.files,
+      '/src/App.tsx': "import Contact from './pages/Contact'; export default function App(){ return <Contact />; }",
+      '/src/pages/Contact.tsx': "import { FormField, FormFields, Input } from '../unison/ui/form-fields'; export default function Contact(){ return <FormFields><FormField label='Email'><Input type='email' /></FormField></FormFields>; }",
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    expect(prepared['/pages/Contact.tsx']).toContain("import { FormField, FormFields, Input } from '../unison/ui/form-fields';");
+    expect(prepared['/unison/ui/form-fields.tsx']).toContain('export function FormField');
+    expect(prepared['/unison/ui/form-fields.tsx']).toContain('export function FormFields');
+  });
+
+  it('upgrades older form field facades before validating preserved Contact pages', () => {
+    const legacyFoundation = {
+      ...foundation.files,
+      '/src/unison/ui/form-fields.tsx': foundation.files['/src/unison/ui/form-fields.tsx']
+        .replace(/\ntype GeneratedFormFieldProps[\s\S]*?(?=\n\/\/ Alias surface:)/, ''),
+      '/src/unison/ui/index.ts': foundation.files['/src/unison/ui/index.ts']
+        .replace(', FormField, FormFields', ''),
+    };
+    const prepared = prepareSandpackFiles({
+      ...legacyFoundation,
+      '/src/App.tsx': "import Contact from './pages/Contact'; export default function App(){ return <Contact />; }",
+      '/src/pages/Contact.tsx': "import { FormField, FormFields } from '../unison/ui/form-fields'; export default function Contact(){ return <FormFields><FormField>Message</FormField></FormFields>; }",
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    expect(prepared['/unison/ui/form-fields.tsx']).toContain('export function FormField');
+    expect(prepared['/unison/ui/form-fields.tsx']).toContain('export function FormFields');
+    expect(prepared['/unison/ui/index.ts']).toContain('FormField, FormFields');
   });
 
   it('upgrades an older generated UI root barrel before resolving Contact icons', () => {

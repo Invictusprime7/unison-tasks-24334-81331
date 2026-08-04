@@ -171,13 +171,14 @@ describe('launch business runtime persistence', () => {
     expect(FORM_RUNTIME_MODULE).toContain("'Content-Type': 'application/json'");
   });
 
-  it('resolves published CTA intents only to generated forms or explicit blocked states', () => {
+  it('dispatches manifest-authorized backend actions through the published Supabase runtime', () => {
     expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("'contact.submit': ['contact.submit']");
     expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("'quote.request': ['quote.request', 'contact.submit']");
     expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("form.scrollIntoView");
-    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("'booking.create'");
-    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain('This action is not configured for this site yet.');
-    expect(PUBLISHED_ACTION_RUNTIME_MODULE).not.toContain('intent-exec');
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain('GENERATED_SITE_RUNTIME_MANIFEST');
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain('runtime.controllerEndpoints[controller.functionName]');
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("controller.transport !== 'supabase-function'");
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain('fetch(endpoint');
   });
 
   it('derives booking component reads, writes, and slot requirements from the canonical registry', () => {
@@ -231,6 +232,29 @@ describe('launch business runtime persistence', () => {
     expect(manifest.intents).toEqual(expect.arrayContaining([
       expect.objectContaining({ intent: 'booking.create', componentIds: [instance!.instanceId] }),
     ]));
+    expect(manifest.controllers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        handler: 'intent-exec',
+        functionName: 'site-runtime',
+        intents: ['booking.create'],
+        requiredCapabilities: ['booking'],
+      }),
+    ]));
+    expect(manifest.requiredBackendFunctions).toContain('site-runtime');
+  });
+
+  it('submits generated booking forms through the site runtime with stable visitor context', () => {
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("form[data-intent-form=\"booking.create\"]");
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("operation: 'action'");
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain('runtimeVersion: runtime.runtimeVersion');
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain('idempotencyKey');
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain('sessionId');
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain('new FormData(form)');
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain('runtime.runtimeEndpoint');
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("read: { type: 'booking', sessionId: createSessionId() }");
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("form.elements.namedItem('serviceId')");
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("form.elements.namedItem('slotId')");
+    expect(PUBLISHED_ACTION_RUNTIME_MODULE).toContain("window.dispatchEvent(new CustomEvent('unison:booking.updated'");
   });
 
   it('provisions only stable approved definitions for generated forms', () => {
@@ -275,6 +299,9 @@ describe('launch business runtime persistence', () => {
     expect(provisioner).toContain('GENERATED_RUNTIME_SITE_IDENTITY_MISMATCH');
     expect(provisioner).toContain('GENERATED_RUNTIME_SNAPSHOT_MISMATCH');
     expect(provisioner).toContain('generatedSiteRuntimeManifest: body.generatedSiteRuntimeManifest');
+    expect(provisioner).toContain("PUBLIC_RUNTIME_FUNCTIONS = new Set(['site-runtime', 'intent-exec', 'create-order-checkout'])");
+    expect(provisioner).toContain('manifest.controllers.find((candidate) =>');
+    expect(provisioner).toContain('has no matching controller');
   });
 
   it('keeps published catalog reads site-scoped and source-whitelisted', () => {
@@ -314,6 +341,14 @@ describe('launch business runtime persistence', () => {
     expect(dispatcher).toContain('FOR UPDATE');
     expect(dispatcher).toContain('SET is_booked = true');
     expect(dispatcher).toContain('INSERT INTO public.bookings');
+    expect(dispatcher).toContain('idempotency_key = $2');
+    expect(dispatcher).toContain('pg_advisory_xact_lock');
+    expect(dispatcher).toContain('availability_slot_id');
+    expect(dispatcher).toContain('session_id');
+    expect(dispatcher).toContain('{ success: true, state }');
+    expect(dispatcher).toContain('loadBookingState');
+    expect(dispatcher).toContain('read?.type === "booking"');
+    expect(dispatcher).toContain('.eq("session_id", sessionId)');
     expect(dispatcher).toContain('BEGIN');
     expect(dispatcher).toContain('COMMIT');
     expect(dispatcher).toContain('This runtime action is not configured for the site');

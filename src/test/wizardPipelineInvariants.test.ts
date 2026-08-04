@@ -190,6 +190,53 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('Lane B UI foundation repair accepted');
   });
 
+  it('prevents broad Lane B turns from starving isolated page completion', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    const constantValue = (name: string) => {
+      const match = launcherSource.match(new RegExp(`const ${name} = ([\\d_]+);`));
+      expect(match, `${name} should be declared as a numeric constant`).not.toBeNull();
+      return Number(match?.[1].replace(/_/g, ''));
+    };
+    const completionWaves = Math.ceil(
+      constantValue('WIZARD_MAX_RECOVERY_PAGE_COUNT')
+      / constantValue('WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS'),
+    );
+    const configuredRecoveryPathMs =
+      constantValue('WIZARD_INITIAL_AI_TURN_MS')
+      + constantValue('WIZARD_UI_REPAIR_MAX_MS')
+      + completionWaves * (
+        constantValue('WIZARD_PAGE_COMPLETION_FIRST_MS')
+        + constantValue('WIZARD_PAGE_COMPLETION_RETRY_MS')
+      );
+
+    expect(constantValue('WIZARD_AI_TIMEOUT_MS')).toBeGreaterThan(configuredRecoveryPathMs);
+    expect(constantValue('WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS')).toBeLessThanOrEqual(4);
+    expect(launcherSource).toContain(
+      'takeWizardGenerationBudget(WIZARD_INITIAL_AI_TURN_MS)',
+    );
+    expect(launcherSource).toContain(
+      'takeWizardGenerationBudget(WIZARD_UI_REPAIR_MAX_MS)',
+    );
+    expect(launcherSource).toContain(
+      'missingWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES',
+    );
+    expect(launcherSource).toContain(
+      'takeWizardGenerationBudget(WIZARD_BATCH_REPAIR_MAX_MS)',
+    );
+    expect(launcherSource).toContain(
+      'for (const attempt of [2, 3] as const)',
+    );
+    expect(launcherSource).toContain('completeMissingWizardPage(path, attempt)');
+    expect(launcherSource).toContain("reasoningEffort: 'low'");
+    expect(launcherSource).toContain('maxTokens: 12_000');
+    expect(launcherSource).toContain('WIZARD_PAGE_COMPLETION_FIRST_MS');
+    expect(launcherSource).toContain('WIZARD_PAGE_COMPLETION_RETRY_MS');
+  });
+
   it('requires generated-preview confirmation before provisioning the durable site root', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),

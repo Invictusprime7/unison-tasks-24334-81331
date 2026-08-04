@@ -116,6 +116,7 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
     'Prefer manifest-backed @/unison/ui imports; supported Sandpack UI packages are also available.',
     'Use semantic Stage 4b Tailwind tokens; do not overwrite /src/index.css.',
     'Use @/unison/ui/icons for Lucide icons and provide accessible labels for icon-only actions.',
+    'From @/unison/ui/form-fields, use only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, FormField, or FormFields.',
     'Use responsive Tailwind variants and preserve data-ut-intent attributes on actionable controls.',
     'For @/unison/ui/motion, use only Reveal, RevealGroup, Stagger, StaggerItem, and MotionRecipe.',
   ];
@@ -348,7 +349,7 @@ ${UNISON_VFS_STYLE_BRIDGE}`,
 export { Button, type ButtonProps } from './button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
 export { cn } from './cn';
-export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea } from './form-fields';
+export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, FormField, FormFields } from './form-fields';
 export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
 export { ImageLightbox } from './media';
@@ -441,6 +442,24 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
 
 export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className={cn('flex min-h-28 w-full rounded-[calc(var(--radius)-0.125rem)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
+}
+
+type GeneratedFormFieldProps = React.HTMLAttributes<HTMLDivElement> & {
+  label?: React.ReactNode;
+  name?: string;
+  control?: unknown;
+  render?: (context: { field: { name?: string; value: string; onChange: () => void; onBlur: () => void } }) => React.ReactNode;
+};
+
+export function FormField({ label, name, control: _control, render, children, className, ...props }: GeneratedFormFieldProps) {
+  if (render) {
+    return <>{render({ field: { name, value: '', onChange: () => {}, onBlur: () => {} } })}</>;
+  }
+  return <div className={cn('grid gap-2', className)} {...props}>{label ? <FieldLabel>{label}</FieldLabel> : null}{children}</div>;
+}
+
+export function FormFields({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('grid gap-4', className)} {...props} />;
 }
 
 // Alias surface: generated pages frequently import shadcn-style names.

@@ -278,6 +278,18 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('Your previous response omitted or under-generated the following selected wizard pages.');
   });
 
+  it('retains malformed isolated pages for a parser-guided repair attempt', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    expect(launcherSource).toContain('rejectedPageCandidates[normalizedPath] = candidate;');
+    expect(launcherSource).toContain('PATH REPAIR REQUIRED: the files object must contain exactly the key');
+    expect(launcherSource).toContain('SYNTAX REPAIR REQUIRED: return balanced JSX/TSX');
+    expect(launcherSource).toContain('Do not use JavaScript regular-expression literals in this page.');
+  });
+
   it('does not run the interaction planner network round-trip (enrichment layer removed)', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),

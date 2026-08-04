@@ -2804,6 +2804,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         });
         const syntaxReport = syntax.reports[0];
         if (!syntaxReport || syntaxReport.status === 'quarantined') {
+          rejectedPageCandidates[normalizedPath] = candidate;
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
             attempt,
@@ -3054,6 +3055,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             `Forbidden industry intents: ${(behaviorContract?.forbidden || []).join(', ') || 'none'}`,
             `Industry vocabulary/context: ${industryVocabulary || generationCategory}`,
             previousFailure ? `Exact validation failure to repair: ${previousFailure}` : '',
+            previousFailure?.includes('omitted the requested page file')
+              ? `PATH REPAIR REQUIRED: the files object must contain exactly the key "${missingPath}".`
+              : '',
+            previousFailure && /Unterminated regular expression|Unexpected token|expected ["']?[})\]]/i.test(previousFailure)
+              ? 'SYNTAX REPAIR REQUIRED: return balanced JSX/TSX with every tag, brace, parenthesis, quote, and template literal closed. Do not use JavaScript regular-expression literals in this page.'
+              : '',
             '',
             'Return ONLY this file in the WizardSeed multi-file JSON contract.',
             'The page must contain at least 3 complete semantic sections and 1200+ characters of real copy.',

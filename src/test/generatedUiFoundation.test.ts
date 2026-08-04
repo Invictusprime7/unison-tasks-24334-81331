@@ -128,6 +128,33 @@ describe('generated UI foundation', () => {
     expect(normalized['/src/unison/ui/motion.tsx']).toContain('export function RevealGroup');
   });
 
+  it('refreshes unmarked legacy foundation CSS and preserves unknown user files', () => {
+    const normalized = normalizeLauncherFiles({
+      ...foundation.files,
+      '/src/unison/ui/tailwind.css': '.legacy-interactive-surface { display: none; }',
+      '/src/unison/ui/custom.css': '.user-owned { color: hotpink; }',
+      '/src/index.css': ':root { --primary: 0 0% 10%; }',
+    });
+
+    expect(normalized['/src/unison/ui/tailwind.css']).toContain('UNISON VFS STYLE BRIDGE');
+    expect(normalized['/src/unison/ui/tailwind.css']).not.toContain('.legacy-interactive-surface');
+    expect(normalized['/src/unison/ui/custom.css']).toBe('.user-owned { color: hotpink; }');
+  });
+
+  it('injects semantic shadcn Tailwind configuration into preserved VFS HTML', () => {
+    const prepared = prepareSandpackFiles({
+      ...foundation.files,
+      '/index.html': '<!doctype html><html><head><title>Custom</title></head><body><div id="root"></div></body></html>',
+      '/src/App.tsx': 'export default function App(){ return <button className="bg-primary text-primary-foreground">Book</button>; }',
+      '/src/index.css': ':root { --primary: 0 0% 10%; --primary-foreground: 0 0% 100%; }',
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    expect(prepared['/index.html']).toContain('<title>Custom</title>');
+    expect(prepared['/index.html']).toContain('data-unison-semantic-tailwind');
+    expect(prepared['/index.html']).toContain("primary: {");
+    expect(prepared['/index.html']).toContain('https://cdn.tailwindcss.com');
+  });
+
   it('restores the complete card facade before rendering Pricing and Services pages', () => {
     const legacyCardFacade = `${foundation.files['/src/unison/ui/card.tsx'].split('export function CardHeader')[0]}export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('p-5 sm:p-6', className)} {...props} />;

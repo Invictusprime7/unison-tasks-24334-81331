@@ -32,7 +32,6 @@ import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedCh
 import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 
-const FOUNDATION_MARKER_TEXT = 'UNISON GENERATED UI FOUNDATION';
 const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
 
 /**
@@ -51,11 +50,10 @@ export function syncGeneratedUiFoundationFiles(
 
   for (const [path, content] of Object.entries(foundation.files)) {
     if (path === UI_MANIFEST_PATH) continue;
-    // Foundation-owned files are always regenerated; user/AI files are never
-    // clobbered (they simply never carry the foundation marker).
-    if (!files[path] || files[path].includes(FOUNDATION_MARKER_TEXT)) {
-      files[path] = content;
-    }
+    // Every path emitted by buildGeneratedUiFoundation is registry-owned.
+    // Refresh it atomically even when a legacy snapshot predates the marker;
+    // unknown user files outside this path set remain untouched.
+    files[path] = content;
   }
 
   // Keep the manifest in lockstep with the runtime files we just wrote. A
@@ -130,7 +128,7 @@ const PREVIEW_INDEX_HTML = `<!DOCTYPE html>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
+  <script data-unison-semantic-tailwind>
     tailwind.config = {
       theme: {
         extend: {
@@ -189,6 +187,25 @@ const PREVIEW_INDEX_HTML = `<!DOCTYPE html>
   <div id="root"></div>
 </body>
 </html>`;
+
+const SEMANTIC_TAILWIND_CONFIG = PREVIEW_INDEX_HTML.match(
+  /<script data-unison-semantic-tailwind>[\s\S]*?<\/script>/,
+)?.[0] || '';
+
+function ensureSemanticTailwindPreviewHtml(html: string): string {
+  if (html.includes('data-unison-semantic-tailwind')) return html;
+
+  const needsTailwindRuntime = !/cdn\.tailwindcss\.com/i.test(html);
+  const bridge = [
+    needsTailwindRuntime ? '<script src="https://cdn.tailwindcss.com"></script>' : '',
+    SEMANTIC_TAILWIND_CONFIG,
+  ].filter(Boolean).join('\n  ');
+
+  if (/<\/head>/i.test(html)) {
+    return html.replace(/<\/head>/i, `  ${bridge}\n</head>`);
+  }
+  return `${bridge}\n${html}`;
+}
 
 
 const PREVIEW_NAV_BRIDGE = `function __initUnisonPreviewNavBridge() {
@@ -6329,6 +6346,8 @@ export function prepareSandpackFiles(
   // Ensure index.html exists with Tailwind CDN + semantic theme config
   if (!sandpackFiles['/index.html']) {
     sandpackFiles['/index.html'] = PREVIEW_INDEX_HTML;
+  } else {
+    sandpackFiles['/index.html'] = ensureSemanticTailwindPreviewHtml(sandpackFiles['/index.html']);
   }
 
   // ── FINAL SAFETY: Detect any remaining JSON wrappers that leaked through ──

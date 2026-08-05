@@ -66,6 +66,7 @@ describe('composition VFS variants', () => {
       designIntervention: {
         motionRecipes: [],
         sectionVariants: ['split-media-hero', 'comparison-services', 'testimonial-rail', 'conversion-form'],
+        activeVariants: {},
       },
     })['/src/pages/Home.tsx'];
     const sectionsMatch = page.match(/const SECTIONS = ([\s\S]*?);\nconst HYDRATABLE/);
@@ -76,6 +77,44 @@ describe('composition VFS variants', () => {
     expect(sections.find((section) => section.type === 'services')?.props.layout).toBe('list');
     expect(sections.find((section) => section.type === 'testimonials')?.props.layout).toBe('carousel');
     expect(sections.find((section) => section.type === 'contact')?.props.layout).toBe('split-card');
+  });
+
+  it('persists stable section variant identity in the compiled page VFS', () => {
+    const restaurant = getCompositionById('restaurant-premium');
+    if (!restaurant) throw new Error('Restaurant composition must be registered');
+    const hero = restaurant.sections.find((section) => section.type === 'hero');
+    if (!hero) throw new Error('Restaurant composition must include a hero');
+    const page = compositionToReactFileSet(restaurant, '/src/pages/Home.tsx', {
+      designIntervention: {
+        motionRecipes: [],
+        sectionVariants: [],
+        activeVariants: { [hero.id]: 'hero:split-image' },
+      },
+    })['/src/pages/Home.tsx'];
+
+    expect(page).toContain(`"variantId": "hero:split-image"`);
+    expect(page).toContain('data-ut-variant={section.variantId || undefined}');
+  });
+
+  it('preserves section variant identity when presentation order changes', () => {
+    const restaurant = getCompositionById('restaurant-premium');
+    if (!restaurant) throw new Error('Restaurant composition must be registered');
+    const intervention = buildWizardDesignIntervention({
+      businessName: 'Reordered Kitchen',
+      businessModel: 'restaurant_hospitality',
+      industryOverlay: 'restaurant',
+      templateId: restaurant.id,
+      themePresetId: 'organic',
+    });
+    const reordered = { ...restaurant, sections: [...restaurant.sections].reverse() };
+    const page = compositionToReactFileSet(reordered, '/src/pages/Home.tsx', {
+      designIntervention: intervention,
+    })['/src/pages/Home.tsx'];
+
+    for (const [sectionId, variantId] of Object.entries(intervention.activeVariants)) {
+      expect(page).toContain(`"id": "${sectionId}"`);
+      expect(page).toContain(`"variantId": "${variantId}"`);
+    }
   });
 
   it('does not reference motion primitives when no intervention is supplied', () => {
@@ -129,7 +168,7 @@ describe('composition VFS variants', () => {
     ];
     const fingerprints = templateIds.map((templateId) => {
       const page = compileHome(templateId)['/src/pages/Home.tsx'];
-      return Array.from(page.matchAll(/"type": "([^\"]+)"[\s\S]{0,180}?"layout": "([^\"]+)"/g))
+      return Array.from(page.matchAll(/"type": "([^"]+)"[\s\S]{0,180}?"layout": "([^"]+)"/g))
         .map((match) => `${match[1]}:${match[2]}`)
         .join('|');
     });

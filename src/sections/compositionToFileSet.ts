@@ -29,6 +29,7 @@
 
 import type { TemplateComposition } from './types';
 import type { WizardDesignIntervention, WizardMotionRecipe } from '@/services/wizardDesignIntervention';
+import { getLayoutForVariantId, getVariantById } from '@/sections/variants';
 import {
   CATALOG_HYDRATION_MODULE,
   CATALOG_HYDRATION_PATH,
@@ -533,7 +534,7 @@ export default function Contact({ props }: { props: any }) {
             <aside style={{ padding: '2rem', borderRadius: THEME.radius, background: hsl(THEME.colors.muted), border: '1px solid ' + hsla(THEME.colors.border, 0.65), display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1.25rem' }}>
               <h3 style={{ ...headingStyle, fontSize: '1.25rem' }}>Start a conversation</h3>
               {address && <p style={{ ...bodyStyle, lineHeight: 1.6 }}>{address}</p>}
-              {phone && <a href={'tel:' + phone.replace(/[^+\d]/g, '')} style={{ ...bodyStyle, color: hsl(THEME.colors.primary), textDecoration: 'none' }}>{phone}</a>}
+              {phone && <a href={'tel:' + phone.replace(/[^+0-9]/g, '')} style={{ ...bodyStyle, color: hsl(THEME.colors.primary), textDecoration: 'none' }}>{phone}</a>}
               {email && <a href={'mailto:' + email} style={{ ...bodyStyle, color: hsl(THEME.colors.primary), textDecoration: 'none' }}>{email}</a>}
             </aside>
           </div>
@@ -768,15 +769,26 @@ const VARIANT_LAYOUTS: Partial<Record<WizardDesignIntervention['sectionVariants'
 
 function applyDesignVariants(
   template: TemplateComposition,
-  designIntervention?: Pick<WizardDesignIntervention, 'sectionVariants'>,
+  designIntervention?: Pick<WizardDesignIntervention, 'sectionVariants'> & Partial<Pick<WizardDesignIntervention, 'activeVariants'>>,
 ): TemplateComposition {
   const variants = designIntervention?.sectionVariants;
-  if (!variants?.length) return template;
+  const activeVariants = designIntervention?.activeVariants;
+  if (!variants?.length && !Object.keys(activeVariants || {}).length) return template;
 
   return {
     ...template,
     sections: template.sections.map((section) => {
-      const selected = variants
+      const activeVariantId = activeVariants?.[section.id];
+      const activeVariant = activeVariantId ? getVariantById(activeVariantId) : undefined;
+      if (activeVariant?.sectionType === section.type) {
+        const layout = getLayoutForVariantId(activeVariant.id);
+        return {
+          ...section,
+          variantId: activeVariant.id,
+          props: layout ? { ...section.props, layout } as typeof section.props : section.props,
+        };
+      }
+      const selected = (variants || [])
         .map((variant) => VARIANT_LAYOUTS[variant])
         .find((candidate) => candidate?.sectionTypes.includes(section.type));
       if (!selected) return section;
@@ -876,6 +888,7 @@ function RenderedSection({ section, occurrence }: { section: any; occurrence: nu
     <div
       data-ut-section-id={section.id}
       data-ut-section-type={section.type}
+      data-ut-variant={section.variantId || undefined}
       data-ut-layout={layoutToken || undefined}
       data-ut-hydration={isHydratable ? (hydration.loading ? 'loading' : (hydration.rows ? 'live' : 'seed')) : undefined}
     >
@@ -911,7 +924,10 @@ export default function Page() {
 export function compositionToReactFileSet(
   template: TemplateComposition,
   pageFilePath: string,
-  options?: { designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants'> },
+  options?: {
+    designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants'>
+      & Partial<Pick<WizardDesignIntervention, 'activeVariants'>>;
+  },
 ): Record<string, string> {
   const projectedTemplate = applyDesignVariants(template, options?.designIntervention);
   const sectionMap = sectionMapModule(projectedTemplate, pageFilePath);

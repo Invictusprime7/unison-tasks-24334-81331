@@ -183,7 +183,12 @@ describe('launch business runtime persistence', () => {
 
   it('derives booking component reads, writes, and slot requirements from the canonical registry', () => {
     const instance = createCanonicalComponentInstance('booking-scheduler', {
-      bindings: { calendarId: 'calendar-1' },
+      bindings: {
+        calendarId: 'calendar-1',
+        sectionType: 'hero',
+        sectionInstanceId: 'home-hero',
+        variantId: 'hero:split-image',
+      },
     });
     expect(instance).not.toBeNull();
 
@@ -202,7 +207,12 @@ describe('launch business runtime persistence', () => {
   it('compiles a page-less booking component into a transport-agnostic runtime contract', () => {
     const snapshot = createSnapshot();
     const instance = createCanonicalComponentInstance('booking-scheduler', {
-      bindings: { calendarId: 'calendar-1' },
+      bindings: {
+        calendarId: 'calendar-1',
+        sectionType: 'hero',
+        sectionInstanceId: 'home-hero',
+        variantId: 'hero:split-image',
+      },
     });
     expect(instance).not.toBeNull();
     snapshot.componentInstances[instance!.instanceId] = instance!;
@@ -226,7 +236,15 @@ describe('launch business runtime persistence', () => {
       pageLess: true,
       writeIntent: 'booking.create',
       slots: expect.arrayContaining([
-        expect.objectContaining({ slot: 'primary-cta', intent: 'booking.create', status: 'ready' }),
+        expect.objectContaining({
+          slotId: `${instance!.instanceId}:primary-cta`,
+          slot: 'primary-cta',
+          section: 'hero',
+          sectionInstanceId: 'home-hero',
+          variantId: 'hero:split-image',
+          intent: 'booking.create',
+          status: 'ready',
+        }),
       ]),
     });
     expect(manifest.intents).toEqual(expect.arrayContaining([
@@ -373,6 +391,29 @@ describe('launch business runtime persistence', () => {
         sourceTable: 'products',
       }),
     ]));
+  });
+
+  it('blocks a component whose visual variant conflicts with its semantic section role', () => {
+    const snapshot = createSnapshot();
+    const instance = createCanonicalComponentInstance('booking-scheduler', {
+      bindings: {
+        calendarId: 'calendar-1',
+        sectionType: 'hero',
+        sectionInstanceId: 'home-hero',
+        variantId: 'footer:dark-band',
+      },
+    });
+    snapshot.componentInstances[instance!.instanceId] = instance!;
+
+    const manifest = compileGeneratedSiteRuntimeManifest({
+      snapshot,
+      enabledCapabilities: ['booking'],
+    });
+
+    expect(manifest.readiness.status).toBe('blocked');
+    expect(manifest.components[0].blockers).toContain(
+      'Component variant footer:dark-band does not match section: hero.',
+    );
   });
 
   it('restores runtime metadata and confirmed identities from a durable draft row', () => {

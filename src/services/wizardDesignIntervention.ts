@@ -1,4 +1,7 @@
 import type { BusinessModel, IndustryOverlay } from '@/types/playground';
+import { getCompositionById } from '@/sections/templates';
+import { getVariantById, getVariantIdForLayout, getVariantsForSection } from '@/sections/variants';
+import type { ActiveVariantMap, VariantId } from '@/sections/variants';
 
 export const WIZARD_DESIGN_INTERVENTION_VERSION = '1.0' as const;
 
@@ -31,6 +34,8 @@ export interface WizardDesignIntervention {
   themePresetId: string;
   layoutRecipe: 'floating-navbar' | 'collage-hero' | 'bento-features' | 'media-card-grid' | 'conversion-form' | 'rich-footer';
   sectionVariants: WizardSectionVariant[];
+  /** Stable section instance id -> registry-owned visual variant id. */
+  activeVariants: ActiveVariantMap;
   motionRecipes: WizardMotionRecipe[];
   interactionRecipes: Array<'mobile-nav-dialog' | 'image-lightbox' | 'accordion' | 'tabs'>;
   motionBudget: 'restrained' | 'expressive';
@@ -83,6 +88,13 @@ export function readWizardDesignIntervention(
       typeof intervention.layoutRecipe !== 'string' ||
       !LAYOUT_RECIPES.has(intervention.layoutRecipe as WizardDesignIntervention['layoutRecipe']) ||
       !hasOnlyAllowedValues(intervention.sectionVariants, SECTION_VARIANTS) ||
+      (intervention.activeVariants !== undefined && (
+        !intervention.activeVariants ||
+        typeof intervention.activeVariants !== 'object' ||
+        Object.values(intervention.activeVariants).some((variantId) => (
+          typeof variantId !== 'string' || !getVariantById(variantId as VariantId)
+        ))
+      )) ||
       !hasOnlyAllowedValues(intervention.motionRecipes, MOTION_RECIPES) ||
       !hasOnlyAllowedValues(intervention.interactionRecipes, INTERACTION_RECIPES) ||
       !MOTION_BUDGETS.has(intervention.motionBudget as WizardDesignIntervention['motionBudget']) ||
@@ -90,13 +102,16 @@ export function readWizardDesignIntervention(
     ) {
       return null;
     }
+    if (!intervention.activeVariants) {
+      intervention.activeVariants = buildActiveVariants(intervention.templateId, intervention.seed || 'legacy');
+    }
     return intervention as WizardDesignIntervention;
   } catch {
     return null;
   }
 }
 
-const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'aiDirective'>> = {
+const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'activeVariants' | 'aiDirective'>> = {
   appointment_service: {
     layoutRecipe: 'collage-hero', sectionVariants: ['split-media-hero', 'bento-services', 'testimonial-rail', 'conversion-form'],
     motionRecipes: ['service-progressive-disclosure', 'proof-led-stagger', 'conversion-feedback'], interactionRecipes: ['mobile-nav-dialog', 'accordion'], motionBudget: 'restrained',
@@ -145,6 +160,20 @@ function rotate<T>(items: readonly T[], seed: string): T[] {
   return [...items.slice(start), ...items.slice(0, start)];
 }
 
+function buildActiveVariants(templateId: string | null | undefined, seed: string): ActiveVariantMap {
+  const composition = templateId ? getCompositionById(templateId) : null;
+  if (!composition) return {};
+
+  return Object.fromEntries(composition.sections.flatMap((section) => {
+    const variants = getVariantsForSection(section.type);
+    if (variants.length === 0) return [];
+    const layout = (section.props as { layout?: string }).layout;
+    const selected = getVariantIdForLayout(section.type, layout)
+      || variants[stableIndex(`${seed}|${section.id}`, variants.length)]?.id;
+    return selected ? [[section.id, selected]] : [];
+  })) as Record<string, VariantId>;
+}
+
 export function buildWizardDesignIntervention(
   input: WizardDesignInterventionInput,
 ): WizardDesignIntervention {
@@ -171,6 +200,7 @@ export function buildWizardDesignIntervention(
     themePresetId: input.themePresetId,
     layoutRecipe: baseline.layoutRecipe,
     sectionVariants,
+    activeVariants: buildActiveVariants(input.templateId, seed),
     motionRecipes: rotate(baseline.motionRecipes, `${seed}|motion`),
     interactionRecipes,
     motionBudget: baseline.motionBudget,

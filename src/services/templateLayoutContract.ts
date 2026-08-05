@@ -1,8 +1,11 @@
 import type { TemplateComposition } from '@/sections/types';
+import { getVariantIdForLayout } from '@/sections/variants';
+import type { VariantId } from '@/sections/variants';
 
 export interface TemplateLayoutSection {
   id: string;
   type: string;
+  variantId?: VariantId;
   layout?: string;
   columns?: number;
   hasMedia: boolean;
@@ -44,6 +47,10 @@ export function buildTemplateLayoutContract(
     return {
       id: section.id,
       type: section.type,
+      variantId: getVariantIdForLayout(
+        section.type,
+        typeof props.layout === 'string' ? props.layout : undefined,
+      ),
       layout: typeof props.layout === 'string' ? props.layout : undefined,
       columns: typeof props.columns === 'number' ? props.columns : undefined,
       hasMedia,
@@ -54,6 +61,7 @@ export function buildTemplateLayoutContract(
   const signature = sections.map((section) => [
     section.id,
     section.type,
+    section.variantId || 'unregistered',
     section.layout || 'default',
     section.columns || '-',
     section.hasMedia ? 'media' : 'text',
@@ -74,11 +82,13 @@ export function buildTemplateLayoutPrompt(contract: TemplateLayoutContract): str
     `TEMPLATE LAYOUT CONTRACT (LOCKED): ${contract.templateId} for ${contract.industry}.`,
     `Layout signature: ${contract.signature}.`,
     'Preserve every section in this exact order and preserve each declared layout, column count, media treatment, and CTA variant.',
+    'On each section root emit the declared data-ut-section-id, data-ut-section-type, and data-ut-variant values. Interactive controls must preserve data-ut-slot and data-ut-intent independently of visual order.',
   ];
   for (const section of contract.sections) {
     const details = [
       `id=${section.id}`,
       `type=${section.type}`,
+      `variantId=${section.variantId || 'unregistered'}`,
       `layout=${section.layout || 'default'}`,
       `columns=${section.columns || 'default'}`,
       `media=${section.hasMedia ? 'required' : 'none'}`,

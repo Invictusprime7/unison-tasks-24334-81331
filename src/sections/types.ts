@@ -71,6 +71,8 @@ export type SectionType =
 export interface SectionEntry<T extends SectionType = SectionType> {
   id: string;
   type: T;
+  /** Registry-owned visual variant; behavior remains bound through id/type/slots. */
+  variantId?: import('./variants/types').VariantId;
   props: SectionPropsMap[T];
   /** Optional CSS module or scoped styles for this section */
   className?: string;

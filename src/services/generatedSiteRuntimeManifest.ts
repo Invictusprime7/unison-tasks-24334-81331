@@ -9,14 +9,19 @@ import {
 import { CAPABILITY_REGISTRY, type CapabilityId } from '@/platform/core/capabilityRegistry';
 import { resolveComponentRuntimeContract, type ComponentRuntimeContract } from '@/services/componentRuntimeContract';
 import type { CreatorComponentInstance } from '@/types/creatorData';
+import { getVariantById } from '@/sections/variants';
+import type { VariantId } from '@/sections/variants';
 
 export const GENERATED_SITE_RUNTIME_MANIFEST_VERSION = '1.0' as const;
 
 export interface GeneratedRuntimeSlotBinding {
+  slotId: string;
   slot: SlotRole;
   intent: string | null;
   source: 'slot-policy' | 'component-contract' | 'unresolved';
   section: SectionType | null;
+  sectionInstanceId: string | null;
+  variantId: string | null;
   policyIntent: string | null;
   status: 'ready' | 'blocked';
   blockers: string[];
@@ -110,10 +115,16 @@ function matchingPolicyBinding(
   section: SectionType | null,
   slot: SlotRole,
 ): ResolvedSlotBinding | undefined {
-  if (section) {
-    return bindings.find((binding) => binding.section === section && binding.slot === slot);
-  }
-  return bindings.find((binding) => binding.slot === slot);
+  if (!section) return undefined;
+  return bindings.find((binding) => binding.section === section && binding.slot === slot);
+}
+
+function readIdentity(
+  instance: CreatorComponentInstance,
+  key: 'sectionInstanceId' | 'variantId',
+): string | null {
+  const candidate = instance.bindings?.[key] || instance.props?.[key];
+  return typeof candidate === 'string' && candidate.trim() ? candidate : null;
 }
 
 function resolveComponentSlots(
@@ -123,12 +134,23 @@ function resolveComponentSlots(
 ): GeneratedRuntimeSlotBinding[] {
   const policy = resolveSlotBindings(enabledCapabilities);
   const section = inferSection(instance);
+  const sectionInstanceId = readIdentity(instance, 'sectionInstanceId');
+  const variantId = readIdentity(instance, 'variantId');
 
   return contract.slotBindings.map((slot) => {
     const policyBinding = matchingPolicyBinding(policy.resolved, section, slot as SlotRole);
     const intent = contract.writeIntent || policyBinding?.intent || null;
     const intentDefinition = intent ? getIntentDef(intent) : null;
     const blockers: string[] = [];
+
+    if (variantId) {
+      const variant = getVariantById(variantId as VariantId);
+      if (!variant) {
+        blockers.push(`Component variant is not registered: ${variantId}.`);
+      } else if (section && variant.sectionType !== section) {
+        blockers.push(`Component variant ${variantId} does not match section: ${section}.`);
+      }
+    }
 
     if (!intent) {
       blockers.push(`No runtime intent is resolved for slot: ${slot}.`);
@@ -143,6 +165,7 @@ function resolveComponentSlots(
     }
 
     return {
+      slotId: `${instance.instanceId}:${slot}`,
       slot: slot as SlotRole,
       intent,
       source: contract.writeIntent
@@ -151,6 +174,8 @@ function resolveComponentSlots(
           ? 'slot-policy'
           : 'unresolved',
       section: policyBinding?.section || section,
+      sectionInstanceId,
+      variantId,
       policyIntent: policyBinding?.intent || null,
       status: blockers.length === 0 ? 'ready' : 'blocked',
       blockers,

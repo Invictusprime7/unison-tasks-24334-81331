@@ -3,6 +3,8 @@ import {
   buildWizardDesignIntervention,
   readWizardDesignIntervention,
 } from '@/services/wizardDesignIntervention';
+import { getVariantById } from '@/sections/variants';
+import { getCompositionById } from '@/sections/templates';
 
 describe('wizard design intervention', () => {
   const salonInput = {
@@ -36,6 +38,18 @@ describe('wizard design intervention', () => {
     const intervention = buildWizardDesignIntervention(salonInput);
     expect(intervention.aiDirective).toContain('snapshot-owned UI primitives');
     expect(intervention.aiDirective).toContain('Stage 4b tokens');
+  });
+
+  it('binds stable composition section ids to registered visual variants', () => {
+    const intervention = buildWizardDesignIntervention(salonInput);
+    const composition = getCompositionById(salonInput.templateId);
+    const sectionIds = new Set(composition?.sections.map((section) => section.id));
+
+    expect(Object.keys(intervention.activeVariants).length).toBeGreaterThan(0);
+    for (const [sectionId, variantId] of Object.entries(intervention.activeVariants)) {
+      expect(sectionIds.has(sectionId)).toBe(true);
+      expect(getVariantById(variantId)).toBeDefined();
+    }
   });
 
   it('reads only a complete, versioned intervention artifact', () => {

@@ -336,6 +336,41 @@ export const getVariantById = (variantId: VariantId): SectionVariant | undefined
   return variants?.find(v => v.id === variantId);
 };
 
+const VARIANT_LAYOUT_ALIASES: Partial<Record<VariantId, readonly string[]>> = {
+  'navbar:standard': ['standard'],
+  'navbar:centered-logo': ['centered-logo'],
+  'navbar:minimal-dark': ['minimal-dark'],
+  'hero:centered': ['centered'],
+  'hero:split-image': ['split', 'split-image'],
+  'hero:full-bleed': ['full-bleed'],
+  'services:card-grid': ['grid', 'card-grid'],
+  'services:alternating': ['alternating'],
+  'services:compact-list': ['list', 'compact-list'],
+  'cta:centered': ['centered'],
+  'cta:gradient-banner': ['gradient-banner'],
+  'cta:split-card': ['split-card'],
+  'contact:centered': ['centered'],
+  'contact:split-card': ['split-card'],
+  'contact:minimal-inline': ['minimal-inline'],
+  'footer:columns': ['columns'],
+  'footer:centered-minimal': ['centered-minimal'],
+  'footer:dark-band': ['dark-band'],
+};
+
+export const getVariantIdForLayout = (
+  sectionType: SectionType,
+  layout?: string | null,
+): VariantId | undefined => {
+  if (!layout) return undefined;
+  return getVariantsForSection(sectionType).find((variant) => (
+    VARIANT_LAYOUT_ALIASES[variant.id]?.includes(layout)
+  ))?.id;
+};
+
+export const getLayoutForVariantId = (variantId: VariantId): string | undefined => (
+  VARIANT_LAYOUT_ALIASES[variantId]?.[0]
+);
+
 /** Get the default variant for a section type */
 export const getDefaultVariant = (sectionType: SectionType): SectionVariant | undefined => {
   const variants = VARIANT_REGISTRY[sectionType];

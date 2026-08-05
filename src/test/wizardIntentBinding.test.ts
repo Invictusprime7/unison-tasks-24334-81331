@@ -105,5 +105,7 @@ describe('wizard intent binding', () => {
     expect(result.files['/src/pages/Home.tsx']).toContain('data-ut-intent="nav.goto"');
     expect(result.files['/src/pages/Home.tsx']).not.toContain('data-ut-intent="nav.goto_page"');
     expect(result.files['/src/pages/Home.tsx']).toContain('data-ut-path="/shop"');
+    expect(result.files['/src/pages/Home.tsx']).toContain('data-ut-slot="primary-cta"');
+    expect(result.files['/src/pages/Home.tsx']).toContain('data-ut-section-role="hero"');
   });
 });

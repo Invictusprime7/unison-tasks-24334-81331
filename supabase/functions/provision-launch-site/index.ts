@@ -108,10 +108,13 @@ const GeneratedRuntimeManifestSchema = z.object({
     writeIntent: z.string().min(1).max(160).nullable(),
     slotBindings: z.array(z.string().min(1).max(120)).max(32),
     slots: z.array(z.object({
+      slotId: z.string().min(1).max(260),
       slot: z.string().min(1).max(120),
       intent: z.string().min(1).max(160).nullable(),
       source: z.enum(['slot-policy', 'component-contract', 'unresolved']),
       section: z.string().min(1).max(120).nullable(),
+      sectionInstanceId: z.string().min(1).max(200).nullable(),
+      variantId: z.string().min(1).max(200).nullable(),
       policyIntent: z.string().min(1).max(160).nullable(),
       status: z.enum(['ready', 'blocked']),
       blockers: z.array(z.string().min(1).max(300)).max(32),

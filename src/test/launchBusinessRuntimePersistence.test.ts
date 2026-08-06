@@ -160,6 +160,9 @@ describe('launch business runtime persistence', () => {
     expect(CATALOG_HYDRATION_MODULE).toContain("from '@/unison/publishedRuntime'");
     expect(CATALOG_HYDRATION_MODULE).toContain("operation: 'read'");
     expect(CATALOG_HYDRATION_MODULE).toContain('runtime.runtimeEndpoint');
+    expect(CATALOG_HYDRATION_MODULE).toContain('PUBLISHED_CATALOG_REVALIDATE_MS = 60_000');
+    expect(CATALOG_HYDRATION_MODULE).toContain("document.addEventListener('visibilitychange', onVisibilityChange)");
+    expect(CATALOG_HYDRATION_MODULE).toContain('refreshPublishedCatalog(false)');
     expect(BUSINESS_PROFILE_HYDRATION_MODULE).toContain('BUSINESS_PROFILE_REQUEST');
     expect(BUSINESS_PROFILE_HYDRATION_MODULE).toContain("read: { type: 'profile' }");
   });

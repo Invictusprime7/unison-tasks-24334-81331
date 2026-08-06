@@ -23,7 +23,6 @@ import { safeParseBody, sanitizeString, isValidEmail, isValidUUID } from "../_sh
 interface SiteAuthPayload {
   action: "register" | "login" | "logout" | "get-user" | "verify-session";
   siteId: string;
-  businessId?: string;
   email?: string;
   password?: string;
   name?: string;
@@ -90,7 +89,6 @@ serve(async (req) => {
     const {
       action,
       siteId,
-      businessId,
       email,
       password,
       name,
@@ -117,12 +115,6 @@ serve(async (req) => {
 
     if (!action || !allowedActions.has(action)) {
       return errorResponse("Invalid action", 400, corsHeaders);
-    }
-
-    const normalizedBusinessId =
-      typeof businessId === "string" ? sanitizeString(businessId, 100) : undefined;
-    if (normalizedBusinessId && !isValidUUID(normalizedBusinessId)) {
-      return errorResponse("Invalid businessId format", 400, corsHeaders);
     }
 
     console.log(`[site-auth] Action: ${action}, siteId: ${normalizedSiteId}`);
@@ -165,20 +157,15 @@ serve(async (req) => {
           );
         }
 
-        // Get business_id from site/project if not provided
-        let finalBusinessId = normalizedBusinessId;
-        if (!finalBusinessId) {
-          const { data: project } = await supabase
-            .from("projects")
-            .select("business_id")
-            .eq("id", normalizedSiteId)
-            .single();
-          
-          finalBusinessId = project?.business_id;
-          
-          if (!finalBusinessId) {
-            return errorResponse("Invalid site or missing business association", 400, corsHeaders);
-          }
+        // The visitor must never choose a tenant. Resolve the business from
+        // the canonical generated-site record, not from request data.
+        const { data: site, error: siteError } = await supabase
+          .from("sites")
+          .select("id,business_id,status")
+          .eq("id", normalizedSiteId)
+          .maybeSingle();
+        if (siteError || !site || !["preview", "published"].includes(site.status)) {
+          return errorResponse("Site authentication is unavailable", 404, corsHeaders);
         }
 
         // Hash password with bcrypt
@@ -189,7 +176,7 @@ serve(async (req) => {
           .from("site_users")
           .insert({
             site_id: normalizedSiteId,
-            business_id: finalBusinessId,
+            business_id: site.business_id,
             email: normalizedEmail,
             password_hash: passwordHash,
             name: typeof name === "string" ? sanitizeString(name, 200) || null : null,

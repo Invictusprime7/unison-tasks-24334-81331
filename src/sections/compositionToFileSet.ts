@@ -91,76 +91,11 @@ function themeModule(template: TemplateComposition): string {
   return `// Snapshot style adapter.
 // Shared by every section component in /src/components/.
 // Stage 4b /src/index.css is the sole visual-token authority.
-import type React from 'react';
-
 export const THEME = ${semanticTheme} as const;
-
-export const hsl = (t: string) => \`hsl(\${t})\`;
-export const hsla = (t: string, a: number) => \`hsl(\${t} / \${a})\`;
-
-export const headingStyle: React.CSSProperties = {
-  fontFamily: THEME.typography.headingFont,
-  fontWeight: THEME.typography.headingWeight as React.CSSProperties['fontWeight'],
-  color: hsl(THEME.colors.foreground),
-};
-
-export const bodyStyle: React.CSSProperties = {
-  fontFamily: THEME.typography.bodyFont,
-  fontWeight: THEME.typography.bodyWeight as React.CSSProperties['fontWeight'],
-  color: hsl(THEME.colors.mutedForeground),
-};
-
-export const containerStyle: React.CSSProperties = {
-  maxWidth: THEME.containerWidth,
-  margin: '0 auto',
-  padding: '0 clamp(1rem, 4vw, 2rem)',
-};
-
-export const sectionPad: React.CSSProperties = {
-  padding: 'clamp(3rem, 8vw, 6rem) clamp(1rem, 4vw, 2rem)',
-};
-
-export const primaryBtnStyle: React.CSSProperties = {
-  background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`,
-  color: hsl(THEME.colors.primaryForeground),
-  padding: '0.75rem 2rem',
-  borderRadius: THEME.radius,
-  fontWeight: 600,
-  border: 'none',
-  cursor: 'pointer',
-  fontFamily: THEME.typography.bodyFont,
-  transition: 'all 0.2s ease',
-  textDecoration: 'none',
-  display: 'inline-block',
-};
-
-export const outlineBtnStyle: React.CSSProperties = {
-  background: 'transparent',
-  color: hsl(THEME.colors.foreground),
-  padding: '0.75rem 2rem',
-  borderRadius: THEME.radius,
-  fontWeight: 600,
-  border: \`1px solid \${hsla(THEME.colors.border, 1)}\`,
-  cursor: 'pointer',
-  fontFamily: THEME.typography.bodyFont,
-  transition: 'all 0.2s ease',
-  textDecoration: 'none',
-  display: 'inline-block',
-};
-
-export const cardStyle: React.CSSProperties = {
-  background: hsl(THEME.colors.card),
-  color: hsl(THEME.colors.cardForeground),
-  borderRadius: THEME.radius,
-  border: \`1px solid \${hsla(THEME.colors.border, 1)}\`,
-  overflow: 'hidden',
-  transition: 'all 0.3s ease',
-};
 
 export const RESPONSIVE_CSS = \`
   *, *::before, *::after { box-sizing: border-box; }
   img, svg { max-width: 100%; height: auto; display: block; }
-  a { color: inherit; }
   .ut-grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
   .ut-grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
   @media (max-width: 720px) {
@@ -175,13 +110,13 @@ export const RESPONSIVE_CSS = \`
 
 function layoutModule(): string {
   return `import React, { useEffect } from 'react';
-import { THEME, hsl, RESPONSIVE_CSS } from './theme';
+import { RESPONSIVE_CSS } from './theme';
 import { usePublishedFormRuntime } from './formRuntime';
 import { usePublishedActionRuntime } from './publishedActionRuntime';
 
 /**
- * SiteLayout — applies snapshot-owned semantic tokens to the document.
- * Template-global CSS is intentionally excluded: Stage 4b owns global style.
+ * SiteLayout installs structural responsive rules and published runtimes.
+ * Stage 4b remains the only owner of global presentation.
  */
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   usePublishedFormRuntime();
@@ -191,18 +126,6 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
     s.textContent = RESPONSIVE_CSS;
     document.head.appendChild(s);
     return () => { s.remove(); };
-  }, []);
-
-  useEffect(() => {
-    document.body.style.background = hsl(THEME.colors.background);
-    document.body.style.color = hsl(THEME.colors.foreground);
-    document.body.style.fontFamily = THEME.typography.bodyFont;
-    document.body.style.margin = '0';
-    return () => {
-      document.body.style.background = '';
-      document.body.style.color = '';
-      document.body.style.fontFamily = '';
-    };
   }, []);
 
   return <div>{children}</div>;
@@ -244,21 +167,24 @@ export default function SocialIcon({ platform, size = 16 }: SocialIconProps) {
 `;
 
 const NAVBAR_MODULE = `import React from 'react';
-import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, primaryBtnStyle } from './theme';
+
+const shellClass = 'mx-auto w-full max-w-7xl px-5 sm:px-8';
+const linkClass = 'font-body text-sm text-muted-foreground no-underline transition-colors hover:text-foreground';
+const ctaClass = 'inline-flex items-center justify-center rounded-[var(--radius)] bg-primary px-4 py-2 font-body text-sm font-semibold text-primary-foreground no-underline transition-opacity hover:opacity-90';
 
 export default function Navbar({ props }: { props: any }) {
   const { brand, links = [], cta, sticky = true, transparent = false, layout } = props;
   const resolvedLayout = layout || (transparent ? 'centered-logo' : 'standard');
-  const baseHeader = { position: sticky ? 'fixed' : 'relative', top: sticky ? 0 : undefined, left: sticky ? 0 : undefined, right: sticky ? 0 : undefined, zIndex: 50 } as React.CSSProperties;
+  const positionClass = sticky ? 'fixed inset-x-0 top-0 z-50' : 'relative z-50';
 
   if (resolvedLayout === 'centered-logo') {
     const midpoint = Math.ceil(links.length / 2);
     return (
-      <header data-ut-variant="navbar:centered-logo" style={{ ...baseHeader, background: hsla(THEME.colors.background, 0.9), backdropFilter: 'blur(12px)', borderBottom: '1px solid ' + hsla(THEME.colors.border, 0.5) }}>
-        <div style={{ ...containerStyle, display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', minHeight: '5rem', gap: '1.25rem' }}>
-          <nav className="ut-nav-links" style={{ display: 'flex', gap: '1.25rem', alignItems: 'center' }}>{links.slice(0, midpoint).map((l: any, i: number) => <a key={i} href={l.href} style={{ ...bodyStyle, fontSize: '0.85rem', textDecoration: 'none' }}>{l.label}</a>)}</nav>
-          <a href="#" style={{ ...headingStyle, fontSize: '1.5rem', textDecoration: 'none', textAlign: 'center' }}>{brand}</a>
-          <nav className="ut-nav-links" style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', justifyContent: 'flex-end' }}>{links.slice(midpoint).map((l: any, i: number) => <a key={i} href={l.href} style={{ ...bodyStyle, fontSize: '0.85rem', textDecoration: 'none' }}>{l.label}</a>)}{cta && <a href={cta.href || '#'} data-ut-intent={cta.intent} style={{ ...primaryBtnStyle, fontSize: '0.8rem', padding: '0.45rem 1rem' }}>{cta.label}</a>}</nav>
+      <header data-ut-variant="navbar:centered-logo" className={positionClass + ' border-b border-border/50 bg-background/90 backdrop-blur-md'}>
+        <div className={shellClass + ' grid min-h-20 grid-cols-[1fr_auto_1fr] items-center gap-5'}>
+          <nav className="ut-nav-links flex items-center gap-5">{links.slice(0, midpoint).map((link: any, index: number) => <a key={index} href={link.href} className={linkClass}>{link.label}</a>)}</nav>
+          <a href="#" className="text-center font-heading text-2xl font-semibold text-foreground no-underline">{brand}</a>
+          <nav className="ut-nav-links flex items-center justify-end gap-5">{links.slice(midpoint).map((link: any, index: number) => <a key={index} href={link.href} className={linkClass}>{link.label}</a>)}{cta && <a href={cta.href || '#'} data-ut-intent={cta.intent} className={ctaClass}>{cta.label}</a>}</nav>
         </div>
       </header>
     );
@@ -266,22 +192,22 @@ export default function Navbar({ props }: { props: any }) {
 
   if (resolvedLayout === 'minimal-dark') {
     return (
-      <header data-ut-variant="navbar:minimal-dark" style={{ ...baseHeader, background: hsl(THEME.colors.foreground), borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
-        <div style={{ ...containerStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '4.5rem' }}>
-          <a href="#" style={{ ...headingStyle, color: hsl(THEME.colors.background), fontSize: '1.25rem', textDecoration: 'none' }}>{brand}</a>
-          <nav className="ut-nav-links" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>{links.map((l: any, i: number) => <a key={i} href={l.href} style={{ color: hsla(THEME.colors.background, 0.72), fontFamily: THEME.typography.bodyFont, fontSize: '0.85rem', textDecoration: 'none' }}>{l.label}</a>)}{cta && <a href={cta.href || '#'} data-ut-intent={cta.intent} style={{ background: hsl(THEME.colors.background), color: hsl(THEME.colors.foreground), padding: '0.45rem 1rem', borderRadius: '9999px', fontFamily: THEME.typography.bodyFont, fontWeight: 600, fontSize: '0.8rem', textDecoration: 'none' }}>{cta.label}</a>}</nav>
+      <header data-ut-variant="navbar:minimal-dark" className={positionClass + ' border-b border-border bg-foreground text-background'}>
+        <div className={shellClass + ' flex min-h-[4.5rem] items-center justify-between'}>
+          <a href="#" className="font-heading text-xl font-semibold text-background no-underline">{brand}</a>
+          <nav className="ut-nav-links flex items-center gap-6">{links.map((link: any, index: number) => <a key={index} href={link.href} className="font-body text-sm text-background/75 no-underline hover:text-background">{link.label}</a>)}{cta && <a href={cta.href || '#'} data-ut-intent={cta.intent} className="rounded-[var(--radius)] bg-background px-4 py-2 font-body text-sm font-semibold text-foreground no-underline">{cta.label}</a>}</nav>
         </div>
       </header>
     );
   }
 
   return (
-    <header data-ut-variant="navbar:standard" style={{ ...baseHeader, background: hsla(THEME.colors.background, 0.85), backdropFilter: 'blur(12px)', borderBottom: \`1px solid \${hsla(THEME.colors.border, 0.5)}\` }}>
-      <div style={{ ...containerStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '5rem' }}>
-        <a href="#" style={{ ...headingStyle, fontSize: '1.5rem', textDecoration: 'none', background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{brand}</a>
-        <nav className="ut-nav-links" style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-          {links.map((l: any, i: number) => <a key={i} href={l.href} style={{ ...bodyStyle, fontSize: '0.9rem', textDecoration: 'none' }}>{l.label}</a>)}
-          {cta && <a href={cta.href || '#'} data-ut-intent={cta.intent} style={{ ...primaryBtnStyle, fontSize: '0.875rem', padding: '0.5rem 1.25rem' }}>{cta.label}</a>}
+    <header data-ut-variant="navbar:standard" className={positionClass + ' border-b border-border/50 bg-background/85 backdrop-blur-md'}>
+      <div className={shellClass + ' flex h-20 items-center justify-between'}>
+        <a href="#" className="font-heading text-2xl font-semibold text-primary no-underline">{brand}</a>
+        <nav className="ut-nav-links flex items-center gap-8">
+          {links.map((link: any, index: number) => <a key={index} href={link.href} className={linkClass}>{link.label}</a>)}
+          {cta && <a href={cta.href || '#'} data-ut-intent={cta.intent} className={ctaClass}>{cta.label}</a>}
         </nav>
       </div>
     </header>
@@ -290,9 +216,11 @@ export default function Navbar({ props }: { props: any }) {
 `;
 
 const HERO_MODULE = `import React from 'react';
-import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, sectionPad, primaryBtnStyle, outlineBtnStyle } from './theme';
 
 const HERO_TOP_PADDING = 'clamp(5.5rem, 8vw, 6.5rem)';
+const shellClass = 'mx-auto w-full max-w-7xl px-5 sm:px-8';
+const primaryButtonClass = 'inline-flex items-center justify-center rounded-[var(--radius)] bg-primary px-6 py-3 font-body font-semibold text-primary-foreground no-underline transition-opacity hover:opacity-90';
+const outlineButtonClass = 'inline-flex items-center justify-center rounded-[var(--radius)] border border-border bg-transparent px-6 py-3 font-body font-semibold text-foreground no-underline transition-colors hover:bg-muted';
 
 export default function Hero({ props }: { props: any }) {
   const { headline, subheadline, description, ctas = [], badge, stats, layout = 'centered', image, backgroundImage } = props;
@@ -300,30 +228,30 @@ export default function Hero({ props }: { props: any }) {
   const fullBleed = layout === 'full-bleed';
   const media = image || backgroundImage;
   const content = <>
-    {badge && <span style={{ display: 'inline-block', padding: '0.35rem 1rem', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: 600, background: fullBleed ? 'rgba(255,255,255,0.14)' : hsla(THEME.colors.primary, 0.12), color: fullBleed ? '#fff' : hsl(THEME.colors.primary), border: fullBleed ? '1px solid rgba(255,255,255,0.28)' : \`1px solid \${hsla(THEME.colors.primary, 0.25)}\`, marginBottom: '1.5rem' }}>{badge}</span>}
-    <h1 style={{ ...headingStyle, color: fullBleed ? '#fff' : hsl(THEME.colors.foreground), fontSize: 'clamp(2.5rem, 5vw, 4rem)', lineHeight: 1.1, marginBottom: '1.5rem' }}>{headline}</h1>
-    {subheadline && <p style={{ ...bodyStyle, color: fullBleed ? 'rgba(255,255,255,0.86)' : hsl(THEME.colors.mutedForeground), fontSize: '1.25rem', lineHeight: 1.6, maxWidth: split ? undefined : '640px', margin: split ? undefined : '0 auto', marginBottom: description ? '0.75rem' : '2rem' }}>{subheadline}</p>}
-    {description && <p style={{ ...bodyStyle, color: fullBleed ? 'rgba(255,255,255,0.72)' : hsl(THEME.colors.mutedForeground), fontSize: '1rem', lineHeight: 1.7, maxWidth: split ? undefined : '640px', margin: split ? undefined : '0 auto 2rem' }}>{description}</p>}
-    {ctas.length > 0 && <div style={{ display: 'flex', gap: '1rem', justifyContent: split ? 'flex-start' : 'center', flexWrap: 'wrap' }}>{ctas.map((c: any, i: number) => <a key={i} href={c.href||'#'} data-ut-intent={c.intent} style={c.variant === 'outline' ? (fullBleed ? { ...outlineBtnStyle, color: '#fff', borderColor: 'rgba(255,255,255,0.55)' } : outlineBtnStyle) : primaryBtnStyle}>{c.label}</a>)}</div>}
+    {badge && <span className={fullBleed ? 'mb-6 inline-block rounded-full border border-background/30 bg-background/15 px-4 py-1.5 font-body text-xs font-semibold text-background' : 'mb-6 inline-block rounded-full border border-primary/25 bg-primary/10 px-4 py-1.5 font-body text-xs font-semibold text-primary'}>{badge}</span>}
+    <h1 className={fullBleed ? 'mb-6 font-heading text-4xl font-semibold leading-tight text-background sm:text-6xl' : 'mb-6 font-heading text-4xl font-semibold leading-tight text-foreground sm:text-6xl'}>{headline}</h1>
+    {subheadline && <p className={(fullBleed ? 'text-background/85 ' : 'text-muted-foreground ') + (split ? '' : 'mx-auto max-w-2xl ') + (description ? 'mb-3 ' : 'mb-8 ') + 'font-body text-xl leading-relaxed'}>{subheadline}</p>}
+    {description && <p className={(fullBleed ? 'text-background/70 ' : 'text-muted-foreground ') + (split ? '' : 'mx-auto max-w-2xl ') + 'mb-8 font-body leading-relaxed'}>{description}</p>}
+    {ctas.length > 0 && <div className={(split ? 'justify-start' : 'justify-center') + ' flex flex-wrap gap-4'}>{ctas.map((cta: any, index: number) => <a key={index} href={cta.href || '#'} data-ut-intent={cta.intent} className={cta.variant === 'outline' ? (fullBleed ? outlineButtonClass + ' border-background/55 text-background hover:bg-background/10' : outlineButtonClass) : primaryButtonClass}>{cta.label}</a>)}</div>}
   </>;
 
   if (fullBleed) {
     return (
-      <section data-ut-variant="hero:full-bleed" style={{ ...sectionPad, paddingTop: HERO_TOP_PADDING, paddingBottom: '9rem', minHeight: '72vh', display: 'flex', alignItems: 'center', position: 'relative', overflow: 'hidden', background: hsl(THEME.colors.foreground) }}>
-        {media && <img src={media} alt="" aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(0,0,0,0.78), rgba(0,0,0,0.38))' }} />
-        <div style={{ ...containerStyle, position: 'relative', zIndex: 1, textAlign: 'left' }}>{content}</div>
+      <section data-ut-variant="hero:full-bleed" className="relative flex min-h-[72vh] items-center overflow-hidden bg-foreground pb-36" style={{ paddingTop: HERO_TOP_PADDING }}>
+        {media && <img src={media} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover" />}
+        <div className="absolute inset-0 bg-foreground/70" />
+        <div className={shellClass + ' relative z-10 text-left'}>{content}</div>
       </section>
     );
   }
 
   if (split) {
     return (
-      <section data-ut-variant="hero:split-image" style={{ ...sectionPad, paddingTop: HERO_TOP_PADDING, background: hsl(THEME.colors.background) }}>
-        <div style={{ ...containerStyle, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'clamp(2rem, 6vw, 5rem)', alignItems: 'center' }}>
-          <div style={{ textAlign: 'left' }}>{content}</div>
-          <div style={{ minHeight: '320px', borderRadius: THEME.radius, overflow: 'hidden', background: \`linear-gradient(135deg, \${hsla(THEME.colors.primary, 0.16)}, \${hsla(THEME.colors.secondary, 0.2)})\`, border: \`1px solid \${hsla(THEME.colors.border, 0.65)}\` }}>
-            {media && <img src={media} alt="" style={{ width: '100%', height: '100%', minHeight: '320px', objectFit: 'cover', display: 'block' }} />}
+      <section data-ut-variant="hero:split-image" className="bg-background pb-24" style={{ paddingTop: HERO_TOP_PADDING }}>
+        <div className={shellClass + ' grid items-center gap-10 md:grid-cols-2 lg:gap-20'}>
+          <div className="text-left">{content}</div>
+          <div className="min-h-80 overflow-hidden rounded-[var(--radius)] border border-border bg-muted">
+            {media && <img src={media} alt="" className="block min-h-80 h-full w-full object-cover" />}
           </div>
         </div>
       </section>
@@ -331,11 +259,11 @@ export default function Hero({ props }: { props: any }) {
   }
 
   return (
-    <section data-ut-variant="hero:centered" style={{ ...sectionPad, paddingTop: HERO_TOP_PADDING, background: hsl(THEME.colors.background) }}>
-      <div style={{ ...containerStyle, textAlign: 'center' }}>
+    <section data-ut-variant="hero:centered" className="bg-background pb-24" style={{ paddingTop: HERO_TOP_PADDING }}>
+      <div className={shellClass + ' text-center'}>
         {content}
-        {media && <img src={media} alt="" style={{ width: '100%', maxWidth: '960px', maxHeight: '540px', objectFit: 'cover', borderRadius: THEME.radius, margin: '3rem auto 0', display: 'block', border: \`1px solid \${hsla(THEME.colors.border, 0.65)}\` }} />}
-        {stats && stats.length > 0 && <div className="ut-hero-stats" style={{ display: 'flex', gap: '2.5rem', marginTop: '3rem', justifyContent: 'center', flexWrap: 'wrap' }}>{stats.map((s: any, i: number) => <div key={i} style={{ textAlign: 'center' }}><div style={{ ...headingStyle, fontSize: '2rem', color: hsl(THEME.colors.primary) }}>{s.value}</div><div style={{ ...bodyStyle, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{s.label}</div></div>)}</div>}
+        {media && <img src={media} alt="" className="mx-auto mt-12 block max-h-[540px] w-full max-w-5xl rounded-[var(--radius)] border border-border object-cover" />}
+        {stats && stats.length > 0 && <div className="ut-hero-stats mt-12 flex flex-wrap justify-center gap-10">{stats.map((stat: any, index: number) => <div key={index} className="text-center"><div className="font-heading text-3xl font-semibold text-primary">{stat.value}</div><div className="font-body text-xs uppercase text-muted-foreground">{stat.label}</div></div>)}</div>}
       </div>
     </section>
   );
@@ -343,29 +271,32 @@ export default function Hero({ props }: { props: any }) {
 `;
 
 const SERVICES_MODULE = `import React from 'react';
-import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, sectionPad, primaryBtnStyle, cardStyle } from './theme';
+
+const shellClass = 'mx-auto w-full max-w-7xl px-5 sm:px-8';
+const cardClass = 'rounded-[var(--radius)] border border-border bg-card text-card-foreground';
+const buttonClass = 'mt-4 inline-flex items-center justify-center rounded-[var(--radius)] bg-primary px-5 py-2.5 font-body text-sm font-semibold text-primary-foreground no-underline transition-opacity hover:opacity-90';
 
 export default function Services({ props }: { props: any }) {
   const { headline, subheadline, items = [], layout = 'grid' } = props;
-  const intro = <>{headline && <div style={{ textAlign: layout === 'alternating' ? 'left' : 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{subheadline && <p style={{ ...bodyStyle, fontSize: '1.1rem', maxWidth: '600px', margin: layout === 'alternating' ? undefined : '0 auto' }}>{subheadline}</p>}</div>}</>;
+  const intro = <>{headline && <div className={(layout === 'alternating' ? 'text-left' : 'text-center') + ' mb-12'}><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className={(layout === 'alternating' ? '' : 'mx-auto ') + 'max-w-2xl font-body text-lg text-muted-foreground'}>{subheadline}</p>}</div>}</>;
 
   if (layout === 'alternating') {
     return (
-      <section data-ut-variant="services:alternating" style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
-        <div style={containerStyle}>
+      <section data-ut-variant="services:alternating" className="bg-background py-24">
+        <div className={shellClass}>
           {intro}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(2.5rem, 7vw, 5rem)' }}>
-            {items.map((item: any, i: number) => (
-              <article key={i} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'clamp(1.5rem, 4vw, 3.5rem)', alignItems: 'center' }}>
-                <div style={{ order: i % 2 === 0 ? 1 : 2 }}>
-                  {item.badge && <span style={{ display: 'inline-block', marginBottom: '0.75rem', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600, background: hsla(THEME.colors.primary, 0.12), color: hsl(THEME.colors.primary) }}>{item.badge}</span>}
-                  <h3 style={{ ...headingStyle, fontSize: 'clamp(1.5rem, 3vw, 2rem)', marginBottom: '0.75rem' }}>{item.title}</h3>
-                  <p style={{ ...bodyStyle, lineHeight: 1.7, marginBottom: '1rem' }}>{item.description}</p>
-                  {(item.price || item.duration) && <p style={{ ...headingStyle, color: hsl(THEME.colors.primary), marginBottom: item.cta ? '1rem' : 0 }}>{[item.price, item.duration].filter(Boolean).join(' · ')}</p>}
-                  {item.cta && <a href={item.cta.href || '#'} data-ut-intent={item.cta.intent} style={{ ...primaryBtnStyle, fontSize: '0.85rem', padding: '0.6rem 1.25rem' }}>{item.cta.label}</a>}
+          <div className="flex flex-col gap-16 lg:gap-20">
+            {items.map((item: any, index: number) => (
+              <article key={index} className="grid items-center gap-8 md:grid-cols-2 lg:gap-14">
+                <div className={index % 2 === 0 ? 'md:order-1' : 'md:order-2'}>
+                  {item.badge && <span className="mb-3 inline-block rounded-full bg-primary/10 px-3 py-1 font-body text-xs font-semibold text-primary">{item.badge}</span>}
+                  <h3 className="mb-3 font-heading text-2xl font-semibold text-foreground sm:text-3xl">{item.title}</h3>
+                  <p className="mb-4 font-body leading-relaxed text-muted-foreground">{item.description}</p>
+                  {(item.price || item.duration) && <p className="font-heading font-semibold text-primary">{[item.price, item.duration].filter(Boolean).join(' · ')}</p>}
+                  {item.cta && <a href={item.cta.href || '#'} data-ut-intent={item.cta.intent} className={buttonClass}>{item.cta.label}</a>}
                 </div>
-                <div style={{ order: i % 2 === 0 ? 2 : 1, minHeight: '260px', overflow: 'hidden', borderRadius: THEME.radius, background: 'linear-gradient(135deg, ' + hsla(THEME.colors.primary, 0.14) + ', ' + hsla(THEME.colors.secondary, 0.18) + ')', border: '1px solid ' + hsla(THEME.colors.border, 0.65) }}>
-                  {item.image && <img src={item.image} alt={item.title || ''} style={{ width: '100%', height: '100%', minHeight: '260px', objectFit: 'cover', display: 'block' }} />}
+                <div className={(index % 2 === 0 ? 'md:order-2' : 'md:order-1') + ' min-h-[260px] overflow-hidden rounded-[var(--radius)] border border-border bg-muted'}>
+                  {item.image && <img src={item.image} alt={item.title || ''} className="block min-h-[260px] h-full w-full object-cover" />}
                 </div>
               </article>
             ))}
@@ -377,15 +308,15 @@ export default function Services({ props }: { props: any }) {
 
   if (layout === 'list') {
     return (
-      <section data-ut-variant="services:compact-list" style={{ ...sectionPad, background: hsl(THEME.colors.muted) }}>
-        <div style={{ ...containerStyle, maxWidth: '900px' }}>
+      <section data-ut-variant="services:compact-list" className="bg-muted py-24">
+        <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
           {intro}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-            {items.map((item: any, i: number) => (
-              <article key={i} style={{ ...cardStyle, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: '1rem', alignItems: 'center', padding: '1.25rem' }}>
-                <div style={{ width: '3rem', height: '3rem', display: 'grid', placeItems: 'center', borderRadius: '50%', background: hsla(THEME.colors.primary, 0.12), color: hsl(THEME.colors.primary), fontSize: '1.25rem' }}>{item.icon || '•'}</div>
-                <div><h3 style={{ ...headingStyle, fontSize: '1.05rem', marginBottom: '0.25rem' }}>{item.title}</h3><p style={{ ...bodyStyle, fontSize: '0.9rem', lineHeight: 1.5 }}>{item.description}</p></div>
-                {(item.price || item.duration) && <div style={{ ...headingStyle, color: hsl(THEME.colors.primary), whiteSpace: 'nowrap', textAlign: 'right' }}>{[item.price, item.duration].filter(Boolean).join(' · ')}</div>}
+          <div className="flex flex-col gap-4">
+            {items.map((item: any, index: number) => (
+              <article key={index} className={cardClass + ' grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 p-5'}>
+                <div className="grid size-12 place-items-center rounded-full bg-primary/10 text-xl text-primary">{item.icon || '•'}</div>
+                <div><h3 className="mb-1 font-heading text-lg font-semibold">{item.title}</h3><p className="font-body text-sm leading-relaxed text-muted-foreground">{item.description}</p></div>
+                {(item.price || item.duration) && <div className="whitespace-nowrap text-right font-heading font-semibold text-primary">{[item.price, item.duration].filter(Boolean).join(' · ')}</div>}
               </article>
             ))}
           </div>
@@ -395,18 +326,18 @@ export default function Services({ props }: { props: any }) {
   }
 
   return (
-    <section data-ut-variant="services:card-grid" style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
-      <div style={containerStyle}>
+    <section data-ut-variant="services:card-grid" className="bg-background py-24">
+      <div className={shellClass}>
         {intro}
-        <div className="ut-grid" style={{ display: 'grid', gridTemplateColumns: \`repeat(auto-fit, minmax(260px, 1fr))\`, gap: '1.5rem' }}>
-          {items.map((item: any, i: number) => (
-            <div key={i} style={{ ...cardStyle, padding: '2rem' }}>
-              {item.image && <img src={item.image} alt={item.title || ''} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 'calc(' + THEME.radius + ' * 0.75)', marginBottom: '1.25rem' }} />}
-              {item.badge && <span style={{ display: 'inline-block', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600, background: hsla(THEME.colors.primary, 0.12), color: hsl(THEME.colors.primary), marginBottom: '1rem' }}>{item.badge}</span>}
-              <h3 style={{ ...headingStyle, fontSize: '1.25rem', marginBottom: '0.5rem' }}>{item.title}</h3>
-              <p style={{ ...bodyStyle, fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1rem' }}>{item.description}</p>
-              {(item.price || item.duration) && <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>{item.price && <span style={{ ...headingStyle, fontSize: '1.5rem', color: hsl(THEME.colors.primary) }}>{item.price}</span>}{item.duration && <span style={{ ...bodyStyle, fontSize: '0.8rem' }}>{item.duration}</span>}</div>}
-              {item.cta && <a href={item.cta.href||'#'} data-ut-intent={item.cta.intent} style={{ ...primaryBtnStyle, fontSize: '0.85rem', padding: '0.5rem 1.25rem', marginTop: '1rem' }}>{item.cta.label}</a>}
+        <div className="ut-grid grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((item: any, index: number) => (
+            <div key={index} className={cardClass + ' p-8'}>
+              {item.image && <img src={item.image} alt={item.title || ''} className="mb-5 aspect-[4/3] w-full rounded-[var(--radius)] object-cover" />}
+              {item.badge && <span className="mb-4 inline-block rounded-full bg-primary/10 px-3 py-1 font-body text-xs font-semibold text-primary">{item.badge}</span>}
+              <h3 className="mb-2 font-heading text-xl font-semibold">{item.title}</h3>
+              <p className="mb-4 font-body text-sm leading-relaxed text-muted-foreground">{item.description}</p>
+              {(item.price || item.duration) && <div className="flex items-baseline gap-2">{item.price && <span className="font-heading text-2xl font-semibold text-primary">{item.price}</span>}{item.duration && <span className="font-body text-xs text-muted-foreground">{item.duration}</span>}</div>}
+              {item.cta && <a href={item.cta.href || '#'} data-ut-intent={item.cta.intent} className={buttonClass}>{item.cta.label}</a>}
             </div>
           ))}
         </div>
@@ -417,23 +348,23 @@ export default function Services({ props }: { props: any }) {
 `;
 
 const TESTIMONIALS_MODULE = `import React from 'react';
-import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, sectionPad, cardStyle } from './theme';
 
 export default function Testimonials({ props }: { props: any }) {
   const { headline, subheadline, items = [], layout = 'grid' } = props;
-  const intro = <>{headline && <div style={{ textAlign: 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{subheadline && <p style={{ ...bodyStyle, fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>{subheadline}</p>}</div>}</>;
-  const quote = (item: any) => <><blockquote style={{ ...bodyStyle, fontSize: '1rem', lineHeight: 1.7, fontStyle: 'italic', marginBottom: '1.5rem', borderLeft: '3px solid ' + hsla(THEME.colors.primary, 0.3), paddingLeft: '1rem' }}>"{item.quote}"</blockquote><div><div style={{ ...headingStyle, fontSize: '0.9rem' }}>{item.author}</div>{item.role && <div style={{ ...bodyStyle, fontSize: '0.8rem' }}>{item.role}</div>}</div></>;
+  const intro = <>{headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}</>;
+  const quote = (item: any) => <><blockquote className="mb-6 border-l-4 border-primary/30 pl-4 font-body italic leading-relaxed text-muted-foreground">"{item.quote}"</blockquote><div><div className="font-heading text-sm font-semibold text-card-foreground">{item.author}</div>{item.role && <div className="font-body text-xs text-muted-foreground">{item.role}</div>}</div></>;
+  const cardClass = 'rounded-[var(--radius)] border border-border bg-card text-card-foreground';
 
   if (layout === 'single' && items[0]) {
     const featured = items[0];
     return (
-      <section data-ut-variant="testimonials:featured" style={{ ...sectionPad, background: hsl(THEME.colors.muted) }}>
-        <div style={{ ...containerStyle, maxWidth: '820px' }}>
+      <section data-ut-variant="testimonials:featured" className="bg-muted py-24">
+        <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
           {intro}
-          <figure style={{ ...cardStyle, padding: 'clamp(2rem, 6vw, 4rem)', textAlign: 'center', borderTop: '4px solid ' + hsl(THEME.colors.accent) }}>
-            {featured.rating && <div style={{ marginBottom: '1.5rem', color: hsl(THEME.colors.accent), letterSpacing: '0.2em' }}>{'★'.repeat(featured.rating)}</div>}
-            <blockquote style={{ ...headingStyle, fontSize: 'clamp(1.35rem, 3vw, 2rem)', lineHeight: 1.45, marginBottom: '2rem' }}>"{featured.quote}"</blockquote>
-            <figcaption><div style={{ ...headingStyle, fontSize: '0.95rem' }}>{featured.author}</div>{featured.role && <div style={{ ...bodyStyle, fontSize: '0.85rem' }}>{featured.role}</div>}</figcaption>
+          <figure className={cardClass + ' border-t-4 border-t-accent p-8 text-center sm:p-16'}>
+            {featured.rating && <div className="mb-6 text-accent">{'★'.repeat(featured.rating)}</div>}
+            <blockquote className="mb-8 font-heading text-2xl font-semibold leading-relaxed sm:text-3xl">"{featured.quote}"</blockquote>
+            <figcaption><div className="font-heading text-sm font-semibold">{featured.author}</div>{featured.role && <div className="font-body text-sm text-muted-foreground">{featured.role}</div>}</figcaption>
           </figure>
         </div>
       </section>
@@ -442,11 +373,11 @@ export default function Testimonials({ props }: { props: any }) {
 
   if (layout === 'carousel') {
     return (
-      <section data-ut-variant="testimonials:carousel" style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
-        <div style={containerStyle}>
+      <section data-ut-variant="testimonials:carousel" className="bg-background py-24">
+        <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
           {intro}
-          <div style={{ display: 'flex', overflowX: 'auto', gap: '1.5rem', scrollSnapType: 'x mandatory', paddingBottom: '1rem' }}>
-            {items.map((item: any, i: number) => <article key={i} style={{ ...cardStyle, flex: '0 0 min(420px, 85vw)', padding: '2rem', scrollSnapAlign: 'start' }}>{item.rating && <div style={{ marginBottom: '1rem', color: hsl(THEME.colors.accent) }}>{'★'.repeat(item.rating)}{'☆'.repeat(5-item.rating)}</div>}{quote(item)}</article>)}
+          <div className="flex snap-x gap-6 overflow-x-auto pb-4">
+            {items.map((item: any, index: number) => <article key={index} className={cardClass + ' w-[min(420px,85vw)] shrink-0 snap-start p-8'}>{item.rating && <div className="mb-4 text-accent">{'★'.repeat(item.rating)}{'☆'.repeat(5-item.rating)}</div>}{quote(item)}</article>)}
           </div>
         </div>
       </section>
@@ -454,13 +385,13 @@ export default function Testimonials({ props }: { props: any }) {
   }
 
   return (
-    <section data-ut-variant="testimonials:grid" style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
-      <div style={containerStyle}>
+    <section data-ut-variant="testimonials:grid" className="bg-background py-24">
+      <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
         {intro}
-        <div className="ut-grid ut-grid-2" style={{ display: 'grid', gridTemplateColumns: \`repeat(auto-fit, minmax(320px, 1fr))\`, gap: '1.5rem' }}>
-          {items.map((item: any, i: number) => (
-            <div key={i} style={{ ...cardStyle, padding: '2rem' }}>
-              {item.rating && <div style={{ marginBottom: '1rem', color: hsl(THEME.colors.accent) }}>{'★'.repeat(item.rating)}{'☆'.repeat(5-item.rating)}</div>}
+        <div className="ut-grid ut-grid-2 grid gap-6 md:grid-cols-2">
+          {items.map((item: any, index: number) => (
+            <div key={index} className={cardClass + ' p-8'}>
+              {item.rating && <div className="mb-4 text-accent">{'★'.repeat(item.rating)}{'☆'.repeat(5-item.rating)}</div>}
               {quote(item)}
             </div>
           ))}
@@ -472,35 +403,37 @@ export default function Testimonials({ props }: { props: any }) {
 `;
 
 const CTA_MODULE = `import React from 'react';
-import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, sectionPad, primaryBtnStyle, outlineBtnStyle } from './theme';
+
+const primaryButtonClass = 'inline-flex items-center justify-center rounded-[var(--radius)] bg-primary px-6 py-3 font-body font-semibold text-primary-foreground no-underline transition-opacity hover:opacity-90';
+const outlineButtonClass = 'inline-flex items-center justify-center rounded-[var(--radius)] border border-border bg-transparent px-6 py-3 font-body font-semibold text-foreground no-underline transition-colors hover:bg-muted';
 
 export default function CTA({ props }: { props: any }) {
   const { headline, description, ctas = [], layout = 'centered', backgroundImage } = props;
   if (layout === 'split') {
     return (
-      <section data-ut-variant="cta:split-card" style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
-        <div style={{ ...containerStyle, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '2rem', alignItems: 'center', padding: 'clamp(2rem, 5vw, 4rem)', borderRadius: THEME.radius, overflow: 'hidden', position: 'relative', background: hsl(THEME.colors.foreground) }}>
-          {backgroundImage && <img src={backgroundImage} alt="" aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.25 }} />}
-          <div style={{ position: 'relative' }}><h2 style={{ ...headingStyle, color: hsl(THEME.colors.background), fontSize: 'clamp(2rem, 4vw, 3rem)', marginBottom: '1rem' }}>{headline}</h2>{description && <p style={{ ...bodyStyle, color: hsla(THEME.colors.background, 0.76), fontSize: '1.05rem', lineHeight: 1.65 }}>{description}</p>}</div>
-          <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '0.75rem' }}>{ctas.map((c: any, i: number) => <a key={i} href={c.href || '#'} data-ut-intent={c.intent} style={c.variant === 'outline' ? { ...outlineBtnStyle, color: hsl(THEME.colors.background), borderColor: hsla(THEME.colors.background, 0.45), textAlign: 'center' } : { ...primaryBtnStyle, textAlign: 'center' }}>{c.label}</a>)}</div>
+      <section data-ut-variant="cta:split-card" className="bg-background py-24">
+        <div className="relative mx-auto grid w-[calc(100%-2.5rem)] max-w-7xl items-center gap-8 overflow-hidden rounded-[var(--radius)] bg-foreground p-8 text-background sm:p-16 md:grid-cols-2">
+          {backgroundImage && <img src={backgroundImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-25" />}
+          <div className="relative"><h2 className="mb-4 font-heading text-3xl font-semibold sm:text-5xl">{headline}</h2>{description && <p className="font-body text-lg leading-relaxed text-background/75">{description}</p>}</div>
+          <div className="relative flex flex-col gap-3">{ctas.map((cta: any, index: number) => <a key={index} href={cta.href || '#'} data-ut-intent={cta.intent} className={cta.variant === 'outline' ? outlineButtonClass + ' border-background/45 text-background hover:bg-background/10' : primaryButtonClass}>{cta.label}</a>)}</div>
         </div>
       </section>
     );
   }
   if (layout === 'banner') {
     return (
-      <section data-ut-variant="cta:banner" style={{ ...sectionPad, position: 'relative', overflow: 'hidden', textAlign: 'center', background: hsl(THEME.colors.primary), color: hsl(THEME.colors.primaryForeground) }}>
-        {backgroundImage && <img src={backgroundImage} alt="" aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.18 }} />}
-        <div style={{ ...containerStyle, position: 'relative' }}><h2 style={{ ...headingStyle, color: hsl(THEME.colors.primaryForeground), fontSize: 'clamp(2rem, 4vw, 3rem)', marginBottom: '1rem' }}>{headline}</h2>{description && <p style={{ ...bodyStyle, color: hsla(THEME.colors.primaryForeground, 0.86), fontSize: '1.1rem', maxWidth: '650px', margin: '0 auto 2rem' }}>{description}</p>}<div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>{ctas.map((c: any, i: number) => <a key={i} href={c.href || '#'} data-ut-intent={c.intent} style={c.variant === 'outline' ? { ...outlineBtnStyle, color: hsl(THEME.colors.primaryForeground), borderColor: hsla(THEME.colors.primaryForeground, 0.62) } : { ...primaryBtnStyle, background: hsl(THEME.colors.primaryForeground), color: hsl(THEME.colors.primary) }}>{c.label}</a>)}</div></div>
+      <section data-ut-variant="cta:banner" className="relative overflow-hidden bg-primary py-24 text-center text-primary-foreground">
+        {backgroundImage && <img src={backgroundImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-20" />}
+        <div className="relative mx-auto w-full max-w-7xl px-5 sm:px-8"><h2 className="mb-4 font-heading text-3xl font-semibold sm:text-5xl">{headline}</h2>{description && <p className="mx-auto mb-8 max-w-2xl font-body text-lg text-primary-foreground/85">{description}</p>}<div className="flex flex-wrap justify-center gap-4">{ctas.map((cta: any, index: number) => <a key={index} href={cta.href || '#'} data-ut-intent={cta.intent} className={cta.variant === 'outline' ? outlineButtonClass + ' border-primary-foreground/60 text-primary-foreground hover:bg-primary-foreground/10' : primaryButtonClass + ' bg-primary-foreground text-primary'}>{cta.label}</a>)}</div></div>
       </section>
     );
   }
   return (
-    <section data-ut-variant="cta:centered" style={{ ...sectionPad, background: \`linear-gradient(135deg, \${hsla(THEME.colors.primary, 0.1)}, \${hsla(THEME.colors.secondary, 0.1)})\`, textAlign: 'center', borderTop: \`1px solid \${hsla(THEME.colors.primary, 0.15)}\`, borderBottom: \`1px solid \${hsla(THEME.colors.primary, 0.15)}\` }}>
-      <div style={containerStyle}>
-        <h2 style={{ ...headingStyle, fontSize: '2.5rem', marginBottom: '1rem' }}>{headline}</h2>
-        {description && <p style={{ ...bodyStyle, fontSize: '1.15rem', maxWidth: '600px', margin: '0 auto 2rem' }}>{description}</p>}
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>{ctas.map((c: any, i: number) => <a key={i} href={c.href||'#'} data-ut-intent={c.intent} style={c.variant === 'outline' ? outlineBtnStyle : primaryBtnStyle}>{c.label}</a>)}</div>
+    <section data-ut-variant="cta:centered" className="border-y border-border bg-muted py-24 text-center">
+      <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+        <h2 className="mb-4 font-heading text-4xl font-semibold text-foreground">{headline}</h2>
+        {description && <p className="mx-auto mb-8 max-w-2xl font-body text-lg text-muted-foreground">{description}</p>}
+        <div className="flex flex-wrap justify-center gap-4">{ctas.map((cta: any, index: number) => <a key={index} href={cta.href || '#'} data-ut-intent={cta.intent} className={cta.variant === 'outline' ? outlineButtonClass : primaryButtonClass}>{cta.label}</a>)}</div>
       </div>
     </section>
   );
@@ -508,34 +441,35 @@ export default function CTA({ props }: { props: any }) {
 `;
 
 const CONTACT_MODULE = `import React from 'react';
-import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, sectionPad, primaryBtnStyle } from './theme';
+
+const inputClass = 'w-full rounded-[var(--radius)] border border-input bg-background px-4 py-3 font-body text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring';
+const buttonClass = 'inline-flex items-center justify-center rounded-[var(--radius)] bg-primary px-6 py-3 font-body font-semibold text-primary-foreground transition-opacity hover:opacity-90';
 
 export default function Contact({ props }: { props: any }) {
   const { headline, description, submitLabel = 'Send Message', submitIntent = 'contact.submit', fields, address, phone, email, layout } = props;
   const resolvedLayout = layout || ((address || phone || email) ? 'split-card' : 'centered');
-  const inputStyle: React.CSSProperties = { width: '100%', padding: '0.75rem 1rem', borderRadius: THEME.radius, border: \`1px solid \${hsla(THEME.colors.border, 1)}\`, background: hsl(THEME.colors.card), color: hsl(THEME.colors.cardForeground), fontFamily: THEME.typography.bodyFont, fontSize: '0.9rem' };
   const formFields = Array.isArray(fields) && fields.length ? fields : [
     { name: 'name', type: 'text', placeholder: 'Your name' },
     { name: 'email', type: 'email', placeholder: 'your@email.com' },
     { name: 'message', type: 'textarea', placeholder: 'How can we help?' },
   ];
   const controls = formFields.map((field: any) => field.type === 'textarea'
-    ? <textarea key={field.name} name={field.name} placeholder={field.placeholder || field.name} required={field.required} rows={4} style={inputStyle} />
-    : <input key={field.name} name={field.name} type={field.type || 'text'} placeholder={field.placeholder || field.name} required={field.required} style={inputStyle} />
+    ? <textarea key={field.name} name={field.name} placeholder={field.placeholder || field.name} required={field.required} rows={4} className={inputClass} />
+    : <input key={field.name} name={field.name} type={field.type || 'text'} placeholder={field.placeholder || field.name} required={field.required} className={inputClass} />
   );
 
   if (resolvedLayout === 'split-card') {
     return (
-      <section data-ut-variant="contact:split-card" style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
-        <div style={{ ...containerStyle, maxWidth: '1080px' }}>
-          {headline && <div style={{ marginBottom: '3rem', maxWidth: '620px' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{description && <p style={{ ...bodyStyle, fontSize: '1.05rem', lineHeight: 1.65 }}>{description}</p>}</div>}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', alignItems: 'stretch' }}>
-            <form data-demo-form="true" data-ut-intent={submitIntent} style={{ ...cardStyle, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>{controls}<button type="submit" style={{ ...primaryBtnStyle, width: '100%', textAlign: 'center' }}>{submitLabel}</button></form>
-            <aside style={{ padding: '2rem', borderRadius: THEME.radius, background: hsl(THEME.colors.muted), border: '1px solid ' + hsla(THEME.colors.border, 0.65), display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1.25rem' }}>
-              <h3 style={{ ...headingStyle, fontSize: '1.25rem' }}>Start a conversation</h3>
-              {address && <p style={{ ...bodyStyle, lineHeight: 1.6 }}>{address}</p>}
-              {phone && <a href={'tel:' + phone.replace(/[^+0-9]/g, '')} style={{ ...bodyStyle, color: hsl(THEME.colors.primary), textDecoration: 'none' }}>{phone}</a>}
-              {email && <a href={'mailto:' + email} style={{ ...bodyStyle, color: hsl(THEME.colors.primary), textDecoration: 'none' }}>{email}</a>}
+      <section data-ut-variant="contact:split-card" className="bg-background py-24">
+        <div className="mx-auto w-full max-w-6xl px-5 sm:px-8">
+          {headline && <div className="mb-12 max-w-2xl"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{description && <p className="font-body text-lg leading-relaxed text-muted-foreground">{description}</p>}</div>}
+          <div className="grid items-stretch gap-6 md:grid-cols-2">
+            <form data-demo-form="true" data-ut-intent={submitIntent} className="flex flex-col gap-4 rounded-[var(--radius)] border border-border bg-card p-8">{controls}<button type="submit" className={buttonClass + ' w-full'}>{submitLabel}</button></form>
+            <aside className="flex flex-col justify-center gap-5 rounded-[var(--radius)] border border-border bg-muted p-8">
+              <h3 className="font-heading text-xl font-semibold text-foreground">Start a conversation</h3>
+              {address && <p className="font-body leading-relaxed text-muted-foreground">{address}</p>}
+              {phone && <a href={'tel:' + phone.replace(/[^+0-9]/g, '')} className="font-body text-primary no-underline">{phone}</a>}
+              {email && <a href={'mailto:' + email} className="font-body text-primary no-underline">{email}</a>}
             </aside>
           </div>
         </div>
@@ -545,23 +479,23 @@ export default function Contact({ props }: { props: any }) {
 
   if (resolvedLayout === 'minimal-inline') {
     return (
-      <section data-ut-variant="contact:minimal-inline" style={{ ...sectionPad, background: hsl(THEME.colors.muted), textAlign: 'center' }}>
-        <div style={{ ...containerStyle, maxWidth: '860px' }}>
-          {headline && <h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '0.75rem' }}>{headline}</h2>}
-          {description && <p style={{ ...bodyStyle, margin: '0 auto 2rem', maxWidth: '560px' }}>{description}</p>}
-          <form data-demo-form="true" data-ut-intent={submitIntent} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'center' }}>{controls.slice(0, 2)}<button type="submit" style={{ ...primaryBtnStyle, flexShrink: 0 }}>{submitLabel}</button></form>
+      <section data-ut-variant="contact:minimal-inline" className="bg-muted py-24 text-center">
+        <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
+          {headline && <h2 className="mb-3 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>}
+          {description && <p className="mx-auto mb-8 max-w-xl font-body text-muted-foreground">{description}</p>}
+          <form data-demo-form="true" data-ut-intent={submitIntent} className="flex flex-wrap justify-center gap-3">{controls.slice(0, 2)}<button type="submit" className={buttonClass + ' shrink-0'}>{submitLabel}</button></form>
         </div>
       </section>
     );
   }
 
   return (
-    <section data-ut-variant="contact:centered" style={{ ...sectionPad, background: hsl(THEME.colors.muted) }}>
-      <div style={{ ...containerStyle, maxWidth: '900px' }}>
-        {headline && <div style={{ textAlign: 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{description && <p style={{ ...bodyStyle, fontSize: '1.1rem' }}>{description}</p>}</div>}
-        <form data-demo-form="true" data-ut-intent={submitIntent} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '500px', margin: '0 auto' }}>
+    <section data-ut-variant="contact:centered" className="bg-muted py-24">
+      <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
+        {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{description && <p className="font-body text-lg text-muted-foreground">{description}</p>}</div>}
+        <form data-demo-form="true" data-ut-intent={submitIntent} className="mx-auto flex max-w-lg flex-col gap-4">
           {controls}
-          <button type="submit" style={{ ...primaryBtnStyle, width: '100%', textAlign: 'center' }}>{submitLabel}</button>
+          <button type="submit" className={buttonClass + ' w-full'}>{submitLabel}</button>
         </form>
       </div>
     </section>
@@ -570,8 +504,11 @@ export default function Contact({ props }: { props: any }) {
 `;
 
 const FOOTER_MODULE = `import React from 'react';
-import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, primaryBtnStyle } from './theme';
 import SocialIcon from './SocialIcon';
+
+const shellClass = 'mx-auto w-full max-w-7xl px-5 sm:px-8';
+const buttonClass = 'rounded-[var(--radius)] bg-primary px-4 py-2 font-body text-sm font-semibold text-primary-foreground';
+const inputClass = 'min-w-0 flex-1 rounded-[var(--radius)] border border-input bg-background px-3 py-2 font-body text-sm text-foreground placeholder:text-muted-foreground';
 
 export default function Footer({ props }: { props: any }) {
   const { brand, columns = [], socials = [], copyright, newsletter, layout } = props;
@@ -580,36 +517,36 @@ export default function Footer({ props }: { props: any }) {
 
   if (resolvedLayout === 'centered-minimal') {
     return (
-      <footer data-ut-variant="footer:centered-minimal" style={{ padding: '3rem 1rem', background: hsl(THEME.colors.background), borderTop: '1px solid ' + hsla(THEME.colors.border, 0.6), textAlign: 'center' }}>
-        <div style={containerStyle}><h3 style={{ ...headingStyle, fontSize: '1.25rem', marginBottom: '1rem' }}>{brand}</h3><nav style={{ display: 'flex', justifyContent: 'center', gap: '1.25rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>{footerLinks.map((link: any, i: number) => <a key={i} href={link.href} style={{ ...bodyStyle, fontSize: '0.85rem', textDecoration: 'none' }}>{link.label}</a>)}</nav><p style={{ ...bodyStyle, fontSize: '0.8rem' }}>{copyright || '© ' + new Date().getFullYear() + ' ' + brand + '. All rights reserved.'}</p></div>
+      <footer data-ut-variant="footer:centered-minimal" className="border-t border-border bg-background py-12 text-center">
+        <div className={shellClass}><h3 className="mb-4 font-heading text-xl font-semibold text-foreground">{brand}</h3><nav className="mb-6 flex flex-wrap justify-center gap-5">{footerLinks.map((link: any, index: number) => <a key={index} href={link.href} className="font-body text-sm text-muted-foreground no-underline hover:text-foreground">{link.label}</a>)}</nav><p className="font-body text-xs text-muted-foreground">{copyright || '© ' + new Date().getFullYear() + ' ' + brand + '. All rights reserved.'}</p></div>
       </footer>
     );
   }
 
   if (resolvedLayout === 'dark-band') {
     return (
-      <footer data-ut-variant="footer:dark-band" style={{ padding: '4rem 1rem 2rem', background: hsl(THEME.colors.foreground), color: hsl(THEME.colors.background) }}>
-        <div style={containerStyle}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '2rem', marginBottom: '3rem' }}><div><h3 style={{ ...headingStyle, color: hsl(THEME.colors.background), fontSize: '1.4rem', marginBottom: '0.75rem' }}>{brand}</h3>{newsletter && <form data-demo-form="true" data-ut-intent="newsletter.subscribe" style={{ display: 'flex', gap: '0.5rem' }}><input type="email" aria-label="Email address" placeholder="Email address" style={{ minWidth: 0, flex: 1, padding: '0.55rem 0.75rem', border: '1px solid rgba(255,255,255,0.25)', borderRadius: THEME.radius, background: 'transparent', color: '#fff' }} /><button type="submit" style={{ ...primaryBtnStyle, padding: '0.55rem 0.85rem', fontSize: '0.8rem' }}>Subscribe</button></form>}</div>{columns.map((column: any, i: number) => <div key={i}><h4 style={{ ...headingStyle, color: hsla(THEME.colors.background, 0.72), fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>{column.title}</h4><div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>{column.links.map((link: any, index: number) => <a key={index} href={link.href} style={{ color: hsla(THEME.colors.background, 0.72), fontFamily: THEME.typography.bodyFont, fontSize: '0.85rem', textDecoration: 'none' }}>{link.label}</a>)}</div></div>)}</div>
-          <div style={{ paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.16)', display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}><p style={{ color: hsla(THEME.colors.background, 0.58), fontFamily: THEME.typography.bodyFont, fontSize: '0.8rem', margin: 0 }}>{copyright || '© ' + new Date().getFullYear() + ' ' + brand + '. All rights reserved.'}</p>{socials.length > 0 && <div style={{ display: 'flex', gap: '0.75rem' }}>{socials.map((social: any, i: number) => <a key={i} href={social.url || '#'} aria-label={social.platform} style={{ color: hsla(THEME.colors.background, 0.8), display: 'inline-flex' }}><SocialIcon platform={social.platform} size={16} /></a>)}</div>}</div>
+      <footer data-ut-variant="footer:dark-band" className="bg-foreground pb-8 pt-16 text-background">
+        <div className={shellClass}>
+          <div className="mb-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4"><div><h3 className="mb-3 font-heading text-2xl font-semibold">{brand}</h3>{newsletter && <form data-demo-form="true" data-ut-intent="newsletter.subscribe" className="flex gap-2"><input type="email" aria-label="Email address" placeholder="Email address" className={inputClass} /><button type="submit" className={buttonClass}>Subscribe</button></form>}</div>{columns.map((column: any, index: number) => <div key={index}><h4 className="mb-3 font-heading text-xs font-semibold uppercase text-background/70">{column.title}</h4><div className="flex flex-col gap-2">{column.links.map((link: any, linkIndex: number) => <a key={linkIndex} href={link.href} className="font-body text-sm text-background/70 no-underline hover:text-background">{link.label}</a>)}</div></div>)}</div>
+          <div className="flex flex-wrap justify-between gap-4 border-t border-background/15 pt-6"><p className="font-body text-xs text-background/60">{copyright || '© ' + new Date().getFullYear() + ' ' + brand + '. All rights reserved.'}</p>{socials.length > 0 && <div className="flex gap-3">{socials.map((social: any, index: number) => <a key={index} href={social.url || '#'} aria-label={social.platform} className="inline-flex text-background/80"><SocialIcon platform={social.platform} size={16} /></a>)}</div>}</div>
         </div>
       </footer>
     );
   }
 
   return (
-    <footer data-ut-variant="footer:columns" style={{ padding: '4rem 1rem 2rem', background: hsl(THEME.colors.card), borderTop: \`1px solid \${hsla(THEME.colors.border, 1)}\` }}>
-      <div style={containerStyle}>
-        <div className="ut-footer-grid" style={{ display: 'grid', gridTemplateColumns: \`repeat(\${columns.length + 1}, minmax(0, 1fr))\`, gap: '3rem', marginBottom: '3rem' }}>
+    <footer data-ut-variant="footer:columns" className="border-t border-border bg-card pb-8 pt-16 text-card-foreground">
+      <div className={shellClass}>
+        <div className="ut-footer-grid mb-12 grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <h3 style={{ ...headingStyle, fontSize: '1.25rem', marginBottom: '1rem', background: \`linear-gradient(135deg, hsl(\${THEME.colors.primary}), hsl(\${THEME.colors.secondary}))\`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{brand}</h3>
-            {newsletter && <form data-demo-form="true" data-ut-intent="newsletter.subscribe" style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}><input type="email" placeholder="your@email.com" style={{ flex: 1, minWidth: 0, padding: '0.5rem 0.75rem', borderRadius: THEME.radius, border: \`1px solid \${hsla(THEME.colors.border, 1)}\`, background: hsl(THEME.colors.background), color: hsl(THEME.colors.foreground), fontSize: '0.85rem' }} /><button type="submit" style={{ ...primaryBtnStyle, padding: '0.5rem 1rem', fontSize: '0.85rem' }}>Subscribe</button></form>}
+            <h3 className="mb-4 font-heading text-xl font-semibold text-primary">{brand}</h3>
+            {newsletter && <form data-demo-form="true" data-ut-intent="newsletter.subscribe" className="mt-4 flex gap-2"><input type="email" placeholder="your@email.com" className={inputClass} /><button type="submit" className={buttonClass}>Subscribe</button></form>}
           </div>
-          {columns.map((col: any, i: number) => <div key={i}><h4 style={{ ...headingStyle, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '1rem' }}>{col.title}</h4><ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>{col.links.map((l: any, j: number) => <li key={j}><a href={l.href} style={{ ...bodyStyle, textDecoration: 'none', fontSize: '0.85rem' }}>{l.label}</a></li>)}</ul></div>)}
+          {columns.map((column: any, index: number) => <div key={index}><h4 className="mb-4 font-heading text-sm font-semibold uppercase">{column.title}</h4><ul className="flex list-none flex-col gap-2 p-0">{column.links.map((link: any, linkIndex: number) => <li key={linkIndex}><a href={link.href} className="font-body text-sm text-muted-foreground no-underline hover:text-foreground">{link.label}</a></li>)}</ul></div>)}
         </div>
-        <div className="ut-footer-bottom" style={{ borderTop: \`1px solid \${hsla(THEME.colors.border, 0.5)}\`, paddingTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <p style={{ ...bodyStyle, fontSize: '0.8rem' }}>{copyright || \`© \${new Date().getFullYear()} \${brand}. All rights reserved.\`}</p>
-          {socials.length > 0 && <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>{socials.map((s: any, i: number) => { const hasUrl = s.url && s.url !== '#'; return <a key={i} href={hasUrl ? s.url : undefined} target={hasUrl ? '_blank' : undefined} rel={hasUrl ? 'noopener noreferrer' : undefined} aria-label={\`Visit our \${s.platform} page\`} style={{ ...bodyStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '2rem', height: '2rem', borderRadius: '9999px' }}><SocialIcon platform={s.platform} size={16} /></a>; })}</div>}
+        <div className="ut-footer-bottom flex items-center justify-between border-t border-border/50 pt-6">
+          <p className="font-body text-xs text-muted-foreground">{copyright || '© ' + new Date().getFullYear() + ' ' + brand + '. All rights reserved.'}</p>
+          {socials.length > 0 && <div className="flex items-center gap-3">{socials.map((social: any, index: number) => { const hasUrl = social.url && social.url !== '#'; return <a key={index} href={hasUrl ? social.url : undefined} target={hasUrl ? '_blank' : undefined} rel={hasUrl ? 'noopener noreferrer' : undefined} aria-label={'Visit our ' + social.platform + ' page'} className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"><SocialIcon platform={social.platform} size={16} /></a>; })}</div>}
         </div>
       </div>
     </footer>
@@ -618,15 +555,14 @@ export default function Footer({ props }: { props: any }) {
 `;
 
 const STATS_MODULE = `import React from 'react';
-import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, sectionPad } from './theme';
 
 export default function Stats({ props }: { props: any }) {
   const { headline, items = [] } = props;
   return (
-    <section style={{ ...sectionPad, background: \`linear-gradient(135deg, \${hsla(THEME.colors.primary, 0.05)}, \${hsla(THEME.colors.secondary, 0.05)})\`, borderTop: \`1px solid \${hsla(THEME.colors.border, 0.5)}\`, borderBottom: \`1px solid \${hsla(THEME.colors.border, 0.5)}\` }}>
-      <div style={containerStyle}>
-        {headline && <h2 style={{ ...headingStyle, fontSize: '2rem', textAlign: 'center', marginBottom: '3rem' }}>{headline}</h2>}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '4rem', flexWrap: 'wrap' }}>{items.map((s: any, i: number) => <div key={i} style={{ textAlign: 'center' }}><div style={{ ...headingStyle, fontSize: '3rem', color: hsl(THEME.colors.primary), lineHeight: 1 }}>{s.value}</div><div style={{ ...bodyStyle, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: '0.5rem' }}>{s.label}</div></div>)}</div>
+    <section className="border-y border-border/50 bg-muted py-24">
+      <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+        {headline && <h2 className="mb-12 text-center font-heading text-3xl font-semibold text-foreground">{headline}</h2>}
+        <div className="flex flex-wrap justify-center gap-16">{items.map((stat: any, index: number) => <div key={index} className="text-center"><div className="font-heading text-5xl font-semibold leading-none text-primary">{stat.value}</div><div className="mt-2 font-body text-xs uppercase text-muted-foreground">{stat.label}</div></div>)}</div>
       </div>
     </section>
   );
@@ -634,16 +570,15 @@ export default function Stats({ props }: { props: any }) {
 `;
 
 const TEAM_MODULE = `import React from 'react';
-import { THEME, hsl, headingStyle, bodyStyle, containerStyle, sectionPad, cardStyle } from './theme';
 
 export default function Team({ props }: { props: any }) {
   const { headline, subheadline, members = [] } = props;
   return (
-    <section style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
-      <div style={containerStyle}>
-        {headline && <div style={{ textAlign: 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{subheadline && <p style={{ ...bodyStyle, fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>{subheadline}</p>}</div>}
-        <div className="ut-grid" style={{ display: 'grid', gridTemplateColumns: \`repeat(auto-fit, minmax(240px, 1fr))\`, gap: '2rem' }}>
-          {members.map((m: any, i: number) => <div key={i} style={{ ...cardStyle, textAlign: 'center', padding: '2rem' }}><h3 style={{ ...headingStyle, fontSize: '1.1rem', marginBottom: '0.25rem' }}>{m.name}</h3><p style={{ ...bodyStyle, fontSize: '0.85rem', color: hsl(THEME.colors.primary) }}>{m.role}</p>{m.bio && <p style={{ ...bodyStyle, fontSize: '0.85rem', lineHeight: 1.6, marginTop: '0.5rem' }}>{m.bio}</p>}</div>)}
+    <section className="bg-background py-24">
+      <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+        {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
+        <div className="ut-grid grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          {members.map((member: any, index: number) => <div key={index} className="rounded-[var(--radius)] border border-border bg-card p-8 text-center text-card-foreground"><h3 className="mb-1 font-heading text-lg font-semibold">{member.name}</h3><p className="font-body text-sm text-primary">{member.role}</p>{member.bio && <p className="mt-2 font-body text-sm leading-relaxed text-muted-foreground">{member.bio}</p>}</div>)}
         </div>
       </div>
     </section>
@@ -652,20 +587,19 @@ export default function Team({ props }: { props: any }) {
 `;
 
 const FAQ_MODULE = `import React, { useState } from 'react';
-import { THEME, hsl, hsla, headingStyle, bodyStyle, containerStyle, sectionPad, cardStyle } from './theme';
 
 export default function FAQ({ props }: { props: any }) {
   const { headline, subheadline, items = [] } = props;
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   return (
-    <section style={{ ...sectionPad, background: hsl(THEME.colors.background) }}>
-      <div style={{ ...containerStyle, maxWidth: '800px' }}>
-        {headline && <div style={{ textAlign: 'center', marginBottom: '3rem' }}><h2 style={{ ...headingStyle, fontSize: '2.25rem', marginBottom: '1rem' }}>{headline}</h2>{subheadline && <p style={{ ...bodyStyle, fontSize: '1.1rem' }}>{subheadline}</p>}</div>}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+    <section className="bg-background py-24">
+      <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
+        {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
+        <div className="flex flex-col gap-3">
           {items.map((item: any, i: number) => (
-            <div key={i} style={cardStyle}>
-              <button onClick={() => setOpenIdx(openIdx === i ? null : i)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 1.5rem', border: 'none', cursor: 'pointer', background: 'transparent', textAlign: 'left', ...headingStyle, fontSize: '1rem' }}>{item.question}<span style={{ fontSize: '1.25rem', color: hsl(THEME.colors.mutedForeground), transition: 'transform 0.2s', transform: openIdx === i ? 'rotate(45deg)' : 'none' }}>+</span></button>
-              {openIdx === i && <div style={{ ...bodyStyle, padding: '0 1.5rem 1.25rem', fontSize: '0.9rem', lineHeight: 1.7 }}>{item.answer}</div>}
+            <div key={i} className="rounded-[var(--radius)] border border-border bg-card text-card-foreground">
+              <button onClick={() => setOpenIdx(openIdx === i ? null : i)} className="flex w-full cursor-pointer items-center justify-between border-0 bg-transparent px-6 py-5 text-left font-heading font-semibold text-card-foreground">{item.question}<span className={(openIdx === i ? 'rotate-45 ' : '') + 'text-xl text-muted-foreground transition-transform'}>+</span></button>
+              {openIdx === i && <div className="px-6 pb-5 font-body text-sm leading-relaxed text-muted-foreground">{item.answer}</div>}
             </div>
           ))}
         </div>
@@ -696,26 +630,86 @@ const SECTION_MODULE_SOURCE: Record<keyof typeof SECTION_FILES, string> = {
   FAQ: FAQ_MODULE,
 };
 
+interface VariantSectionModule {
+  path: string;
+  componentName: string;
+  content: string;
+}
+
+function variantComponentName(component: keyof typeof SECTION_FILES, sectionId: string): string {
+  const suffix = sectionId
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join('') || 'Section';
+  return `${component}${suffix}Variant`;
+}
+
+function variantSectionModule(
+  component: keyof typeof SECTION_FILES,
+  section: TemplateComposition['sections'][number],
+): VariantSectionModule | null {
+  if (!section.variantId) return null;
+  const layout = getLayoutForVariantId(section.variantId as import('@/sections/variants').VariantId);
+  if (!layout) return null;
+
+  const componentName = variantComponentName(component, section.id);
+  const fileName = `${componentName}.tsx`;
+  return {
+    path: `/src/components/variants/${fileName}`,
+    componentName,
+    content: `import React from 'react';
+import ${component} from '../${component}';
+
+// Snapshot-owned presentation projection for ${section.id}.
+export const SECTION_VARIANT = ${JSON.stringify(section.variantId)};
+export const SECTION_LAYOUT = ${JSON.stringify(layout)};
+
+export default function ${componentName}({ props }: { props: any }) {
+  return <${component} props={{ ...props, layout: SECTION_LAYOUT }} />;
+}
+`,
+  };
+}
+
 function sectionMapModule(template: TemplateComposition, pageFilePath: string): {
   path: string;
   content: string;
   components: Set<keyof typeof SECTION_FILES>;
+  variantModules: VariantSectionModule[];
 } {
   const sectionTypes = Array.from(new Set(template.sections.map((section) => section.type)));
   const components = new Set(sectionTypes
     .map((type) => SECTION_COMPONENT_BY_TYPE[type])
     .filter((component): component is keyof typeof SECTION_FILES => Boolean(component)));
+  const variantModules = template.sections.flatMap((section) => {
+    const component = SECTION_COMPONENT_BY_TYPE[section.type];
+    return component ? [variantSectionModule(component, section)].filter((module): module is VariantSectionModule => Boolean(module)) : [];
+  });
   const mapPath = pageFilePath.replace(/\.(tsx|jsx)$/i, '.sections.ts');
-  const imports = Array.from(components).map((component) => (
+  const imports = [
+    ...Array.from(components).map((component) => (
     `import ${component} from '../components/${component}';`
-  )).join('\n');
-  const mappings = sectionTypes
+    )),
+    ...variantModules.map((module) => (
+      `import ${module.componentName} from '../components/variants/${module.componentName}';`
+    )),
+  ].join('\n');
+  const mappings = [
+    ...sectionTypes
     .map((type) => `${JSON.stringify(type)}: ${SECTION_COMPONENT_BY_TYPE[type]}`)
-    .join(',\n  ');
+    , ...template.sections
+      .map((section) => {
+        const module = variantModules.find((candidate) => candidate.path.endsWith(`/${variantComponentName(SECTION_COMPONENT_BY_TYPE[section.type], section.id)}.tsx`));
+        return module ? `${JSON.stringify(section.id)}: ${module.componentName}` : null;
+      })
+      .filter((mapping): mapping is string => Boolean(mapping)),
+  ].join(',\n  ');
 
   return {
     path: mapPath,
     components,
+    variantModules,
     content: `import type React from 'react';
 ${imports}
 
@@ -868,7 +862,7 @@ const DESIGN_MOTION: ${designMotionType} = ${designMotionJson};
  * items. Static sections render exactly as authored.
  */
 function RenderedSection({ section, occurrence }: { section: any; occurrence: number }) {
-  const C = SECTION_MAP[section.type];
+  const C = SECTION_MAP[section.id] || SECTION_MAP[section.type];
   const isHydratable = HYDRATABLE.has(section.type);
   const hydration = useSectionData(section.id, isHydratable ? section.type : undefined, occurrence);
   if (!C) return null;
@@ -943,6 +937,9 @@ export function compositionToReactFileSet(
   };
   for (const component of sectionMap.components) {
     files[SECTION_FILES[component]] = SECTION_MODULE_SOURCE[component];
+  }
+  for (const module of sectionMap.variantModules) {
+    files[module.path] = module.content;
   }
   if (sectionMap.components.has('Footer')) {
     files[SOCIAL_PATH] = SOCIAL_ICON_MODULE;

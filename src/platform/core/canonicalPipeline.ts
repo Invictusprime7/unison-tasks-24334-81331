@@ -181,6 +181,23 @@ export interface SiteBundleSnapshotMeta {
   designIntervention?: WizardDesignIntervention;
 }
 
+function readSnapshotDesignIntervention(
+  files: Record<string, string>,
+): WizardDesignIntervention | null {
+  const rawSnapshot = files['/.unison/site-bundle-snapshot.json'];
+  if (!rawSnapshot) return null;
+  try {
+    const snapshot = JSON.parse(rawSnapshot) as { meta?: { designIntervention?: unknown } };
+    const intervention = snapshot.meta?.designIntervention;
+    if (!intervention) return null;
+    return readWizardDesignIntervention({
+      '/.unison/design-intervention.json': JSON.stringify(intervention),
+    });
+  } catch {
+    return null;
+  }
+}
+
 
 // ============================================================================
 // Main Pipeline Entry
@@ -384,8 +401,18 @@ export function recompileFromPlayground(
     }
   } catch { /* ignore */ }
 
-  const recoveredDesignIntervention = readWizardDesignIntervention(existingVfsFiles);
-  const designIntervention = recoveredDesignIntervention || buildWizardDesignIntervention({
+  const mirroredDesignIntervention = readWizardDesignIntervention(existingVfsFiles);
+  const snapshotDesignIntervention = readSnapshotDesignIntervention(existingVfsFiles);
+  if (
+    mirroredDesignIntervention &&
+    snapshotDesignIntervention &&
+    JSON.stringify(mirroredDesignIntervention) !== JSON.stringify(snapshotDesignIntervention)
+  ) {
+    throw new Error(
+      '[canonicalPipeline] Recompile presentation contract mismatch between SiteBundleSnapshot metadata and VFS mirror.',
+    );
+  }
+  const designIntervention = snapshotDesignIntervention || mirroredDesignIntervention || buildWizardDesignIntervention({
     businessName: businessName || '',
     businessModel: 'general',
     industryOverlay: industry,

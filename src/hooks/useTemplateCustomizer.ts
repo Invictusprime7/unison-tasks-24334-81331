@@ -294,13 +294,53 @@ export const useTemplateCustomizer = () => {
 
     const parsedSections: SectionInfo[] = [];
 
+    // Canonical composed pages serialize their snapshot-owned sections as JSON.
+    // Prefer those stable IDs over DOM-order heuristics so presentation changes
+    // can target the persisted design intervention rather than rewriting JSX.
+    const canonicalSections = jsxSource.match(/const\s+SECTIONS\s*=\s*([\s\S]*?);\s*\nconst\s+HYDRATABLE\b/);
+    let hasCanonicalSections = false;
+    if (canonicalSections) {
+      try {
+        const entries = JSON.parse(canonicalSections[1]) as Array<{
+          id?: unknown;
+          type?: unknown;
+          variantId?: unknown;
+        }>;
+        const stableSections = entries
+          .filter((entry) => typeof entry.id === 'string' && typeof entry.type === 'string')
+          .map((entry, order) => ({
+            id: entry.id as string,
+            tagName: 'section',
+            label: String(entry.type).replace(/(^|-)(\w)/g, (_, _separator, character) => character.toUpperCase()),
+            visible: true,
+            order,
+            height: 'auto',
+            selector: `[data-ut-section-id="${entry.id}"]`,
+            preview: '',
+          }));
+        if (stableSections.length > 0) {
+          setSections(stableSections);
+          setActiveVariants(Object.fromEntries(
+            entries.flatMap((entry) => (
+              typeof entry.id === 'string' && typeof entry.variantId === 'string'
+                ? [[entry.id, entry.variantId]]
+                : []
+            )),
+          ) as ActiveVariantMap);
+          hasCanonicalSections = true;
+        }
+      } catch {
+        // Fall back to the legacy JSX parser for non-canonical/manual source.
+      }
+    }
+
     // Match JSX tags: <section, <header, <nav, <footer, <main
     // Captures the tag name, any id/className attributes, and surrounding content
-    const sectionTagRegex = /<(section|header|nav|footer|main)\b([^>]*?)>/gi;
+    const sectionTagRegex = hasCanonicalSections ? null : /<(section|header|nav|footer|main)\b([^>]*?)>/gi;
     let match: RegExpExecArray | null;
     let index = 0;
 
-    while ((match = sectionTagRegex.exec(jsxSource)) !== null) {
+    while (sectionTagRegex && (match = sectionTagRegex.exec(jsxSource)) !== null) {
       const tagName = match[1].toLowerCase();
       const attrs = match[2];
       

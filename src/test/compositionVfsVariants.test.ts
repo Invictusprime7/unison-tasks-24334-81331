@@ -84,16 +84,24 @@ describe('composition VFS variants', () => {
     if (!restaurant) throw new Error('Restaurant composition must be registered');
     const hero = restaurant.sections.find((section) => section.type === 'hero');
     if (!hero) throw new Error('Restaurant composition must include a hero');
-    const page = compositionToReactFileSet(restaurant, '/src/pages/Home.tsx', {
+    const files = compositionToReactFileSet(restaurant, '/src/pages/Home.tsx', {
       designIntervention: {
         motionRecipes: [],
         sectionVariants: [],
         activeVariants: { [hero.id]: 'hero:split-image' },
       },
-    })['/src/pages/Home.tsx'];
+    });
+    const page = files['/src/pages/Home.tsx'];
+    const variantModule = Object.entries(files).find(([path, source]) => (
+      path.startsWith('/src/components/variants/') && source.includes('SECTION_VARIANT = "hero:split-image"')
+    ));
 
     expect(page).toContain(`"variantId": "hero:split-image"`);
     expect(page).toContain('data-ut-variant={section.variantId || undefined}');
+    expect(page).toContain('SECTION_MAP[section.id] || SECTION_MAP[section.type]');
+    expect(variantModule).toBeDefined();
+    expect(variantModule?.[1]).toContain('SECTION_LAYOUT = "split"');
+    expect(variantModule?.[1]).toContain('<Hero props={{ ...props, layout: SECTION_LAYOUT }} />');
   });
 
   it('preserves section variant identity when presentation order changes', () => {
@@ -139,6 +147,27 @@ describe('composition VFS variants', () => {
     expect(heroOnly['/src/components/Navbar.tsx']).toBeUndefined();
     expect(heroOnly['/src/components/Footer.tsx']).toBeUndefined();
     expect(heroOnly['/src/pages/Offer.sections.ts']).not.toContain("import Navbar");
+  });
+
+  it('keeps Stage 4b authoritative over scaffold presentation', () => {
+    const files = compileHome('restaurant-premium');
+    const visualModules = Object.entries(files).filter(([path]) => (
+      /\/src\/components\/(?:theme\.ts|(?:SiteLayout|Navbar|Hero|Services|Testimonials|CTA|Contact|Footer|Stats|Team|FAQ)\.tsx)$/.test(path)
+    ));
+    const forbiddenPresentation = [
+      /document\.body\.style\./,
+      /export const (?:headingStyle|bodyStyle|primaryBtnStyle|outlineBtnStyle|cardStyle)/,
+      /fontFamily\s*:/,
+      /(?:background|backgroundColor|color|borderColor|boxShadow|borderRadius)\s*:/,
+      /#[0-9a-f]{3,8}\b/i,
+      /\brgba?\(/i,
+    ];
+
+    for (const [path, source] of visualModules) {
+      for (const pattern of forbiddenPresentation) {
+        expect(source, `${path} contains scaffold presentation matching ${pattern}`).not.toMatch(pattern);
+      }
+    }
   });
 
   it('routes generated social icons through the snapshot VFS facade', () => {

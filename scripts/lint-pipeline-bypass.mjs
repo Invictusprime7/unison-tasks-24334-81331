@@ -2,7 +2,9 @@
  * CI lint: enforce that all pipeline mutations route through commitToPipeline.
  *
  * Direct imports/usages of executeCanonicalPipeline / recompileFromPlayground
- * outside the allow-listed core module are bypasses and fail the build.
+ * outside the allow-listed core module are bypasses and fail the build. It
+ * also blocks new direct builder_drafts mutations outside the explicit,
+ * transitional persistence owners below.
  *
  * PR4 — promotes the soft dev-mode warning installed by
  * installPipelineBypassGuard() into a hard CI failure.
@@ -27,6 +29,22 @@ const ALLOWLIST = new Set([
 ]);
 
 const FORBIDDEN_SYMBOLS = ['executeCanonicalPipeline', 'recompileFromPlayground'];
+
+// These modules predate the revision-backed writer migration. Keep this list
+// deliberately small and shrink it as each writer moves behind commitMutation.
+const BUILDER_DRAFT_MUTATION_ALLOWLIST = new Set([
+  // Canonical writer: advances only builder_drafts.last_revision_id after a
+  // committed site_revisions row exists; never persists mutable site VFS.
+  'src/services/vfsCommitService.ts',
+  'src/hooks/useTemplateFiles.ts',
+  'src/services/aiHistoryStore.ts',
+  'src/services/draftFrameworkMigrationService.ts',
+  'src/utils/topologyResolver.ts',
+  'src/components/onboarding/ImportUnisonSiteZipButton.tsx',
+  // Deletes only orphaned legacy drafts as part of project lifecycle cleanup.
+  'src/components/cloud/CloudProjects.tsx',
+]);
+const BUILDER_DRAFT_MUTATION_METHODS = new Set(['insert', 'update', 'upsert', 'delete']);
 
 export function findForbiddenUsages(text, fileName = 'source.ts') {
   const sourceFile = ts.createSourceFile(
@@ -54,6 +72,59 @@ export function findForbiddenUsages(text, fileName = 'source.ts') {
   return usages;
 }
 
+function isBuilderDraftFromCall(node) {
+  return ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'from' &&
+    ts.isStringLiteral(node.arguments[0]) &&
+    node.arguments[0].text === 'builder_drafts';
+}
+
+function containsBuilderDraftFrom(node) {
+  let found = false;
+  const visit = (current) => {
+    if (found) return;
+    if (isBuilderDraftFromCall(current)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return found;
+}
+
+export function findBuilderDraftMutations(text, fileName = 'source.ts') {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const mutations = [];
+
+  function visit(node) {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      BUILDER_DRAFT_MUTATION_METHODS.has(node.expression.name.text) &&
+      containsBuilderDraftFrom(node.expression.expression)
+    ) {
+      const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      mutations.push({
+        line: position.line + 1,
+        symbol: `builder_drafts.${node.expression.name.text}`,
+        text: sourceFile.text.slice(node.getStart(sourceFile), node.getEnd()),
+      });
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return mutations;
+}
+
 function collectViolations(dir) {
   const violations = [];
 
@@ -72,10 +143,18 @@ function collectViolations(dir) {
       if (ALLOWLIST.has(rel)) continue;
 
       const text = readFileSync(full, 'utf8');
-      if (!FORBIDDEN_SYMBOLS.some((s) => text.includes(s))) continue;
+      if (
+        !FORBIDDEN_SYMBOLS.some((symbol) => text.includes(symbol)) &&
+        !text.includes('builder_drafts')
+      ) continue;
 
       for (const usage of findForbiddenUsages(text, full)) {
         violations.push({ file: rel, ...usage });
+      }
+      if (!BUILDER_DRAFT_MUTATION_ALLOWLIST.has(rel)) {
+        for (const mutation of findBuilderDraftMutations(text, full)) {
+          violations.push({ file: rel, ...mutation });
+        }
       }
     }
   }
@@ -101,7 +180,7 @@ function main() {
     console.error(`    > ${v.text}`);
   }
   console.error(
-    `\nFix: import { commitToPipeline } from '@/platform/core' and pass a CommitSource.\n`,
+    `\nFix: route canonical state through commitMutation; do not create a new direct builder_drafts writer.\n`,
   );
   process.exit(1);
 }

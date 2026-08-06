@@ -20,6 +20,11 @@ import {
   type CatalogSourceTable,
   type CatalogSurface,
 } from '@/platform/core/catalogSurfaceRegistry';
+import {
+  createCmsRecord,
+  removeCmsRecord,
+  updateCmsRecord,
+} from '@/services/cmsRecordService';
 import type { SectionDataBindingDTO } from '@/types/catalog';
 
 /** Legacy "inspector" patch shape. */
@@ -71,36 +76,40 @@ export async function loadRowsForBinding(
 }
 
 export async function updateCatalogRow(
-  table: string,
+  resource: string,
+  businessId: string,
   id: string,
   patch: EditableRowPatch,
 ): Promise<boolean> {
-  const surface = resolveTable(table);
+  const surface = resolveTable(resource);
   if (!surface) {
-    console.warn('[catalogRowService] refusing unknown table', table);
+    console.warn('[catalogRowService] refusing unknown resource', resource);
     return false;
   }
   const payload = normalizePatch(surface, patch);
   if (Object.keys(payload).length === 0) return true;
-  const { error } = await supabase
-    .from(surface.sourceTable as never)
-    .update(payload as never)
-    .eq('id', id);
-  if (error) {
-    console.warn('[catalogRowService] update failed', surface.sourceTable, id, error);
+  try {
+    await updateCmsRecord({
+      resource: surface.surfaceId,
+      businessId,
+      recordId: id,
+      values: payload,
+    });
+  } catch (error) {
+    console.warn('[catalogRowService] update failed', surface.surfaceId, id, error);
     return false;
   }
   return true;
 }
 
 export async function createCatalogRow(
-  table: string,
+  resource: string,
   businessId: string,
   patch: EditableRowPatch,
 ): Promise<{ id: string } | null> {
-  const surface = resolveTable(table);
+  const surface = resolveTable(resource);
   if (!surface) {
-    console.warn('[catalogRowService] refusing unknown table', table);
+    console.warn('[catalogRowService] refusing unknown resource', resource);
     return null;
   }
   if (!businessId) {
@@ -116,35 +125,34 @@ export async function createCatalogRow(
   const row: Record<string, unknown> = {
     ...surface.newRowDefaults,
     ...base,
-    business_id: businessId,
   };
-  const { data, error } = await supabase
-    .from(surface.sourceTable as never)
-    .insert(row as never)
-    .select('id')
-    .single();
-  if (error || !data) {
-    console.warn('[catalogRowService] create failed', surface.sourceTable, error);
+  try {
+    const data = await createCmsRecord({
+      resource: surface.surfaceId,
+      businessId,
+      values: row,
+    });
+    return { id: String(data.id) };
+  } catch (error) {
+    console.warn('[catalogRowService] create failed', surface.surfaceId, error);
     return null;
   }
-  return { id: String((data as { id: string }).id) };
 }
 
 export async function deleteCatalogRow(
-  table: string,
+  resource: string,
+  businessId: string,
   id: string,
 ): Promise<boolean> {
-  const surface = resolveTable(table);
+  const surface = resolveTable(resource);
   if (!surface) {
-    console.warn('[catalogRowService] refusing unknown table', table);
+    console.warn('[catalogRowService] refusing unknown resource', resource);
     return false;
   }
-  const { error } = await supabase
-    .from(surface.sourceTable as never)
-    .delete()
-    .eq('id', id);
-  if (error) {
-    console.warn('[catalogRowService] delete failed', surface.sourceTable, id, error);
+  try {
+    await removeCmsRecord({ resource: surface.surfaceId, businessId, recordId: id });
+  } catch (error) {
+    console.warn('[catalogRowService] delete failed', surface.surfaceId, id, error);
     return false;
   }
   return true;

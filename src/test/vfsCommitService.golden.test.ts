@@ -60,6 +60,7 @@ type RevisionRow = {
 };
 
 const revisionStore: RevisionRow[] = [];
+const draftProjectionUpdates: Array<{ id: unknown; userId: unknown; revisionId: unknown }> = [];
 
 vi.mock('@/integrations/supabase/client', () => {
   const insert = (payload: Record<string, unknown>) => ({
@@ -105,10 +106,21 @@ vi.mock('@/integrations/supabase/client', () => {
 
   return {
     supabase: {
-      from: (_table: string) => ({
-        insert,
-        select: (_cols: string) => selectChain((rows) => rows),
-      }),
+      from: (table: string) => table === 'builder_drafts'
+        ? {
+            update: (payload: { last_revision_id?: unknown }) => ({
+              eq: (_column: string, id: unknown) => ({
+                eq: async (_userColumn: string, userId: unknown) => {
+                  draftProjectionUpdates.push({ id, userId, revisionId: payload.last_revision_id });
+                  return { error: null };
+                },
+              }),
+            }),
+          }
+        : {
+            insert,
+            select: (_cols: string) => selectChain((rows) => rows),
+          },
     },
   };
 });
@@ -165,6 +177,7 @@ function mockIntents(previewBlocked = 0, publishBlocked = 0) {
 
 beforeEach(() => {
   revisionStore.length = 0;
+  draftProjectionUpdates.length = 0;
   vi.clearAllMocks();
 });
 
@@ -188,6 +201,11 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
     });
     expect(launch.status).toBe('committed');
     expect(launch.persistedRevisionId).toBe('00000000-0000-0000-0000-000000000001');
+    expect(draftProjectionUpdates).toEqual([{
+      id: IDENTITY.draftId,
+      userId: IDENTITY.userId,
+      revisionId: launch.persistedRevisionId,
+    }]);
     expect(launch.parentRevisionId).toBeNull();
 
     // 2. AI Builder edits hero
@@ -443,6 +461,64 @@ describe('VFS commit Stage 4b handoff', () => {
       selectedTemplateId: 'salon-minimal',
       themeTokens,
     }), 'ai-builder');
+  });
+});
+
+describe('Snapshot-owned presentation mutations', () => {
+  it('projects a selected variant into canonical metadata and VFS mirrors before recompilation', async () => {
+    const files = { '/src/App.tsx': 'export default function App(){ return null; }' };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents();
+    const patch = emptyPatchPlan('Select split hero');
+    patch.presentationOps.push({
+      type: 'setVariant',
+      sectionId: 'home-hero',
+      variantId: 'hero:split-image',
+    });
+    const snapshot = {
+      meta: {
+        designIntervention: {
+          activeVariants: { 'home-hero': 'hero:centered' },
+        },
+      },
+    } as never;
+
+    await commitMutation({
+      source: 'playground-edit',
+      identity: IDENTITY,
+      current: { vfsFiles: files, playground: {} as never, siteBundleSnapshot: snapshot },
+      patch,
+    });
+
+    const canonicalInput = (commitToPipeline as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(canonicalInput.existingVfsFiles['/.unison/design-intervention.json']).toContain('hero:split-image');
+    expect(canonicalInput.existingVfsFiles['/.unison/site-bundle-snapshot.json']).toContain('hero:split-image');
+    expect(canonicalInput.themeTokens).toBeUndefined();
+  });
+
+  it('rejects a variant from a different section family', async () => {
+    const patch = emptyPatchPlan('Invalid service variant for hero');
+    patch.presentationOps.push({
+      type: 'setVariant',
+      sectionId: 'home-hero',
+      variantId: 'services:card-grid',
+    });
+
+    await expect(commitMutation({
+      source: 'playground-edit',
+      identity: IDENTITY,
+      current: {
+        vfsFiles: {},
+        playground: {} as never,
+        siteBundleSnapshot: {
+          meta: {
+            designIntervention: { activeVariants: { 'home-hero': 'hero:centered' } },
+          },
+        } as never,
+      },
+      patch,
+    })).rejects.toThrow('invalid presentation variant');
   });
 });
 

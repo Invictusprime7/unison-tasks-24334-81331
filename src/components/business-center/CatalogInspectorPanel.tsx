@@ -275,7 +275,7 @@ export function CatalogInspectorPanel({
     if (!d || !rd) return;
     updateRowDraft(binding.id, rowId, { saving: true });
     const priceNum = rd.price.trim() === '' ? null : Number(rd.price);
-    const ok = await updateCatalogRow(binding.sourceTable, rowId, {
+    const ok = await updateCatalogRow(binding.sourceTable, binding.businessId, rowId, {
       name: rd.name,
       description: rd.description || null,
       price: Number.isFinite(priceNum as number) ? (priceNum as number) : null,
@@ -309,7 +309,7 @@ export function CatalogInspectorPanel({
       if (!ok) return;
     }
     updateRowDraft(binding.id, rowId, { saving: true });
-    const ok = await deleteCatalogRow(binding.sourceTable, rowId);
+    const ok = await deleteCatalogRow(binding.sourceTable, binding.businessId, rowId);
     if (ok) {
       await loadRows(binding);
       bumpPreview();

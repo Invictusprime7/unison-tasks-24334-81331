@@ -8,6 +8,7 @@ import { SHADCN_LIBRARY_CSS_MARKER } from '@/components/onboarding/themePresetTo
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { GENERATED_UI_FOUNDATION_VERSION } from '@/platform/core/generatedUiFoundation';
 import { getCompositionsBySystemType } from '@/sections/templates';
+import { getVariantById, getVariantsForSection } from '@/sections/variants';
 import { buildTemplateLayoutContract } from '@/services/templateLayoutContract';
 import {
   compileWizardInteractionManifest,
@@ -120,6 +121,54 @@ describe('wizard pipeline ownership invariants', () => {
     expect(recompiled.compileResult.vfsFiles['/src/components/UnisonInteractionRuntime.tsx']).toBeUndefined();
     expect(recompiled.compileResult.vfsFiles['/.unison/interaction-manifest.json']).toBeUndefined();
     expect(recompiled.siteBundleSnapshot.meta.themeInjection?.stage).toBe('4b');
+  });
+
+  it('recovers presentation variants from snapshot metadata when the VFS mirror is missing', () => {
+    const launch = commitToPipeline({ selections: wizardSelections() }, 'wizard-launch');
+    const existingVfsFiles = {
+      ...launch.compileResult.vfsFiles,
+      '/.unison/site-bundle-snapshot.json': JSON.stringify(launch.siteBundleSnapshot),
+    };
+    delete existingVfsFiles['/.unison/design-intervention.json'];
+
+    const recompiled = commitToPipeline({
+      playground: launch.playground,
+      existingVfsFiles,
+      selectedTemplateId: wizardSelections().templateId,
+      themePresetId: wizardSelections().themePresetId,
+      themeTokens: wizardSelections().themeTokens,
+    }, 'playground-edit');
+
+    expect(recompiled.siteBundleSnapshot.meta.designIntervention).toEqual(
+      launch.siteBundleSnapshot.meta.designIntervention,
+    );
+    expect(recompiled.compileResult.vfsFiles['/.unison/design-intervention.json']).toContain(
+      Object.values(launch.siteBundleSnapshot.meta.designIntervention?.activeVariants || {})[0],
+    );
+  });
+
+  it('rejects a stale VFS presentation mirror that disagrees with snapshot metadata', () => {
+    const launch = commitToPipeline({ selections: wizardSelections() }, 'wizard-launch');
+    const staleIntervention = structuredClone(launch.siteBundleSnapshot.meta.designIntervention!);
+    const [sectionId, variantId] = Object.entries(staleIntervention.activeVariants)[0];
+    const currentVariant = getVariantById(variantId);
+    if (!currentVariant) throw new Error('Expected a registered active variant');
+    const replacement = getVariantsForSection(currentVariant.sectionType)
+      .find((candidate) => candidate.id !== variantId);
+    if (!replacement) throw new Error('Expected an alternate registered variant');
+    staleIntervention.activeVariants[sectionId] = replacement.id;
+
+    expect(() => commitToPipeline({
+      playground: launch.playground,
+      existingVfsFiles: {
+        ...launch.compileResult.vfsFiles,
+        '/.unison/site-bundle-snapshot.json': JSON.stringify(launch.siteBundleSnapshot),
+        '/.unison/design-intervention.json': JSON.stringify(staleIntervention),
+      },
+      selectedTemplateId: wizardSelections().templateId,
+      themePresetId: wizardSelections().themePresetId,
+      themeTokens: wizardSelections().themeTokens,
+    }, 'playground-edit')).toThrow('presentation contract mismatch');
   });
 
   it('does not persist a Lane B interaction manifest into the revision snapshot (enrichment layer removed)', () => {
@@ -325,7 +374,8 @@ describe('wizard pipeline ownership invariants', () => {
     );
 
     expect(builderSource).toContain('const hasStructuredRuntimeLaunch = Boolean(');
-    expect(builderSource).toContain('if (!templateId || hasStructuredRuntimeLaunch) return;');
+    expect(builderSource).toContain('hasStructuredRuntimeLaunch ||');
+    expect(builderSource).toContain('savedTemplateRestoreStateRef.current.has(templateId)');
     expect(builderSource).toContain('A wizard route can retain a stale ?id= value from a prior builder tab.');
   });
 
@@ -349,16 +399,14 @@ describe('wizard pipeline ownership invariants', () => {
     expect(builderSource).not.toMatch(/const effectiveTemplateId =\s+currentDraftId \|\|/);
   });
 
-  it('persists legacy VFS drafts when canonical theme seed metadata is unavailable', () => {
+  it('carries recovered canonical theme tokens into Builder recompiles', () => {
     const builderSource = readFileSync(
       resolve(process.cwd(), 'src/components/creatives/WebBuilder.tsx'),
       'utf8',
     );
 
-    expect(builderSource).toContain(
-      'const payload = buildSavePayloadOrFallback(virtualFSRef.current.getSandpackFiles());',
-    );
-    expect(builderSource).toContain('payload = buildSavePayloadOrFallback(currentVfsFiles);');
+    expect(builderSource).toContain('const effectiveThemeTokens =');
+    expect(builderSource).toContain('themeTokens: effectiveThemeTokens,');
   });
 });
   const templateId = getCompositionsBySystemType('booking')[0]?.id;

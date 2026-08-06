@@ -27,6 +27,9 @@ export type SectionHydrationState = {
 
 let __seq = 0;
 const nextId = () => \`h_\${Date.now().toString(36)}_\${(++__seq).toString(36)}\`;
+// Published sites revalidate through the public runtime gateway rather than
+// subscribing directly to Supabase tables or credentials.
+const PUBLISHED_CATALOG_REVALIDATE_MS = 60_000;
 
 /**
  * Request live catalog rows for a generated section. Falls back gracefully
@@ -52,11 +55,15 @@ export function useSectionData(
   useEffect(() => {
     mounted.current = true;
     if (typeof window === 'undefined' || window.parent === window) {
-      const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 1500);
-      void (async () => {
+      let activeController: AbortController | null = null;
+      const refreshPublishedCatalog = async (initial: boolean) => {
+        activeController?.abort();
+        const controller = new AbortController();
+        activeController = controller;
+        const timer = window.setTimeout(() => controller.abort(), 1500);
         const runtime = PUBLISHED_RUNTIME_CONFIG;
         if (!runtime.siteId || !runtime.runtimeEndpoint || controller.signal.aborted) {
+          window.clearTimeout(timer);
           if (mounted.current) setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: null });
           return;
         }
@@ -88,13 +95,28 @@ export function useSectionData(
             error: data?.error ?? null,
           });
         } catch {
-          if (mounted.current) setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: null });
+          if (initial && mounted.current) {
+            setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: null });
+          }
+        } finally {
+          window.clearTimeout(timer);
         }
-      })();
+      };
+
+      void refreshPublishedCatalog(true);
+      const interval = window.setInterval(() => {
+        if (!document.hidden) void refreshPublishedCatalog(false);
+      }, PUBLISHED_CATALOG_REVALIDATE_MS);
+      const onVisibilityChange = () => {
+        if (!document.hidden) void refreshPublishedCatalog(false);
+      };
+      document.addEventListener('visibilitychange', onVisibilityChange);
+
       return () => {
         mounted.current = false;
-        window.clearTimeout(timer);
-        controller.abort();
+        window.clearInterval(interval);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        activeController?.abort();
       };
     }
 

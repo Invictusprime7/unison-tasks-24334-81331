@@ -55,7 +55,9 @@ import {
   emptyPatchPlan,
   type PatchPlan,
   type PatchSource,
+  type PresentationOp,
 } from '@/types/patchPlan';
+import { getVariantById } from '@/sections/variants';
 
 
 
@@ -254,11 +256,19 @@ export async function commitMutation(
   }
   log('fileOps', 'info', `applied ${patch.fileOps.length} file op(s)`);
 
-  // 4. Canonical recompile via commitToPipeline -----------------------------
+  // 4. Apply snapshot-owned presentation operations -------------------------
+  const presentationSnapshot = applyPresentationOps(
+    input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined,
+    workingFiles,
+    patch.presentationOps,
+    log,
+  );
+
+  // 5. Canonical recompile via commitToPipeline -----------------------------
   let canonicalResult: CanonicalCommitResult;
   try {
     canonicalResult = commitToPipeline(
-      buildCanonicalInput(input, workingFiles),
+      buildCanonicalInput(input, workingFiles, presentationSnapshot),
       toCanonicalSource(input.source),
     );
   } catch (err) {
@@ -287,7 +297,7 @@ export async function commitMutation(
     });
   }
 
-  // 5. Full preflight --------------------------------------------------------
+  // 6. Full preflight --------------------------------------------------------
   const snapshot = canonicalResult.siteBundleSnapshot ?? null;
   let files: Record<string, string> =
     input.source === 'wizard-launch'
@@ -298,7 +308,7 @@ export async function commitMutation(
     : snapshot;
   snapshotForPersistence = stampBusinessSystemState(
     snapshotForPersistence as SiteBundleSnapshot | null,
-    input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined,
+    presentationSnapshot,
     input.patch.businessSystem,
   );
 
@@ -575,8 +585,9 @@ export async function commitMutation(
 function buildCanonicalInput(
   input: CommitMutationInput,
   workingFiles: Record<string, string>,
+  snapshotOverride?: SiteBundleSnapshot | null,
 ): CanonicalCommitInput {
-  const snapshot = input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined;
+  const snapshot = snapshotOverride ?? input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined;
   return {
     selections: input.options?.selections,
     playground: input.current.playground,
@@ -589,6 +600,38 @@ function buildCanonicalInput(
     themeTokens: input.options?.themeTokens ?? snapshot?.themeTokens,
     compiledContract: input.options?.compiledContract,
   };
+}
+
+function applyPresentationOps(
+  snapshot: SiteBundleSnapshot | null | undefined,
+  files: Record<string, string>,
+  ops: PresentationOp[] | undefined,
+  log: (stage: string, level: CommitDiagnostic['level'], message: string, detail?: unknown) => void,
+): SiteBundleSnapshot | null | undefined {
+  if (!ops?.length) return snapshot;
+  if (!snapshot?.meta.designIntervention) {
+    throw new Error('[VFSCommitService] presentation mutation requires a snapshot-owned design intervention.');
+  }
+
+  const intervention = JSON.parse(JSON.stringify(snapshot.meta.designIntervention)) as typeof snapshot.meta.designIntervention;
+  for (const op of ops) {
+    const currentVariantId = intervention.activeVariants[op.sectionId];
+    const currentVariant = currentVariantId ? getVariantById(currentVariantId) : undefined;
+    const nextVariant = getVariantById(op.variantId as import('@/sections/variants').VariantId);
+    if (!currentVariant || !nextVariant || currentVariant.sectionType !== nextVariant.sectionType) {
+      throw new Error(`[VFSCommitService] invalid presentation variant ${op.variantId} for section ${op.sectionId}.`);
+    }
+    intervention.activeVariants[op.sectionId] = nextVariant.id;
+  }
+
+  const nextSnapshot: SiteBundleSnapshot = {
+    ...snapshot,
+    meta: { ...snapshot.meta, designIntervention: intervention },
+  };
+  files['/.unison/design-intervention.json'] = JSON.stringify(intervention, null, 2);
+  files['/.unison/site-bundle-snapshot.json'] = JSON.stringify(nextSnapshot, null, 2);
+  log('presentation', 'info', `applied ${ops.length} snapshot-owned presentation operation(s)`, ops);
+  return nextSnapshot;
 }
 
 function toCanonicalSource(s: PatchSource): CanonicalCommitSource {
@@ -775,6 +818,21 @@ async function finalize(args: {
         });
       } else if (data) {
         persistedRevisionId = (data as { id: string }).id;
+        if (status === 'committed') {
+          const { error: projectionError } = await (supabase
+            .from('builder_drafts') as any)
+            .update({ last_revision_id: persistedRevisionId })
+            .eq('id', input.identity.draftId)
+            .eq('user_id', input.identity.userId);
+          if (projectionError) {
+            diagnostics.push({
+              stage: 'draftProjection',
+              level: 'warn',
+              message: 'failed to advance builder draft revision projection',
+              detail: projectionError.message,
+            });
+          }
+        }
       }
     } catch (err) {
       diagnostics.push({

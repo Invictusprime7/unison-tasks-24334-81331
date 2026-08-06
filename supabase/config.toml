@@ -108,6 +108,9 @@ verify_jwt = true
 [functions.create-booking]
 verify_jwt = false
 
+[functions.cms-records]
+verify_jwt = true
+
 [functions.create-lead]
 verify_jwt = false
 

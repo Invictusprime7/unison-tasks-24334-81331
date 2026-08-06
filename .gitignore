@@ -41,6 +41,10 @@ vs code loveable migration.txt
 .vercel
 .env*.local
 
+# Generated compiler and Supabase CLI state
+*.tsbuildinfo
+supabase/.temp/
+
 supabase.exe
 *.tar.gz
 

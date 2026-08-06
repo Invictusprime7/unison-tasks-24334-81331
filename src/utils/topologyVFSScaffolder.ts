@@ -42,7 +42,7 @@ export interface ScaffoldOptions {
   /** @deprecated Strict composition is now the only supported mode. */
   strictWizardComposition?: boolean;
   /** Canonical, opt-in visual recipes projected into generated page modules. */
-  designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants'>;
+  designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants' | 'activeVariants'>;
   /** App.tsx owns the site-wide navbar/footer; page compositions emit body sections only. */
   globalSharedChrome?: boolean;
 }

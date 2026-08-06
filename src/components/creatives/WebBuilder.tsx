@@ -92,7 +92,7 @@ import {
   loadLatestRevisionForProject,
 } from "@/services/vfsCommitService";
 import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
-import { legacyFilesToPatchPlan } from "@/types/patchPlan";
+import { emptyPatchPlan, legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
 import { normalizeUnisonRuntimeContext } from "@/platform/core/runtimeManifest";
 import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
@@ -116,8 +116,7 @@ import { CodeViewErrorBoundary } from "./web-builder/CodeViewErrorBoundary";
 import { applyCustomizerOverridesToIframe } from "./web-builder/customizerDomPatcher";
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
-import { getVariantById, extractSectionContentFromJSX, findSectionBounds } from '@/sections/variants';
-import { swapSectionVariant } from '@/utils/sectionSwapper';
+import { getVariantById } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants/types';
 import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
 import { ElementIntentInspector } from "./web-builder/ElementIntentInspector";
@@ -2053,56 +2052,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // This enables instant in-place navigation (no new tabs)
   // Page manifest sync is handled via VFS router generation — no separate sync needed
 
-  // Apply variant section swaps — replace section JSX blocks in VFS source code
-  useEffect(() => {
-    const activeVariants = templateCustomizer.activeVariants;
-    if (!activeVariants || Object.keys(activeVariants).length === 0) return;
-
-    const pageNode = vfsNodes.find(
-      (n: { type: string; path?: string }) => n.type === 'file' && n.path === activePagePath
-    ) as { id: string; content: string } | undefined;
-    if (!pageNode) return;
-
-    let source = pageNode.content;
-    let modified = false;
-
-    for (const [sectionId, variantId] of Object.entries(activeVariants)) {
-      try {
-        const variant = getVariantById(variantId);
-        if (!variant?.renderJSX) continue;
-
-        // Skip if this variant is already applied in source
-        if (source.includes(`data-variant="${variantId}"`)) continue;
-
-        const sectionInfo = templateCustomizer.sections.find(s => s.id === sectionId);
-        if (!sectionInfo) continue;
-        const tagName = sectionInfo.tagName || 'section';
-        const idx = sectionInfo.order ?? parseInt(sectionId.replace(/^\D+-/, ''), 10);
-        if (isNaN(idx)) continue;
-
-        // Find section boundaries in the JSX source
-        const bounds = findSectionBounds(source, tagName, idx);
-        if (!bounds) continue;
-
-        // Extract content and render the new variant JSX
-        const sectionJSX = source.substring(bounds.start, bounds.end);
-        const content = extractSectionContentFromJSX(sectionJSX);
-        const newJSX = variant.renderJSX(content);
-
-        // Splice the replacement into the source
-        source = source.substring(0, bounds.start) + newJSX + source.substring(bounds.end);
-        modified = true;
-        console.log('[WebBuilder] VFS variant swap applied:', sectionId, '→', variantId);
-      } catch (e) {
-        console.warn('[WebBuilder] VFS variant swap failed for', sectionId, e);
-      }
-    }
-
-    if (modified) {
-      vfsUpdateFileContent(pageNode.id, source);
-    }
-  }, [templateCustomizer.activeVariants, templateCustomizer.sections, vfsNodes, vfsUpdateFileContent, activePagePath]);
-  
   // Router regeneration handles manifest sync — no separate sync effect needed
   
   const openBuilderFile = useCallback((path: string, contentOverride?: string) => {
@@ -2621,6 +2570,94 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     activePagePath,
     launchEntryPoint,
     effectiveRouteState?.siteBundleSnapshot,
+  ]);
+
+  // Snapshot-owned visual variants must enter the revision ledger before a
+  // page is regenerated. The customizer reflects the selected state locally;
+  // this bridge reconciles it against the returned canonical VFS/snapshot.
+  const presentationCommitInFlightRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isCommitServiceEnabled() || !businessId || !currentDraftId) return;
+    const desiredVariants = templateCustomizer.activeVariants;
+    if (Object.keys(desiredVariants).length === 0) return;
+
+    const beforeFiles = virtualFSRef.current.getSandpackFiles();
+    const snapshot = resolveSnapshot(beforeFiles, effectiveRouteState as any).snapshot
+      ?? effectiveRouteState?.siteBundleSnapshot
+      ?? null;
+    const currentVariants = snapshot?.meta?.designIntervention?.activeVariants;
+    if (!currentVariants) return;
+    const presentationOps = Object.entries(desiredVariants)
+      .filter(([sectionId, variantId]) => currentVariants[sectionId] !== variantId)
+      .map(([sectionId, variantId]) => ({ type: 'setVariant' as const, sectionId, variantId }));
+    if (presentationOps.length === 0) return;
+
+    const operationKey = JSON.stringify(presentationOps);
+    if (presentationCommitInFlightRef.current === operationKey) return;
+    presentationCommitInFlightRef.current = operationKey;
+
+    void (async () => {
+      try {
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        if (!user) return;
+        const patch = emptyPatchPlan(`Presentation · ${presentationOps.length} variant update(s)`);
+        patch.presentationOps.push(...presentationOps);
+        const commit = await commitMutation({
+          source: 'playground-edit',
+          identity: {
+            userId: user.id,
+            businessId,
+            projectId: resolvedProjectId || currentDraftId,
+            draftId: currentDraftId,
+            revisionId: currentRevisionIdRef.current,
+            sessionId: `web-builder:${currentDraftId}`,
+          },
+          current: {
+            vfsFiles: beforeFiles,
+            siteBundleSnapshot: snapshot,
+            playground: {
+              pageRegistry: creatorPlayground.pageRegistry,
+              creatorData: creatorPlayground.creatorData,
+              calendars: snapshot.calendars ?? {},
+              popups: snapshot.popups ?? {},
+            } as never,
+          },
+          patch,
+          options: {
+            requirePreviewPass: false,
+            requireReadinessPass: false,
+            industry: snapshot.industry,
+            themePresetId: snapshot.meta.themePresetId ?? undefined,
+            themeTokens: snapshot.themeTokens,
+          },
+        });
+        if (commit.status !== 'committed') {
+          throw new CommitRejectedError('presentation mutation was rejected', commit);
+        }
+        importBuilderFiles(commit.vfsFiles, {
+          replace: true,
+          preferredPath: activePagePath,
+          entryPoint: launchEntryPoint,
+        });
+        if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
+      } catch (err) {
+        console.warn('[WebBuilder] presentation commit failed:', err);
+        toast.error('Could not save the selected layout');
+      } finally {
+        presentationCommitInFlightRef.current = null;
+      }
+    })();
+  }, [
+    templateCustomizer.activeVariants,
+    businessId,
+    currentDraftId,
+    resolvedProjectId,
+    creatorPlayground.pageRegistry,
+    creatorPlayground.creatorData,
+    activePagePath,
+    launchEntryPoint,
+    effectiveRouteState,
+    importBuilderFiles,
   ]);
 
   // ── Preview Floating Toolbar → VFSCommitService bridge ───────────────────
@@ -3377,10 +3414,23 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       projectNameFromState ||
       systemName ||
       'Business';
+    const persistedSnapshot = (() => {
+      try {
+        const raw = currentFiles['/.unison/site-bundle-snapshot.json'];
+        return raw
+          ? JSON.parse(raw) as {
+              meta?: { themePresetId?: string | null; templateId?: string | null };
+              themeTokens?: import('@/sections/types').ThemeTokens;
+            }
+          : null;
+      } catch {
+        return null;
+      }
+    })();
     // Chain-of-custody: after compile, the SiteBundleSnapshot is the source
     // of truth for themePresetId/templateId. Re-derive from snapshot.meta so
     // autosave/recompile never throws when in-memory wizard props drift.
-    const snapshotMeta = effectiveRouteState?.siteBundleSnapshot?.meta;
+    const snapshotMeta = effectiveRouteState?.siteBundleSnapshot?.meta || persistedSnapshot?.meta;
     const effectiveThemePresetId =
       resolvedThemePresetId ||
       snapshotMeta?.themePresetId ||
@@ -3394,6 +3444,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       resolvedThemePresetId ||
       snapshotMeta?.themePresetId ||
       undefined;
+    const effectiveThemeTokens =
+      effectiveRouteState?.siteBundleSnapshot?.themeTokens ||
+      persistedSnapshot?.themeTokens ||
+      effectiveRouteState?.wizardSelections?.themeTokens;
     const recompilation = commitToPipeline(
       {
         playground: canonicalPlayground,
@@ -3403,6 +3457,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         selectedTemplateId: effectiveTemplateId,
         selectedThemeId: effectiveSelectedThemeId,
         themePresetId: effectiveThemePresetId,
+        themeTokens: effectiveThemeTokens,
       },
       'playground-edit',
     );
@@ -4981,29 +5036,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
   // Handle section layout swap from SectionLayoutPicker
   const handleSwapSection = useCallback((sectionId: string, variantId: string) => {
-    console.log('[WebBuilder] Section swap:', sectionId, '→', variantId);
-    const currentCode = previewCode;
-    if (!currentCode) {
-      toast.error('No template loaded to swap sections');
-      return;
-    }
-
-    const swappedCode = swapSectionVariant(currentCode, sectionId, variantId as VariantId);
-    if (swappedCode === currentCode) {
-      toast.error('Could not swap section — variant or section not found');
-      return;
-    }
-
-    importBuilderFiles(templateToVFSFiles(swappedCode, currentTemplateName || 'Untitled'), {
-      preferredPath: activePagePath,
-      entryPoint: activePagePath,
-    });
-
     const variant = getVariantById(variantId as VariantId);
-    toast.success(`Swapped ${sectionId} → ${variant?.name || variantId}`, {
-      description: 'Section layout updated, theme preserved',
-    });
-  }, [previewCode, currentTemplateName, activePagePath, importBuilderFiles]);
+    if (!variant) {
+      toast.error('Could not find the selected layout');
+      return;
+    }
+    templateCustomizer.setActiveVariant(sectionId, variant.id);
+  }, [templateCustomizer]);
 
   // Handle saving current template
   const handleSaveTemplate = useCallback(async (

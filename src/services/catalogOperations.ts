@@ -24,12 +24,13 @@ import {
   getCatalogSurface,
   type CatalogSurface,
 } from '@/platform/core/catalogSurfaceRegistry';
+import { type EditableRowPatch } from '@/services/catalogRowService';
 import {
-  createCatalogRow as createRow,
-  deleteCatalogRow as deleteRow,
-  updateCatalogRow as updateRow,
-  type EditableRowPatch,
-} from '@/services/catalogRowService';
+  createCmsRecord,
+  getCmsRecord,
+  removeCmsRecord,
+  updateCmsRecord,
+} from '@/services/cmsRecordService';
 import {
   getBinding,
   getBindingById,
@@ -133,13 +134,14 @@ async function currentUserId(): Promise<string | null> {
 
 async function assertBusinessAccess(
   businessId: string | null | undefined,
+  permission: 'catalog.write' | 'catalog.delete' | 'artifact.write',
 ): Promise<string | null> {
   if (!businessId) return 'businessId is required for this catalog operation.';
   const uid = await currentUserId();
   if (!uid) return UNAUTHORIZED_SIGN_IN;
   const { data, error } = await supabase.rpc(
-    'is_business_member' as never,
-    { _business_id: businessId } as never,
+    'business_has_permission' as never,
+    { p_business_id: businessId, p_permission: permission } as never,
   );
   if (error) return `Authorization check failed: ${error.message}`;
   if (data !== true) return UNAUTHORIZED_BUSINESS;
@@ -159,19 +161,6 @@ async function assertProjectAccess(
   if (error) return `Authorization check failed: ${error.message}`;
   if (data !== true) return UNAUTHORIZED_PROJECT;
   return null;
-}
-
-/** Look up the owning business_id for a catalog row before mutating it. */
-async function fetchRowBusinessId(
-  table: string,
-  rowId: string,
-): Promise<string | null> {
-  const { data } = await supabase
-    .from(table as never)
-    .select('business_id')
-    .eq('id', rowId)
-    .maybeSingle();
-  return (data as { business_id?: string } | null)?.business_id ?? null;
 }
 
 /** Look up the owning project/business for a binding row. */
@@ -212,6 +201,20 @@ function splitPatch(
   return { editable, extraColumns };
 }
 
+function normalizeCmsValues(surface: CatalogSurface, patch: CatalogRowFieldPatch): Record<string, unknown> {
+  const { editable, extraColumns } = splitPatch(surface, patch);
+  const values: Record<string, unknown> = { ...extraColumns };
+  if (editable.name !== undefined) values[surface.fields.title] = editable.name ?? '';
+  if (editable.description !== undefined && surface.fields.description) values[surface.fields.description] = editable.description;
+  if (editable.image_url !== undefined && surface.fields.image) values[surface.fields.image] = editable.image_url;
+  if (editable.price !== undefined) {
+    const dollars = editable.price == null || !Number.isFinite(editable.price) ? 0 : editable.price;
+    if (surface.fields.priceCents) values[surface.fields.priceCents] = Math.round(dollars * 100);
+    if (surface.fields.price) values[surface.fields.price] = dollars;
+  }
+  return values;
+}
+
 async function locateBindingId(
   locator: SectionBindingLocator,
 ): Promise<string | null> {
@@ -238,70 +241,71 @@ export async function createCatalogRow(args: {
   patch: CatalogRowFieldPatch;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
-  const denied = await assertBusinessAccess(args.businessId);
+  const denied = await assertBusinessAccess(args.businessId, 'catalog.write');
   if (denied) return { ok: false, op: 'createCatalogRow', message: denied };
-  const { editable, extraColumns } = splitPatch(surface, args.patch);
-  const created = await createRow(surface.sourceTable, args.businessId, editable);
-  if (!created) {
+  let created: Record<string, unknown>;
+  try {
+    created = await createCmsRecord({
+      resource: surface.surfaceId,
+      businessId: args.businessId,
+      values: { ...surface.newRowDefaults, ...normalizeCmsValues(surface, args.patch) },
+    });
+  } catch {
     return { ok: false, op: 'createCatalogRow', message: 'create failed' };
-  }
-  if (Object.keys(extraColumns).length > 0) {
-    await supabase
-      .from(surface.sourceTable as never)
-      .update(extraColumns as never)
-      .eq('id', created.id);
   }
   return {
     ok: true,
     op: 'createCatalogRow',
     message: `Created ${surface.rowLabel} in ${surface.sourceTable}`,
-    data: { id: created.id, surfaceId: surface.surfaceId, table: surface.sourceTable },
+    data: { id: created.id, surfaceId: surface.surfaceId },
   };
 }
 
 export async function updateCatalogRow(args: {
   surfaceId: string;
+  businessId: string;
   rowId: string;
   patch: CatalogRowFieldPatch;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
-  const ownerBusinessId = await fetchRowBusinessId(surface.sourceTable, args.rowId);
-  const denied = await assertBusinessAccess(ownerBusinessId);
+  const denied = await assertBusinessAccess(args.businessId, 'catalog.write');
   if (denied) return { ok: false, op: 'updateCatalogRow', message: denied };
-  const { editable, extraColumns } = splitPatch(surface, args.patch);
-
-  const ok1 = Object.keys(editable).length === 0
-    ? true
-    : await updateRow(surface.sourceTable, args.rowId, editable);
-
-  let ok2 = true;
-  if (Object.keys(extraColumns).length > 0) {
-    const { error } = await supabase
-      .from(surface.sourceTable as never)
-      .update(extraColumns as never)
-      .eq('id', args.rowId);
-    ok2 = !error;
+  let ok = true;
+  try {
+    await updateCmsRecord({
+      resource: surface.surfaceId,
+      businessId: args.businessId,
+      recordId: args.rowId,
+      values: normalizeCmsValues(surface, args.patch),
+    });
+  } catch {
+    ok = false;
   }
 
   return {
-    ok: ok1 && ok2,
+    ok,
     op: 'updateCatalogRow',
-    message: ok1 && ok2
+    message: ok
       ? `Updated ${surface.rowLabel} ${args.rowId}`
-      : `Partial/failed update on ${surface.sourceTable}#${args.rowId}`,
-    data: { surfaceId: surface.surfaceId, table: surface.sourceTable, rowId: args.rowId },
+      : `Update failed on ${surface.surfaceId}#${args.rowId}`,
+    data: { surfaceId: surface.surfaceId, rowId: args.rowId },
   };
 }
 
 export async function deleteCatalogRow(args: {
   surfaceId: string;
+  businessId: string;
   rowId: string;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
-  const ownerBusinessId = await fetchRowBusinessId(surface.sourceTable, args.rowId);
-  const denied = await assertBusinessAccess(ownerBusinessId);
+  const denied = await assertBusinessAccess(args.businessId, 'catalog.delete');
   if (denied) return { ok: false, op: 'deleteCatalogRow', message: denied };
-  const ok = await deleteRow(surface.sourceTable, args.rowId);
+  let ok = true;
+  try {
+    await removeCmsRecord({ resource: surface.surfaceId, businessId: args.businessId, recordId: args.rowId });
+  } catch {
+    ok = false;
+  }
   return {
     ok,
     op: 'deleteCatalogRow',
@@ -313,11 +317,13 @@ export async function deleteCatalogRow(args: {
 /** Semantic alias for content edits triggered from a bound catalog card. */
 export async function updateCatalogItem(args: {
   surfaceId: string;
+  businessId: string;
   itemId: string;
   patch: CatalogRowFieldPatch;
 }): Promise<CatalogOperationResult> {
   const result = await updateCatalogRow({
     surfaceId: args.surfaceId,
+    businessId: args.businessId,
     rowId: args.itemId,
     patch: args.patch,
   });
@@ -337,14 +343,19 @@ export async function bindCatalogItemToComponent(args: {
   actions?: CatalogBindingActions;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
-  const [projectDenied, businessDenied, itemBusinessId] = await Promise.all([
+  const [projectDenied, businessDenied] = await Promise.all([
     assertProjectAccess(args.projectId),
-    assertBusinessAccess(args.businessId),
-    fetchRowBusinessId(surface.sourceTable, args.itemId),
+    assertBusinessAccess(args.businessId, 'artifact.write'),
   ]);
   const denied = projectDenied ?? businessDenied;
   if (denied) return { ok: false, op: 'bindCatalogItemToComponent', message: denied };
-  if (itemBusinessId !== args.businessId) {
+  try {
+    await getCmsRecord({
+      businessId: args.businessId,
+      resource: surface.surfaceId,
+      recordId: args.itemId,
+    });
+  } catch {
     return {
       ok: false,
       op: 'bindCatalogItemToComponent',
@@ -370,7 +381,7 @@ export async function updateComponentPresentation(args: {
   }
   const denied = current.projectId
     ? await assertProjectAccess(current.projectId)
-    : await assertBusinessAccess(current.businessId);
+    : await assertBusinessAccess(current.businessId, 'artifact.write');
   if (denied) return { ok: false, op: 'updateComponentPresentation', message: denied };
   const binding = await updateCatalogCardPresentation(args.bindingId, args.patch);
   return {
@@ -391,7 +402,7 @@ export async function updateComponentActions(args: {
   }
   const denied = current.projectId
     ? await assertProjectAccess(current.projectId)
-    : await assertBusinessAccess(current.businessId);
+    : await assertBusinessAccess(current.businessId, 'artifact.write');
   if (denied) return { ok: false, op: 'updateComponentActions', message: denied };
   const binding = await updateCatalogCardBinding(args.bindingId, { actions: args.actions });
   return {
@@ -427,7 +438,7 @@ export async function updateSectionBinding(args: {
     const scope = await fetchBindingScope(id);
     const denied = scope.projectId
       ? await assertProjectAccess(scope.projectId)
-      : await assertBusinessAccess(scope.businessId);
+      : await assertBusinessAccess(scope.businessId, 'artifact.write');
     if (denied) return { ok: false, op: 'updateSectionBinding', message: denied };
     const dto = await patchBindingById(id, args.patch);
     return {
@@ -451,7 +462,7 @@ export async function updateSectionBinding(args: {
   const upsertBusinessId = (args.upsert as { businessId?: string }).businessId ?? null;
   const denied = upsertProjectId
     ? await assertProjectAccess(upsertProjectId)
-    : await assertBusinessAccess(upsertBusinessId);
+    : await assertBusinessAccess(upsertBusinessId, 'artifact.write');
   if (denied) return { ok: false, op: 'updateSectionBinding', message: denied };
   const dto = await upsertBinding({
     ...args.upsert,
@@ -632,9 +643,10 @@ export const CATALOG_OPERATION_TOOLS = [
       'Patch fields on an existing catalog row. Prices go in DOLLARS in the patch (converted to cents when needed).',
     parameters: {
       type: 'object',
-      required: ['surfaceId', 'rowId', 'patch'],
+      required: ['surfaceId', 'businessId', 'rowId', 'patch'],
       properties: {
         surfaceId: { type: 'string', enum: SURFACE_IDS },
+        businessId: { type: 'string' },
         rowId: { type: 'string' },
         patch: ROW_PATCH_SCHEMA,
       },
@@ -646,9 +658,10 @@ export const CATALOG_OPERATION_TOOLS = [
       'Update the real catalog record referenced by a rendered card. Use this for content changes, never a TSX text rewrite.',
     parameters: {
       type: 'object',
-      required: ['surfaceId', 'itemId', 'patch'],
+      required: ['surfaceId', 'businessId', 'itemId', 'patch'],
       properties: {
         surfaceId: { type: 'string', enum: SURFACE_IDS },
+        businessId: { type: 'string' },
         itemId: { type: 'string' },
         patch: ROW_PATCH_SCHEMA,
       },
@@ -718,9 +731,10 @@ export const CATALOG_OPERATION_TOOLS = [
     description: 'Delete an existing catalog row.',
     parameters: {
       type: 'object',
-      required: ['surfaceId', 'rowId'],
+      required: ['surfaceId', 'businessId', 'rowId'],
       properties: {
         surfaceId: { type: 'string', enum: SURFACE_IDS },
+        businessId: { type: 'string' },
         rowId: { type: 'string' },
       },
     },

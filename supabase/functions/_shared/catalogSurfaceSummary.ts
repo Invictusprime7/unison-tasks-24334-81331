@@ -20,6 +20,16 @@ interface EdgeSurfaceSummary {
   priceColumn: string | null;
 }
 
+export type CmsFieldType = "text" | "textarea" | "number" | "money" | "money-cents" | "image" | "boolean" | "rating";
+
+export interface CmsResourceContract {
+  resource: string;
+  sourceTable: string;
+  sortField: string;
+  editableFields: Record<string, CmsFieldType>;
+  requiredFields: string[];
+}
+
 export const CATALOG_SURFACE_SUMMARY: EdgeSurfaceSummary[] = [
   {
     surfaceId: 'services',
@@ -78,6 +88,60 @@ export const CATALOG_SURFACE_SUMMARY: EdgeSurfaceSummary[] = [
     priceColumn: null,
   },
 ];
+
+/**
+ * Server-side projection of the canonical catalog registry. Browser callers
+ * address resources only; `cms-records` resolves the physical table and field
+ * allowlist from this contract.
+ */
+export const CMS_RESOURCE_CONTRACTS: CmsResourceContract[] = [
+  {
+    resource: "services",
+    sourceTable: "services",
+    sortField: "sort_order",
+    editableFields: { name: "text", category: "text", duration_minutes: "number", price_cents: "money-cents", sort_order: "number", image_url: "image", description: "textarea", featured: "boolean", is_active: "boolean" }, requiredFields: ["name"],
+  },
+  {
+    resource: "products",
+    sourceTable: "products",
+    sortField: "sort_order",
+    editableFields: { name: "text", category: "text", price: "money", currency: "text", inventory_count: "number", sort_order: "number", image_url: "image", description: "textarea", featured: "boolean", is_active: "boolean" }, requiredFields: ["name"],
+  },
+  {
+    resource: "menu",
+    sourceTable: "menu_items",
+    sortField: "sort_order",
+    editableFields: { name: "text", category: "text", price_cents: "money-cents", currency: "text", sort_order: "number", image_url: "image", description: "textarea", available: "boolean", featured: "boolean" }, requiredFields: ["name"],
+  },
+  {
+    resource: "pricing",
+    sourceTable: "pricing_plans",
+    sortField: "sort_order",
+    editableFields: { name: "text", price_cents: "money-cents", currency: "text", billing_interval: "text", sort_order: "number", description: "textarea", highlighted: "boolean", is_active: "boolean" }, requiredFields: ["name"],
+  },
+  {
+    resource: "offers",
+    sourceTable: "featured_offers",
+    sortField: "sort_order",
+    editableFields: { title: "text", subtitle: "text", discount_label: "text", cta_label: "text", cta_href: "text", cta_intent: "text", sort_order: "number", image_url: "image", description: "textarea", active: "boolean" }, requiredFields: ["title"],
+  },
+  {
+    resource: "testimonials",
+    sourceTable: "testimonials",
+    sortField: "sort_order",
+    editableFields: { author_name: "text", author_role: "text", rating: "rating", source: "text", author_avatar_url: "image", quote: "textarea", sort_order: "number", featured: "boolean" }, requiredFields: ["author_name", "quote"],
+  },
+  {
+    resource: "portfolio",
+    sourceTable: "portfolio_projects",
+    sortField: "sort_order",
+    editableFields: { title: "text", subtitle: "text", client_name: "text", external_url: "text", sort_order: "number", cover_image_url: "image", summary: "textarea", featured: "boolean" }, requiredFields: ["title"],
+  },
+];
+
+export function getCmsResourceContract(resource: string): CmsResourceContract | null {
+  return CMS_RESOURCE_CONTRACTS.find((contract) => contract.resource === resource) ?? null;
+}
 
 export function renderCatalogSurfaceSummaryForPrompt(industry?: string): string {
   const lines: string[] = [];

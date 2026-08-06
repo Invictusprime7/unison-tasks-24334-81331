@@ -168,8 +168,9 @@ function buildActiveVariants(templateId: string | null | undefined, seed: string
     const variants = getVariantsForSection(section.type);
     if (variants.length === 0) return [];
     const layout = (section.props as { layout?: string }).layout;
-    const selected = getVariantIdForLayout(section.type, layout)
-      || variants[stableIndex(`${seed}|${section.id}`, variants.length)]?.id;
+    const baselineVariantId = getVariantIdForLayout(section.type, layout);
+    const baselineIndex = Math.max(0, variants.findIndex((variant) => variant.id === baselineVariantId));
+    const selected = variants[(baselineIndex + stableIndex(`${seed}|${section.id}`, variants.length)) % variants.length]?.id;
     return selected ? [[section.id, selected]] : [];
   })) as Record<string, VariantId>;
 }

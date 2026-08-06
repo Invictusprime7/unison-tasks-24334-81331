@@ -25,6 +25,7 @@ const AIPageGenerator = lazy(() =>
 const CRMDashboard = lazy(() => import("@/pages/CRMDashboard"));
 const BusinessSettings = lazy(() => import("@/pages/BusinessSettings"));
 const BusinessCatalog = lazy(() => import("@/pages/BusinessCatalog"));
+const BusinessContent = lazy(() => import("@/pages/BusinessContent"));
 const CloudDashboard = lazy(() => import("@/pages/CloudDashboard"));
 const DocsPage = lazy(() => import("@/pages/DocsPage"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -290,6 +291,19 @@ export const appRoutes: AppRouteConfig[] = [
     meta: {
       id: "business-settings",
       title: "Business settings",
+      section: "workspace",
+      shell: "workspace",
+      chrome: "legacy",
+      requiresAuth: true,
+      requiresWorkspace: true,
+    },
+  },
+  {
+    path: "/business/content",
+    element: withAsyncBoundary(<BusinessContent />),
+    meta: {
+      id: "business-content",
+      title: "Manage content",
       section: "workspace",
       shell: "workspace",
       chrome: "legacy",

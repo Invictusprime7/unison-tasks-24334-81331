@@ -143,6 +143,16 @@ export async function listContentRecords(input: Omit<ContentCmsRequest, 'action'
   return response.records ?? [];
 }
 
+export async function listContentTypes(input: Omit<ContentCmsRequest, 'action' | 'values'>): Promise<Array<Record<string, unknown>>> {
+  const response = await mutateContentRecord({ action: 'content-type-list', ...input });
+  return response.records ?? [];
+}
+
+export async function listContentRevisions(input: Omit<ContentCmsRequest, 'action' | 'values'>): Promise<Array<Record<string, unknown>>> {
+  const response = await mutateContentRecord({ action: 'content-entry-revisions', ...input });
+  return response.records ?? [];
+}
+
 export async function getContentRecord(input: Omit<ContentCmsRequest, 'action'>): Promise<Record<string, unknown>> {
   const response = await mutateContentRecord({ action: 'content-entry-get', ...input });
   if (!response.record) throw new Error('Content CMS did not return the requested entry');

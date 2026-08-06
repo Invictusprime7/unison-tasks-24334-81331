@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -16,6 +16,7 @@ const hardeningMigration = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20260806113000_harden_onboarding_session_browser_writes.sql'),
   'utf8',
 );
+const vercelConfig = readFileSync(resolve(process.cwd(), 'vercel.json'), 'utf8');
 
 const sessionId = '11111111-1111-4111-8111-111111111111';
 const userId = '22222222-2222-4222-8222-222222222222';
@@ -70,5 +71,12 @@ describe('connected Supabase foundation', () => {
     expect(ciphertext).not.toContain('refresh-token-value');
     expect(decryptSecret(ciphertext)).toBe('refresh-token-value');
     expect(() => decryptSecret(`${ciphertext}tampered`)).toThrow('could not be decrypted');
+  });
+
+  it('routes connected backend URLs through one Serverless function', () => {
+    expect(existsSync(resolve(process.cwd(), 'api/connected-backend.ts'))).toBe(true);
+    expect(existsSync(resolve(process.cwd(), 'api/integrations/supabase/authorize.ts'))).toBe(false);
+    expect(vercelConfig).toContain('/api/integrations/supabase/authorize');
+    expect(vercelConfig).toContain('/api/connected-backend?route=authorize');
   });
 });

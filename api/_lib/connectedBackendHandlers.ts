@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { applyApiSecurityHeaders, handlePreflight, sendError } from './security';
+import { applyApiSecurityHeaders, handlePreflight, sendError } from './security.js';
 import {
   accessTokenForConnection,
   assertBackendConnectionPermission,
@@ -17,7 +17,7 @@ import {
   managementRequest,
   publicAppUrl,
   readOAuthCallbackState,
-} from './connectedSupabase';
+} from './connectedSupabase.js';
 
 type ManagementProject = { ref?: string; name?: string; organization_id?: string; region?: string; status?: string };
 type ManagementOrganization = { id?: string; slug?: string; name?: string };

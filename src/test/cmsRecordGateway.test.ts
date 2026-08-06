@@ -10,6 +10,10 @@ const service = readFileSync(
   resolve(process.cwd(), 'src/services/cmsRecordService.ts'),
   'utf8',
 );
+const commandMigration = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260806143000_add_content_entry_command.sql'),
+  'utf8',
+);
 
 describe('CMS record gateway contract', () => {
   it('uses a resource allowlist and never accepts client table names', () => {
@@ -43,5 +47,26 @@ describe('CMS record gateway contract', () => {
   it('keeps the browser surface resource-based', () => {
     expect(service).toContain("functions.invoke('cms-records'");
     expect(service).not.toContain(".from('");
+  });
+
+  it('keeps the browser enterprise content surface command-based', () => {
+    expect(service).toContain('export async function mutateContentRecord');
+    expect(service).toContain("action: 'content-entry-transition'");
+    expect(service).not.toContain(".rpc('");
+  });
+
+  it('exposes enterprise content through explicit server-owned commands', () => {
+    expect(endpoint).toContain('"content-type-create"');
+    expect(endpoint).toContain('"content-entry-transition"');
+    expect(endpoint).toContain('"content-entry-revisions"');
+    expect(endpoint).toContain('admin.rpc("cms_apply_content_entry_command"');
+    expect(endpoint).toContain('parseContentFields(contentType.field_schema)');
+    expect(endpoint).toContain('validateContentEntryValues(body.values, parsedSchema.fields)');
+  });
+
+  it('requires publisher-level capability for non-submission workflow transitions', () => {
+    expect(endpoint).toContain('return status === "review" ? "content.write" : "content.publish"');
+    expect(commandMigration).toContain("WHEN 'content.publish' THEN public.is_business_admin");
+    expect(endpoint).not.toMatch(/body\.table|\.rpc\(body\./);
   });
 });

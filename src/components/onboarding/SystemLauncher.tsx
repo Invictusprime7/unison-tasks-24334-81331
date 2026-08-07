@@ -122,6 +122,7 @@ import {
   buildTemplateLayoutPrompt,
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
+import { preserveCanonicalHomePresentation } from "@/services/wizardPresentationGuard";
 import { validateGeneratedUiContract } from "@/platform/core/generatedUiFoundation";
 import { countWizardPageSections } from "@/services/wizardPageQuality";
 import { loadBusinessProfile } from '@/services/businessProfileService';
@@ -2739,7 +2740,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         );
       }
 
-      const aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
+      let aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
+      const canonicalHomePath = Object.values(siteBundleSnapshot.pageRegistry.pages)
+        .map((page) => (page as { filePath?: string }).filePath)
+        .find((path): path is string => /\/Home\.(tsx|jsx)$/i.test(path));
+      if (canonicalHomePath) {
+        const presentationGuard = preserveCanonicalHomePresentation({
+          aiFiles: aiSourcedFiles,
+          canonicalFiles: siteBundleSnapshot.vfsFiles,
+          homePath: canonicalHomePath,
+          contract: templateLayoutContract,
+        });
+        aiSourcedFiles = presentationGuard.files;
+        if (presentationGuard.restored) {
+          console.warn('[SystemLauncher] Restored canonical Home presentation after Lane B visual drift', {
+            templateId: templateLayoutContract.templateId,
+            reason: presentationGuard.reason,
+          });
+        }
+      }
       const wizardGenerationGaps: {
         aiError?: string;
         payloadIssue?: typeof lastPayloadIssue;

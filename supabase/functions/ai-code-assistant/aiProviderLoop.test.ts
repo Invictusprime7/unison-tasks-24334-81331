@@ -19,7 +19,7 @@ Deno.test('omits reasoning_effort for the GPT-4.1 Wizard fallback', () => {
 
 Deno.test('keeps reasoning_effort for Gemini OpenAI-compatible requests', () => {
   const request = buildPlannedChatCompletionRequest({
-    model: { id: 'google/gemini-3.6-flash', label: 'Gemini 3.6 Flash', maxTokens: 36_000 },
+    model: { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash', maxTokens: 36_000 },
     aiMessages: messages,
     reasoningEffort: 'medium',
   });

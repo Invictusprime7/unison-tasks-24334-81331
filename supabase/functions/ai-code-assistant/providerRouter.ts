@@ -115,9 +115,8 @@ function prioritizeProviderModels(models: ModelSpec[], primaryProvider?: Paralle
 // ── Model tiers ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // Use the stable production Gemini model for long Wizard generations. The
-  // former preview model is more capacity-constrained and is no longer the
-  // recommended production target.
+  // Full-site Wizard generation selects the stable 2.5 Flash tier below;
+  // shorter tasks may still use the newer Flash tier.
   geminiFlash: { id: "google/gemini-3.6-flash", label: "Gemini 3.6 Flash" },
   gemini25Flash: { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   geminiFlashLite: { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
@@ -206,7 +205,10 @@ export function buildProviderPlan(
       // bundle. Both honor the same multi-file JSON output contract.
       plan = {
         gatewayModels: [
-          m(MODELS.geminiFlash, 36000),   // primary
+          // Stable direct Gemini model with a 65k output window. Keep the
+          // newer 3.6 tier for shorter tasks until it proves reliable under
+          // full-site Lane B response sizes.
+          m(MODELS.gemini25Flash, 36_000),
           // GPT-4.1 has a 32k output window without a reasoning phase, making
           // it a better bounded fallback for this large structured response.
           m(MODELS.gpt41, 32_000),

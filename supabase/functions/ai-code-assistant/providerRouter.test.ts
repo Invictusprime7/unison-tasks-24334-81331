@@ -111,7 +111,7 @@ Deno.test("keeps Wizard provider slices within the bounded failover window", () 
   );
 
   assertEquals(plan.gatewayModels.length, 2);
-  assertEquals(plan.gatewayModels[0]?.id, "google/gemini-3.6-flash");
+  assertEquals(plan.gatewayModels[0]?.id, "google/gemini-2.5-flash");
   assertEquals(plan.gatewayModels[1]?.id, "openai/gpt-4.1");
   assertEquals(plan.perModelTimeoutMs, 95_000);
   assertEquals(plan.preferLongLeadAttempt, true);
@@ -128,7 +128,7 @@ Deno.test("honors lower Wizard resource caps without changing its model lineup",
   );
 
   assertEquals(plan.gatewayModels.map((model) => model.id), [
-    "google/gemini-3.6-flash",
+    "google/gemini-2.5-flash",
     "openai/gpt-4.1",
   ]);
   assertEquals(plan.gatewayModels.map((model) => model.maxTokens), [12_000, 12_000]);

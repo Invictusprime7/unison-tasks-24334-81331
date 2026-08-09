@@ -9,11 +9,11 @@ import {
 } from '../../api/_lib/connectedSupabase';
 
 const migration = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260806110000_add_connected_backend_foundation.sql'),
+  resolve(process.cwd(), 'supabase/migrations/20260806164754_add_connected_backend_foundation.sql'),
   'utf8',
 );
 const hardeningMigration = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260806113000_harden_onboarding_session_browser_writes.sql'),
+  resolve(process.cwd(), 'supabase/migrations/20260806165213_harden_onboarding_session_browser_writes.sql'),
   'utf8',
 );
 const vercelConfig = readFileSync(resolve(process.cwd(), 'vercel.json'), 'utf8');

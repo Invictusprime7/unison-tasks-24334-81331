@@ -12,6 +12,18 @@ const SUPABASE_DB_URL = Deno.env.get("SUPABASE_DB_URL")!;
 const MAX_FILE_COUNT = 300;
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_TOTAL_BYTES = 5_000_000;
+const REQUIRED_UI_FOUNDATION_PATHS = [
+  "/.unison/ui-manifest.json",
+  "/src/unison/ui/index.ts",
+  "/src/unison/ui/button.tsx",
+  "/src/unison/ui/card.tsx",
+  "/src/unison/ui/icons.ts",
+  "/src/unison/ui/media.tsx",
+  "/src/unison/ui/motion.tsx",
+  "/src/unison/ui/navigation.tsx",
+  "/src/unison/ui/recipes.tsx",
+  "/src/unison/ui/tailwind.css",
+] as const;
 
 const IdsSchema = z.object({
   businessId: z.string().uuid(),
@@ -125,17 +137,23 @@ const GeneratedRuntimeManifestSchema = z.object({
   reads: z.array(z.string().min(1).max(120)).max(100),
   intents: z.array(z.object({
     intent: z.string().min(1).max(160),
-    handler: z.enum(['client', 'intent-exec', 'workflow-trigger', 'stripe-checkout', 'auth-overlay', 'webhook']),
+    handler: z.enum(['client', 'site-runtime', 'intent-exec', 'workflow-trigger', 'stripe-checkout', 'auth-overlay', 'webhook']),
     surface: z.enum(['inline', 'overlay', 'redirect', 'client']),
     requiredCapabilities: z.array(z.string().min(1).max(120)).max(32),
     componentIds: z.array(z.string().min(1).max(200)).min(1).max(200),
   })).max(200),
   controllers: z.array(z.object({
-    handler: z.enum(['client', 'intent-exec', 'workflow-trigger', 'stripe-checkout', 'auth-overlay', 'webhook']),
+    handler: z.enum(['client', 'site-runtime', 'intent-exec', 'workflow-trigger', 'stripe-checkout', 'auth-overlay', 'webhook']),
     transport: z.enum(['client', 'supabase-function', 'external']),
     functionName: z.string().min(1).max(80).nullable(),
     intents: z.array(z.string().min(1).max(160)).max(200),
     requiredCapabilities: z.array(z.string().min(1).max(120)).max(32),
+  })).max(16).default([]),
+  agents: z.array(z.object({
+    agentSlug: z.string().min(1).max(120).regex(/^[a-z0-9_]+$/),
+    intents: z.array(z.string().min(1).max(160)).min(1).max(32),
+    allowedTools: z.array(z.string().min(1).max(120)).min(1).max(32),
+    requiredCapabilities: z.array(z.string().min(1).max(120)).min(1).max(32),
   })).max(16).default([]),
   requiredBackendFunctions: z.array(z.string().min(1).max(80)).max(64).default([]),
   readiness: z.object({
@@ -146,40 +164,61 @@ const GeneratedRuntimeManifestSchema = z.object({
 }).superRefine((manifest, context) => {
   // Controller metadata is additive within manifest v1.0. Continue accepting
   // already-open launch sessions produced before this field existed.
-  if (manifest.controllers.length === 0 && manifest.requiredBackendFunctions.length === 0) return;
-  for (const intent of manifest.intents) {
-    const controller = manifest.controllers.find((candidate) =>
-      candidate.handler === intent.handler && candidate.intents.includes(intent.intent)
-    );
-    if (!controller) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['controllers'],
-        message: `Runtime intent ${intent.intent} has no matching controller.`,
-      });
-    }
-  }
-  for (const controller of manifest.controllers) {
-    if (controller.transport === 'supabase-function') {
-      if (!controller.functionName || !PUBLIC_RUNTIME_FUNCTIONS.has(controller.functionName)) {
+  if (manifest.controllers.length > 0 || manifest.requiredBackendFunctions.length > 0) {
+    for (const intent of manifest.intents) {
+      const controller = manifest.controllers.find((candidate) =>
+        candidate.handler === intent.handler && candidate.intents.includes(intent.intent)
+      );
+      if (!controller) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['controllers'],
-          message: `Runtime controller ${controller.handler} is not public or allowlisted.`,
-        });
-      } else if (!manifest.requiredBackendFunctions.includes(controller.functionName)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['requiredBackendFunctions'],
-          message: `Runtime controller function ${controller.functionName} is not declared as required.`,
+          message: `Runtime intent ${intent.intent} has no matching controller.`,
         });
       }
-    } else if (controller.functionName !== null) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['controllers'],
-        message: `Non-Supabase controller ${controller.handler} cannot declare a function endpoint.`,
-      });
+    }
+    for (const controller of manifest.controllers) {
+      if (controller.transport === 'supabase-function') {
+        if (!controller.functionName || !PUBLIC_RUNTIME_FUNCTIONS.has(controller.functionName)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['controllers'],
+            message: `Runtime controller ${controller.handler} is not public or allowlisted.`,
+          });
+        } else if (!manifest.requiredBackendFunctions.includes(controller.functionName)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['requiredBackendFunctions'],
+            message: `Runtime controller function ${controller.functionName} is not declared as required.`,
+          });
+        }
+      } else if (controller.functionName !== null) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['controllers'],
+          message: `Non-Supabase controller ${controller.handler} cannot declare a function endpoint.`,
+        });
+      }
+    }
+  }
+  for (const agent of manifest.agents) {
+    for (const intent of agent.intents) {
+      if (!manifest.intents.some((candidate) => candidate.intent === intent)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['agents'],
+          message: `Runtime agent ${agent.agentSlug} references uncompiled intent ${intent}.`,
+        });
+      }
+    }
+    for (const capability of agent.requiredCapabilities) {
+      if (!manifest.enabledCapabilities.includes(capability)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['agents'],
+          message: `Runtime agent ${agent.agentSlug} requires disabled capability ${capability}.`,
+        });
+      }
     }
   }
 });
@@ -222,6 +261,20 @@ function validateFiles(files: Record<string, string>): string | null {
     if (bytes > MAX_FILE_BYTES) return `File exceeds size limit: ${path}`;
     totalBytes += bytes;
     if (totalBytes > MAX_TOTAL_BYTES) return "Generated site exceeds the launch payload size limit.";
+  }
+  const manifestSource = files["/.unison/ui-manifest.json"];
+  if (!manifestSource) return "Wizard launch is missing the generated UI foundation manifest.";
+  try {
+    const manifest = JSON.parse(manifestSource) as { importRoot?: unknown; primitiveImports?: unknown };
+    if (manifest.importRoot !== "@/unison/ui" || !Array.isArray(manifest.primitiveImports)) {
+      return "Wizard launch contains an invalid generated UI foundation manifest.";
+    }
+  } catch {
+    return "Wizard launch contains an unreadable generated UI foundation manifest.";
+  }
+  const missingFoundation = REQUIRED_UI_FOUNDATION_PATHS.filter((path) => !files[path]?.trim());
+  if (missingFoundation.length > 0) {
+    return `Wizard launch is missing required generated UI foundation files: ${missingFoundation.join(", ")}.`;
   }
   return null;
 }
@@ -340,6 +393,34 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
         JSON.stringify({ siteId: body.ids.siteId, source: "system-launcher" }),
       ],
     );
+    for (const agentBinding of body.generatedSiteRuntimeManifest.agents) {
+      const installed = await query<{ id: string }>(
+        pg,
+        `INSERT INTO public.ai_plugin_instances
+          (business_id, agent_id, project_id, placement_key, config, is_enabled)
+         SELECT $1, registry.id, $2, $3, $4::jsonb, true
+         FROM public.ai_agent_registry AS registry
+         WHERE registry.slug = $5 AND registry.is_active = true
+         ON CONFLICT (business_id, project_id, placement_key, agent_id)
+         DO UPDATE SET config = EXCLUDED.config, is_enabled = true, updated_at = now()
+         RETURNING id`,
+        [
+          businessId,
+          body.ids.projectId,
+          `runtime:${agentBinding.agentSlug}`,
+          JSON.stringify({
+            source: 'generated-runtime-manifest',
+            siteId: body.ids.siteId,
+            snapshotId: body.generatedSiteRuntimeManifest.snapshotId,
+            binding: agentBinding,
+          }),
+          agentBinding.agentSlug,
+        ],
+      );
+      if (!installed[0]?.id) {
+        throw new Error(`GENERATED_RUNTIME_AGENT_UNAVAILABLE:${agentBinding.agentSlug}`);
+      }
+    }
     for (const binding of body.dataBindings) {
       await query(
         pg,

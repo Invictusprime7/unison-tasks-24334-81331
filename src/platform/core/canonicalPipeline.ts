@@ -51,6 +51,7 @@ import type { WizardInteractionManifest } from '@/services/wizardInteractionEnri
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
 import {
   buildGeneratedUiFoundation,
+  ensureGeneratedUiFoundation,
   GENERATED_UI_FOUNDATION_VERSION,
   type GeneratedUiManifest,
 } from './generatedUiFoundation';
@@ -59,6 +60,145 @@ import {
   readWizardDesignIntervention,
   type WizardDesignIntervention,
 } from '@/services/wizardDesignIntervention';
+import {
+  getWizardPageRoleInstruction,
+  normalizeWizardPageRole,
+} from '@/services/wizardPageQuality';
+
+export interface WizardHeroGeometry {
+  layout: string;
+  variantId?: string;
+  mediaTreatment: 'full-bleed-overlay' | 'split-frame' | 'centered-frame' | 'text-only';
+  source: 'selected-home-template';
+}
+
+export interface WizardGenerationBrief {
+  version: '1.0';
+  research: {
+    mode: 'connected-gateway';
+    enabled: true;
+    mayInform: readonly ['audience-language', 'category-patterns', 'content-angles', 'image-direction'];
+    mustNotInvent: readonly ['business-facts', 'prices', 'availability', 'tenant-identity', 'capabilities', 'endpoints'];
+  };
+  routes: Array<{
+    pageId: string;
+    path: string;
+    role: string;
+    title: string;
+    content: { minimumRegions: number; roleRequirement?: string };
+    hero: {
+      required: true;
+      headline: string;
+      contentAngle: string;
+      mustDifferFromHome: boolean;
+      geometry: WizardHeroGeometry;
+    };
+  }>;
+  homeHeroGeometry: WizardHeroGeometry;
+  ui: { formFormats: string[]; buttonFormats: string[]; iconFormats: string[] };
+}
+
+function generationTitle(role: string, title: string): string {
+  const label = title.trim() || role.replace(/[-_]/g, ' ').trim() || 'Explore';
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function generationAngle(role: string, title: string): string {
+  const label = generationTitle(role, title).toLowerCase();
+  const angles: Record<string, string> = {
+    home: 'brand promise and primary customer outcome',
+    services: 'service selection and practical outcomes',
+    products: 'catalog discovery and product confidence',
+    pricing: 'offer comparison and decision confidence',
+    booking: 'availability and reservation confidence',
+    contact: 'conversation start and response expectations',
+    about: 'credibility, people, and point of view',
+    portfolio: 'proof through selected work and process',
+    gallery: 'visual proof and inspection',
+    faq: 'objection handling and clarity',
+  };
+  return angles[role] || `${label} intent and the next customer decision`;
+}
+
+function readWizardHeroGeometry(pageSource: string): WizardHeroGeometry {
+  const match = pageSource.match(/const SECTIONS = ([\s\S]*?);\nconst HYDRATABLE/);
+  let hero: { variantId?: unknown; props?: Record<string, unknown> } | undefined;
+  if (match) {
+    try {
+      const sections = JSON.parse(match[1]) as Array<{ type?: unknown; variantId?: unknown; props?: Record<string, unknown> }>;
+      hero = sections.find((section) => section.type === 'hero');
+    } catch {
+      // Legacy snapshots fall through to explicit centered/text-only geometry.
+    }
+  }
+  const layout = typeof hero?.props?.layout === 'string' ? hero.props.layout : 'centered';
+  const hasMedia = typeof hero?.props?.image === 'string' || typeof hero?.props?.backgroundImage === 'string';
+  const mediaTreatment: WizardHeroGeometry['mediaTreatment'] = layout === 'full-bleed'
+    ? 'full-bleed-overlay'
+    : layout === 'split'
+      ? 'split-frame'
+      : hasMedia
+        ? 'centered-frame'
+        : 'text-only';
+  return {
+    layout,
+    variantId: typeof hero?.variantId === 'string' ? hero.variantId : undefined,
+    mediaTreatment,
+    source: 'selected-home-template',
+  };
+}
+
+function buildWizardGenerationBrief(input: {
+  pageRegistry: PageRegistry;
+  vfsFiles: Record<string, string>;
+  uiFoundation?: Pick<GeneratedUiManifest, 'formFormats' | 'buttonFormats' | 'iconFormats'>;
+}): WizardGenerationBrief {
+  const homePage = Object.values(input.pageRegistry.pages).find((page) => page.isHome);
+  const homeSource = homePage
+    ? (input.vfsFiles[homePage.filePath] || input.vfsFiles[homePage.filePath.replace(/^\//, '')] || '')
+    : '';
+  const homeHeroGeometry = readWizardHeroGeometry(homeSource);
+  const routes = Object.values(input.pageRegistry.pages)
+    .sort((left, right) => left.navOrder - right.navOrder)
+    .map((page) => {
+      const role = normalizeWizardPageRole(page.pageRole || page.pageType || (page.isHome ? 'home' : 'custom'));
+      const title = generationTitle(role, page.title);
+      const roleRequirement = getWizardPageRoleInstruction(role);
+      return {
+        pageId: page.pageId,
+        path: page.filePath,
+        role,
+        title,
+        content: {
+          minimumRegions: role === 'home' ? 5 : 4,
+          ...(roleRequirement ? { roleRequirement } : {}),
+        },
+        hero: {
+          required: true as const,
+          headline: title,
+          contentAngle: generationAngle(role, title),
+          mustDifferFromHome: !page.isHome,
+          geometry: homeHeroGeometry,
+        },
+      };
+    });
+  return {
+    version: '1.0',
+    research: {
+      mode: 'connected-gateway',
+      enabled: true,
+      mayInform: ['audience-language', 'category-patterns', 'content-angles', 'image-direction'],
+      mustNotInvent: ['business-facts', 'prices', 'availability', 'tenant-identity', 'capabilities', 'endpoints'],
+    },
+    routes,
+    homeHeroGeometry,
+    ui: {
+      formFormats: [...(input.uiFoundation?.formFormats || [])],
+      buttonFormats: [...(input.uiFoundation?.buttonFormats || [])],
+      iconFormats: [...(input.uiFoundation?.iconFormats || [])],
+    },
+  };
+}
 
 // ============================================================================
 // Pipeline Result
@@ -177,6 +317,8 @@ export interface SiteBundleSnapshotMeta {
     manifestPath: '/.unison/ui-manifest.json';
     importRoot: '@/unison/ui';
   };
+  /** Bounded connected-gateway research and route-specific generation plan. */
+  generationBrief?: WizardGenerationBrief;
   /** Deterministic composition, interaction, and motion recipes for this launch. */
   designIntervention?: WizardDesignIntervention;
 }
@@ -318,6 +460,14 @@ export function executeCanonicalPipeline(
     sellsProducts: selections.sellsProducts,
   });
   Object.assign(compileResult.vfsFiles, uiFoundation.files);
+  compileResult.vfsFiles = ensureGeneratedUiFoundation(compileResult.vfsFiles, {
+    industry: selections.industryOverlay || (selections as { industry?: string }).industry,
+    templateId: selections.templateId,
+    themePresetId,
+    needsBooking: selections.needsBooking,
+    wantsLeadCapture: selections.wantsLeadCapture,
+    sellsProducts: selections.sellsProducts,
+  }).files;
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
@@ -547,6 +697,11 @@ function projectToSiteBundleSnapshot(
     'Stage 4b -> SiteBundleSnapshot.meta',
   );
   const resolvedTemplateId = selections.templateId || null;
+  const generationBrief = buildWizardGenerationBrief({
+    pageRegistry: registry,
+    vfsFiles: compileResult.vfsFiles,
+    uiFoundation,
+  });
 
   return {
     snapshotId: `snap_${nanoid(8)}`,
@@ -585,6 +740,7 @@ function projectToSiteBundleSnapshot(
         manifestPath: '/.unison/ui-manifest.json',
         importRoot: uiFoundation.importRoot,
       } : undefined,
+      generationBrief,
       designIntervention,
     },
   };

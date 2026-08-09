@@ -229,6 +229,25 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
   // Strip leading "Here's…" prose lines that survived extractCleanCode
   code = code.replace(/^(?:\s*\/\/[^\n]*\n)*\s*(?:Here(?:'s| is)|Sure|Below|This is)\b[^\n]*\n/i, "");
 
+  // Generated Vite snapshots do not provide Next.js image optimization.
+  // Preserve the rendered asset while removing framework-only props.
+  try {
+    const nextImageImport = code.match(/^[ \t]*import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]next\/image['"]\s*;?\s*$\n?/m);
+    if (nextImageImport) {
+      const componentName = nextImageImport[1];
+      const escapedName = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      code = code
+        .replace(nextImageImport[0], '')
+        .replace(new RegExp(`<${escapedName}\\b`, 'g'), '<img')
+        .replace(new RegExp(`</${escapedName}>`, 'g'), '</img>')
+        .replace(/\s+(?:priority|fill)(?=\s|\/?>)/g, '')
+        .replace(/\s+(?:placeholder|blurDataURL)=\{?(["'`])[^"'`]*\1\}?/g, '');
+      applied.push('normalizeNextImage');
+    }
+  } catch (e) {
+    issues.push(`normalizeNextImage failed: ${(e as Error).message}`);
+  }
+
   // Generated snapshots own the UI runtime facade modules. Normalize common
   // model imports here so every Lane B response uses the same executable VFS
   // contract while leaving unrelated packages untouched.

@@ -20,7 +20,7 @@ const FORM_INTENT_TARGETS: Record<string, string[]> = {
 };
 
 type RuntimeController = {
-  handler: 'client' | 'intent-exec' | 'workflow-trigger' | 'stripe-checkout' | 'auth-overlay' | 'webhook';
+  handler: 'client' | 'site-runtime' | 'intent-exec' | 'workflow-trigger' | 'stripe-checkout' | 'auth-overlay' | 'webhook';
   transport: 'client' | 'supabase-function' | 'external';
   functionName: string | null;
   intents: readonly string[];

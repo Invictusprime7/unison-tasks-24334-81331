@@ -23,6 +23,9 @@ describe('Theme deprecation sweep — wizard preset is single source of truth', 
       expect(css).toContain('.ut-shadcn-dialog-content');
       expect(css).toContain('.unison-runtime-glass');
       expect(css).toContain('.ut-glass-card');
+      expect(css).toContain('--ut-surface-shadow:');
+      expect(css).toContain('.ut-foundation-card');
+      expect(css).toContain('.ut-media-frame');
     }
   });
 
@@ -55,6 +58,9 @@ describe('Theme deprecation sweep — wizard preset is single source of truth', 
     expect(css).toContain('border-radius: var(--radius);');
     expect(css).not.toContain('border-radius: 9999px;');
     expect(css).not.toContain('border-radius: 1.5rem;');
+    expect(css).toContain('--ut-surface-shadow: none;');
+    expect(css).toContain('--ut-surface-lift: 0px;');
+    expect(css).not.toContain('background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);');
   });
 });
 

@@ -20,6 +20,7 @@ import {
   REQUIRED_SITE_CAPABILITIES,
   provisionConfirmedLaunchSite,
 } from '@/services/confirmedLaunchProvisioner';
+import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 
 const ids = {
   businessId: '11111111-1111-4111-8111-111111111111',
@@ -58,6 +59,7 @@ const generatedSiteRuntimeManifest = {
   reads: [],
   intents: [],
   controllers: [],
+  agents: [],
   requiredBackendFunctions: [],
   readiness: { status: 'ready' as const, blockers: [] },
   generatedAt: '2026-07-28T13:00:00.000Z',
@@ -65,9 +67,14 @@ const generatedSiteRuntimeManifest = {
 
 describe('provisionConfirmedLaunchSite', () => {
   it('sends the complete live-site capability contract to the confirmed launch endpoint', async () => {
+    const foundation = buildGeneratedUiFoundation({ themePresetId: 'modern' });
+    const vfsFiles = {
+      ...foundation.files,
+      '/src/App.tsx': 'export default function App() { return null; }',
+    };
     invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
     maybeSingle.mockResolvedValueOnce({
-      data: { id: ids.draftId, vfs_files: { '/src/App.tsx': 'export default function App() {}' } },
+      data: { id: ids.draftId, vfs_files: vfsFiles },
       error: null,
     });
 
@@ -79,7 +86,7 @@ describe('provisionConfirmedLaunchSite', () => {
       systemType: 'agency',
       themePresetId: 'modern',
       code: 'export default function App() { return null; }',
-      vfsFiles: { '/src/App.tsx': 'export default function App() { return null; }' },
+      vfsFiles,
       siteBundleSnapshot: {},
       runtimeManifest: {},
       generatedSiteRuntimeManifest,
@@ -118,5 +125,35 @@ describe('provisionConfirmedLaunchSite', () => {
       businessRuntime,
       dataBindings: [],
     })).rejects.toThrow('incomplete site identity');
+  });
+
+  it('rejects a persisted draft that lost the generated UI foundation', async () => {
+    const foundation = buildGeneratedUiFoundation({ themePresetId: 'modern' });
+    const vfsFiles = {
+      ...foundation.files,
+      '/src/App.tsx': 'export default function App() { return null; }',
+    };
+    invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
+    maybeSingle.mockResolvedValueOnce({
+      data: { id: ids.draftId, vfs_files: { '/src/App.tsx': 'export default function App() {}' } },
+      error: null,
+    });
+
+    await expect(provisionConfirmedLaunchSite({
+      ids,
+      businessName: 'Northstar Studio',
+      industry: 'agency',
+      siteName: 'Northstar Studio Site',
+      systemType: 'agency',
+      themePresetId: 'modern',
+      code: 'export default function App() { return null; }',
+      vfsFiles,
+      siteBundleSnapshot: {},
+      runtimeManifest: {},
+      generatedSiteRuntimeManifest,
+      wizardSelections: {},
+      businessRuntime,
+      dataBindings: [],
+    })).rejects.toThrow('confirmed launch builder_drafts read-back lost the snapshot-owned UI foundation');
   });
 });

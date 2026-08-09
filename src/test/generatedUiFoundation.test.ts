@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildGeneratedUiFoundation,
+  ensureGeneratedUiFoundation,
+  getGeneratedUiFoundationPersistenceViolations,
   readGeneratedUiManifest,
   validateGeneratedUiContract,
 } from '@/platform/core/generatedUiFoundation';
@@ -23,6 +25,12 @@ describe('generated UI foundation', () => {
     expect(foundation.files['/src/unison/ui/card.tsx']).toContain('export function CardFooter');
     expect(foundation.files['/src/unison/ui/form-fields.tsx']).toContain('export function FormField');
     expect(foundation.files['/src/unison/ui/form-fields.tsx']).toContain('export function FormFields');
+    expect(foundation.files['/src/unison/ui/form-fields.tsx']).toContain('export function Select');
+    expect(foundation.files['/src/unison/ui/form-fields.tsx']).toContain('export function Checkbox');
+    expect(foundation.files['/src/unison/ui/form-fields.tsx']).toContain('export function FormGrid');
+    expect(foundation.files['/src/unison/ui/button.tsx']).toContain('export function IconButton');
+    expect(foundation.files['/src/unison/ui/button.tsx']).toContain("destructive:");
+    expect(foundation.files['/src/unison/ui/icons.ts']).toContain("export const Linkedin = brandIcon('Linkedin');");
     expect(foundation.files['/src/unison/ui/navigation.tsx']).toContain("from './radix/dialog'");
     expect(foundation.files['/src/unison/ui/radix/dialog.ts']).toContain("@radix-ui/react-dialog");
     expect(foundation.files['/src/unison/ui/icon.tsx']).toContain('LucideIcon');
@@ -35,7 +43,7 @@ describe('generated UI foundation', () => {
     // Root barrel must expose the full surface of every foundation module, or
     // a page importing e.g. CardHeader from '@/unison/ui' renders undefined.
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';");
-    expect(foundation.files['/src/unison/ui/index.ts']).toContain("FormField, FormFields } from './form-fields';");
+    expect(foundation.files['/src/unison/ui/index.ts']).toContain("FormField, FormFields, FormGrid, FormHint, FormError } from './form-fields';");
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Slot, Slottable } from './radix/slot';");
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { cn } from './cn';");
     // Animation aliases must stay layout-transparent like motion.tsx Stagger.
@@ -57,6 +65,9 @@ describe('generated UI foundation', () => {
     expect(foundation.manifest.runtimeFacades.icons).toBe('@/unison/ui/icons');
     expect(foundation.manifest.runtimeFacades.animation).toBe('@/unison/ui/animation');
     expect(foundation.manifest.runtimeFacades.radixPrimitives).toContain('dialog');
+    expect(foundation.manifest.formFormats).toContain('appointment');
+    expect(foundation.manifest.buttonFormats).toContain('icon');
+    expect(foundation.manifest.iconFormats).toContain('social');
   });
 
   it('reads only a valid snapshot-owned manifest from VFS', () => {
@@ -70,6 +81,38 @@ describe('generated UI foundation', () => {
       '/.unison/ui-manifest.json': JSON.stringify({ importRoot: '@/unison/ui' }),
     })).toBeNull();
     expect(readGeneratedUiManifest(null)).toBeNull();
+  });
+
+  it('normalizes legacy 1.1 manifests into the expanded component-format registry', () => {
+    const legacyManifest = { ...foundation.manifest, version: '1.1' } as Record<string, unknown>;
+    delete legacyManifest.formFormats;
+    delete legacyManifest.buttonFormats;
+    delete legacyManifest.iconFormats;
+
+    const manifest = readGeneratedUiManifest({
+      '/.unison/ui-manifest.json': JSON.stringify(legacyManifest),
+    });
+
+    expect(manifest?.version).toBe('1.2');
+    expect(manifest?.formFormats).toContain('appointment');
+    expect(manifest?.buttonFormats).toContain('icon');
+    expect(manifest?.iconFormats).toContain('social');
+  });
+
+  it('rehydrates an incomplete Stage 4b foundation before downstream use', () => {
+    const incomplete = { ...foundation.files };
+    delete incomplete['/src/unison/ui/recipes.tsx'];
+
+    expect(getGeneratedUiFoundationPersistenceViolations(incomplete)).toContain(
+      'missing /src/unison/ui/recipes.tsx',
+    );
+    const rehydrated = ensureGeneratedUiFoundation(incomplete, {
+      industry: 'salon',
+      themePresetId: 'organic',
+      needsBooking: true,
+    });
+    expect(rehydrated.files['/src/unison/ui/recipes.tsx']).toContain('BentoFeatureGrid');
+    expect(getGeneratedUiFoundationPersistenceViolations(rehydrated.files)).toEqual([]);
   });
 
   it('upgrades legacy wizard snapshots with missing facade files during preview preparation', () => {
@@ -273,6 +316,17 @@ export default function Experience(){ const form = useForm({ resolver: zodResolv
     }, { strict: true, entryPoint: '/src/App.tsx' });
     expect(prepared['/App.tsx']).toContain("import './unison/ui/tailwind.css'");
     expect(prepared['/index.css']).toContain("@import './unison/ui/tailwind.css'");
+  });
+
+  it('normalizes unsupported next/image components to native images', () => {
+    const sanitized = sanitizeTsxFile('/src/pages/About.tsx', `import Image from 'next/image';
+export default function About(){ return <main><Image src="/team.jpg" alt="Our team" width={1200} height={800} priority /></main>; }`);
+
+    expect(sanitized.valid).toBe(true);
+    expect(sanitized.applied).toContain('normalizeNextImage');
+    expect(sanitized.code).not.toContain('next/image');
+    expect(sanitized.code).toContain('<img');
+    expect(sanitized.code).not.toContain('priority');
   });
 
   it('repairs Contact default and named component import mismatches before React renders', () => {

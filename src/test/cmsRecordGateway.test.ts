@@ -11,7 +11,7 @@ const service = readFileSync(
   'utf8',
 );
 const commandMigration = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260806143000_add_content_entry_command.sql'),
+  resolve(process.cwd(), 'supabase/migrations/20260806203649_add_content_entry_command.sql'),
   'utf8',
 );
 

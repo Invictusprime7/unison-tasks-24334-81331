@@ -7,13 +7,13 @@
  * - Easy project management
  */
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FolderKanban, Plus, Globe, Settings, Trash2, ExternalLink,
   Sparkles, Rocket, Layout, Palette, Clock, ChevronRight,
   MoreVertical, Copy, Star, FileText, Home, Download,
   Building2, Users, Loader2, Paintbrush, ArrowLeft,
-  BarChart3, Target, Kanban, Workflow, Zap, UserCircle,
+  BarChart3, Target, Workflow, Zap,
   Search, Grid3X3, List, Edit3, Eye, ChevronDown, Database
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,13 +63,7 @@ import {
 import { mergeWorkspaceProjects } from '@/services/cloudProjectDrafts';
 import { findBuilderDraftIdForProject } from '@/services/builderDraftBridge';
 
-// CRM Components
-import { CRMContacts } from '@/components/crm/CRMContacts';
-import { CRMLeads } from '@/components/crm/CRMLeads';
-import { CRMPipeline } from '@/components/crm/CRMPipeline';
-import { CRMWorkflows } from '@/components/crm/CRMWorkflows';
-import { CRMFormSubmissions } from '@/components/crm/CRMFormSubmissions';
-import { CRMOverview } from '@/components/crm/CRMOverview';
+import CRMDashboard, { type CRMView } from '@/pages/CRMDashboard';
 import { CloudTeams } from './CloudTeams';
 import { CloudDatabase } from './CloudDatabase';
 import { BusinessAutomationSettings } from '@/components/crm/BusinessAutomationSettings';
@@ -177,13 +171,13 @@ const transformBusiness = (data: Record<string, unknown>): Business => ({
 
 type ViewMode = 'grid' | 'list';
 type BusinessSection = 'projects' | 'crm' | 'automations' | 'team' | 'settings' | 'database';
-type CRMSubTab = 'overview' | 'contacts' | 'leads' | 'pipeline' | 'workflows' | 'forms';
 
 interface CloudProjectsLocationState {
   tab?: 'overview' | 'projects' | 'assets' | 'email' | 'integrations' | 'security' | 'profile';
   workspaceSection?: BusinessSection;
   businessId?: string;
   projectId?: string;
+  crmView?: CRMView;
 }
 
 export function CloudProjects({ userId, businessId: propBusinessId, onProjectSelect }: CloudProjectsProps) {
@@ -196,7 +190,7 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
   const [businessSelectionMode, setBusinessSelectionMode] = useState(false);
   const [selectedBusinessIds, setSelectedBusinessIds] = useState<string[]>([]);
   const [activeSection, setActiveSection] = useState<BusinessSection>('projects');
-  const [crmSubTab, setCrmSubTab] = useState<CRMSubTab>('overview');
+  const [crmView, setCrmView] = useState<CRMView>('overview');
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
@@ -321,6 +315,10 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
 
     if (state.workspaceSection) {
       setActiveSection(state.workspaceSection);
+    }
+
+    if (state.crmView) {
+      setCrmView(state.crmView);
     }
 
     if (state.businessId) {
@@ -961,15 +959,6 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
   const selectedScopeProject =
     projects.find((project) => project.id === selectedProjectScopeId) || null;
 
-  const crmTabs: Array<{ id: CRMSubTab; label: string; icon: React.ElementType }> = [
-    { id: 'overview', label: 'Overview', icon: BarChart3 },
-    { id: 'contacts', label: 'Contacts', icon: UserCircle },
-    { id: 'leads', label: 'Leads', icon: Target },
-    { id: 'pipeline', label: 'Pipeline', icon: Kanban },
-    { id: 'workflows', label: 'Workflows', icon: Workflow },
-    { id: 'forms', label: 'Forms', icon: FileText },
-  ];
-
   const businessSettingsSnapshot =
     selectedBusiness?.settings && typeof selectedBusiness.settings === 'object' && !Array.isArray(selectedBusiness.settings)
       ? (selectedBusiness.settings as Record<string, any>)
@@ -996,35 +985,6 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
       businessIdentityFields.length) *
       100
   );
-
-  // ==================== CRM CONTENT ====================
-
-  const renderCRMContent = () => {
-    if (!selectedScopeProject || !selectedBusiness) {
-      return null;
-    }
-
-    switch (crmSubTab) {
-      case 'contacts':
-        return <CRMContacts businessId={selectedBusiness.id} projectId={selectedScopeProject.id} />;
-      case 'leads':
-        return <CRMLeads businessId={selectedBusiness.id} projectId={selectedScopeProject.id} />;
-      case 'pipeline':
-        return <CRMPipeline businessId={selectedBusiness.id} projectId={selectedScopeProject.id} />;
-      case 'workflows':
-        return <CRMWorkflows businessId={selectedBusiness.id} projectId={selectedScopeProject.id} />;
-      case 'forms':
-        return <CRMFormSubmissions businessId={selectedBusiness.id} projectId={selectedScopeProject.id} />;
-      default:
-        return (
-          <CRMOverview
-            businessId={selectedBusiness.id}
-            projectId={selectedScopeProject.id}
-            onNavigate={(v) => setCrmSubTab(v as CRMSubTab)}
-          />
-        );
-    }
-  };
 
   // ==================== LOADING ====================
 
@@ -1682,26 +1642,12 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
                   </Card>
 
                   {selectedScopeProject ? (
-                    <div className="flex gap-6">
-                      <nav className="w-44 flex-shrink-0 space-y-1">
-                        {crmTabs.map((tab) => (
-                          <Button
-                            key={tab.id}
-                            variant={crmSubTab === tab.id ? 'secondary' : 'ghost'}
-                            className={cn("w-full justify-start", crmSubTab === tab.id && "bg-white/10")}
-                            onClick={() => setCrmSubTab(tab.id)}
-                          >
-                            <tab.icon className="h-4 w-4 mr-2" />
-                            {tab.label}
-                          </Button>
-                        ))}
-                      </nav>
-                      <div className="flex-1 min-w-0">
-                        <Suspense fallback={<Loader2 className="h-8 w-8 animate-spin" />}>
-                          {renderCRMContent()}
-                        </Suspense>
-                      </div>
-                    </div>
+                    <CRMDashboard
+                      embedded
+                      businessId={selectedBusiness.id}
+                      projectId={selectedScopeProject.id}
+                      initialView={crmView}
+                    />
                   ) : (
                     <Card className="bg-white/[0.02] border-white/5">
                       <CardContent className="py-12 text-center text-white/40">

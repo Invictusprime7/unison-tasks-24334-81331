@@ -17,6 +17,12 @@
 
 import { BUILDER_BODY_BUDGET_BYTES } from '@/services/builderPayloadBudget';
 
+const LANE_B_UI_CONTEXT_PATHS = [
+  '/.unison/ui-manifest.json',
+  '/src/unison/ui/index.ts',
+] as const;
+const DEFAULT_LANE_B_VFS_CONTEXT_CHARS = 24_000;
+
 /** Fixed per-request overhead (classify, research, provider handshake). */
 export const LANE_B_FIXED_OVERHEAD_MS = 18_000;
 /** Observed generation cost of one full production-quality page. */
@@ -116,4 +122,49 @@ export function measurePayloadBytes(value: unknown): number {
   } catch {
     return BUILDER_BODY_BUDGET_BYTES;
   }
+}
+
+/** Build the bounded canonical VFS context that accompanies each Lane B batch. */
+export function buildLaneBVfsContext(
+  files: Record<string, string>,
+  maxChars = DEFAULT_LANE_B_VFS_CONTEXT_CHARS,
+): Record<string, string> {
+  const context: Record<string, string> = {};
+  let totalChars = 0;
+
+  for (const path of LANE_B_UI_CONTEXT_PATHS) {
+    const source = files[path];
+    if (!source?.trim()) continue;
+    context[path] = source;
+    totalChars += source.length;
+  }
+
+  const entries = Object.entries(files).sort(([left], [right]) => {
+    const rank = (path: string) => path === '/src/pages/Home.tsx'
+      ? 0
+      : path.includes('/src/pages/')
+        ? 1
+        : path === '/src/App.tsx'
+          ? 2
+          : path.endsWith('.css')
+            ? 3
+            : 4;
+    return rank(left) - rank(right);
+  });
+
+  for (const [path, source] of entries) {
+    if (path in context) continue;
+    if (!/\.(tsx|jsx|css|json)$/.test(path)) continue;
+    if (
+      !path.startsWith('/src/pages/') &&
+      path !== '/src/App.tsx' &&
+      path !== '/src/index.css' &&
+      !path.startsWith('/.unison/')
+    ) continue;
+    if (totalChars + source.length > maxChars) continue;
+    context[path] = source;
+    totalChars += source.length;
+  }
+
+  return context;
 }

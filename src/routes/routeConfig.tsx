@@ -1,6 +1,7 @@
 import { AsyncBoundary, AsyncRouteLoadingFallback } from "@/components/RouteErrorBoundary";
 import { CloudProvider } from "@/contexts/CloudContext";
 import { lazy, type ReactElement } from "react";
+import { Navigate } from "react-router-dom";
 
 import Auth from "@/pages/Auth";
 import Landing from "@/pages/Landing";
@@ -22,7 +23,6 @@ const AIPageGenerator = lazy(() =>
     default: module.AIPageGenerator,
   })),
 );
-const CRMDashboard = lazy(() => import("@/pages/CRMDashboard"));
 const BusinessSettings = lazy(() => import("@/pages/BusinessSettings"));
 const BusinessCatalog = lazy(() => import("@/pages/BusinessCatalog"));
 const BusinessContent = lazy(() => import("@/pages/BusinessContent"));
@@ -273,7 +273,13 @@ export const appRoutes: AppRouteConfig[] = [
   },
   {
     path: "/crm",
-    element: withAsyncBoundary(<CRMDashboard />),
+    element: (
+      <Navigate
+        to="/cloud"
+        replace
+        state={{ tab: "projects", workspaceSection: "crm", crmView: "overview" }}
+      />
+    ),
     meta: {
       id: "crm",
       title: "CRM",
@@ -282,7 +288,7 @@ export const appRoutes: AppRouteConfig[] = [
       chrome: "legacy",
       requiresAuth: true,
       requiresWorkspace: true,
-      primaryAction: "Add lead",
+      deprecatedAliasFor: "/cloud",
     },
   },
   {
@@ -327,7 +333,13 @@ export const appRoutes: AppRouteConfig[] = [
 
   {
     path: "/dashboard/leads",
-    element: withAsyncBoundary(<CRMDashboard initialView="leads" />),
+    element: (
+      <Navigate
+        to="/cloud"
+        replace
+        state={{ tab: "projects", workspaceSection: "crm", crmView: "leads" }}
+      />
+    ),
     meta: {
       id: "dashboard-leads",
       title: "Leads",
@@ -336,8 +348,7 @@ export const appRoutes: AppRouteConfig[] = [
       chrome: "legacy",
       requiresAuth: true,
       requiresWorkspace: true,
-      deprecatedAliasFor: "/crm",
-      primaryAction: "Add lead",
+      deprecatedAliasFor: "/cloud",
     },
   },
   {

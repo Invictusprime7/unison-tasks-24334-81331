@@ -7,7 +7,7 @@ const siteAuth = readFileSync(
   'utf8',
 );
 const migration = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260806033000_align_site_users_with_canonical_sites.sql'),
+  resolve(process.cwd(), 'supabase/migrations/20260806142323_align_site_users_with_canonical_sites.sql'),
   'utf8',
 );
 const overlay = readFileSync(

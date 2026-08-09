@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createBuilderPage, createEmptyPageRegistry } from '@/types/pageRegistry';
 import { createEmptyCreatorData } from '@/types/creatorData';
@@ -24,6 +24,7 @@ import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeRe
 import { createCanonicalComponentInstance } from '@/services/canonicalComponentRegistry';
 import { resolveComponentRuntimeContract } from '@/services/componentRuntimeContract';
 import { compileGeneratedSiteRuntimeManifest } from '@/services/generatedSiteRuntimeManifest';
+import { getIntentDef } from '@/platform/core/intentSurfaceRegistry';
 
 function createSnapshot(): SiteBundleSnapshot {
   const pageRegistry = createEmptyPageRegistry();
@@ -251,17 +252,197 @@ describe('launch business runtime persistence', () => {
       ]),
     });
     expect(manifest.intents).toEqual(expect.arrayContaining([
-      expect.objectContaining({ intent: 'booking.create', componentIds: [instance!.instanceId] }),
+      expect.objectContaining({
+        intent: 'booking.create',
+        handler: 'site-runtime',
+        componentIds: [instance!.instanceId],
+      }),
     ]));
     expect(manifest.controllers).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        handler: 'intent-exec',
+        handler: 'site-runtime',
         functionName: 'site-runtime',
         intents: ['booking.create'],
         requiredCapabilities: ['booking'],
       }),
     ]));
+    expect(manifest.controllers.find((controller) => controller.intents.includes('booking.create')))
+      .not.toMatchObject({ functionName: expect.stringMatching(/intent-(?:exec|router|booking)/) });
+    expect(manifest.agents).toEqual([{
+      agentSlug: 'booking_agent',
+      intents: ['booking.create'],
+      allowedTools: ['calendar.check', 'calendar.book'],
+      requiredCapabilities: ['booking'],
+    }]);
     expect(manifest.requiredBackendFunctions).toContain('site-runtime');
+  });
+
+  it('does not provision an agent binding without a generated Booking intent', () => {
+    const manifest = compileGeneratedSiteRuntimeManifest({
+      siteId: 'site-1',
+      snapshot: createSnapshot(),
+      enabledCapabilities: ['booking'],
+      generatedAt: '2026-07-30T00:00:00.000Z',
+    });
+
+    expect(manifest.agents).toEqual([]);
+  });
+
+  it('reconciles Builder revisions through the compiler-produced runtime contract', () => {
+    const commitService = readFileSync(
+      resolve(process.cwd(), 'src/services/vfsCommitService.ts'),
+      'utf8',
+    );
+    const reconciler = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/reconcile-generated-runtime/index.ts'),
+      'utf8',
+    );
+    const config = readFileSync(resolve(process.cwd(), 'supabase/config.toml'), 'utf8');
+
+    expect(commitService).toContain("files['/.unison/wizard-seed.json']");
+    expect(commitService).toContain('seed.canonical?.capabilities');
+    expect(commitService).toContain('compileGeneratedSiteRuntimeManifest({');
+    expect(commitService).toContain("supabase.functions.invoke('reconcile-generated-runtime'");
+    expect(commitService).toContain("status = 'rejected'");
+    expect(commitService).toContain("code: 'generated-runtime-reconciliation-failed'");
+    expect(reconciler).toContain('UPDATE public.site_runtime_configs');
+    expect(reconciler).toContain("placement_key LIKE 'runtime:%'");
+    expect(reconciler).toContain('INSERT INTO public.ai_plugin_instances');
+    expect(reconciler).toContain("await pg.queryArray('BEGIN')");
+    expect(reconciler).toContain("await pg.queryArray('COMMIT')");
+    expect(config).toMatch(/\[functions\.reconcile-generated-runtime\]\r?\nverify_jwt = true/);
+  });
+
+  it('declares the site runtime as the sole canonical booking.create handler', () => {
+    expect(getIntentDef('booking.create')).toMatchObject({
+      handler: 'site-runtime',
+      requiredCapabilities: ['booking'],
+    });
+  });
+
+  it('does not generate new booking bindings to legacy executors', () => {
+    const legacyBinding = /booking\.create[^\n]*(?:intent-exec|intent-router|intent-booking)|(?:intent-exec|intent-router|intent-booking)[^\n]*booking\.create/;
+    const builderActions = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/builder-actions/index.ts'),
+      'utf8',
+    );
+    const systemsCompile = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/systems-compile/index.ts'),
+      'utf8',
+    );
+
+    expect(builderActions).not.toMatch(legacyBinding);
+    expect(systemsCompile).not.toMatch(legacyBinding);
+  });
+
+  it('shuts down every legacy Booking execution path', () => {
+    const intentExec = readFileSync(resolve(process.cwd(), 'supabase/functions/intent-exec/index.ts'), 'utf8');
+    const intentRouter = readFileSync(resolve(process.cwd(), 'supabase/functions/intent-router/index.ts'), 'utf8');
+    const intentRouterLite = readFileSync(resolve(process.cwd(), 'supabase/functions/intent-router-lite/index.ts'), 'utf8');
+    const config = readFileSync(resolve(process.cwd(), 'supabase/config.toml'), 'utf8');
+
+    expect(intentExec).not.toContain('intentId === "booking.create"');
+    expect(intentExec).not.toContain('handleBookingCreate');
+    expect(intentExec).not.toContain('"intent-booking"');
+    expect(intentRouter).not.toContain('case "booking.create"');
+    expect(intentRouterLite).not.toContain('BOOKING_INTENTS');
+    expect(intentRouterLite).not.toContain('forwardToFunction("intent-booking"');
+    expect(config).not.toContain('[functions.intent-booking]');
+    expect(existsSync(resolve(process.cwd(), 'supabase/functions/intent-booking/index.ts'))).toBe(false);
+  });
+
+  it('does not let the legacy React runtime bypass the canonical Booking gateway', () => {
+    const runtimeProvider = readFileSync(
+      resolve(process.cwd(), 'src/runtime/TemplateRuntimeProvider.tsx'),
+      'utf8',
+    );
+    const bookingManager = runtimeProvider.slice(
+      runtimeProvider.indexOf('function createBookingManagerWired'),
+      runtimeProvider.indexOf('function createBookingManagerWired') + 4_000,
+    );
+
+    expect(bookingManager).not.toContain("invokeRuntimeCanonicalIntent(config, 'booking.create'");
+    expect(bookingManager).not.toContain(".from('bookings')");
+    expect(bookingManager).toContain('Booking writes require the generated site-runtime adapter.');
+  });
+
+  it('removes unreferenced public and preview-only Booking writers', () => {
+    const config = readFileSync(resolve(process.cwd(), 'supabase/config.toml'), 'utf8');
+    const templateAutomation = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/template-automation/index.ts'),
+      'utf8',
+    );
+    const functionalBlocks = readFileSync(
+      resolve(process.cwd(), 'src/components/creatives/web-builder/functional-blocks/index.ts'),
+      'utf8',
+    );
+
+    expect(config).not.toContain('[functions.create-booking]');
+    expect(existsSync(resolve(process.cwd(), 'supabase/functions/create-booking/index.ts'))).toBe(false);
+    expect(templateAutomation).not.toContain("case 'createBooking'");
+    expect(templateAutomation).not.toContain("case 'getAvailableSlots'");
+    expect(functionalBlocks).not.toContain("export { BookingWidget }");
+    expect(existsSync(resolve(
+      process.cwd(),
+      'src/components/creatives/web-builder/functional-blocks/BookingWidget.tsx',
+    ))).toBe(false);
+  });
+
+  it('keeps the private canonical operation as the only Booking transaction writer', () => {
+    const forbiddenWriters = [
+      'supabase/functions/agent-runner/index.ts',
+      'supabase/functions/intent-router/index.ts',
+      'src/lib/crm-managers.ts',
+      'src/runtime/TemplateRuntimeProvider.tsx',
+      'supabase/functions/template-automation/index.ts',
+    ];
+
+    for (const file of forbiddenWriters) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8');
+      expect(source, file).not.toMatch(/\.from\(["']bookings["']\)[\s\S]{0,500}?\.(?:insert|update|upsert|delete)\(/);
+      expect(source, file).not.toMatch(/\.from\(["']availability_slots["']\)[\s\S]{0,500}?\.update\(\{\s*is_booked:/);
+    }
+
+    const agentRunner = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/agent-runner/index.ts'),
+      'utf8',
+    );
+    const siteRuntime = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/site-runtime/index.ts'),
+      'utf8',
+    );
+    const sharedBookingAdapter = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/_shared/canonicalBooking.ts'),
+      'utf8',
+    );
+    const bookingMigration = readdirSync(resolve(process.cwd(), 'supabase/migrations'))
+      .filter((file) => file.endsWith('.sql'))
+      .map((file) => readFileSync(resolve(process.cwd(), 'supabase/migrations', file), 'utf8'))
+      .find((source) => source.includes('private.create_atomic_booking'));
+
+    expect(bookingMigration).toContain('CREATE OR REPLACE FUNCTION private.create_atomic_booking');
+    expect(bookingMigration).toContain('FOR UPDATE');
+    expect(bookingMigration).toContain('pg_advisory_xact_lock');
+    expect(bookingMigration).toContain('REVOKE ALL ON FUNCTION private.create_atomic_booking');
+    expect(sharedBookingAdapter).toContain('private.create_atomic_booking');
+    expect(siteRuntime).toContain('createCanonicalBooking({');
+    expect(siteRuntime).not.toContain('INSERT INTO public.bookings');
+    expect(agentRunner).toContain("'calendar.book': calendarBook");
+    expect(agentRunner).toContain('createCanonicalBooking({');
+    expect(agentRunner).toContain(".from('ai_plugin_instances')");
+    expect(agentRunner).toContain(".from('projects')");
+    expect(agentRunner).toContain(".from('site_runtime_configs')");
+    expect(agentRunner).toContain('settings?.generatedSiteRuntimeManifest');
+    expect(agentRunner).toContain("manifest?.readiness?.status !== 'ready'");
+    expect(agentRunner).toContain('manifest.agents.find');
+    expect(agentRunner).toContain("registryAgent.id !== instance.agent_id");
+    expect(agentRunner).toContain('agentSlug = authorization.agentSlug');
+    expect(agentRunner).toContain('allowedTools.filter((tool) => registryTools.includes(tool))');
+    expect(agentRunner).toContain('idempotencyKey: `agent:${context.eventId}`');
+    expect(agentRunner).toContain("event.intent === 'booking.create'");
+    expect(agentRunner).toContain(".from('availability_slots')");
+    expect(agentRunner).toContain("status: 'failed'");
+    expect(agentRunner).toContain("? { ...(event.payload || {}), ...toolCall.payload }");
   });
 
   it('submits generated booking forms through the site runtime with stable visitor context', () => {
@@ -321,8 +502,14 @@ describe('launch business runtime persistence', () => {
     expect(provisioner).toContain('GENERATED_RUNTIME_SNAPSHOT_MISMATCH');
     expect(provisioner).toContain('generatedSiteRuntimeManifest: body.generatedSiteRuntimeManifest');
     expect(provisioner).toContain("PUBLIC_RUNTIME_FUNCTIONS = new Set(['site-runtime', 'intent-exec', 'create-order-checkout'])");
+    expect(provisioner).toContain("'site-runtime'");
     expect(provisioner).toContain('manifest.controllers.find((candidate) =>');
     expect(provisioner).toContain('has no matching controller');
+    expect(provisioner).toContain('body.generatedSiteRuntimeManifest.agents');
+    expect(provisioner).toContain('INSERT INTO public.ai_plugin_instances');
+    expect(provisioner).toContain('GENERATED_RUNTIME_AGENT_UNAVAILABLE');
+    expect(provisioner).toContain('references uncompiled intent');
+    expect(provisioner).toContain('requires disabled capability');
   });
 
   it('keeps published catalog reads site-scoped and source-whitelisted', () => {
@@ -352,6 +539,10 @@ describe('launch business runtime persistence', () => {
 
   it('routes standalone reads through the persisted manifest dispatcher and atomically authorizes booking writes', () => {
     const dispatcher = readFileSync(resolve(process.cwd(), 'supabase/functions/site-runtime/index.ts'), 'utf8');
+    const canonicalOperation = readdirSync(resolve(process.cwd(), 'supabase/migrations'))
+      .filter((file) => file.endsWith('.sql'))
+      .map((file) => readFileSync(resolve(process.cwd(), 'supabase/migrations', file), 'utf8'))
+      .find((source) => source.includes('private.create_atomic_booking')) || '';
 
     expect(dispatcher).toContain('generatedSiteRuntimeManifest');
     expect(dispatcher).toContain('body.runtimeVersion !== context.manifest.version');
@@ -359,19 +550,18 @@ describe('launch business runtime persistence', () => {
     expect(dispatcher).toContain('body.operation === "action"');
     expect(dispatcher).toContain('isBookingActionAuthorized');
     expect(dispatcher).toContain('bookingCapabilityIsEnabled');
-    expect(dispatcher).toContain('FOR UPDATE');
-    expect(dispatcher).toContain('SET is_booked = true');
-    expect(dispatcher).toContain('INSERT INTO public.bookings');
-    expect(dispatcher).toContain('idempotency_key = $2');
-    expect(dispatcher).toContain('pg_advisory_xact_lock');
-    expect(dispatcher).toContain('availability_slot_id');
-    expect(dispatcher).toContain('session_id');
+    expect(dispatcher).toContain('createCanonicalBooking({');
+    expect(canonicalOperation).toContain('FOR UPDATE');
+    expect(canonicalOperation).toContain('SET is_booked = true');
+    expect(canonicalOperation).toContain('INSERT INTO public.bookings');
+    expect(canonicalOperation).toContain('booking.idempotency_key = p_idempotency_key');
+    expect(canonicalOperation).toContain('pg_advisory_xact_lock');
+    expect(canonicalOperation).toContain('availability_slot_id');
+    expect(canonicalOperation).toContain('p_session_id');
     expect(dispatcher).toContain('{ success: true, state }');
     expect(dispatcher).toContain('loadBookingState');
     expect(dispatcher).toContain('read?.type === "booking"');
     expect(dispatcher).toContain('.eq("session_id", sessionId)');
-    expect(dispatcher).toContain('BEGIN');
-    expect(dispatcher).toContain('COMMIT');
     expect(dispatcher).toContain('This runtime action is not configured for the site');
     expect(dispatcher).toContain('/functions/v1/site-runtime-read');
   });

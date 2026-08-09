@@ -49,9 +49,17 @@ export interface GeneratedRuntimeController {
   requiredCapabilities: CapabilityId[];
 }
 
+export interface GeneratedRuntimeAgentBinding {
+  agentSlug: string;
+  intents: string[];
+  allowedTools: string[];
+  requiredCapabilities: CapabilityId[];
+}
+
 const CONTROLLER_BY_HANDLER: Record<IntentHandler, Pick<GeneratedRuntimeController, 'transport' | 'functionName'>> = {
   client: { transport: 'client', functionName: null },
   'auth-overlay': { transport: 'client', functionName: null },
+  'site-runtime': { transport: 'supabase-function', functionName: 'site-runtime' },
   'intent-exec': { transport: 'supabase-function', functionName: 'intent-exec' },
   // Public generated sites dispatch workflow-backed intents through the
   // entitlement-aware executor; workflow-trigger itself requires owner auth.
@@ -59,15 +67,6 @@ const CONTROLLER_BY_HANDLER: Record<IntentHandler, Pick<GeneratedRuntimeControll
   'stripe-checkout': { transport: 'supabase-function', functionName: 'create-order-checkout' },
   webhook: { transport: 'external', functionName: null },
 };
-
-function controllerForIntent(
-  intent: GeneratedRuntimeIntent,
-): Pick<GeneratedRuntimeController, 'transport' | 'functionName'> {
-  if (intent.intent === 'booking.create') {
-    return { transport: 'supabase-function', functionName: 'site-runtime' };
-  }
-  return CONTROLLER_BY_HANDLER[intent.handler];
-}
 
 /**
  * The persisted contract consumed by both Preview and published-site adapters.
@@ -83,6 +82,7 @@ export interface GeneratedSiteRuntimeManifest {
   reads: string[];
   intents: GeneratedRuntimeIntent[];
   controllers: GeneratedRuntimeController[];
+  agents: GeneratedRuntimeAgentBinding[];
   requiredBackendFunctions: string[];
   readiness: {
     status: 'ready' | 'blocked';
@@ -254,20 +254,28 @@ export function compileGeneratedSiteRuntimeManifest(
   const intents = Array.from(intentsByName.values()).sort((left, right) => left.intent.localeCompare(right.intent));
   const controllerGroups = new Map<string, GeneratedRuntimeIntent[]>();
   for (const intent of intents) {
-    const controller = controllerForIntent(intent);
+    const controller = CONTROLLER_BY_HANDLER[intent.handler];
     const key = `${intent.handler}:${controller.transport}:${controller.functionName || ''}`;
     controllerGroups.set(key, [...(controllerGroups.get(key) || []), intent]);
   }
   const controllers = Array.from(controllerGroups.values())
     .map((controllerIntents): GeneratedRuntimeController => ({
       handler: controllerIntents[0].handler,
-      ...controllerForIntent(controllerIntents[0]),
+      ...CONTROLLER_BY_HANDLER[controllerIntents[0].handler],
       intents: controllerIntents.map((intent) => intent.intent).sort(),
       requiredCapabilities: Array.from(new Set(
         controllerIntents.flatMap((intent) => intent.requiredCapabilities),
       )).sort(),
     }))
     .sort((left, right) => left.handler.localeCompare(right.handler));
+  const agents: GeneratedRuntimeAgentBinding[] = intents.some((intent) => intent.intent === 'booking.create')
+    ? [{
+        agentSlug: 'booking_agent',
+        intents: ['booking.create'],
+        allowedTools: ['calendar.check', 'calendar.book'],
+        requiredCapabilities: ['booking'],
+      }]
+    : [];
   const requiredBackendFunctions = Array.from(new Set([
     ...enabledCapabilities.flatMap((capability) => CAPABILITY_REGISTRY[capability]?.backend.functions || []),
     ...controllers.flatMap((controller) => controller.functionName ? [controller.functionName] : []),
@@ -281,6 +289,7 @@ export function compileGeneratedSiteRuntimeManifest(
     reads,
     intents,
     controllers,
+    agents,
     requiredBackendFunctions,
     readiness: {
       status: blockers.length === 0 ? 'ready' : 'blocked',

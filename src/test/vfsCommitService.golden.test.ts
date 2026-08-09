@@ -18,6 +18,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { runtimeReconcileInvoke } = vi.hoisted(() => ({
+  runtimeReconcileInvoke: vi.fn(async () => ({ data: { success: true }, error: null })),
+}));
+
 // -- Mocks ------------------------------------------------------------------
 
 vi.mock('@/platform/core/commitToPipeline', () => ({
@@ -106,8 +110,8 @@ vi.mock('@/integrations/supabase/client', () => {
 
   return {
     supabase: {
-      from: (table: string) => table === 'builder_drafts'
-        ? {
+      from: (table: string) => {
+        if (table === 'builder_drafts') return {
             update: (payload: { last_revision_id?: unknown }) => ({
               eq: (_column: string, id: unknown) => ({
                 eq: async (_userColumn: string, userId: unknown) => {
@@ -116,11 +120,25 @@ vi.mock('@/integrations/supabase/client', () => {
                 },
               }),
             }),
-          }
-        : {
-            insert,
-            select: (_cols: string) => selectChain((rows) => rows),
-          },
+          };
+        if (table === 'projects') return {
+          select: (_columns: string) => ({
+            eq: (_projectColumn: string, _projectId: unknown) => ({
+              eq: (_businessColumn: string, _businessId: unknown) => ({
+                single: async () => ({
+                  data: { site_id: '55555555-5555-4555-8555-555555555555' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+        return {
+          insert,
+          select: (_cols: string) => selectChain((rows) => rows),
+        };
+      },
+      functions: { invoke: runtimeReconcileInvoke },
     },
   };
 });
@@ -128,6 +146,7 @@ vi.mock('@/integrations/supabase/client', () => {
 // -- Imports (after mocks) ---------------------------------------------------
 
 import {
+  CommitRejectedError,
   commitMutation,
   loadLatestRevisionForProject,
   loadLatestPublishReadyRevisionForProject,
@@ -179,6 +198,7 @@ beforeEach(() => {
   revisionStore.length = 0;
   draftProjectionUpdates.length = 0;
   vi.clearAllMocks();
+  runtimeReconcileInvoke.mockResolvedValue({ data: { success: true }, error: null });
 });
 
 describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
@@ -565,9 +585,56 @@ describe('Move D — publish-ready ledger', () => {
 
     expect(result.publishReady).toBe(true);
     expect(result.publishBlockers).toHaveLength(0);
+    expect(runtimeReconcileInvoke).toHaveBeenCalledWith('reconcile-generated-runtime', {
+      body: expect.objectContaining({
+        businessId: IDENTITY.businessId,
+        projectId: IDENTITY.projectId,
+        manifest: expect.objectContaining({
+          siteId: '55555555-5555-4555-8555-555555555555',
+          agents: [],
+        }),
+      }),
+    });
+    expect(result.vfsFiles['/src/unison/generatedSiteRuntimeManifest.ts']).toContain(
+      'GENERATED_SITE_RUNTIME_MANIFEST',
+    );
 
     const ready = await loadLatestPublishReadyRevisionForProject(IDENTITY.projectId);
     expect(ready?.id).toBe(result.persistedRevisionId);
     expect(ready?.publishReady).toBe(true);
+  });
+
+  it('persists a rejected revision when generated runtime reconciliation fails', async () => {
+    const files = { '/src/App.tsx': 'x', '/src/pages/Home.tsx': '<Hero/>' };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents(0, 0);
+    runtimeReconcileInvoke.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'runtime control plane unavailable' },
+    });
+
+    let result: CommitRejectedError['result'] | null = null;
+    try {
+      await commitMutation({
+        source: 'ai-builder',
+        identity: IDENTITY,
+        current: { vfsFiles: files, playground: { pages: [] } as never },
+        patch: legacyFilesToPatchPlan(files, 'runtime reconciliation failure'),
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(CommitRejectedError);
+      result = (error as CommitRejectedError).result;
+    }
+
+    expect(result?.status).toBe('rejected');
+    expect(result?.publishReady).toBe(false);
+    expect(result?.publishBlockers).toContainEqual(expect.objectContaining({
+      code: 'generated-runtime-reconciliation-failed',
+      message: 'runtime control plane unavailable',
+    }));
+    expect(revisionStore).toHaveLength(1);
+    expect(revisionStore[0].status).toBe('rejected');
+    expect(draftProjectionUpdates).toEqual([]);
   });
 });

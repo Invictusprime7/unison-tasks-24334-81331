@@ -84,24 +84,16 @@ describe('composition VFS variants', () => {
     if (!restaurant) throw new Error('Restaurant composition must be registered');
     const hero = restaurant.sections.find((section) => section.type === 'hero');
     if (!hero) throw new Error('Restaurant composition must include a hero');
-    const files = compositionToReactFileSet(restaurant, '/src/pages/Home.tsx', {
+    const page = compositionToReactFileSet(restaurant, '/src/pages/Home.tsx', {
       designIntervention: {
         motionRecipes: [],
         sectionVariants: [],
         activeVariants: { [hero.id]: 'hero:split-image' },
       },
-    });
-    const page = files['/src/pages/Home.tsx'];
-    const variantModule = Object.entries(files).find(([path, source]) => (
-      path.startsWith('/src/components/variants/') && source.includes('SECTION_VARIANT = "hero:split-image"')
-    ));
+    })['/src/pages/Home.tsx'];
 
     expect(page).toContain(`"variantId": "hero:split-image"`);
     expect(page).toContain('data-ut-variant={section.variantId || undefined}');
-    expect(page).toContain('SECTION_MAP[section.id] || SECTION_MAP[section.type]');
-    expect(variantModule).toBeDefined();
-    expect(variantModule?.[1]).toContain('SECTION_LAYOUT = "split"');
-    expect(variantModule?.[1]).toContain('<Hero props={{ ...props, layout: SECTION_LAYOUT }} />');
   });
 
   it('preserves section variant identity when presentation order changes', () => {

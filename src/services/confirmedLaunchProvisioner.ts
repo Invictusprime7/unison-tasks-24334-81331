@@ -3,6 +3,7 @@ import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeCon
 import type { PlannedSectionDataBinding } from '@/services/autoEmitSectionBindings';
 import type { PlannedFormDefinition } from '@/services/launchFormDefinitions';
 import type { GeneratedSiteRuntimeManifest } from '@/services/generatedSiteRuntimeManifest';
+import { assertGeneratedUiFoundationPersistence } from '@/platform/core/generatedUiFoundation';
 
 export const REQUIRED_SITE_CAPABILITIES = [
   'business_profile',
@@ -91,6 +92,10 @@ export async function provisionConfirmedLaunchSite(
   if (!draftRow || Object.keys(persistedFiles).length === 0) {
     throw new Error('Launch did not persist the generated site files. Nothing was saved — please retry.');
   }
+  assertGeneratedUiFoundationPersistence(
+    persistedFiles as Record<string, string>,
+    'confirmed launch builder_drafts read-back',
+  );
 
   return result as ConfirmedLaunchIds;
 }

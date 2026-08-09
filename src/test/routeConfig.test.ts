@@ -75,6 +75,24 @@ describe("app route config", () => {
     expect(getNavigableRoutesForShell("public").map((route) => route.meta.id)).not.toContain("not-found");
   });
 
+  it("routes legacy CRM entry points into the scoped Cloud workspace", () => {
+    const crmRoute = getRouteById("crm");
+    const leadsRoute = getRouteById("dashboard-leads");
+
+    expect(crmRoute?.meta.deprecatedAliasFor).toBe("/cloud");
+    expect(leadsRoute?.meta.deprecatedAliasFor).toBe("/cloud");
+    expect(crmRoute?.element.props).toMatchObject({
+      to: "/cloud",
+      replace: true,
+      state: { tab: "projects", workspaceSection: "crm", crmView: "overview" },
+    });
+    expect(leadsRoute?.element.props).toMatchObject({
+      to: "/cloud",
+      replace: true,
+      state: { tab: "projects", workspaceSection: "crm", crmView: "leads" },
+    });
+  });
+
   it("resolves primary routes for shell entry points", () => {
     expect(getPrimaryRouteForShell("workspace")?.meta.id).toBe("dashboard");
     expect(getPrimaryRouteForShell("builder")?.meta.id).toBe("web-builder");

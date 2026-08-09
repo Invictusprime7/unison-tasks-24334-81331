@@ -9,7 +9,8 @@ import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
  * owner of global theme tokens and CSS.
  */
 
-export const GENERATED_UI_FOUNDATION_VERSION = '1.1' as const;
+export const GENERATED_UI_FOUNDATION_VERSION = '1.2' as const;
+const LEGACY_GENERATED_UI_FOUNDATION_VERSIONS = new Set(['1.1']);
 
 export type GeneratedUiLayoutRecipe =
   | 'floating-navbar'
@@ -24,6 +25,10 @@ export type GeneratedUiInteraction =
   | 'image-lightbox'
   | 'accordion'
   | 'tabs';
+
+export type GeneratedUiFormFormat = 'inline-capture' | 'contact' | 'appointment' | 'quote-request' | 'checkout';
+export type GeneratedUiButtonFormat = 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive' | 'link' | 'icon';
+export type GeneratedUiIconFormat = 'inline' | 'icon-button' | 'social';
 
 export interface GeneratedUiManifest {
   version: typeof GENERATED_UI_FOUNDATION_VERSION;
@@ -41,6 +46,9 @@ export interface GeneratedUiManifest {
   iconLibrary: 'lucide-react';
   layoutRecipes: GeneratedUiLayoutRecipe[];
   interactions: GeneratedUiInteraction[];
+  formFormats: GeneratedUiFormFormat[];
+  buttonFormats: GeneratedUiButtonFormat[];
+  iconFormats: GeneratedUiIconFormat[];
   requirements: string[];
 }
 
@@ -62,6 +70,19 @@ export interface GeneratedUiContractValidation {
   valid: boolean;
   violations: string[];
 }
+
+const REQUIRED_GENERATED_UI_FOUNDATION_PATHS = [
+  '/.unison/ui-manifest.json',
+  '/src/unison/ui/index.ts',
+  '/src/unison/ui/button.tsx',
+  '/src/unison/ui/card.tsx',
+  '/src/unison/ui/icons.ts',
+  '/src/unison/ui/media.tsx',
+  '/src/unison/ui/motion.tsx',
+  '/src/unison/ui/navigation.tsx',
+  '/src/unison/ui/recipes.tsx',
+  '/src/unison/ui/tailwind.css',
+] as const;
 
 const FOUNDATION_MARKER = 'UNISON GENERATED UI FOUNDATION';
 
@@ -116,7 +137,8 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
     'Prefer manifest-backed @/unison/ui imports; supported Sandpack UI packages are also available.',
     'Use semantic Stage 4b Tailwind tokens; do not overwrite /src/index.css.',
     'Use @/unison/ui/icons for Lucide icons and provide accessible labels for icon-only actions.',
-    'From @/unison/ui/form-fields, use only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, FormField, or FormFields.',
+    'Use manifest-backed form formats: FormGrid/FormFields, FormField, Input, Textarea, Select, Checkbox, FieldLabel, FormHint, and FormError.',
+    'Use Button variants or IconButton for actions; icon-only actions require an accessible label.',
     'Use responsive Tailwind variants and preserve data-ut-intent attributes on actionable controls.',
     'For @/unison/ui/motion, use only Reveal, RevealGroup, Stagger, StaggerItem, and MotionRecipe.',
   ];
@@ -158,6 +180,9 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
       'rich-footer',
     ],
     interactions: ['mobile-nav-dialog', 'image-lightbox', 'accordion', 'tabs'],
+    formFormats: ['inline-capture', 'contact', 'appointment', 'quote-request', 'checkout'],
+    buttonFormats: ['primary', 'secondary', 'outline', 'ghost', 'destructive', 'link', 'icon'],
+    iconFormats: ['inline', 'icon-button', 'social'],
     requirements,
   };
 }
@@ -257,6 +282,9 @@ const brandIcon = (name: string): IconComponent => (
 // Sandpack's Lucide runtime omits brand marks; generated social links must still render.
 export const Instagram = brandIcon('Instagram');
 export const Facebook = brandIcon('Facebook');
+export const Linkedin = brandIcon('Linkedin');
+export const Youtube = brandIcon('Youtube');
+export const Twitter = brandIcon('Twitter');
 `,
     '/src/unison/ui/zod.ts': `${marker}
 export * from 'zod';
@@ -323,8 +351,8 @@ export const colorStyles = {
 export const componentStyles = {
   section: 'px-5 py-16 sm:px-8 lg:py-24',
   container: 'mx-auto w-full max-w-6xl',
-  card: 'rounded-[var(--radius)] border border-border bg-card text-card-foreground shadow-sm',
-  interactiveCard: 'rounded-[var(--radius)] border border-border bg-card text-card-foreground shadow-sm transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-primary/35 hover:shadow-xl focus-within:ring-2 focus-within:ring-ring',
+  card: 'ut-foundation-card bg-card text-card-foreground',
+  interactiveCard: 'ut-foundation-card bg-card text-card-foreground focus-within:ring-2 focus-within:ring-ring',
   button: 'inline-flex min-h-10 items-center justify-center gap-2 rounded-[calc(var(--radius)-0.125rem)] px-4 py-2 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
 } as const;
 
@@ -346,10 +374,10 @@ ${UNISON_VFS_STYLE_BRIDGE}`,
 // Root barrel: MUST re-export the full public surface of every foundation
 // module. A partial barrel resolves to \`undefined\` at runtime and surfaces as
 // "Element type is invalid" in the preview.
-export { Button, type ButtonProps } from './button';
+export { Button, IconButton, type ButtonProps, type IconButtonProps } from './button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
 export { cn } from './cn';
-export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, FormField, FormFields } from './form-fields';
+export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, FormError } from './form-fields';
 export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
 export { ImageLightbox } from './media';
@@ -377,8 +405,10 @@ const buttonVariants = cva(
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
         outline: 'border border-border bg-background text-foreground hover:bg-accent hover:text-accent-foreground',
         ghost: 'text-foreground hover:bg-accent hover:text-accent-foreground',
+        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+        link: 'h-auto px-0 text-primary underline-offset-4 hover:underline',
       },
-      size: { default: 'h-10', sm: 'h-9 px-3 text-xs', lg: 'h-12 px-6 text-base' },
+      size: { default: 'h-10', sm: 'h-9 px-3 text-xs', lg: 'h-12 px-6 text-base', icon: 'size-10 p-0', 'icon-sm': 'size-8 p-0', 'icon-lg': 'size-12 p-0' },
     },
     defaultVariants: { variant: 'primary', size: 'default' },
   },
@@ -398,13 +428,18 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   },
 );
 Button.displayName = 'Button';
+
+export type IconButtonProps = Omit<ButtonProps, 'children' | 'size'> & { label: string; children: React.ReactNode; size?: 'icon' | 'icon-sm' | 'icon-lg' };
+export function IconButton({ label, size = 'icon', ...props }: IconButtonProps) {
+  return <Button {...props} size={size} aria-label={label} title={label} />;
+}
 `,
     '/src/unison/ui/card.tsx': `${marker}
 import * as React from 'react';
 import { cn } from './cn';
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('group rounded-[var(--radius)] border border-border bg-card text-card-foreground shadow-sm transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lg', className)} {...props} />;
+  return <div className={cn('group ut-foundation-card bg-card text-card-foreground', className)} {...props} />;
 }
 
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
@@ -444,6 +479,14 @@ export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<H
   return <textarea className={cn('flex min-h-28 w-full rounded-[calc(var(--radius)-0.125rem)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
 }
 
+export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select className={cn('flex h-10 w-full rounded-[calc(var(--radius)-0.125rem)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
+}
+
+export function Checkbox({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input type="checkbox" className={cn('size-4 rounded border border-input text-primary accent-primary focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
+}
+
 type GeneratedFormFieldProps = React.HTMLAttributes<HTMLDivElement> & {
   label?: React.ReactNode;
   name?: string;
@@ -460,6 +503,19 @@ export function FormField({ label, name, control: _control, render, children, cl
 
 export function FormFields({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('grid gap-4', className)} {...props} />;
+}
+
+export function FormGrid({ columns = 2, className, ...props }: React.HTMLAttributes<HTMLDivElement> & { columns?: 1 | 2 | 3 }) {
+  const layouts = { 1: 'grid-cols-1', 2: 'grid-cols-1 sm:grid-cols-2', 3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' };
+  return <div className={cn('grid gap-4', layouts[columns], className)} {...props} />;
+}
+
+export function FormHint({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn('text-xs leading-relaxed text-muted-foreground', className)} {...props} />;
+}
+
+export function FormError({ className, role = 'alert', ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p role={role} className={cn('text-xs font-medium text-destructive', className)} {...props} />;
 }
 
 // Alias surface: generated pages frequently import shadcn-style names.
@@ -563,6 +619,23 @@ export function buildGeneratedUiFoundation(
   return { manifest, files: buildFoundationFiles(manifest) };
 }
 
+/**
+ * Rehydrates the Stage 4b-owned UI module set at every canonical boundary.
+ * Lane B may consume this API but never becomes responsible for retaining its
+ * source files. This lets any incomplete legacy or imported VFS converge to
+ * the selected theme and capability-aware foundation without blocking launch.
+ */
+export function ensureGeneratedUiFoundation(
+  files: Record<string, string>,
+  options: GeneratedUiFoundationOptions,
+): GeneratedUiFoundation {
+  const foundation = buildGeneratedUiFoundation(options);
+  return {
+    manifest: foundation.manifest,
+    files: { ...files, ...foundation.files },
+  };
+}
+
 /** Reads the snapshot-owned UI contract from a VFS without fabricating one. */
 export function readGeneratedUiManifest(
   files: Record<string, string> | null | undefined,
@@ -572,7 +645,7 @@ export function readGeneratedUiManifest(
   try {
     const manifest = JSON.parse(raw) as Partial<GeneratedUiManifest>;
     if (
-      manifest.version !== GENERATED_UI_FOUNDATION_VERSION ||
+      (manifest.version !== GENERATED_UI_FOUNDATION_VERSION && !LEGACY_GENERATED_UI_FOUNDATION_VERSIONS.has(manifest.version || '')) ||
       manifest.importRoot !== '@/unison/ui' ||
       !Array.isArray(manifest.primitiveImports) ||
       !manifest.primitiveImports.every((path) => typeof path === 'string')
@@ -583,9 +656,46 @@ export function readGeneratedUiManifest(
       Array.isArray(manifest.runtimeFacades.radixPrimitives)
       ? manifest.runtimeFacades
       : buildRuntimeFacades();
-    return { ...manifest, runtimeFacades } as GeneratedUiManifest;
+    return {
+      ...manifest,
+      version: GENERATED_UI_FOUNDATION_VERSION,
+      runtimeFacades,
+      formFormats: manifest.formFormats || ['inline-capture', 'contact', 'appointment', 'quote-request', 'checkout'],
+      buttonFormats: manifest.buttonFormats || ['primary', 'secondary', 'outline', 'ghost', 'destructive', 'link', 'icon'],
+      iconFormats: manifest.iconFormats || ['inline', 'icon-button', 'social'],
+    } as GeneratedUiManifest;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Stage 4b owns this module set. A Wizard artifact that declares the UI
+ * foundation but omits a facade is not portable across Lane B, Preview, and
+ * persisted builder drafts.
+ */
+export function getGeneratedUiFoundationPersistenceViolations(
+  files: Record<string, string> | null | undefined,
+): string[] {
+  const violations: string[] = [];
+  if (!readGeneratedUiManifest(files)) {
+    violations.push('missing or invalid /.unison/ui-manifest.json');
+  }
+  for (const path of REQUIRED_GENERATED_UI_FOUNDATION_PATHS) {
+    if (!files?.[path]?.trim()) violations.push(`missing ${path}`);
+  }
+  return violations;
+}
+
+export function assertGeneratedUiFoundationPersistence(
+  files: Record<string, string> | null | undefined,
+  boundary: string,
+): void {
+  const violations = getGeneratedUiFoundationPersistenceViolations(files);
+  if (violations.length > 0) {
+    throw new Error(
+      `[generatedUiFoundation] ${boundary} lost the snapshot-owned UI foundation: ${violations.join('; ')}`,
+    );
   }
 }
 

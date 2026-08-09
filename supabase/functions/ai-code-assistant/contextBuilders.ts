@@ -438,6 +438,31 @@ export interface WizardSeedShape {
     requirements?: string[];
     [k: string]: unknown;
   };
+  generationBrief?: {
+    research?: {
+      mode?: string;
+      enabled?: boolean;
+      mayInform?: string[];
+      mustNotInvent?: string[];
+    };
+    routes?: Array<{
+      path?: string;
+      role?: string;
+      title?: string;
+      content?: {
+        minimumRegions?: number;
+        roleRequirement?: string;
+      };
+      hero?: {
+        headline?: string;
+        contentAngle?: string;
+        mustDifferFromHome?: boolean;
+        geometry?: { layout?: string; variantId?: string; mediaTreatment?: string; source?: string };
+      };
+    }>;
+    ui?: { formFormats?: string[]; buttonFormats?: string[]; iconFormats?: string[] };
+    [k: string]: unknown;
+  };
   designIntervention?: {
     version?: string;
     layoutRecipe?: string;
@@ -530,6 +555,32 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   if (c.capabilities?.length) lines.push(`Capabilities: ${c.capabilities.join(', ')}`);
   if (c.intents?.length)      lines.push(`Wired intents: ${c.intents.join(', ')}`);
   if (c.capabilities?.length || c.intents?.length) lines.push('');
+
+  const brief = seed.generationBrief;
+  if (brief?.research?.enabled) {
+    lines.push('── RESEARCH + ROUTE PLAN (BOUNDED JUDGMENT) ──');
+    lines.push(`Use ${brief.research.mode || 'connected-gateway'} research only to inform: ${(brief.research.mayInform || []).join(', ')}.`);
+    lines.push(`Never invent or alter: ${(brief.research.mustNotInvent || []).join(', ')}. Canonical data bindings and capability contracts remain authoritative.`);
+    for (const route of brief.routes || []) {
+      const hero = route.hero || {};
+      const content = route.content || {};
+      const geometry = hero.geometry;
+      const geometryAttributes = geometry?.layout
+        ? [`data-ut-layout="${geometry.layout}"`, geometry.mediaTreatment ? `data-ut-media-treatment="${geometry.mediaTreatment}"` : '', geometry.variantId ? `data-ut-variant="${geometry.variantId}"` : ''].filter(Boolean).join(' ')
+        : '';
+      const geometryInstruction = geometry?.layout
+        ? `; geometry LOCKED: ${geometry.layout}/${geometry.mediaTreatment || 'media treatment'}. Declare ${geometryAttributes} on the hero section.`
+        : '';
+      lines.push(`  • ${route.title || route.role || 'Page'} (${route.path || 'path'}): hero "${hero.headline || route.title || 'route title'}"; angle: ${hero.contentAngle || 'route intent'}${hero.mustDifferFromHome ? '; MUST differ from Home hero copy.' : ''}${geometryInstruction}`);
+      if (content.minimumRegions || content.roleRequirement) {
+        lines.push(`    Content contract: at least ${content.minimumRegions || 4} literal body regions.${content.roleRequirement ? ` ${content.roleRequirement}` : ''}`);
+      }
+    }
+    if (brief.ui) {
+      lines.push(`Approved UI formats — forms: ${(brief.ui.formFormats || []).join(', ') || 'none'}; buttons: ${(brief.ui.buttonFormats || []).join(', ') || 'none'}; icons: ${(brief.ui.iconFormats || []).join(', ') || 'none'}.`);
+    }
+    lines.push('');
+  }
 
   const g = seed.generation || {};
   if (g.customInstructions) {

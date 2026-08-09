@@ -69,6 +69,28 @@ describe('wizard pipeline ownership invariants', () => {
       manifestPath: '/.unison/ui-manifest.json',
       importRoot: '@/unison/ui',
     });
+    expect(artifacts.siteBundleSnapshot?.meta.generationBrief?.research).toEqual({
+      mode: 'connected-gateway',
+      enabled: true,
+      mayInform: ['audience-language', 'category-patterns', 'content-angles', 'image-direction'],
+      mustNotInvent: ['business-facts', 'prices', 'availability', 'tenant-identity', 'capabilities', 'endpoints'],
+    });
+    const routeBriefs = artifacts.siteBundleSnapshot?.meta.generationBrief?.routes || [];
+    const homeRoute = routeBriefs.find((route) => route.hero.mustDifferFromHome === false);
+    const secondaryRoute = routeBriefs.find((route) => route.hero.mustDifferFromHome === true);
+    const servicesRoute = routeBriefs.find((route) => route.role === 'services');
+    expect(homeRoute?.hero.mustDifferFromHome).toBe(false);
+    expect(homeRoute?.content.minimumRegions).toBe(5);
+    expect(secondaryRoute?.hero).toMatchObject({ mustDifferFromHome: true });
+    expect(secondaryRoute?.content.minimumRegions).toBe(4);
+    expect(servicesRoute?.content.roleRequirement).toContain('service catalog');
+    expect(secondaryRoute?.hero.headline).not.toBe(homeRoute?.hero.headline);
+    expect(artifacts.siteBundleSnapshot?.meta.generationBrief?.homeHeroGeometry.source).toBe('selected-home-template');
+    expect(secondaryRoute?.hero.geometry).toEqual(
+      artifacts.siteBundleSnapshot?.meta.generationBrief?.homeHeroGeometry,
+    );
+    expect(artifacts.siteBundleSnapshot?.meta.generationBrief?.ui.formFormats).toContain('appointment');
+    expect(artifacts.siteBundleSnapshot?.meta.generationBrief?.ui.buttonFormats).toContain('icon');
     expect(artifacts.files['/.unison/ui-manifest.json']).toContain('@/unison/ui/button');
     expect(artifacts.files['/.unison/design-intervention.json']).toContain('deterministic-baseline');
     expect(artifacts.files['/src/unison/ui/navigation.tsx']).toContain('FloatingNavbar');
@@ -82,6 +104,21 @@ describe('wizard pipeline ownership invariants', () => {
     expect(artifacts.siteBundleSnapshot?.manifest.layout.footer).not.toBe('default');
     expect(artifacts.siteBundleSnapshot?.meta.designIntervention?.themePresetId).toBe(wizardSelections().themePresetId);
     expect(artifacts.siteBundleSnapshot?.meta.designIntervention?.motionRecipes.length).toBeGreaterThan(0);
+  });
+
+  it('passes Stage 4b visual intelligence and design memory into Lane B', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    expect(launcherSource).toContain('── STAGE 4B VISUAL INTELLIGENCE (BINDING) ──');
+    expect(launcherSource).toContain('Available visual recipes:');
+    expect(launcherSource).toContain('Available interaction primitives:');
+    expect(launcherSource).toContain('DESIGN MEMORY:');
+    expect(launcherSource).toContain('ensureGeneratedUiFoundation({');
+    expect(launcherSource).toContain('generationBrief: siteBundleSnapshot.meta.generationBrief');
+    expect(launcherSource).toContain('Select, Checkbox, FormField, FormFields, FormGrid, FormHint, or FormError');
   });
 
   it('rejects a themeId substitute when the wizard themePresetId is missing', () => {
@@ -323,8 +360,16 @@ describe('wizard pipeline ownership invariants', () => {
 
     expect(launcherSource).toContain('function findUnderGeneratedWizardPages(');
     expect(launcherSource).toContain('const underGeneratedPages = findUnderGeneratedWizardPages(');
-    expect(launcherSource).toContain('Deferring under-generated registered pages to isolated Lane B completion');
+    expect(launcherSource).toContain('Deferring pages that failed their role-specific content contract');
     expect(launcherSource).toContain('Your previous response omitted or under-generated the following selected wizard pages.');
+    expect(launcherSource).toContain('const roleQuality = assessWizardPageRoleQuality(content, registeredPage.role)');
+    expect(launcherSource).toContain('const roleQuality = assessWizardPageRoleQuality(normalizedCandidate, pageRole)');
+    expect(launcherSource).toContain('ROLE CONTENT CONTRACT: ${roleInstruction}');
+
+    const roleAuditIndex = launcherSource.indexOf('const underGeneratedPages = findUnderGeneratedWizardPages(');
+    const aggregateQualityIndex = launcherSource.indexOf('const industryReq = launchContract.previewReady');
+    expect(roleAuditIndex).toBeGreaterThan(-1);
+    expect(roleAuditIndex).toBeLessThan(aggregateQualityIndex);
   });
 
   it('retains malformed isolated pages for a parser-guided repair attempt', () => {
@@ -337,6 +382,11 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('PATH REPAIR REQUIRED: the files object must contain exactly the key');
     expect(launcherSource).toContain('SYNTAX REPAIR REQUIRED: return balanced JSX/TSX');
     expect(launcherSource).toContain('Do not use JavaScript regular-expression literals in this page.');
+    expect(launcherSource).toContain('const useRejectedCandidate = attempt === 2');
+    expect(launcherSource).toContain("currentCode: useRejectedCandidate ? rejectedCandidate : ''");
+    expect(launcherSource).toContain('vfsFiles: useRejectedCandidate ? { [missingPath]: rejectedCandidate } : undefined');
+    expect(launcherSource).toContain('FINAL CLEAN REGENERATION: do not reuse the rejected source');
+    expect(launcherSource).toContain('rejectedPageCandidates[normalizedPath] = normalizedCandidate;');
   });
 
   it('does not run the interaction planner network round-trip (enrichment layer removed)', () => {

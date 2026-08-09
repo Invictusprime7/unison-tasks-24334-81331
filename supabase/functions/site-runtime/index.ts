@@ -1,9 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { Client as PgClient } from "https://deno.land/x/postgres@v0.19.3/mod.ts";
 import { publicCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 import { secureJsonResponse, errorResponse } from "../_shared/response.ts";
 import { safeParseBody } from "../_shared/validate.ts";
 import { checkRateLimit, getClientIp, rateLimitHeaders } from "../_shared/rateLimit.ts";
+import { CanonicalBookingError, createCanonicalBooking } from "../_shared/canonicalBooking.ts";
 
 const RATE_LIMIT_CONFIG = { maxRequests: 60, windowSeconds: 60 };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -284,123 +284,19 @@ async function createAtomicBooking(
   siteId: string,
   action: BookingActionPayload,
 ): Promise<{ booking: { id: string; startsAt: string; endsAt: string; serviceName: string; status: string }; duplicate: boolean }> {
-  const databaseUrl = Deno.env.get("SUPABASE_DB_URL");
-  if (!databaseUrl) throw new RuntimeActionError(503, "Runtime booking service is unavailable");
-  const pg = new PgClient(databaseUrl);
-  await pg.connect();
-  try {
-    await pg.queryArray("BEGIN");
-    await pg.queryArray(
-      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-      [`${siteId}:${action.idempotencyKey}`],
-    );
-    const existingResult = await pg.queryObject<{
-      id: string;
-      starts_at: string;
-      ends_at: string;
-      service_name: string;
-      status: string;
-    }>(
-      `SELECT id, starts_at, ends_at, service_name, status
-       FROM public.bookings
-       WHERE site_id = $1 AND idempotency_key = $2
-       FOR UPDATE`,
-      [siteId, action.idempotencyKey],
-    );
-    const existing = existingResult.rows[0];
-    if (existing) {
-      await pg.queryArray("COMMIT");
-      return {
-        booking: {
-          id: existing.id,
-          startsAt: new Date(existing.starts_at).toISOString(),
-          endsAt: new Date(existing.ends_at).toISOString(),
-          serviceName: existing.service_name,
-          status: existing.status,
-        },
-        duplicate: true,
-      };
-    }
-    const slotResult = await pg.queryObject<{
-      id: string;
-      business_id: string;
-      service_id: string | null;
-      starts_at: string;
-      ends_at: string;
-      is_booked: boolean;
-    }>(
-      `SELECT id, business_id, service_id, starts_at, ends_at, is_booked
-       FROM public.availability_slots
-       WHERE id = $1 AND business_id = $2
-       FOR UPDATE`,
-      [action.slotId, businessId],
-    );
-    const slot = slotResult.rows[0];
-    if (!slot || slot.is_booked) throw new RuntimeActionError(409, "Selected time slot is not available");
-    if (slot.service_id && slot.service_id !== action.serviceId) {
-      throw new RuntimeActionError(400, "Selected time slot is not available for this service");
-    }
-
-    const serviceResult = await pg.queryObject<{ id: string; name: string; duration_minutes: number }>(
-      `SELECT id, name, duration_minutes
-       FROM public.services
-       WHERE id = $1 AND business_id = $2 AND is_active = true`,
-      [action.serviceId, businessId],
-    );
-    const service = serviceResult.rows[0];
-    if (!service) throw new RuntimeActionError(400, "Selected service is not available");
-
-    const claimedSlot = await pg.queryObject<{ id: string }>(
-      `UPDATE public.availability_slots
-       SET is_booked = true
-       WHERE id = $1 AND business_id = $2 AND is_booked = false
-       RETURNING id`,
-      [action.slotId, businessId],
-    );
-    if (!claimedSlot.rows[0]) throw new RuntimeActionError(409, "Selected time slot is not available");
-
-    const startsAt = new Date(slot.starts_at).toISOString();
-    const endsAt = new Date(slot.ends_at).toISOString();
-    const booking = await pg.queryObject<{ id: string }>(
-      `INSERT INTO public.bookings
-        (business_id, site_id, service_id, availability_slot_id, session_id, idempotency_key,
-         service_name, customer_name, customer_email, customer_phone, booking_date, booking_time,
-         starts_at, ends_at, duration_minutes, status, notes, metadata)
-       VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::date, $12::time,
-         $13::timestamptz, $14::timestamptz, $15, 'confirmed', $16, $17::jsonb)
-       RETURNING id`,
-      [
-        businessId,
-        siteId,
-        service.id,
-        slot.id,
-        action.sessionId,
-        action.idempotencyKey,
-        service.name,
-        action.customerName,
-        action.customerEmail,
-        action.customerPhone,
-        startsAt.slice(0, 10),
-        startsAt.slice(11, 19),
-        startsAt,
-        endsAt,
-        service.duration_minutes,
-        action.notes,
-        JSON.stringify({ siteId, slotId: slot.id, runtime: "site-runtime@1.0" }),
-      ],
-    );
-    await pg.queryArray("COMMIT");
-    return {
-      booking: { id: booking.rows[0].id, startsAt, endsAt, serviceName: service.name, status: "confirmed" },
-      duplicate: false,
-    };
-  } catch (error) {
-    try { await pg.queryArray("ROLLBACK"); } catch { /* connection already closed */ }
-    throw error;
-  } finally {
-    try { await pg.end(); } catch { /* no-op */ }
-  }
+  return createCanonicalBooking({
+    businessId,
+    siteId,
+    serviceId: action.serviceId,
+    slotId: action.slotId,
+    sessionId: action.sessionId,
+    idempotencyKey: action.idempotencyKey,
+    customerName: action.customerName,
+    customerEmail: action.customerEmail,
+    customerPhone: action.customerPhone,
+    notes: action.notes,
+    source: "site-runtime@1.0",
+  });
 }
 
 Deno.serve(async (req) => {
@@ -451,7 +347,7 @@ Deno.serve(async (req) => {
       const state = await createAtomicBooking(context.businessId, body.siteId, bookingAction);
       return secureJsonResponse({ success: true, state }, state.duplicate ? 200 : 201, publicCorsHeaders, rateHeaders);
     } catch (error) {
-      if (error instanceof RuntimeActionError) {
+      if (error instanceof CanonicalBookingError) {
         return errorResponse(error.message, error.status, publicCorsHeaders);
       }
       console.error("[site-runtime] booking action failed", error);

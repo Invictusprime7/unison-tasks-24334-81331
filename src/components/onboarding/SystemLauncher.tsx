@@ -51,7 +51,11 @@ import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { runBuilderTurn, isRateLimitError, isTransportError } from "@/services/builderBrainClient";
-import { planLaneBBatches, measurePayloadBytes } from "@/services/laneBBatchPlanner";
+import {
+  buildLaneBVfsContext,
+  planLaneBBatches,
+  measurePayloadBytes,
+} from "@/services/laneBBatchPlanner";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -123,8 +127,15 @@ import {
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
 import { preserveCanonicalHomePresentation } from "@/services/wizardPresentationGuard";
-import { validateGeneratedUiContract } from "@/platform/core/generatedUiFoundation";
-import { countWizardPageSections } from "@/services/wizardPageQuality";
+import {
+  ensureGeneratedUiFoundation,
+  validateGeneratedUiContract,
+} from "@/platform/core/generatedUiFoundation";
+import {
+  assessWizardPageRoleQuality,
+  countWizardPageSections,
+  getWizardPageRoleInstruction,
+} from "@/services/wizardPageQuality";
 import { loadBusinessProfile } from '@/services/businessProfileService';
 import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
@@ -679,7 +690,8 @@ function buildWizardAiSeedPrompt(opts: {
     ``,
     `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
     `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
-    `GENERATED UI CONTRACT: Prefer snapshot-owned VFS imports over raw packages: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. From @/unison/ui/form-fields, import only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, FormField, or FormFields. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
+    `VISUAL EXECUTION CONTRACT: This is an art-directed, image-led selected template, not a generic section stack. Preserve the selected section geometry, use the canonical media treatment in every media-bearing section, give cards deliberate hierarchy and responsive density, and use staged Reveal/Stagger motion where the selected intervention calls for it. Render the chosen layout recipe and visual variants rather than substituting plain centered text, default buttons, or flat grids.`,
+    `GENERATED UI CONTRACT: Prefer snapshot-owned VFS imports over raw packages: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. From @/unison/ui/form-fields, import only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, or FormError. Use Button variants or IconButton for actions, with accessible labels for icon-only controls. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
     opts.designIntervention
       ? `DESIGN INTERVENTION (LOCKED): Use ${opts.designIntervention.layoutRecipe}; prioritize ${opts.designIntervention.sectionVariants.join(', ')}; use ${opts.designIntervention.motionRecipes.join(', ')} within a ${opts.designIntervention.motionBudget} motion budget; and compose only these interactions: ${opts.designIntervention.interactionRecipes.join(', ')}. ${opts.designIntervention.aiDirective}`
       : '',
@@ -714,24 +726,6 @@ function buildWizardCurrentCodeContext(files: Record<string, string>): string {
     total += content.length;
   }
   return blocks.join('\n\n');
-}
-
-function buildWizardVfsPayload(files: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  let total = 0;
-  const maxChars = 24_000;
-  const entries = Object.entries(files).sort(([a], [b]) => {
-    const rank = (path: string) => path === '/src/pages/Home.tsx' ? 0 : path.includes('/src/pages/') ? 1 : path === '/src/App.tsx' ? 2 : path.endsWith('.css') ? 3 : 4;
-    return rank(a) - rank(b);
-  });
-  for (const [path, content] of entries) {
-    if (!/\.(tsx|jsx|css|json)$/.test(path)) continue;
-    if (!path.startsWith('/src/pages/') && path !== '/src/App.tsx' && path !== '/src/index.css' && !path.startsWith('/.unison/')) continue;
-    if (total + content.length > maxChars) continue;
-    out[path] = content;
-    total += content.length;
-  }
-  return out;
 }
 
 function buildTemplateGuidance(card: TemplateCardData | null): string {
@@ -982,13 +976,13 @@ function assessWizardGenerationQuality(
  */
 function findUnderGeneratedWizardPages(
   files: Record<string, string>,
-  registeredPagePaths: readonly string[],
+  registeredPages: ReadonlyArray<{ path: string; role?: string }>,
   requiredSections: readonly string[],
 ): Array<{ path: string; reason: string }> {
   const homeMinimum = Math.max(3, Math.min(requiredSections.length || 3, 5));
 
-  return registeredPagePaths.flatMap((registeredPath) => {
-    const path = registeredPath.startsWith('/') ? registeredPath : `/${registeredPath}`;
+  return registeredPages.flatMap((registeredPage) => {
+    const path = registeredPage.path.startsWith('/') ? registeredPage.path : `/${registeredPage.path}`;
     const content = files[path] || files[path.replace(/^\//, '')];
     if (!content?.trim()) return [];
 
@@ -999,6 +993,10 @@ function findUnderGeneratedWizardPages(
     }
     if (semanticSections < minimumSections) {
       return [{ path, reason: `too few sections (${semanticSections}/${minimumSections})` }];
+    }
+    const roleQuality = assessWizardPageRoleQuality(content, registeredPage.role);
+    if (!roleQuality.ok) {
+      return [{ path, reason: roleQuality.reason || `${roleQuality.role} page failed its content contract` }];
     }
     return [];
   });
@@ -1957,7 +1955,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       });
 
       // ── Compose the AI seed prompt from ALL SIX wizard inputs ──
-      const aiUserPrompt = buildWizardAiSeedPrompt({
+      const baseAiUserPrompt = buildWizardAiSeedPrompt({
         industrySystemName: system.name,
         resolvedIndustry,
         primaryGoal: resolvedPrimaryGoal,
@@ -1998,16 +1996,23 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           path: page.filePath,
         }));
 
-      const canonicalScaffoldFiles: Record<string, string> = {
+      const canonicalScaffoldFiles: Record<string, string> = ensureGeneratedUiFoundation({
         ...(siteBundleSnapshot.vfsFiles || compiledPlayground?.vfsFiles || {}),
         '/src/index.css': themedIndexCss,
-      };
+      }, {
+        industry: resolvedIndustry,
+        templateId: wizardSelections.templateId,
+        themePresetId: wizardSelections.themePresetId,
+        needsBooking: wizardSelections.needsBooking,
+        wantsLeadCapture: wizardSelections.wantsLeadCapture,
+        sellsProducts: wizardSelections.sellsProducts,
+      }).files;
       const siteAnalysis = analyzeReactSite(canonicalScaffoldFiles);
       const wizardCurrentCode = buildWizardCurrentCodeContext(canonicalScaffoldFiles);
-      const wizardVfsPayload = buildWizardVfsPayload(canonicalScaffoldFiles);
+      const wizardVfsPayload = buildLaneBVfsContext(canonicalScaffoldFiles);
       const siteElementsLibraryContext = generateLibraryPrompt({
         systemType: selectedSystem,
-        userPrompt: aiUserPrompt,
+        userPrompt: baseAiUserPrompt,
         includeSkeletons: false,
         maxElements: 4,
       }).slice(0, 12_000);
@@ -2030,7 +2035,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         : wizardPreviewSnapshotRaw;
       const generatedUiFoundation = (() => {
         try {
-          const raw = siteBundleSnapshot.vfsFiles['/.unison/ui-manifest.json'];
+          const raw = canonicalScaffoldFiles['/.unison/ui-manifest.json'];
           return raw ? JSON.parse(raw) as {
             version?: string;
             importRoot?: string;
@@ -2054,6 +2059,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           return undefined;
         }
       })();
+      const laneBVisualIntelligence = [
+        '── STAGE 4B VISUAL INTELLIGENCE (BINDING) ──',
+        `The selected theme is already compiled into /src/index.css. Build on its semantic tokens; never replace or flatten them.`,
+        `Available visual recipes: ${(generatedUiFoundation?.layoutRecipes || []).join(', ') || 'collage-hero, bento-features, media-card-grid, conversion-form'}.`,
+        `Available interaction primitives: ${(generatedUiFoundation?.interactions || []).join(', ') || 'mobile-nav-dialog, image-lightbox, accordion, tabs'}.`,
+        `Available motion facade: ${generatedUiFoundation?.runtimeFacades?.animation || '@/unison/ui/animation'} and ${generatedUiFoundation?.importRoot || '@/unison/ui'}/motion. Use the selected motion recipes to sequence content rather than static stacks.`,
+        laneBDesignProfile
+          ? `DESIGN MEMORY: Previous user work favors ${laneBDesignProfile.dominantStyle || 'intentional visual variety'} across ${laneBDesignProfile.projectCount} project(s). Preserve those cues while honoring this selected template.`
+          : 'DESIGN MEMORY: Use the selected template and industry research as the visual authority; do not regress to generic landing-page defaults.',
+        'Use image-led hero and gallery treatments where the canonical composition includes media. Cards, CTAs, navigation, overlays, and forms must visibly use the selected composition variants and responsive interaction patterns.',
+      ].join('\n');
+      const aiUserPrompt = [baseAiUserPrompt, laneBVisualIntelligence].join('\n\n');
 
       const wizardSeed = {
         version: '1.0',
@@ -2099,6 +2116,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           socials: userSocials,
         },
         uiFoundation: generatedUiFoundation,
+        generationBrief: siteBundleSnapshot.meta.generationBrief,
         designIntervention: siteBundleSnapshot.meta.designIntervention,
         bindingGuide: bindingGuide || undefined,
       } as const;
@@ -2624,6 +2642,29 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   });
                 }
 
+                const registeredPages = Object.values(siteBundleSnapshot.pageRegistry.pages)
+                  .filter((page) => Boolean(page.filePath))
+                  .map((page) => ({
+                    path: page.filePath,
+                    role: page.pageRole || page.pageType || (page.isHome ? 'home' : 'custom'),
+                  }));
+                const underGeneratedPages = findUnderGeneratedWizardPages(
+                  sanitized.files,
+                  registeredPages,
+                  composition.sections.map((section) => section.type),
+                );
+                if (underGeneratedPages.length > 0) {
+                  for (const page of underGeneratedPages) {
+                    delete sanitized.files[page.path];
+                    delete sanitized.files[page.path.replace(/^\//, '')];
+                    deferredPageCompletions.add(page.path);
+                  }
+                  launchReliabilityMode = 'lane-b-degraded';
+                  console.warn('[SystemLauncher] Deferring pages that failed their role-specific content contract', {
+                    pages: underGeneratedPages,
+                  });
+                }
+
                 const industryReq = launchContract.previewReady ? getIndustryQualityRequirements(resolvedIndustry) : undefined;
                 let quality = assessWizardGenerationQuality(
                   sanitized.files,
@@ -2666,30 +2707,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       reason: quality.reason || 'Output failed wizard quality contract',
                     }]);
                     console.warn('[SystemLauncher] AI returned minimal/fallback output', quality);
-                    const registeredPagePaths = Object.values(siteBundleSnapshot.pageRegistry.pages)
-                      .map((page) => (page as { filePath?: string }).filePath)
-                      .filter((path): path is string => Boolean(path));
-                    const underGeneratedPages = findUnderGeneratedWizardPages(
-                      sanitized.files,
-                      registeredPagePaths,
-                      composition.sections.map((section) => section.type),
-                    );
-                    if (underGeneratedPages.length > 0 && !aiError) {
-                      // A present page with one section is as incomplete as a
-                      // missing page. Remove it from the provisional Lane B
-                      // payload so the registered-page completion ledger
-                      // regenerates the exact path with wizard context.
-                      for (const page of underGeneratedPages) {
-                        delete sanitized.files[page.path];
-                        delete sanitized.files[page.path.replace(/^\//, '')];
-                        deferredPageCompletions.add(page.path);
-                      }
-                      console.warn('[SystemLauncher] Deferring under-generated registered pages to isolated Lane B completion', {
-                        pages: underGeneratedPages,
-                      });
-                      generationResult = { structured, sanitized };
-                      launchReliabilityMode = 'lane-b-degraded';
-                    }
                     if (deferredPageCompletions.size > 0 && !aiError) {
                       // The complete-site quality gate is expected to fail when
                       // one or more registered pages were deliberately removed.
@@ -2848,6 +2865,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             : null,
         );
         if (!pageUiContract.valid) {
+          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
             attempt,
@@ -2879,6 +2897,23 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             attempt,
             accepted: false,
             reason: quality.reason || 'Page failed the wizard quality contract',
+          });
+          return false;
+        }
+
+        const registryPage = Object.values(siteBundleSnapshot.pageRegistry.pages).find((page) => {
+          const filePath = page.filePath?.startsWith('/') ? page.filePath : `/${page.filePath || ''}`;
+          return filePath === normalizedPath;
+        });
+        const pageRole = registryPage?.pageRole || registryPage?.pageType || (registryPage?.isHome ? 'home' : 'custom');
+        const roleQuality = assessWizardPageRoleQuality(normalizedCandidate, pageRole);
+        if (!roleQuality.ok) {
+          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt,
+            accepted: false,
+            reason: roleQuality.reason || `${roleQuality.role} page failed its content contract`,
           });
           return false;
         }
@@ -2928,9 +2963,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             return normalizedMissing.includes(n);
           })
           .map((page) => {
-            const p = page as { filePath?: string; title?: string; path?: string; pageType?: string };
+            const p = page as { filePath?: string; title?: string; path?: string; pageType?: string; pageRole?: string; isHome?: boolean };
             const fp = (p.filePath || '').startsWith('/') ? p.filePath! : `/${p.filePath}`;
-            return `  • ${p.title || fp} → ${fp}  [route ${p.path || '/'}${p.pageType ? `, type ${p.pageType}` : ''}]`;
+            const role = p.pageRole || p.pageType || (p.isHome ? 'home' : 'custom');
+            const roleInstruction = getWizardPageRoleInstruction(role);
+            return [
+              `  • ${p.title || fp} → ${fp}  [route ${p.path || '/'}, role ${role}]`,
+              roleInstruction ? `    Required content: ${roleInstruction}` : '',
+            ].filter(Boolean).join('\n');
           })
           .join('\n');
         const retryPrompt = [
@@ -3031,6 +3071,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           title?: string;
           path?: string;
           pageType?: string;
+          pageRole?: string;
+          isHome?: boolean;
           filePath?: string;
         } | undefined;
 
@@ -3038,10 +3080,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const behaviorContract = INDUSTRY_INTENT_PROFILES[resolvedIndustry];
         const requiredIntents = (industryRequirements?.requiredIntents || []).join(', ') || 'nav.goto';
         const industryVocabulary = (industryRequirements?.vocabulary || []).slice(0, 16).join(', ');
+        const pageRole = page?.pageRole || page?.pageType || (page?.isHome ? 'home' : 'custom');
+        const roleInstruction = getWizardPageRoleInstruction(pageRole);
 
         if (!aiSourcedFiles[missingPath]) {
           setLaunchStatus(`Completing ${page?.title || missingPath} (${attempt - 1}/2)…`);
           const rejectedCandidate = rejectedPageCandidates[missingPath];
+          const useRejectedCandidate = attempt === 2 && Boolean(rejectedCandidate);
           const previousFailure = [...laneBCompletionDiagnostics]
             .reverse()
             .find((diagnostic) => diagnostic.path === missingPath && !diagnostic.accepted)?.reason;
@@ -3059,12 +3104,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           };
           const pageCompletionPrompt = [
             '── LANE B PAGE COMPLETION TURN ──',
-            rejectedCandidate
+            useRejectedCandidate
               ? `Improve the supplied near-complete page without replacing its working content: ${missingPath}.`
               : `Generate exactly one missing selected wizard page: ${missingPath}.`,
             `Page title: ${page?.title || 'Page'}`,
             `Route: ${page?.path || '/'}`,
-            `Page type/role: ${page?.pageType || 'generic'}`,
+            `Page type/role: ${pageRole}`,
             `Selected template ID: ${wizardSelections.templateId}`,
             `Selected theme preset ID: ${wizardSelections.themePresetId}`,
             `Wizard seed ID: ${wizardSelections.wizardSeedId}`,
@@ -3080,20 +3125,24 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             previousFailure && /Unterminated regular expression|Unexpected token|expected ["']?[})\]]/i.test(previousFailure)
               ? 'SYNTAX REPAIR REQUIRED: return balanced JSX/TSX with every tag, brace, parenthesis, quote, and template literal closed. Do not use JavaScript regular-expression literals in this page.'
               : '',
+            attempt === 3 && rejectedCandidate
+              ? 'FINAL CLEAN REGENERATION: do not reuse the rejected source. Generate fresh balanced TSX from the canonical page role and validation diagnosis.'
+              : '',
             '',
             'Return ONLY this file in the WizardSeed multi-file JSON contract.',
-            'The page must contain at least 3 complete semantic sections and 1200+ characters of real copy.',
-            'The validator must count at least 3 literal sectioning regions: use <section>, <article>, or <aside> elements rather than only nested <div> blocks.',
+            'The page must contain at least 4 complete semantic regions and 1200+ characters of specific, useful copy.',
+            'The validator must count at least 4 literal sectioning regions: use <main>, <section>, <article>, or <aside> elements rather than only nested <div> blocks.',
+            roleInstruction ? `ROLE CONTENT CONTRACT: ${roleInstruction}` : '',
             previousFailure?.includes('too few sections')
-              ? `STRUCTURAL REPAIR REQUIRED: ${previousFailure}. Add distinct literal sectioning elements until the page count is at least 3.`
+              ? `STRUCTURAL REPAIR REQUIRED: ${previousFailure}. Add distinct literal sectioning elements until the body-region count is at least 4.`
               : '',
-            rejectedCandidate
+            useRejectedCandidate
               ? 'Preserve all valid existing sections and behavior; add or repair only what the validation failure requires.'
               : '',
             'Use only semantic theme classes backed by the supplied Stage 4b HSL tokens.',
             'Include working data-ut-intent behavior appropriate to this page role.',
             'Do not emit App.tsx, shared chrome, placeholder copy, quarantine UI, or a preset scaffold.',
-            rejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
+            useRejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
           ].join('\n');
 
           try {
@@ -3106,7 +3155,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               (signal) => runBuilderTurn<any>({
                 messages: [{ role: 'user', content: pageCompletionPrompt }],
                 mode: 'wizard-seed',
-                currentCode: rejectedCandidate || '',
+                currentCode: useRejectedCandidate ? rejectedCandidate : '',
                 editMode: false,
                 templateName: effectiveTemplate?.label || system.name,
                 aesthetic: resolvedPreset.id,
@@ -3124,7 +3173,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   template_intents: blueprint.template_intents,
                 },
                 userDesignProfile: laneBDesignProfile,
-                vfsFiles: rejectedCandidate ? { [missingPath]: rejectedCandidate } : undefined,
+                vfsFiles: useRejectedCandidate ? { [missingPath]: rejectedCandidate } : undefined,
                 recentChangedFiles: [missingPath],
                 gatewayOptions: {
                   ...WIZARD_LANE_B_GATEWAY_OPTIONS,

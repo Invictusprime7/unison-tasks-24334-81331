@@ -3,11 +3,11 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const migration = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260806140000_add_enterprise_content_foundation.sql'),
+  resolve(process.cwd(), 'supabase/migrations/20260806202710_add_enterprise_content_foundation.sql'),
   'utf8',
 );
 const commandMigration = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260806143000_add_content_entry_command.sql'),
+  resolve(process.cwd(), 'supabase/migrations/20260806203649_add_content_entry_command.sql'),
   'utf8',
 );
 

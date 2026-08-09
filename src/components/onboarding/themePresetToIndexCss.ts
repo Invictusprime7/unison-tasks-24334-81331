@@ -15,6 +15,22 @@ import type { ThemeTokens } from '@/sections/types';
 import { themePresetToThemeTokens } from './themePresetToTokens';
 
 export const SHADCN_LIBRARY_CSS_MARKER = 'SHADCN LIBRARY: canonical Stage 4b foundation';
+function buildProfessionalGeometry(presetId?: string): string {
+  switch (presetId) {
+    case 'minimalist':
+      return '--ut-surface-shadow: none; --ut-surface-shadow-hover: none; --ut-surface-lift: 0px; --ut-section-space: clamp(4rem, 7vw, 7rem);';
+    case 'editorial':
+      return '--ut-surface-shadow: 0 1px 2px hsl(var(--foreground) / 0.05); --ut-surface-shadow-hover: 0 5px 16px hsl(var(--foreground) / 0.08); --ut-surface-lift: -1px; --ut-section-space: clamp(4.5rem, 8vw, 8rem);';
+    case 'futuristic':
+      return '--ut-surface-shadow: 0 0 0 1px hsl(var(--primary) / 0.18), 0 8px 20px hsl(var(--foreground) / 0.18); --ut-surface-shadow-hover: 0 0 0 1px hsl(var(--primary) / 0.34), 0 12px 28px hsl(var(--primary) / 0.16); --ut-surface-lift: -2px; --ut-section-space: clamp(4rem, 7vw, 7rem);';
+    case 'organic':
+      return '--ut-surface-shadow: 0 4px 14px hsl(var(--foreground) / 0.07); --ut-surface-shadow-hover: 0 10px 24px hsl(var(--foreground) / 0.1); --ut-surface-lift: -2px; --ut-section-space: clamp(4.5rem, 8vw, 7.5rem);';
+    case 'bold':
+      return '--ut-surface-shadow: 4px 4px 0 hsl(var(--foreground)); --ut-surface-shadow-hover: 6px 6px 0 hsl(var(--foreground)); --ut-surface-lift: -2px; --ut-section-space: clamp(4rem, 7vw, 7rem);';
+    default:
+      return '--ut-surface-shadow: 0 2px 10px hsl(var(--foreground) / 0.08); --ut-surface-shadow-hover: 0 8px 20px hsl(var(--foreground) / 0.12); --ut-surface-lift: -2px; --ut-section-space: clamp(4rem, 7vw, 7rem);';
+  }
+}
 
 export function buildThemedIndexCss(preset: ThemePreset): string {
   return buildThemedIndexCssFromTokens(themePresetToThemeTokens(preset), {
@@ -30,6 +46,7 @@ export function buildThemedIndexCssFromTokens(
   metadata: { presetId?: string; label?: string; headingFont?: string; bodyFont?: string } = {},
 ): string {
   const c = tokens.colors;
+  const professionalGeometry = buildProfessionalGeometry(metadata.presetId);
 
   // Web-font import for the exact typography injected by the selected card.
   const fontFamilies = Array.from(
@@ -72,7 +89,10 @@ export function buildThemedIndexCssFromTokens(
   --radius: ${tokens.radius};
   --ut-glass-surface: hsl(var(--card) / 0.68);
   --ut-glass-border: hsl(var(--border) / 0.58);
-  --ut-glass-shadow: hsl(var(--foreground) / 0.12);
+  --ut-glass-shadow: var(--ut-surface-shadow);
+  --ut-content-width: 72rem;
+  --ut-media-radius: var(--radius);
+  ${professionalGeometry}
   /* Tailwind CDN reads these via theme.fontFamily.heading / body */
   --font-heading: ${tokens.typography.headingFont};
   --font-body: ${tokens.typography.bodyFont};
@@ -137,9 +157,20 @@ export function buildThemedIndexCssFromTokens(
     border-radius: var(--radius);
     background: hsl(var(--card));
     color: hsl(var(--card-foreground));
-    box-shadow: 0 10px 24px hsl(var(--foreground) / 0.12);
+    box-shadow: var(--ut-surface-shadow);
   }
   .ut-shadcn-card { padding: 1.5rem; }
+  .ut-foundation-card {
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background: hsl(var(--card));
+    box-shadow: var(--ut-surface-shadow);
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  }
+  .ut-foundation-card:hover { transform: translateY(var(--ut-surface-lift)); box-shadow: var(--ut-surface-shadow-hover); border-color: hsl(var(--primary) / 0.32); }
+  .ut-content { width: min(100% - 2.5rem, var(--ut-content-width)); margin-inline: auto; }
+  .ut-section { padding-block: var(--ut-section-space); }
+  .ut-media-frame { overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: var(--ut-media-radius); background: hsl(var(--muted)); }
   .ut-shadcn-popover,
   .ut-shadcn-dialog-content { background: hsl(var(--popover)); color: hsl(var(--popover-foreground)); }
   .ut-shadcn-dialog-overlay { background: hsl(var(--foreground) / 0.42); }
@@ -198,9 +229,9 @@ h1, h2, h3, h4, h5, h6 {
    ============================================================ */
 
 /* Layout */
-.container-wide { max-width: 1200px; margin-left: auto; margin-right: auto; padding-left: 1rem; padding-right: 1rem; }
-.section-spacing { padding: 5rem 1rem; }
-@media (min-width: 768px) { .section-spacing { padding: 7rem 2rem; } }
+.container-wide { max-width: var(--ut-content-width); margin-left: auto; margin-right: auto; padding-left: 1rem; padding-right: 1rem; }
+.section-spacing { padding: var(--ut-section-space) 1rem; }
+@media (min-width: 768px) { .section-spacing { padding-left: 2rem; padding-right: 2rem; } }
 
 /* Typography scale */
 .headline-xl { font-family: var(--font-heading); font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 1rem; }
@@ -213,14 +244,14 @@ h1, h2, h3, h4, h5, h6 {
 /* Buttons */
 .btn-primary {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
+  background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
   font-weight: 600; padding: 0.75rem 1.5rem; border-radius: var(--radius);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
-  box-shadow: 0 4px 14px hsl(var(--primary) / 0.25);
+  box-shadow: var(--ut-surface-shadow);
   border: none; cursor: pointer;
 }
-.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 22px hsl(var(--primary) / 0.35); }
+  .btn-primary:hover { transform: translateY(var(--ut-surface-lift)); box-shadow: var(--ut-surface-shadow-hover); }
 .btn-secondary {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   background: transparent; border: 1.5px solid hsl(var(--border));
@@ -237,9 +268,10 @@ h1, h2, h3, h4, h5, h6 {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   padding: 2rem;
-  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  box-shadow: var(--ut-surface-shadow);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
-.card:hover { transform: translateY(-4px); border-color: hsl(var(--primary) / 0.4); box-shadow: 0 12px 32px hsl(var(--foreground) / 0.08); }
+  .card:hover { transform: translateY(var(--ut-surface-lift)); border-color: hsl(var(--primary) / 0.4); box-shadow: var(--ut-surface-shadow-hover); }
 
 /* Glass */
 .glass {
@@ -258,10 +290,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 .unison-runtime-glass {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 8% 0%, hsl(var(--primary) / 0.12), transparent 32rem),
-    radial-gradient(circle at 92% 12%, hsl(var(--accent) / 0.10), transparent 30rem),
-    hsl(var(--background));
+  background: hsl(var(--background));
 }
 .ut-glass,
 .ut-glass-card,
@@ -296,7 +325,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Micro-interactions */
 .hover-lift { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease; }
-.hover-lift:hover { transform: translateY(-6px); box-shadow: 0 20px 40px hsl(var(--foreground) / 0.12); }
+  .hover-lift:hover { transform: translateY(var(--ut-surface-lift)); box-shadow: var(--ut-surface-shadow-hover); }
 .button-press { transition: transform 0.1s ease; }
 .button-press:active { transform: scale(0.97); }
 

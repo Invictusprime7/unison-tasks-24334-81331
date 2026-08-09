@@ -44,8 +44,20 @@ import { runFullPreflight } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
 import { evaluateElementReadiness, type ElementReadinessReport } from '@/services/elementReadinessEvaluator';
 import { executeBackendOps, type BackendOpExecutionReport } from '@/services/backendOpExecutor';
+import {
+  compileGeneratedSiteRuntimeManifest,
+  type GeneratedSiteRuntimeManifest,
+} from '@/services/generatedSiteRuntimeManifest';
+import {
+  buildGeneratedSiteRuntimeManifestModule,
+  GENERATED_SITE_RUNTIME_MANIFEST_MODULE_PATH,
+} from '@/services/canonicalLaunchVfs';
 import type { PlaygroundControlPlaneModel } from '@/types/playground';
-import type { BusinessSystemState, CapabilityId } from '@/platform/core/capabilityRegistry';
+import {
+  CAPABILITY_REGISTRY,
+  type BusinessSystemState,
+  type CapabilityId,
+} from '@/platform/core/capabilityRegistry';
 import {
   assertBuilderIdentity,
   type BuilderIdentity,
@@ -423,6 +435,7 @@ export async function commitMutation(
     elementPreviewBlocked === 0;
 
   let backendOpsReport: BackendOpExecutionReport | null = null;
+  let runtimeReconciliationError: string | null = null;
 
 
   // 6. Auto-repair-then-hard-reject -----------------------------------------
@@ -498,8 +511,44 @@ export async function commitMutation(
     log('backendOps', 'warn', 'skipped backend operations because pre-execution gates failed');
   }
 
+  if (
+    status === 'committed' &&
+    input.source !== 'wizard-launch' &&
+    input.options?.dryRun !== true &&
+    snapshotForPersistence
+  ) {
+    try {
+      const generatedRuntime = await reconcileGeneratedRuntime({
+        identity: input.identity,
+        files,
+        snapshot: snapshotForPersistence as SiteBundleSnapshot,
+      });
+      log(
+        'generatedRuntime',
+        'info',
+        `reconciled ${generatedRuntime.agents.length} generated agent binding(s)`,
+      );
+    } catch (error) {
+      runtimeReconciliationError = error instanceof Error ? error.message : String(error);
+      status = 'rejected';
+      log(
+        'generatedRuntime',
+        'error',
+        'generated runtime reconciliation rejected the commit',
+        runtimeReconciliationError,
+      );
+    }
+  }
+
   // Move D — compute publish readiness + blockers aggregate.
   const publishBlockers: PublishBlockerSummary[] = [];
+  if (runtimeReconciliationError) {
+    publishBlockers.push({
+      source: 'backendOps',
+      code: 'generated-runtime-reconciliation-failed',
+      message: runtimeReconciliationError,
+    });
+  }
   if (publishVerdict && !publishVerdict.ok) {
     for (const r of publishVerdict.reasons) {
       publishBlockers.push({
@@ -718,6 +767,58 @@ function finalizeBusinessSystemState(
       capabilities: snapshot.businessSystem.capabilities.map((capability) => ({ ...capability, status })),
     },
   };
+}
+
+function readWizardEnabledCapabilities(files: Record<string, string>): CapabilityId[] {
+  try {
+    const seed = JSON.parse(files['/.unison/wizard-seed.json'] || '{}') as {
+      canonical?: { capabilities?: unknown };
+    };
+    if (!Array.isArray(seed.canonical?.capabilities)) return [];
+    return Array.from(new Set(seed.canonical.capabilities.filter(
+      (capability): capability is CapabilityId =>
+        typeof capability === 'string' && capability in CAPABILITY_REGISTRY,
+    ))).sort();
+  } catch {
+    return [];
+  }
+}
+
+async function reconcileGeneratedRuntime(input: {
+  identity: BuilderIdentity;
+  files: Record<string, string>;
+  snapshot: SiteBundleSnapshot;
+}): Promise<GeneratedSiteRuntimeManifest> {
+  const { data: project, error: projectError } = await supabase
+    .from('projects')
+    .select('site_id')
+    .eq('id', input.identity.projectId)
+    .eq('business_id', input.identity.businessId)
+    .single();
+  if (projectError || !project?.site_id) {
+    throw new Error('Canonical project site identity is unavailable.');
+  }
+
+  const manifest = compileGeneratedSiteRuntimeManifest({
+    siteId: project.site_id,
+    snapshot: input.snapshot,
+    enabledCapabilities: readWizardEnabledCapabilities(input.files),
+  });
+  input.files[GENERATED_SITE_RUNTIME_MANIFEST_MODULE_PATH] =
+    buildGeneratedSiteRuntimeManifestModule(manifest);
+  input.snapshot.vfsFiles = { ...input.files };
+
+  const { data, error } = await supabase.functions.invoke('reconcile-generated-runtime', {
+    body: {
+      businessId: input.identity.businessId,
+      projectId: input.identity.projectId,
+      manifest,
+    },
+  });
+  if (error || !data?.success) {
+    throw new Error(error?.message || 'Generated runtime reconciliation failed.');
+  }
+  return manifest;
 }
 
 export async function hashVfsFiles(files: Record<string, string>): Promise<string> {

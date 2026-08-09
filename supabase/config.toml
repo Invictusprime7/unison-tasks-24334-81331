@@ -90,6 +90,9 @@ verify_jwt = true
 [functions.provision-launch-site]
 verify_jwt = true
 
+[functions.reconcile-generated-runtime]
+verify_jwt = true
+
 [functions.automation-event]
 verify_jwt = false
 
@@ -104,9 +107,6 @@ verify_jwt = true
 
 [functions.builder-provision-lite]
 verify_jwt = true
-
-[functions.create-booking]
-verify_jwt = false
 
 [functions.cms-records]
 verify_jwt = true
@@ -124,9 +124,6 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.intent-action]
-verify_jwt = false
-
-[functions.intent-booking]
 verify_jwt = false
 
 [functions.intent-router]

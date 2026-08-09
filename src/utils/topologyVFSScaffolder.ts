@@ -304,6 +304,8 @@ function buildRoleComposition(
     DEFAULT_ROLE_SECTION_POOL[role] ??
     DEFAULT_ROLE_SECTION_POOL.custom;
   const allowedTypes = new Set<SectionType>(poolList);
+  const alternateMedia = !page.isHome ? collectAlternateHeroMedia(template) : [];
+  const alternateHeroMedia = alternateMedia[stableStringHash(page.id) % Math.max(1, alternateMedia.length)];
 
   // Iterate template sections in source order and keep every section whose
   // type is in the allowed set. Duplicates are preserved with unique ids so
@@ -316,9 +318,21 @@ function buildRoleComposition(
     if (globalSharedChrome && (source.type === 'navbar' || source.type === 'footer')) continue;
     const idx = typeCounters.get(source.type) ?? 0;
     typeCounters.set(source.type, idx + 1);
+    const props = { ...(source.props as Record<string, unknown>) };
+    if (source.type === 'hero' && !page.isHome) {
+      const roleLabel = page.title.trim() || page.role.replace(/_/g, ' ');
+      props.headline = roleLabel;
+      props.subheadline = `Explore ${roleLabel.toLowerCase()} from ${template.name}.`;
+      props.badge = roleLabel;
+      if (alternateHeroMedia) {
+        if (typeof props.image === 'string') props.image = alternateHeroMedia;
+        else props.backgroundImage = alternateHeroMedia;
+      }
+    }
     filtered.push({
       ...source,
       id: `${page.id}-${source.type}-${idx}`,
+      props: props as SectionEntry['props'],
     });
   }
 
@@ -330,6 +344,31 @@ function buildRoleComposition(
     name: `${template.name} · ${page.title}`,
     sections: filtered,
   };
+}
+
+function stableStringHash(value: string): number {
+  let hash = 0;
+  for (const character of value) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return Math.abs(hash);
+}
+
+function collectAlternateHeroMedia(template: TemplateComposition): string[] {
+  const media = new Set<string>();
+  for (const section of template.sections) {
+    if (section.type === 'hero') continue;
+    const props = section.props as Record<string, unknown>;
+    for (const key of ['image', 'backgroundImage']) {
+      if (typeof props[key] === 'string' && props[key]) media.add(props[key]);
+    }
+    if (Array.isArray(props.items)) {
+      for (const item of props.items) {
+        if (item && typeof item === 'object' && typeof (item as Record<string, unknown>).image === 'string') {
+          media.add((item as Record<string, string>).image);
+        }
+      }
+    }
+  }
+  return [...media];
 }
 
 

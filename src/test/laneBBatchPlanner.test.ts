@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { planLaneBBatches, LANE_B_MAX_PAGES_PER_BATCH } from '@/services/laneBBatchPlanner';
+import {
+  buildLaneBVfsContext,
+  planLaneBBatches,
+  LANE_B_MAX_PAGES_PER_BATCH,
+} from '@/services/laneBBatchPlanner';
 
 const pages = (n: number) => Array.from({ length: n }, (_, i) => `/src/pages/Page${i}.tsx`);
 
@@ -44,5 +48,18 @@ describe('laneBBatchPlanner', () => {
 
   it('handles an empty page list', () => {
     expect(planLaneBBatches({ pages: [], basePayloadBytes: 0 }).batches).toEqual([]);
+  });
+
+  it('keeps the snapshot-owned UI contract in bounded Lane B context', () => {
+    const files = {
+      '/.unison/ui-manifest.json': '{"importRoot":"@/unison/ui"}',
+      '/src/unison/ui/index.ts': "export * from './button';",
+      '/src/pages/Home.tsx': 'x'.repeat(24_000),
+    };
+
+    const context = buildLaneBVfsContext(files);
+
+    expect(context['/.unison/ui-manifest.json']).toBe(files['/.unison/ui-manifest.json']);
+    expect(context['/src/unison/ui/index.ts']).toBe(files['/src/unison/ui/index.ts']);
   });
 });

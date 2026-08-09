@@ -888,50 +888,8 @@ function createCRMManagerWired(config: RuntimeIntentManagerConfig): IntentManage
 
 function createBookingManagerWired(config: RuntimeIntentManagerConfig): IntentManagers['booking'] {
   return {
-    createBooking: async (data) => {
-      if (!supabase) {
-        return { bookingId: `booking_${Date.now()}` };
-      }
-
-      const datetime = data.datetime ? new Date(data.datetime) : null;
-      const canonical = await invokeRuntimeCanonicalIntent(config, 'booking.create', {
-        ...data,
-        name: data.customerName,
-        email: data.customerEmail,
-        phone: data.customerPhone,
-        message: data.notes,
-        service: (data as unknown as { serviceName?: string }).serviceName,
-        date: datetime && !Number.isNaN(datetime.getTime()) ? datetime.toISOString().slice(0, 10) : undefined,
-        time: datetime && !Number.isNaN(datetime.getTime()) ? datetime.toISOString().slice(11, 16) : undefined,
-        startsAt: datetime && !Number.isNaN(datetime.getTime()) ? datetime.toISOString() : undefined,
-      });
-
-      if (canonical?.ok) {
-        const result = (canonical.result ?? {}) as { bookingId?: string };
-        return { bookingId: result.bookingId || `booking_${Date.now()}` };
-      }
-
-      if (canonical && !canonical.ok) {
-        console.error('[Booking] Canonical booking submission failed:', canonical.error);
-      }
-
-      // Fallback to direct insert
-      const { data: booking } = await supabase
-        .from('bookings')
-        .insert({
-          booking_date: new Date(data.datetime).toISOString().split('T')[0],
-          booking_time: new Date(data.datetime).toISOString().split('T')[1]?.slice(0, 5) || '09:00',
-          service_name: (data as any).serviceName || 'General Appointment',
-          customer_name: data.customerName,
-          customer_email: data.customerEmail,
-          business_id: config.businessId,
-          service_id: data.serviceId,
-          status: 'pending',
-        })
-        .select()
-        .single();
-
-      return { bookingId: booking?.id || 'unknown' };
+    createBooking: async () => {
+      throw new Error('Booking writes require the generated site-runtime adapter.');
     },
 
     getServices: async () => {

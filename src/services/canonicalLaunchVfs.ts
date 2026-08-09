@@ -25,6 +25,7 @@ import type { WizardInteractionManifest } from './wizardInteractionEnrichment';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
+import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {
   buildCanonicalWizardSharedChromeModules,
   getMissingCanonicalChromeRoutes,
@@ -661,7 +662,16 @@ export function buildCanonicalLaunchArtifacts(
 
   // The snapshot is the only canonical VFS source once it exists. A compile
   // result is an intermediate stage and may be stale when Lane B is merged.
-  const canonicalFiles = input.siteBundleSnapshot?.vfsFiles || input.compiledPlayground?.vfsFiles || {};
+  const canonicalFiles = input.siteBundleSnapshot
+    ? ensureGeneratedUiFoundation(input.siteBundleSnapshot.vfsFiles, {
+        industry: input.industry || input.siteBundleSnapshot.industry,
+        templateId: input.templateId || input.siteBundleSnapshot.meta.templateId,
+        themePresetId: resolvedThemePresetId,
+        needsBooking: input.wizardSelections?.needsBooking,
+        wantsLeadCapture: input.wizardSelections?.wantsLeadCapture,
+        sellsProducts: input.wizardSelections?.sellsProducts,
+      }).files
+    : input.compiledPlayground?.vfsFiles || {};
   const boundFiles = bindingApplication?.files || repairedFiles;
   const preflight = input.siteBundleSnapshot
     ? (() => {
@@ -836,6 +846,16 @@ export function buildCanonicalLaunchArtifacts(
     siteBundleSnapshot,
     canonicalPlayground,
   });
+  const hydratedFiles = input.siteBundleSnapshot
+    ? ensureGeneratedUiFoundation(files, {
+        industry: input.industry || input.siteBundleSnapshot.industry,
+        templateId: input.templateId || input.siteBundleSnapshot.meta.templateId,
+        themePresetId: resolvedThemePresetId,
+        needsBooking: input.wizardSelections?.needsBooking,
+        wantsLeadCapture: input.wizardSelections?.wantsLeadCapture,
+        sellsProducts: input.wizardSelections?.sellsProducts,
+      }).files
+    : files;
 
   // Run the exact strict VFS compiler that Preview uses before this Wizard
   // artifact is persisted or opened in Playground. Syntax repair protects
@@ -843,7 +863,7 @@ export function buildCanonicalLaunchArtifacts(
   // imports after every canonical merge and generated-runtime transformation.
   if (input.strictPreflight) {
     try {
-      prepareSandpackFiles(files, {
+      prepareSandpackFiles(hydratedFiles, {
         entryPoint,
         themePresetId: appContext.themePresetId || resolvedThemePresetId,
         strict: true,
@@ -871,7 +891,7 @@ export function buildCanonicalLaunchArtifacts(
   }
 
   return {
-    files,
+    files: hydratedFiles,
     entryPoint,
     runtimeManifest,
     generatedSiteRuntimeManifest,

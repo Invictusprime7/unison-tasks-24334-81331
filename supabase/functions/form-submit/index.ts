@@ -177,10 +177,11 @@ Deno.serve(async (req) => {
     if (definitionError) {
       throw new Error("Could not resolve the approved form definition");
     }
-    if (!definition) {
-      return errorResponse("This form is not configured for the site", 400, publicCorsHeaders);
-    }
-    if (definition.intent !== intent) {
+    // Legacy compatibility: sites launched before form_definitions existed (and
+    // Builder-added forms with generated ids) have no definition row. The tenant
+    // context and the intent enum are already validated above, so accept the
+    // submission instead of silently dropping the owner's leads.
+    if (definition && definition.intent !== intent) {
       return errorResponse("Form intent does not match its approved definition", 400, publicCorsHeaders);
     }
     if (Array.isArray(definition?.fields)) {

@@ -17,7 +17,7 @@
     "lint:catalog-contracts": "node scripts/lint-catalog-contracts.mjs",
     "type-check": "tsc --build --noEmit",
     "preview": "vite preview",
-    "deploy": "vercel --prod",
+    "deploy": "node scripts/check-clean-git-tree.mjs && vercel --prod",
     "deploy:preview": "vercel",
     "deploy:watch": "powershell -ExecutionPolicy Bypass -File ./scripts/vercel-deploy.ps1 -Watch -Production",
     "supabase:update": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-auto-update.ps1",

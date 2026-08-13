@@ -557,13 +557,20 @@ const WIZARD_INITIAL_AI_TURN_MS = 142_000;
 const WIZARD_UI_REPAIR_MAX_MS = 65_000;
 const WIZARD_BATCH_REPAIR_MAX_MS = 65_000;
 const WIZARD_BATCH_REPAIR_MAX_PAGES = 2;
-const WIZARD_PAGE_COMPLETION_FIRST_MS = 60_000;
-const WIZARD_PAGE_COMPLETION_RETRY_MS = 70_000;
-// A single isolated page can take as long as a successful Gemini page batch.
-// The shared lifecycle deadline remains the final authority for both attempts.
-const WIZARD_SINGLE_PAGE_COMPLETION_MS = 132_000;
-const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 4;
+// Every isolated page — regardless of how many pages are missing in a given
+// round — gets this full allowance. Pages in the same round already run
+// concurrently (bounded by WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS), so a
+// shorter per-page cap for multi-page rounds only starved the provider loop
+// without shortening the round's actual wall-clock time.
+const WIZARD_ISOLATED_PAGE_COMPLETION_MS = 132_000;
+// Kept low while only Gemini is funded: 4-way parallel isolated completions
+// contend for the same per-minute quota and starve every request's timeout.
+const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 2;
 const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
+// A pure timeout/transport failure never produced content to judge, so it
+// must not consume the 2-attempt content/syntax-repair budget an isolated
+// page gets. One extra same-round retry absorbs transport noise for free.
+const WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES = 1;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   timeoutMs: 132_000,
@@ -805,6 +812,18 @@ async function withTimeout<T>(
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
+}
+
+/**
+ * A timeout/transport failure means no content was ever judged — it should
+ * not consume the one syntax/contract-repair retry an isolated page gets.
+ * Covers both `runBuilderTurn`'s own deadline abort and this file's
+ * `withTimeout` wrapper's message, in addition to the shared transport check.
+ */
+function isRecoverableWizardCompletionTimeout(err: unknown): boolean {
+  if (isProviderTimeoutError(err) || isTransportError(err)) return true;
+  const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  return /exceeded the remaining wizard generation deadline/i.test(message);
 }
 
 function yieldToBrowser(): Promise<void> {
@@ -3094,7 +3113,19 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       ): boolean => {
         const normalizedPath = path.startsWith('/') ? path : `/${path}`;
         const relativePath = normalizedPath.replace(/^\//, '');
-        const candidate = candidateFiles[normalizedPath] || candidateFiles[relativePath];
+        // This turn's envelope requests exactly one file at `normalizedPath`.
+        // A model that returns exactly one page file under a near-miss key
+        // (wrong case, missing leading slash, no /src/pages/ prefix) almost
+        // certainly meant this path — remap rather than discard real content.
+        let candidate = candidateFiles[normalizedPath] || candidateFiles[relativePath];
+        if (!candidate?.trim()) {
+          const pageFileEntries = Object.entries(candidateFiles).filter(
+            ([, content]) => typeof content === 'string' && content.trim().length > 0,
+          );
+          if (pageFileEntries.length === 1) {
+            candidate = pageFileEntries[0][1];
+          }
+        }
         if (!candidate || !candidate.trim()) {
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
@@ -3429,87 +3460,110 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             rejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
           ].join('\n');
 
-          try {
-            const completionTurnCapMs = stillMissing.length === 1
-              ? WIZARD_SINGLE_PAGE_COMPLETION_MS
-              : attempt === 2
-                ? WIZARD_PAGE_COMPLETION_FIRST_MS
-                : WIZARD_PAGE_COMPLETION_RETRY_MS;
-            const completionBudgetMs = takeWizardGenerationBudget(
-              completionTurnCapMs,
-            );
-            const completion = await withTimeout(
-              (signal) => runBuilderTurn<any>({
-                messages: [{ role: 'user', content: pageCompletionPrompt }],
-                mode: 'wizard-seed',
-                currentCode: rejectedCandidate && !isSyntaxCompletionFailure(previousFailure)
-                  ? rejectedCandidate
-                  : '',
-                editMode: false,
-                templateName: effectiveTemplate?.label || system.name,
-                aesthetic: resolvedPreset.id,
-                source: resolvedIndustry,
-                systemType: selectedSystem,
-                systemsBuildContext: {
-                  version: blueprint.version,
-                  launcherPolicy: blueprint.launcherPolicy,
-                  identity: blueprint.identity,
-                  brand: blueprint.brand,
-                  design: blueprint.design,
-                  theme_tokens: blueprint.theme_tokens,
-                  intents: blueprint.intents,
-                  template_sections: blueprint.template_sections,
-                  template_intents: blueprint.template_intents,
-                },
-                userDesignProfile: laneBDesignProfile,
-                vfsFiles: rejectedCandidate && !isSyntaxCompletionFailure(previousFailure)
-                  ? { [missingPath]: rejectedCandidate }
-                  : undefined,
-                recentChangedFiles: [missingPath],
-                gatewayOptions: {
-                  ...WIZARD_LANE_B_GATEWAY_OPTIONS,
-                  reasoningEffort: 'low',
-                  autoModelSelection: false,
-                  selectedModelId: 'google/gemini-2.5-flash-lite',
-                  timeoutMs: Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, completionBudgetMs - 5_000),
-                  maxTokens: 12_000,
-                },
-                wizardSeed: isolatedWizardSeed,
-              }, { signal, timeoutMs: completionBudgetMs - 2_000 }),
-              completionBudgetMs,
-              `Lane B page completion exceeded the remaining Wizard generation deadline.`,
-            );
-            if (completion.error) {
+          for (
+            let transportRetry = 0;
+            transportRetry <= WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES;
+            transportRetry++
+          ) {
+            try {
+              const completionBudgetMs = takeWizardGenerationBudget(
+                WIZARD_ISOLATED_PAGE_COMPLETION_MS,
+              );
+              const completion = await withTimeout(
+                (signal) => runBuilderTurn<any>({
+                  messages: [{ role: 'user', content: pageCompletionPrompt }],
+                  mode: 'wizard-seed',
+                  currentCode: rejectedCandidate && !isSyntaxCompletionFailure(previousFailure)
+                    ? rejectedCandidate
+                    : '',
+                  editMode: false,
+                  templateName: effectiveTemplate?.label || system.name,
+                  aesthetic: resolvedPreset.id,
+                  source: resolvedIndustry,
+                  systemType: selectedSystem,
+                  systemsBuildContext: {
+                    version: blueprint.version,
+                    launcherPolicy: blueprint.launcherPolicy,
+                    identity: blueprint.identity,
+                    brand: blueprint.brand,
+                    design: blueprint.design,
+                    theme_tokens: blueprint.theme_tokens,
+                    intents: blueprint.intents,
+                    template_sections: blueprint.template_sections,
+                    template_intents: blueprint.template_intents,
+                  },
+                  userDesignProfile: laneBDesignProfile,
+                  vfsFiles: rejectedCandidate && !isSyntaxCompletionFailure(previousFailure)
+                    ? { [missingPath]: rejectedCandidate }
+                    : undefined,
+                  recentChangedFiles: [missingPath],
+                  gatewayOptions: {
+                    ...WIZARD_LANE_B_GATEWAY_OPTIONS,
+                    reasoningEffort: 'low',
+                    autoModelSelection: false,
+                    selectedModelId: 'google/gemini-2.5-flash-lite',
+                    timeoutMs: Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, completionBudgetMs - 5_000),
+                    maxTokens: 12_000,
+                  },
+                  wizardSeed: isolatedWizardSeed,
+                }, { signal, timeoutMs: completionBudgetMs - 2_000 }),
+                completionBudgetMs,
+                `Lane B page completion exceeded the remaining Wizard generation deadline.`,
+              );
+              if (completion.error) {
+                if (
+                  transportRetry < WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES
+                  && isRecoverableWizardCompletionTimeout(completion.error)
+                ) {
+                  console.warn('[SystemLauncher] Isolated page completion transport/timeout; retrying before spending a content-repair attempt', {
+                    path: missingPath,
+                    attempt,
+                  });
+                  continue;
+                }
+                laneBCompletionDiagnostics.push({
+                  path: missingPath,
+                  attempt,
+                  accepted: false,
+                  reason: await getFunctionErrorMessage(completion.error),
+                });
+                return;
+              }
+              const { structured: completionStructured } = extractLaneBLauncherPayload(
+                completion.data as Record<string, unknown> | null,
+                `${brand} ${page?.title || 'Page'}`,
+              );
+              if (!completionStructured?.files) {
+                laneBCompletionDiagnostics.push({
+                  path: missingPath,
+                  attempt,
+                  accepted: false,
+                  reason: 'Lane B page completion returned no structured files',
+                });
+                return;
+              }
+              const completionSanitized = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(completionStructured.files));
+              acceptCompletedWizardPage(missingPath, completionSanitized.files, attempt);
+              return;
+            } catch (completionError) {
+              if (
+                transportRetry < WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES
+                && isRecoverableWizardCompletionTimeout(completionError)
+              ) {
+                console.warn('[SystemLauncher] Isolated page completion transport/timeout threw; retrying before spending a content-repair attempt', {
+                  path: missingPath,
+                  attempt,
+                });
+                continue;
+              }
               laneBCompletionDiagnostics.push({
                 path: missingPath,
                 attempt,
                 accepted: false,
-                reason: await getFunctionErrorMessage(completion.error),
+                reason: completionError instanceof Error ? completionError.message : String(completionError),
               });
               return;
             }
-            const { structured: completionStructured } = extractLaneBLauncherPayload(
-              completion.data as Record<string, unknown> | null,
-              `${brand} ${page?.title || 'Page'}`,
-            );
-            if (!completionStructured?.files) {
-              laneBCompletionDiagnostics.push({
-                path: missingPath,
-                attempt,
-                accepted: false,
-                reason: 'Lane B page completion returned no structured files',
-              });
-              return;
-            }
-            const completionSanitized = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(completionStructured.files));
-            acceptCompletedWizardPage(missingPath, completionSanitized.files, attempt);
-          } catch (completionError) {
-            laneBCompletionDiagnostics.push({
-              path: missingPath,
-              attempt,
-              accepted: false,
-              reason: completionError instanceof Error ? completionError.message : String(completionError),
-            });
           }
         }
       };

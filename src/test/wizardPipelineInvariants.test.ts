@@ -306,22 +306,15 @@ describe('wizard pipeline ownership invariants', () => {
       expect(match, `${name} should be declared as a numeric constant`).not.toBeNull();
       return Number(match?.[1].replace(/_/g, ''));
     };
-    const completionWaves = Math.ceil(
-      constantValue('WIZARD_MAX_RECOVERY_PAGE_COUNT')
-      / constantValue('WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS'),
-    );
-    const configuredRecoveryPathMs =
-      constantValue('WIZARD_INITIAL_AI_TURN_MS')
-      + constantValue('WIZARD_UI_REPAIR_MAX_MS')
-      + constantValue('WIZARD_BATCH_REPAIR_MAX_MS')
-      + completionWaves * (
-        constantValue('WIZARD_PAGE_COMPLETION_FIRST_MS')
-        + constantValue('WIZARD_PAGE_COMPLETION_RETRY_MS')
-      );
 
-    expect(constantValue('WIZARD_AI_TIMEOUT_MS')).toBeGreaterThan(configuredRecoveryPathMs);
+    // Every isolated page gets the same generous, non-starved budget — no
+    // more per-round FIRST/RETRY split that shrank as more pages went missing.
+    // Total worst-case wall-clock time is bounded by takeWizardGenerationBudget
+    // (the shared deadline), not by pre-shrinking each page's nominal cap.
+    expect(constantValue('WIZARD_ISOLATED_PAGE_COMPLETION_MS')).toBeGreaterThanOrEqual(105_000);
+    expect(constantValue('WIZARD_ISOLATED_PAGE_COMPLETION_MS')).toBeLessThanOrEqual(120_000 + 12_000);
+    expect(constantValue('WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS')).toBeLessThanOrEqual(2);
     expect(constantValue('WIZARD_INITIAL_AI_TURN_MS')).toBeGreaterThanOrEqual(140_000);
-    expect(constantValue('WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS')).toBeLessThanOrEqual(4);
     expect(launcherSource).toContain(
       'takeWizardGenerationBudget(WIZARD_INITIAL_AI_TURN_MS)',
     );
@@ -341,13 +334,18 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain("reasoningEffort: 'low'");
     expect(launcherSource).toContain("selectedModelId: 'google/gemini-2.5-flash-lite'");
     expect(launcherSource).toContain('maxTokens: 12_000');
-    expect(launcherSource).toContain('WIZARD_PAGE_COMPLETION_FIRST_MS');
-    expect(launcherSource).toContain('WIZARD_PAGE_COMPLETION_RETRY_MS');
-    expect(constantValue('WIZARD_SINGLE_PAGE_COMPLETION_MS')).toBe(132_000);
-    expect(launcherSource).toContain('stillMissing.length === 1');
+    expect(launcherSource).toContain('const completionBudgetMs = takeWizardGenerationBudget(');
+    expect(launcherSource).toContain('WIZARD_ISOLATED_PAGE_COMPLETION_MS,');
     expect(launcherSource).toContain(
       'Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, completionBudgetMs - 5_000)',
     );
+
+    // A timeout/transport failure must not consume a content-repair attempt.
+    expect(launcherSource).toContain('WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES = 1');
+    expect(launcherSource).toContain('function isRecoverableWizardCompletionTimeout(');
+    expect(launcherSource).toContain('transportRetry < WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES');
+    expect(launcherSource).toContain('isRecoverableWizardCompletionTimeout(completion.error)');
+    expect(launcherSource).toContain('isRecoverableWizardCompletionTimeout(completionError)');
   });
 
   it('requires generated-preview confirmation before provisioning the durable site root', () => {

@@ -141,7 +141,7 @@ Deno.test("uses the funded Gemini Wizard provider without spending time on OpenA
   assertEquals(plan.preferLongLeadAttempt, true);
 });
 
-Deno.test("balances focused Wizard page completion across Gemini fallbacks", () => {
+Deno.test("gives focused Wizard page completion one model with its full budget, no fallback split", () => {
   const plan = buildProviderPlan(
     wizardTask,
     true,
@@ -158,9 +158,8 @@ Deno.test("balances focused Wizard page completion across Gemini fallbacks", () 
 
   assertEquals(plan.gatewayModels.map((model) => model.id), [
     "google/gemini-2.5-flash-lite",
-    "google/gemini-2.5-flash",
   ]);
-  assertEquals(plan.gatewayModels.map((model) => model.maxTokens), [12_000, 12_000]);
+  assertEquals(plan.gatewayModels.map((model) => model.maxTokens), [12_000]);
   assertEquals(plan.fallbackMaxTokens, 12_000);
   assertEquals(plan.perModelTimeoutMs, 50_000);
   assertEquals(plan.preferLongLeadAttempt, false);

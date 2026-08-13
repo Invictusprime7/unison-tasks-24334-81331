@@ -329,8 +329,13 @@ export function buildProviderPlan(
       const modelId = overrides.selectedModelId;
       const label = modelId.split("/").pop() ?? modelId;
       const userModel: ModelSpec = { id: modelId, maxTokens: tokens, label };
-      const fallbacks = plan.gatewayModels.filter(m => m.id !== modelId);
-      plan.gatewayModels = [userModel, ...fallbacks];
+      // A focused isolated-page completion gets ONE model with its FULL
+      // per-model timeout — appending fallbacks here means the provider loop
+      // divides the already-short browser budget across two model attempts
+      // instead of giving the explicitly requested model its whole window.
+      plan.gatewayModels = isFocusedWizardCompletion
+        ? [userModel]
+        : [userModel, ...plan.gatewayModels.filter(m => m.id !== modelId)];
     }
     if (overrides.timeoutMs) {
       plan.perModelTimeoutMs = task.type === "wizard_seed_generation"

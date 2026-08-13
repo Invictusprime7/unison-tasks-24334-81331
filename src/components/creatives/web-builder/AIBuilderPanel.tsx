@@ -101,7 +101,10 @@ import {
 import { previewCapabilityMigration } from '@/services/capabilityMigrationRunner';
 import { MigrationProposalPanel } from '@/components/ai-builder/MigrationProposalPanel';
 import { LayoutSnapshotCard } from '@/components/creatives/web-builder/ai-chat/LayoutSnapshotCard';
-import { interpretBuilderRequest } from '@/services/builderRequestInterpreter';
+import {
+  interpretBuilderRequest,
+  requiresRenderableUiPatch,
+} from '@/services/builderRequestInterpreter';
 import { extractMultiFileOutput, extractStylesheetOutput } from '@/utils/aiResponseParser';
 
 import {
@@ -741,6 +744,19 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
   // No initial welcome message — AIConversationWelcome handles the empty state
 
+  useEffect(() => {
+    setPendingCapabilityProposal((current) => {
+      if (!current) return current;
+      const resolution = resolveCapabilityIntentBindings(
+        current.plan.proposal.intentBindings,
+        vfsFiles ?? {},
+      );
+      return JSON.stringify(resolution) === JSON.stringify(current.resolution)
+        ? current
+        : { ...current, resolution };
+    });
+  }, [vfsFiles]);
+
   // Live thinking step pusher — updates the streaming message in real-time
   const pushThinkingStep = useCallback((
     streamingId: string,
@@ -811,20 +827,28 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         industry: systemType ?? undefined,
       },
     });
+    const needsRenderableUiPatch = requiresRenderableUiPatch(
+      capabilityInterpretation.envelope,
+      userContent,
+    );
     if (capabilityPlan.requestedCapabilities.length > 0) {
       const resolution = resolveCapabilityIntentBindings(
         capabilityPlan.proposal.intentBindings,
         vfsFiles ?? {},
       );
       setPendingCapabilityProposal({ plan: capabilityPlan, resolution, isApplying: false });
-      setMessages((prev) => [...prev, {
-        id: generateId(),
-        role: 'assistant',
-        content: capabilityPlan.proposal.summary,
-        timestamp: new Date(),
-      }]);
-      setIsLoading(false);
-      return;
+      if (needsRenderableUiPatch) {
+        toast.info('Backend setup requires approval. Building the requested UI now.');
+      } else {
+        setMessages((prev) => [...prev, {
+          id: generateId(),
+          role: 'assistant',
+          content: capabilityPlan.proposal.summary,
+          timestamp: new Date(),
+        }]);
+        setIsLoading(false);
+        return;
+      }
     }
 
     // ── Icon Wire Fast Path ──────────────────────────────────────────────
@@ -1689,6 +1713,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       let generatedCode: string | null = null;
       let explanationText = '';
       let multiFileOutput: Record<string, string> | null = null;
+      let structuredContractExtractionFailed = false;
 
       if (aiContent) {
         const trimmed = aiContent.trim();
@@ -1842,6 +1867,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             explanationText = isSurgicalEdit ? '✅ Edit applied successfully.' : '✅ Code generated and applied to your project.';
           }
         }
+
+        structuredContractExtractionFailed = !multiFileOutput && !generatedCode &&
+          /(?:```json\s*)?\{[\s\S]*["']files["']\s*:/i.test(trimmed);
+        if (structuredContractExtractionFailed) {
+          const extractionError = 'The AI returned an invalid or incomplete file contract. No changes were applied.';
+          explanationText = extractionError;
+          liveStep('error', 'Generated files could not be extracted', extractionError);
+          toast.error('AI response could not be applied', {
+            description: 'The generated file contract was malformed. Retry the request.',
+            duration: 8000,
+          });
+        }
       }
 
       // Handle multi-file output — prefer orchestrator, fall back to legacy callback
@@ -1978,14 +2015,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // Add final thinking step — include a reasoning summary badge if AI thinking was returned
       thinkingSteps.push({
         id: generateId(),
-        type: aiReasoning ? 'reasoning' : 'complete',
-        message: aiReasoning
+        type: structuredContractExtractionFailed ? 'error' : aiReasoning ? 'reasoning' : 'complete',
+        message: structuredContractExtractionFailed
+          ? 'Response validation failed'
+          : aiReasoning
           ? `Extended reasoning complete (${(aiReasoning.length / 1000).toFixed(1)}k chars)`
           : 'Generation complete',
         timestamp: new Date(),
-        details: aiReasoning ? aiReasoning.slice(0, 500) + (aiReasoning.length > 500 ? '…' : '') : undefined,
+        details: structuredContractExtractionFailed
+          ? 'The response contained a files contract that could not be parsed.'
+          : aiReasoning ? aiReasoning.slice(0, 500) + (aiReasoning.length > 500 ? '…' : '') : undefined,
       });
-      if (aiReasoning) {
+      if (aiReasoning && !structuredContractExtractionFailed) {
         thinkingSteps.push({
           id: generateId(),
           type: 'complete',
@@ -1994,21 +2035,28 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         });
       }
 
-      // Mark all remaining plan steps as done
-      advancePlanStep(taskPlan, 'patch', 'done');
-      advancePlanStep(taskPlan, 'bind_intent', 'done');
-      advancePlanStep(taskPlan, 'create_route', 'done');
-      advancePlanStep(taskPlan, 'install_workflow', 'done');
-      advancePlanStep(taskPlan, 'enable_capability', 'done');
-      advancePlanStep(taskPlan, 'update_registry', 'done');
-      advancePlanStep(taskPlan, 'refresh_preview', 'running');
+      if (structuredContractExtractionFailed) {
+        advancePlanStep(taskPlan, 'patch', 'failed');
+        advancePlanStep(taskPlan, 'refresh_preview', 'failed');
+      } else {
+        // Mark all remaining plan steps as done
+        advancePlanStep(taskPlan, 'patch', 'done');
+        advancePlanStep(taskPlan, 'bind_intent', 'done');
+        advancePlanStep(taskPlan, 'create_route', 'done');
+        advancePlanStep(taskPlan, 'install_workflow', 'done');
+        advancePlanStep(taskPlan, 'enable_capability', 'done');
+        advancePlanStep(taskPlan, 'update_registry', 'done');
+        advancePlanStep(taskPlan, 'refresh_preview', 'running');
+      }
 
       // Update message — show ONLY the explanation text, NOT raw code
       setMessages(prev => prev.map(m =>
         m.id === streamingId
           ? {
               ...m,
-              content: explanationText || aiContent,
+              content: explanationText || (structuredContractExtractionFailed
+                ? 'The AI response could not be converted into project files.'
+                : aiContent),
               thinking: thinkingSteps,
               claudeReasoning: aiReasoning,
               meta: responseMeta,

@@ -13,6 +13,7 @@ import {
   buildEnvelopeHints,
   heuristicEnvelope,
   normalizeEnvelope,
+  requiresRenderableUiPatch,
   type BuilderRequestEnvelope,
 } from '@/types/builderRequestEnvelope';
 import { matchAbstractGoals } from '@/platform/core/abstractGoalRegistry';
@@ -165,6 +166,8 @@ export function requiresApproval(envelope: BuilderRequestEnvelope): boolean {
     envelope.domains.includes('database')
   );
 }
+
+export { requiresRenderableUiPatch };
 
 /** Compact envelope brief for injection into downstream generation prompts. */
 export function envelopeBrief(envelope: BuilderRequestEnvelope): string {

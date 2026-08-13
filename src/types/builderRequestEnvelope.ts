@@ -244,11 +244,14 @@ export function buildEnvelopeHints(
   const backendish =
     requestKinds.includes('backend_configuration') ||
     domains.some((d) => ['database', 'crm', 'booking', 'commerce', 'automation', 'auth'].includes(d));
+  const explicitUiSurface = /\b(page|component|screen|view|section)\b/i.test(text);
 
   const level: BuilderScopeLevel = ctx?.hasSelectedElement
     ? 'element'
     : /\b(whole site|entire site|every page|site[- ]wide|all pages)\b/i.test(text)
       ? 'site'
+      : explicitUiSurface
+        ? /\bsection\b/i.test(text) ? 'section' : 'page'
       : backendish && !domains.some((d) => ['layout', 'visual_design', 'copy'].includes(d))
         ? 'backend'
         : /\bsection\b/i.test(text)
@@ -290,4 +293,27 @@ export function heuristicEnvelope(
 ): BuilderRequestEnvelope {
   const hints = buildEnvelopeHints(prompt, ctx);
   return { ...normalizeEnvelope({}, hints), source: 'heuristic' };
+}
+
+/**
+ * A request can require both a visible UI change and approval-gated backend
+ * provisioning. The UI portion must still reach the Builder's VFS pipeline;
+ * this predicate never authorizes the backend portion.
+ */
+export function requiresRenderableUiPatch(
+  envelope: BuilderRequestEnvelope,
+  prompt = '',
+): boolean {
+  if (!envelope.requestKinds.some((kind) => kind === 'create' || kind === 'edit')) {
+    return false;
+  }
+
+  if (['element', 'block', 'section', 'page', 'site'].includes(envelope.scope.level)) {
+    return true;
+  }
+
+  // A degraded or over-conservative interpreter can classify a checkout or
+  // booking page as backend scope. Preserve its backend approval requirement,
+  // while still honoring the explicit request for a renderable surface.
+  return /\b(create|build|add|generate|make|new|edit|update|modify)\b[\s\S]{0,80}\b(page|component|screen|view|section)\b/i.test(prompt);
 }

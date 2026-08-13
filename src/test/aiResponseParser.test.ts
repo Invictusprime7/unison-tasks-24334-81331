@@ -26,6 +26,55 @@ describe('AI response file extraction', () => {
     });
   });
 
+  it('recovers a fenced file contract with unescaped JSX quotes', () => {
+    const response = [
+      '```json',
+      '{',
+      '  "files": {',
+      '    "/src/pages/Checkout.tsx": "export default function Checkout() {\\n  return <h1 className="text-primary">Confirm Your Session</h1>;\\n}"',
+      '  },',
+      '  "explanation": "Created checkout."',
+      '}',
+      '```',
+    ].join('\n');
+
+    expect(extractMultiFileOutput(response)).toEqual({
+      files: {
+        '/src/pages/Checkout.tsx': 'export default function Checkout() {\n  return <h1 className="text-primary">Confirm Your Session</h1>;\n}',
+      },
+    });
+  });
+
+  it('recovers a complete file contract when the closing markdown fence is missing', () => {
+    const response = [
+      '```json',
+      '{',
+      '  "files": {',
+      '    "/src/pages/Checkout.tsx": "export default function Checkout() {\\n  return <span className="text-primary">Pay now</span>;\\n}"',
+      '  },',
+      '  "explanation": "Created checkout."',
+      '}',
+    ].join('\n');
+
+    expect(extractMultiFileOutput(response)?.files['/src/pages/Checkout.tsx']).toContain(
+      '<span className="text-primary">Pay now</span>',
+    );
+  });
+
+  it('normalizes file objects that wrap source in a content property', () => {
+    const response = JSON.stringify({
+      files: {
+        '/src/App.tsx': { content: 'export default function App() { return <main />; }' },
+      },
+    });
+
+    expect(extractMultiFileOutput(response)).toEqual({
+      files: {
+        '/src/App.tsx': 'export default function App() { return <main />; }',
+      },
+    });
+  });
+
   it('routes a prose-wrapped CSS theme response to the canonical stylesheet', () => {
     const response = [
       'Here is the updated theme:',

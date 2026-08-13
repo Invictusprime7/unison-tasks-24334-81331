@@ -90,8 +90,13 @@ function parseMultiFileCandidate(candidate: string): ExtractedMultiFileOutput | 
     if (!parsed.files || typeof parsed.files !== 'object' || Array.isArray(parsed.files)) return null;
 
     const files: Record<string, string> = {};
-    for (const [path, content] of Object.entries(parsed.files)) {
-      if (typeof content !== 'string') return null;
+    for (const [path, value] of Object.entries(parsed.files)) {
+      const content = typeof value === 'string'
+        ? value
+        : value && typeof value === 'object' && 'content' in value && typeof value.content === 'string'
+          ? value.content
+          : null;
+      if (content === null) return null;
       files[path] = content;
     }
     if (Object.keys(files).length === 0) return null;
@@ -103,6 +108,112 @@ function parseMultiFileCandidate(candidate: string): ExtractedMultiFileOutput | 
   } catch {
     return null;
   }
+}
+
+function decodeJsonStringContent(value: string): string {
+  return value.replace(/\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})/g, (escape) => {
+    if (escape[1] === 'u') {
+      return String.fromCharCode(Number.parseInt(escape.slice(2), 16));
+    }
+    const replacements: Record<string, string> = {
+      '\\"': '"',
+      '\\\\': '\\',
+      '\\/': '/',
+      '\\b': '\b',
+      '\\f': '\f',
+      '\\n': '\n',
+      '\\r': '\r',
+      '\\t': '\t',
+    };
+    return replacements[escape] ?? escape;
+  });
+}
+
+function readQuotedJsonToken(input: string, start: number): { value: string; end: number } | null {
+  if (input[start] !== '"') return null;
+  for (let index = start + 1; index < input.length; index += 1) {
+    if (input[index] !== '"') continue;
+    let slashCount = 0;
+    for (let cursor = index - 1; cursor > start && input[cursor] === '\\'; cursor -= 1) {
+      slashCount += 1;
+    }
+    if (slashCount % 2 === 1) continue;
+    try {
+      return { value: JSON.parse(input.slice(start, index + 1)), end: index + 1 };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function isGeneratedFilePath(path: string): boolean {
+  return /^(?:\.?\.?\/|\/)?(?:[\w@.-]+\/)*[\w@.-]+\.[a-z0-9]+$/i.test(path);
+}
+
+function findMalformedFileValueEnd(input: string, start: number): number {
+  for (let index = start; index < input.length; index += 1) {
+    if (input[index] !== '"') continue;
+    let slashCount = 0;
+    for (let cursor = index - 1; cursor >= start && input[cursor] === '\\'; cursor -= 1) {
+      slashCount += 1;
+    }
+    if (slashCount % 2 === 1) continue;
+
+    let cursor = index + 1;
+    while (/\s/.test(input[cursor] ?? '')) cursor += 1;
+    if (input[cursor] === ',') {
+      cursor += 1;
+      while (/\s/.test(input[cursor] ?? '')) cursor += 1;
+      const nextKey = readQuotedJsonToken(input, cursor);
+      if (!nextKey || !isGeneratedFilePath(nextKey.value)) continue;
+      cursor = nextKey.end;
+      while (/\s/.test(input[cursor] ?? '')) cursor += 1;
+      if (input[cursor] === ':') return index;
+      continue;
+    }
+
+    if (input[cursor] !== '}') continue;
+    cursor += 1;
+    while (/\s/.test(input[cursor] ?? '')) cursor += 1;
+    if (input[cursor] === '}') return index;
+    if (input[cursor] !== ',') continue;
+    cursor += 1;
+    while (/\s/.test(input[cursor] ?? '')) cursor += 1;
+    const outerKey = readQuotedJsonToken(input, cursor);
+    if (outerKey?.value === 'explanation') return index;
+  }
+  return -1;
+}
+
+/** Recover the known file-map contract when JSX quotes were not JSON-escaped. */
+function parseMalformedMultiFileCandidate(candidate: string): ExtractedMultiFileOutput | null {
+  const filesKey = candidate.match(/"files"\s*:\s*\{/);
+  if (!filesKey || filesKey.index === undefined) return null;
+
+  const files: Record<string, string> = {};
+  let cursor = filesKey.index + filesKey[0].length;
+  while (cursor < candidate.length) {
+    while (/\s|,/.test(candidate[cursor] ?? '')) cursor += 1;
+    if (candidate[cursor] === '}') break;
+
+    const key = readQuotedJsonToken(candidate, cursor);
+    if (!key || !isGeneratedFilePath(key.value)) return null;
+    cursor = key.end;
+    while (/\s/.test(candidate[cursor] ?? '')) cursor += 1;
+    if (candidate[cursor] !== ':') return null;
+    cursor += 1;
+    while (/\s/.test(candidate[cursor] ?? '')) cursor += 1;
+    if (candidate[cursor] !== '"') return null;
+
+    const valueStart = cursor + 1;
+    const valueEnd = findMalformedFileValueEnd(candidate, valueStart);
+    if (valueEnd < 0) return null;
+    files[key.value] = decodeJsonStringContent(candidate.slice(valueStart, valueEnd));
+    cursor = valueEnd + 1;
+  }
+
+  return Object.keys(files).length > 0 ? { files } : null;
 }
 
 function findBalancedJsonObjects(input: string): string[] {
@@ -146,6 +257,8 @@ export function extractMultiFileOutput(input: string): ExtractedMultiFileOutput 
   while ((fence = fencedJson.exec(input)) !== null) {
     const parsed = parseMultiFileCandidate(fence[1].trim());
     if (parsed) return parsed;
+    const recovered = parseMalformedMultiFileCandidate(fence[1].trim());
+    if (recovered) return recovered;
   }
 
   for (const candidate of findBalancedJsonObjects(input)) {
@@ -153,6 +266,7 @@ export function extractMultiFileOutput(input: string): ExtractedMultiFileOutput 
     const parsed = parseMultiFileCandidate(candidate);
     if (parsed) return parsed;
   }
+  if (trimmed.includes('"files"')) return parseMalformedMultiFileCandidate(trimmed);
   return null;
 }
 

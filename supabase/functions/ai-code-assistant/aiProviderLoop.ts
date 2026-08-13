@@ -104,9 +104,18 @@ export async function runProviderLoop(opts: {
   const hasDirectOpenAI = allowDirectFallbacks && !geminiExclusive && Boolean(Deno.env.get('OPENAI_API_KEY'));
   const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY'));
   const hasLastResortGateway = allowDirectFallbacks && !geminiExclusive && Boolean(Deno.env.get('LOVABLE_API_KEY'));
-  const lastResortReserveMs = hasLastResortGateway ? 20_000 : 0;
+  // The managed gateway is the final safety net; a 20 s slice is not enough for
+  // a real generation, so reserve a usable window for it.
+  const lastResortReserveMs = hasLastResortGateway ? 35_000 : 0;
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
+  // A 429 whose body says billing/quota is exhausted is not a transient rate
+  // limit: every further call to that provider will fail the same way. Mark the
+  // whole family dead so the remaining budget goes to providers that can answer.
+  let geminiQuotaExhausted = false;
+  const isQuotaExhausted = (detail: string) =>
+    /credits are depleted|prepayment|quota|billing|insufficient|exceeded your current quota/i.test(detail);
+  const isGeminiModelId = (id: string) => id.startsWith('google/') || id.startsWith('gemini-');
   // Tracks whether any provider failed for a non-rate-limit reason (timeout,
   // 500, empty response, etc.). When true, a deferred 429 from one provider
   // must NOT mask the real failure — the client would show "rate limited" even
@@ -120,6 +129,7 @@ export async function runProviderLoop(opts: {
       hadNonRateLimitError = true;
     }
   };
+
   const createAttemptSignal = (timeoutMs: number) => {
     const controller = new AbortController();
     const onOuterAbort = () => controller.abort(signal?.reason);
@@ -284,7 +294,7 @@ export async function runProviderLoop(opts: {
   // single-shot provider for large wizard seed generation (9+ pages).
   const runDirectGemini = async (): Promise<void> => {
     const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY');
-    if (!GEMINI_API_KEY || content) return;
+    if (!GEMINI_API_KEY || content || geminiQuotaExhausted) return;
 
     const role = 'direct';
     console.log(`[AI-Hybrid] Direct Gemini API configured as ${role} provider`);
@@ -326,15 +336,19 @@ export async function runProviderLoop(opts: {
 
         if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
-          const earlyError: ProviderEarlyError = resp.status === 429
-            ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
-            : { status: 402, error: 'Payment required. Please add credits to your Google AI account.' };
+          const exhausted = isQuotaExhausted(errText) || resp.status === 402;
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
-          deferredEarlyError ??= earlyError;
+          if (exhausted) {
+            geminiQuotaExhausted = true;
+            deferredEarlyError ??= { status: 402, error: 'Payment required. Please add credits to your Google AI account.' };
+            console.warn(`[AI-Hybrid] ${model.label} quota/billing exhausted; abandoning Gemini for this turn.`);
+            break;
+          }
+          deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next...`);
-          if (resp.status === 429) continue;
-          break;
+          continue;
         }
+
 
         if (!resp.ok) {
           const errText = await resp.text();
@@ -396,7 +410,12 @@ export async function runProviderLoop(opts: {
     
     for (const [modelIndex, model] of providerPlan.gatewayModels.entries()) {
       throwIfCancelled();
+      if (geminiQuotaExhausted && isGeminiModelId(model.id)) {
+        console.warn(`[AI-Hybrid] Skipping ${model.label} — Gemini quota exhausted this turn.`);
+        continue;
+      }
       const remaining = budgetRemaining();
+
       if (remaining < 8000) {
         console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining gateway models`);
         lastError = lastError || 'budget exhausted before all models tried';
@@ -439,15 +458,23 @@ export async function runProviderLoop(opts: {
 
         if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
-          const earlyError: ProviderEarlyError = resp.status === 429
+          const detail = `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`;
+          const exhausted = isQuotaExhausted(errText);
+          const earlyError: ProviderEarlyError = resp.status === 429 && !exhausted
             ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
             : { status: 402, error: 'Payment required. Please add credits to your workspace.' };
-          recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
-          deferredEarlyError ??= earlyError;
+          recordProviderError(model.label, detail);
+          if (exhausted && isGeminiModelId(model.id)) {
+            geminiQuotaExhausted = true;
+            console.warn(`[AI-Hybrid] ${model.label} quota/billing exhausted; skipping all Gemini attempts this turn.`);
+          } else {
+            deferredEarlyError ??= earlyError;
+          }
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next provider...`);
           if (resp.status === 429) continue;
           break;
         }
+
 
         if (!resp.ok) {
           const errText = await resp.text();

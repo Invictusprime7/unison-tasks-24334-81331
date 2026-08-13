@@ -104,9 +104,18 @@ export async function runProviderLoop(opts: {
   const hasDirectOpenAI = allowDirectFallbacks && !geminiExclusive && Boolean(Deno.env.get('OPENAI_API_KEY'));
   const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY'));
   const hasLastResortGateway = allowDirectFallbacks && !geminiExclusive && Boolean(Deno.env.get('LOVABLE_API_KEY'));
-  const lastResortReserveMs = hasLastResortGateway ? 20_000 : 0;
+  // The managed gateway is the final safety net; a 20 s slice is not enough for
+  // a real generation, so reserve a usable window for it.
+  const lastResortReserveMs = hasLastResortGateway ? 35_000 : 0;
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
+  // A 429 whose body says billing/quota is exhausted is not a transient rate
+  // limit: every further call to that provider will fail the same way. Mark the
+  // whole family dead so the remaining budget goes to providers that can answer.
+  let geminiQuotaExhausted = false;
+  const isQuotaExhausted = (detail: string) =>
+    /credits are depleted|prepayment|quota|billing|insufficient|exceeded your current quota/i.test(detail);
+  const isGeminiModelId = (id: string) => id.startsWith('google/') || id.startsWith('gemini-');
   // Tracks whether any provider failed for a non-rate-limit reason (timeout,
   // 500, empty response, etc.). When true, a deferred 429 from one provider
   // must NOT mask the real failure — the client would show "rate limited" even
@@ -120,6 +129,7 @@ export async function runProviderLoop(opts: {
       hadNonRateLimitError = true;
     }
   };
+
   const createAttemptSignal = (timeoutMs: number) => {
     const controller = new AbortController();
     const onOuterAbort = () => controller.abort(signal?.reason);

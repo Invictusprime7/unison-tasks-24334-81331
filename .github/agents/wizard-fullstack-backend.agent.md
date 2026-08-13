@@ -1,7 +1,7 @@
 ---
 name: "Wizard Full-Stack Backend"
 description: "Use when implementing or reviewing System Launcher Wizard full-stack generation, canonical APIs, Supabase capability provisioning, generated-site runtime controllers, intent handlers, realtime UI synchronization, forms, carts, checkout, product/service grids, routes, overlays, or publish readiness. Converts stateful generated components from static/toast-only demos into durable multi-tenant behavior."
-tools: [read, search, edit, execute, todo, agent, web]
+tools: [vscode, execute, read, agent, ms-azuretools.vscode-containers/containerToolsConfig, edit, search, web, browser, 'supabase/*', 'com.supabase/mcp/*', todo]
 argument-hint: "Describe the generated-site component, intent, or backend capability that must work end to end."
 user-invocable: true
 disable-model-invocation: false

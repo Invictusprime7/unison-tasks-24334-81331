@@ -1,3 +1,4 @@
+const cardClass = 'ut-foundation-card bg-card text-card-foreground';
 /**
  * compositionToReactFileSet — Splits a TemplateComposition into multiple
  * VFS files so inexperienced users can navigate per-section components.
@@ -250,9 +251,7 @@ export default function Hero({ props }: { props: any }) {
       <section data-ut-variant="hero:split-image" className="bg-background pb-24" style={{ paddingTop: HERO_TOP_PADDING }}>
         <div className={shellClass + ' grid items-center gap-10 md:grid-cols-2 lg:gap-20'}>
           <div className="text-left">{content}</div>
-          <div className="min-h-80 overflow-hidden rounded-[var(--radius)] border border-border bg-muted">
-            {media && <img src={media} alt="" className="block min-h-80 h-full w-full object-cover" />}
-          </div>
+          {media && <div className="ut-media-frame min-h-80"><img src={media} alt="" className="block min-h-80 h-full w-full object-cover" /></div>}
         </div>
       </section>
     );
@@ -287,7 +286,7 @@ export default function Services({ props }: { props: any }) {
           {intro}
           <div className="flex flex-col gap-16 lg:gap-20">
             {items.map((item: any, index: number) => (
-              <article key={index} className="grid items-center gap-8 md:grid-cols-2 lg:gap-14">
+              <article key={index} className={(item.image ? 'grid items-center gap-8 md:grid-cols-2 lg:gap-14' : 'max-w-2xl')}>
                 <div className={index % 2 === 0 ? 'md:order-1' : 'md:order-2'}>
                   {item.badge && <span className="mb-3 inline-block rounded-full bg-primary/10 px-3 py-1 font-body text-xs font-semibold text-primary">{item.badge}</span>}
                   <h3 className="mb-3 font-heading text-2xl font-semibold text-foreground sm:text-3xl">{item.title}</h3>
@@ -295,9 +294,7 @@ export default function Services({ props }: { props: any }) {
                   {(item.price || item.duration) && <p className="font-heading font-semibold text-primary">{[item.price, item.duration].filter(Boolean).join(' · ')}</p>}
                   {item.cta && <a href={item.cta.href || '#'} data-ut-intent={item.cta.intent} className={buttonClass}>{item.cta.label}</a>}
                 </div>
-                <div className={(index % 2 === 0 ? 'md:order-2' : 'md:order-1') + ' min-h-[260px] overflow-hidden rounded-[var(--radius)] border border-border bg-muted'}>
-                  {item.image && <img src={item.image} alt={item.title || ''} className="block min-h-[260px] h-full w-full object-cover" />}
-                </div>
+                {item.image && <div className={(index % 2 === 0 ? 'md:order-2' : 'md:order-1') + ' ut-media-frame min-h-[260px]'}><img src={item.image} alt={item.title || ''} className="block min-h-[260px] h-full w-full object-cover" /></div>}
               </article>
             ))}
           </div>
@@ -353,7 +350,7 @@ export default function Testimonials({ props }: { props: any }) {
   const { headline, subheadline, items = [], layout = 'grid' } = props;
   const intro = <>{headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}</>;
   const quote = (item: any) => <><blockquote className="mb-6 border-l-4 border-primary/30 pl-4 font-body italic leading-relaxed text-muted-foreground">"{item.quote}"</blockquote><div><div className="font-heading text-sm font-semibold text-card-foreground">{item.author}</div>{item.role && <div className="font-body text-xs text-muted-foreground">{item.role}</div>}</div></>;
-  const cardClass = 'rounded-[var(--radius)] border border-border bg-card text-card-foreground';
+  const cardClass = 'ut-foundation-card bg-card text-card-foreground';
 
   if (layout === 'single' && items[0]) {
     const featured = items[0];
@@ -630,26 +627,86 @@ const SECTION_MODULE_SOURCE: Record<keyof typeof SECTION_FILES, string> = {
   FAQ: FAQ_MODULE,
 };
 
+interface VariantSectionModule {
+  path: string;
+  componentName: string;
+  content: string;
+}
+
+function variantComponentName(component: keyof typeof SECTION_FILES, sectionId: string): string {
+  const suffix = sectionId
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join('') || 'Section';
+  return `${component}${suffix}Variant`;
+}
+
+function variantSectionModule(
+  component: keyof typeof SECTION_FILES,
+  section: TemplateComposition['sections'][number],
+): VariantSectionModule | null {
+  if (!section.variantId) return null;
+  const layout = getLayoutForVariantId(section.variantId as import('@/sections/variants').VariantId);
+  if (!layout) return null;
+
+  const componentName = variantComponentName(component, section.id);
+  const fileName = `${componentName}.tsx`;
+  return {
+    path: `/src/components/variants/${fileName}`,
+    componentName,
+    content: `import React from 'react';
+import ${component} from '../${component}';
+
+// Snapshot-owned presentation projection for ${section.id}.
+export const SECTION_VARIANT = ${JSON.stringify(section.variantId)};
+export const SECTION_LAYOUT = ${JSON.stringify(layout)};
+
+export default function ${componentName}({ props }: { props: any }) {
+  return <${component} props={{ ...props, layout: SECTION_LAYOUT }} />;
+}
+`,
+  };
+}
+
 function sectionMapModule(template: TemplateComposition, pageFilePath: string): {
   path: string;
   content: string;
   components: Set<keyof typeof SECTION_FILES>;
+  variantModules: VariantSectionModule[];
 } {
   const sectionTypes = Array.from(new Set(template.sections.map((section) => section.type)));
   const components = new Set(sectionTypes
     .map((type) => SECTION_COMPONENT_BY_TYPE[type])
     .filter((component): component is keyof typeof SECTION_FILES => Boolean(component)));
+  const variantModules = template.sections.flatMap((section) => {
+    const component = SECTION_COMPONENT_BY_TYPE[section.type];
+    return component ? [variantSectionModule(component, section)].filter((module): module is VariantSectionModule => Boolean(module)) : [];
+  });
   const mapPath = pageFilePath.replace(/\.(tsx|jsx)$/i, '.sections.ts');
-  const imports = Array.from(components).map((component) => (
+  const imports = [
+    ...Array.from(components).map((component) => (
     `import ${component} from '../components/${component}';`
-  )).join('\n');
-  const mappings = sectionTypes
+    )),
+    ...variantModules.map((module) => (
+      `import ${module.componentName} from '../components/variants/${module.componentName}';`
+    )),
+  ].join('\n');
+  const mappings = [
+    ...sectionTypes
     .map((type) => `${JSON.stringify(type)}: ${SECTION_COMPONENT_BY_TYPE[type]}`)
-    .join(',\n  ');
+    , ...template.sections
+      .map((section) => {
+        const module = variantModules.find((candidate) => candidate.path.endsWith(`/${variantComponentName(SECTION_COMPONENT_BY_TYPE[section.type], section.id)}.tsx`));
+        return module ? `${JSON.stringify(section.id)}: ${module.componentName}` : null;
+      })
+      .filter((mapping): mapping is string => Boolean(mapping)),
+  ].join(',\n  ');
 
   return {
     path: mapPath,
     components,
+    variantModules,
     content: `import type React from 'react';
 ${imports}
 
@@ -712,7 +769,9 @@ function applyDesignVariants(
   return {
     ...template,
     sections: template.sections.map((section) => {
-      const activeVariantId = activeVariants?.[section.id];
+      const activeVariantId = activeVariants?.[section.id] || (
+        section.sourceSectionId ? activeVariants?.[section.sourceSectionId] : undefined
+      );
       const activeVariant = activeVariantId ? getVariantById(activeVariantId) : undefined;
       if (activeVariant?.sectionType === section.type) {
         const layout = getLayoutForVariantId(activeVariant.id);
@@ -802,7 +861,7 @@ const DESIGN_MOTION: ${designMotionType} = ${designMotionJson};
  * items. Static sections render exactly as authored.
  */
 function RenderedSection({ section, occurrence }: { section: any; occurrence: number }) {
-  const C = SECTION_MAP[section.type];
+  const C = SECTION_MAP[section.id] || SECTION_MAP[section.type];
   const isHydratable = HYDRATABLE.has(section.type);
   const hydration = useSectionData(section.id, isHydratable ? section.type : undefined, occurrence);
   if (!C) return null;
@@ -817,6 +876,13 @@ function RenderedSection({ section, occurrence }: { section: any; occurrence: nu
   if (hidden) return null;
 
   const layoutToken = props && props.layout;
+  const mediaTreatment = layoutToken === 'full-bleed'
+    ? 'full-bleed-overlay'
+    : layoutToken === 'split'
+      ? 'split-frame'
+      : props && (props.image || props.backgroundImage)
+        ? 'centered-frame'
+        : 'text-only';
   const motionRecipe = DESIGN_MOTION[section.type];
   return (
     <div
@@ -824,6 +890,7 @@ function RenderedSection({ section, occurrence }: { section: any; occurrence: nu
       data-ut-section-type={section.type}
       data-ut-variant={section.variantId || undefined}
       data-ut-layout={layoutToken || undefined}
+      data-ut-media-treatment={section.type === 'hero' ? mediaTreatment : undefined}
       data-ut-hydration={isHydratable ? (hydration.loading ? 'loading' : (hydration.rows ? 'live' : 'seed')) : undefined}
     >
       ${sectionContent}
@@ -877,6 +944,9 @@ export function compositionToReactFileSet(
   };
   for (const component of sectionMap.components) {
     files[SECTION_FILES[component]] = SECTION_MODULE_SOURCE[component];
+  }
+  for (const module of sectionMap.variantModules) {
+    files[module.path] = module.content;
   }
   if (sectionMap.components.has('Footer')) {
     files[SOCIAL_PATH] = SOCIAL_ICON_MODULE;

@@ -55,18 +55,36 @@ export interface ScaffoldOptions {
 
 const DEFAULT_ROLE_SECTION_POOL: Record<PageRole, SectionType[]> = {
   home:      ['navbar', 'hero', 'services', 'features', 'testimonials', 'cta', 'footer'],
-  services:  ['navbar', 'hero', 'services', 'pricing', 'cta', 'footer'],
-  pricing:   ['navbar', 'hero', 'pricing', 'faq', 'cta', 'footer'],
-  about:     ['navbar', 'hero', 'about', 'team', 'stats', 'footer'],
-  contact:   ['navbar', 'hero', 'contact', 'footer'],
-  gallery:   ['navbar', 'hero', 'gallery', 'cta', 'footer'],
-  faq:       ['navbar', 'hero', 'faq', 'cta', 'footer'],
-  booking:   ['navbar', 'hero', 'services', 'contact', 'footer'],
-  shop:      ['navbar', 'hero', 'services', 'cta', 'footer'],
-  checkout:  ['navbar', 'hero', 'contact', 'footer'],
-  thank_you: ['navbar', 'hero', 'cta', 'footer'],
-  blog:      ['navbar', 'hero', 'blog-preview', 'cta', 'footer'],
-  custom:    ['navbar', 'hero', 'cta', 'footer'],
+  services:  ['navbar', 'hero', 'services', 'features', 'pricing', 'testimonials', 'cta', 'footer'],
+  pricing:   ['navbar', 'hero', 'pricing', 'services', 'faq', 'testimonials', 'cta', 'footer'],
+  about:     ['navbar', 'hero', 'about', 'team', 'stats', 'testimonials', 'cta', 'footer'],
+  contact:   ['navbar', 'hero', 'contact', 'faq', 'testimonials', 'cta', 'footer'],
+  gallery:   ['navbar', 'hero', 'gallery', 'testimonials', 'cta', 'footer'],
+  faq:       ['navbar', 'hero', 'faq', 'services', 'testimonials', 'cta', 'footer'],
+  booking:   ['navbar', 'hero', 'services', 'testimonials', 'contact', 'cta', 'footer'],
+  shop:      ['navbar', 'hero', 'services', 'gallery', 'testimonials', 'cta', 'footer'],
+  checkout:  ['navbar', 'hero', 'services', 'contact', 'faq', 'cta', 'footer'],
+  thank_you: ['navbar', 'hero', 'stats', 'testimonials', 'cta', 'footer'],
+  blog:      ['navbar', 'hero', 'blog-preview', 'testimonials', 'cta', 'footer'],
+  custom:    ['navbar', 'hero', 'services', 'testimonials', 'faq', 'cta', 'footer'],
+};
+
+const MINIMUM_ROUTE_BODY_SECTIONS = 4;
+
+const ROLE_SUPPLEMENT_PRIORITY: Record<PageRole, SectionType[]> = {
+  home: ['services', 'features', 'testimonials', 'cta'],
+  services: ['features', 'pricing', 'testimonials', 'faq', 'cta'],
+  pricing: ['services', 'faq', 'testimonials', 'cta'],
+  about: ['team', 'stats', 'testimonials', 'cta'],
+  contact: ['faq', 'testimonials', 'services', 'cta'],
+  gallery: ['testimonials', 'services', 'cta', 'faq'],
+  faq: ['services', 'testimonials', 'cta', 'contact'],
+  booking: ['services', 'testimonials', 'contact', 'cta'],
+  shop: ['services', 'gallery', 'testimonials', 'cta'],
+  checkout: ['services', 'contact', 'faq', 'cta'],
+  thank_you: ['stats', 'testimonials', 'cta', 'services'],
+  blog: ['blog-preview', 'testimonials', 'services', 'cta'],
+  custom: ['services', 'testimonials', 'faq', 'cta'],
 };
 
 // ============================================================================
@@ -313,9 +331,8 @@ function buildRoleComposition(
   // (items, cards, products, gallery, layout, props) are passed through.
   const filtered: SectionEntry[] = [];
   const typeCounters = new Map<SectionType, number>();
-  for (const source of template.sections) {
-    if (!allowedTypes.has(source.type)) continue;
-    if (globalSharedChrome && (source.type === 'navbar' || source.type === 'footer')) continue;
+  const selectedSourceIds = new Set<string>();
+  const appendSection = (source: SectionEntry) => {
     const idx = typeCounters.get(source.type) ?? 0;
     typeCounters.set(source.type, idx + 1);
     const props = { ...(source.props as Record<string, unknown>) };
@@ -332,8 +349,33 @@ function buildRoleComposition(
     filtered.push({
       ...source,
       id: `${page.id}-${source.type}-${idx}`,
+      sourceSectionId: source.sourceSectionId || source.id,
       props: props as SectionEntry['props'],
     });
+    selectedSourceIds.add(source.id);
+  };
+  for (const source of template.sections) {
+    if (!allowedTypes.has(source.type)) continue;
+    if (globalSharedChrome && (source.type === 'navbar' || source.type === 'footer')) continue;
+    appendSection(source);
+  }
+
+  if (!page.isHome && filtered.length < MINIMUM_ROUTE_BODY_SECTIONS) {
+    const priority = ROLE_SUPPLEMENT_PRIORITY[role] || ROLE_SUPPLEMENT_PRIORITY.custom;
+    const candidates = template.sections
+      .map((section, index) => ({ section, index, priority: priority.indexOf(section.type) }))
+      .filter(({ section }) => (
+        section.type !== 'navbar' && section.type !== 'footer' && section.type !== 'hero' && !selectedSourceIds.has(section.id)
+      ))
+      .sort((left, right) => {
+        const leftPriority = left.priority === -1 ? Number.MAX_SAFE_INTEGER : left.priority;
+        const rightPriority = right.priority === -1 ? Number.MAX_SAFE_INTEGER : right.priority;
+        return leftPriority - rightPriority || left.index - right.index;
+      });
+    for (const { section } of candidates) {
+      appendSection(section);
+      if (filtered.length >= MINIMUM_ROUTE_BODY_SECTIONS) break;
+    }
   }
 
   if (filtered.length === 0) return null;

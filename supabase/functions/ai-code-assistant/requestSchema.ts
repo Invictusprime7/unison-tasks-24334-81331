@@ -173,7 +173,7 @@ export const AIRequestSchema = z.object({
   gatewayOptions: z.object({
     selectedModelId: z.string().max(80).optional(),
     reasoningEffort: z.enum(["none", "low", "medium", "high"]).optional(),
-    timeoutMs: z.number().min(5000).max(120000).optional(),
+    timeoutMs: z.number().min(5000).max(135000).optional(),
     autoModelSelection: z.boolean().optional(),
     maxTokens: z.number().min(1000).max(128000).optional(),
   }).optional(),

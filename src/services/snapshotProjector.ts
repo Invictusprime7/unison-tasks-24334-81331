@@ -253,6 +253,122 @@ export function assertNoMinimalFallbackPreview(
 }
 
 /**
+ * Verifies the Sandpack overlay still executes every PageRegistry route after
+ * /src flattening and controlled-entry preparation. File presence alone is not
+ * enough: an orphaned page module never reaches the preview iframe.
+ */
+export function assertSnapshotPreviewRouteReachability(
+  files: Record<string, string>,
+  resolution: SnapshotResolution,
+  context = 'Preview route reachability',
+): void {
+  if (!resolution.isWizardDraft) return;
+  assertWizardSnapshotPresent(resolution, context);
+
+  const app = files['/App.tsx'] || files['/App.jsx'] || '';
+  if (!app) {
+    throw new PreviewPipelineError(
+      'sandpack',
+      `${context} is missing flattened /App.tsx router.`,
+      { blockedFiles: ['/App.tsx'], recoverableByRelaunch: true },
+    );
+  }
+
+  for (const page of Object.values(resolution.snapshot?.pageRegistry?.pages || {})) {
+    const filePath = (page as { filePath?: string }).filePath;
+    if (!filePath) continue;
+    const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
+    const flattenedPath = normalizedPath.replace(/^\/src\//, '/');
+    const source = files[flattenedPath] || files[flattenedPath.slice(1)];
+    if (!source || !source.trim()) {
+      throw new PreviewPipelineError(
+        'sandpack',
+        `${context} dropped registered page ${normalizedPath} during VFS flattening.`,
+        { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
+      );
+    }
+
+    const importPath = normalizedPath.replace(/^\/src\//, './').replace(/\.(tsx|jsx)$/i, '');
+    const escapedImportPath = importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!new RegExp(`from\\s*["']${escapedImportPath}(?:\\.(?:tsx|jsx))?["']`).test(app)) {
+      throw new PreviewPipelineError(
+        'sandpack',
+        `${context} leaves registered page ${normalizedPath} disconnected from /App.tsx.`,
+        { blockedFiles: ['/App.tsx', normalizedPath], recoverableByRelaunch: true },
+      );
+    }
+  }
+}
+
+function getSandpackDestinationPath(path: string): string | null {
+  let normalizedPath = normalizeVfsPath(path);
+
+  // Sandpack does not execute project metadata, dependency manifests, or build
+  // configuration. These are still retained in the canonical VFS and are not
+  // considered preview artifacts.
+  if (
+    normalizedPath.includes('node_modules') ||
+    normalizedPath.includes('/.') ||
+    normalizedPath.endsWith('.json') ||
+    normalizedPath.endsWith('.config.ts') ||
+    normalizedPath.endsWith('.config.js')
+  ) {
+    return null;
+  }
+
+  if (normalizedPath.startsWith('/src/')) {
+    normalizedPath = normalizedPath.replace('/src/', '/');
+  } else if (normalizedPath.startsWith('/styles/')) {
+    normalizedPath = normalizedPath.replace('/styles/', '/');
+  }
+
+  if (normalizedPath === '/main.tsx') return '/index.tsx';
+  if (normalizedPath === '/main.jsx') return '/index.jsx';
+  if (normalizedPath === '/main.ts') return '/index.ts';
+  return normalizedPath;
+}
+
+/**
+ * Verifies that snapshot-owned runtime files survive VFS projection and
+ * Sandpack path flattening. This protects components, styles, and local assets
+ * beyond the PageRegistry routes validated above.
+ */
+export function assertSnapshotPreviewFileCoverage(
+  sourceFiles: Record<string, string>,
+  previewFiles: Record<string, string>,
+  resolution: SnapshotResolution,
+  context = 'Preview artifact coverage',
+): void {
+  if (!resolution.isWizardDraft) return;
+  assertWizardSnapshotPresent(resolution, context);
+
+  const sourcePathsByDestination = new Map<string, string>();
+  for (const [sourcePath, content] of Object.entries(sourceFiles)) {
+    if (typeof content !== 'string') continue;
+    const destinationPath = getSandpackDestinationPath(sourcePath);
+    if (!destinationPath) continue;
+
+    const previousSourcePath = sourcePathsByDestination.get(destinationPath);
+    if (previousSourcePath && previousSourcePath !== sourcePath) {
+      throw new PreviewPipelineError(
+        'sandpack',
+        `${context} maps both ${previousSourcePath} and ${sourcePath} to ${destinationPath}; refusing to drop either generated file.`,
+        { blockedFiles: [previousSourcePath, sourcePath], recoverableByRelaunch: true },
+      );
+    }
+    sourcePathsByDestination.set(destinationPath, sourcePath);
+
+    if (!(destinationPath in previewFiles)) {
+      throw new PreviewPipelineError(
+        'sandpack',
+        `${context} dropped generated file ${sourcePath} while preparing ${destinationPath}.`,
+        { blockedFiles: [sourcePath], recoverableByRelaunch: true },
+      );
+    }
+  }
+}
+
+/**
  * Live-edit registry — paths written by the AI Builder (or any in-builder edit)
  * after the current snapshot was produced. The snapshot stays authoritative for
  * every other path, but it must never resurrect the pre-edit version of a file

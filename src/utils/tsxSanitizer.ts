@@ -232,14 +232,20 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
   // Generated Vite snapshots do not provide Next.js image optimization.
   // Preserve the rendered asset while removing framework-only props.
   try {
-    const nextImageImport = code.match(/^[ \t]*import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]next\/image['"]\s*;?\s*$\n?/m);
-    if (nextImageImport) {
-      const componentName = nextImageImport[1];
-      const escapedName = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nextImageImports = [...code.matchAll(
+      /^[ \t]*import\s+(?:type\s+)?(?:(?<component>[A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{[^}]*\}\s*)?from\s+['"]next\/image['"]\s*;?\s*$/gm,
+    )];
+    if (nextImageImports.length > 0) {
+      for (const nextImageImport of nextImageImports) {
+        const componentName = nextImageImport.groups?.component;
+        code = code.replace(nextImageImport[0], '');
+        if (!componentName) continue;
+        const escapedName = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        code = code
+          .replace(new RegExp(`<${escapedName}\\b`, 'g'), '<img')
+          .replace(new RegExp(`</${escapedName}>`, 'g'), '</img>');
+      }
       code = code
-        .replace(nextImageImport[0], '')
-        .replace(new RegExp(`<${escapedName}\\b`, 'g'), '<img')
-        .replace(new RegExp(`</${escapedName}>`, 'g'), '</img>')
         .replace(/\s+(?:priority|fill)(?=\s|\/?>)/g, '')
         .replace(/\s+(?:placeholder|blurDataURL)=\{?(["'`])[^"'`]*\1\}?/g, '');
       applied.push('normalizeNextImage');

@@ -70,6 +70,8 @@ export type SectionType =
 /** A single section in a template composition */
 export interface SectionEntry<T extends SectionType = SectionType> {
   id: string;
+  /** Original template section identity retained when this section is cloned for a route. */
+  sourceSectionId?: string;
   type: T;
   /** Registry-owned visual variant; behavior remains bound through id/type/slots. */
   variantId?: import('./variants/types').VariantId;

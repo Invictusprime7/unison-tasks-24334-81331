@@ -233,24 +233,15 @@ const BodySchema = z.object({
   systemType: z.string().trim().min(1).max(80),
   templateId: z.string().trim().max(160).nullable().optional(),
   themePresetId: z.string().trim().min(1).max(120),
-  code: z.string().max(1_000_000),
-  vfsFiles: z.record(z.string(), z.string()),
-  siteBundleSnapshot: z.record(z.unknown()),
-  runtimeManifest: z.record(z.unknown()),
-  generatedSiteRuntimeManifest: GeneratedRuntimeManifestSchema,
-  wizardSelections: z.record(z.unknown()),
-  businessRuntime: BusinessRuntimeSchema.optional(),
-  dataBindings: z.array(DataBindingSchema).max(300).default([]),
-  formDefinitions: z.array(FormDefinitionSchema).max(10).default([]),
-  capabilities: z.array(z.string().trim().min(1).max(120)).min(1).max(32),
 });
 
 type ProvisionBody = z.infer<typeof BodySchema>;
 
-function validateFiles(files: Record<string, string>): string | null {
+function validateFiles(files: Record<string, string>, activePagePath: string): string | null {
   const entries = Object.entries(files);
   if (entries.length === 0) return "A confirmed launch must include generated files.";
   if (entries.length > MAX_FILE_COUNT) return `Too many files; limit is ${MAX_FILE_COUNT}.`;
+  if (!(activePagePath in files)) return "Confirmed launch active page is not present in the canonical VFS.";
 
   let totalBytes = 0;
   for (const [path, source] of entries) {
@@ -295,43 +286,6 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
   try {
     await pg.queryArray("BEGIN");
     const businessId = body.existingBusinessId ?? body.ids.businessId;
-    const fallbackSnapshotId = typeof body.siteBundleSnapshot.snapshotId === 'string'
-      ? body.siteBundleSnapshot.snapshotId
-      : 'legacy-launch';
-    const businessRuntime = body.businessRuntime ?? {
-      version: '1.0' as const,
-      businessId,
-      profile: {
-        source: 'businesses' as const,
-        version: 'unversioned',
-        completenessPercent: 0,
-        publishReady: false,
-        missingRequiredFields: ['profile_verification_required'],
-      },
-      dataBindings: {
-        source: 'site_data_bindings' as const,
-        snapshotId: fallbackSnapshotId,
-        expectedCount: 0,
-        status: 'ready' as const,
-      },
-      generatedAt: new Date().toISOString(),
-    };
-    if (businessRuntime.businessId !== businessId) {
-      throw new Error('BUSINESS_RUNTIME_IDENTITY_MISMATCH');
-    }
-    if (businessRuntime.dataBindings.expectedCount !== body.dataBindings.length) {
-      throw new Error('BUSINESS_RUNTIME_BINDING_COUNT_MISMATCH');
-    }
-    if (body.dataBindings.some((binding) => binding.snapshotId !== businessRuntime.dataBindings.snapshotId)) {
-      throw new Error('BUSINESS_RUNTIME_SNAPSHOT_MISMATCH');
-    }
-    if (body.generatedSiteRuntimeManifest.siteId !== body.ids.siteId) {
-      throw new Error('GENERATED_RUNTIME_SITE_IDENTITY_MISMATCH');
-    }
-    if (body.generatedSiteRuntimeManifest.snapshotId !== businessRuntime.dataBindings.snapshotId) {
-      throw new Error('GENERATED_RUNTIME_SNAPSHOT_MISMATCH');
-    }
-
     if (body.existingBusinessId) {
       const authorization = await query<{ authorized: boolean }>(
         pg,
@@ -369,19 +323,19 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
       projectId: body.ids.projectId,
       draftId: body.ids.draftId,
       export: { attributionRequired: true, attributionLabel: "Powered by Unison" },
-      runtime: { apiVersion: "2026-07-27", publicRuntimeEnabled: true },
+      runtime: { apiVersion: "2026-07-27", publicRuntimeEnabled: false },
     });
     await query(
       pg,
       `INSERT INTO public.sites (id, business_id, owner_user_id, name, slug, status, settings)
-       VALUES ($1, $2, $3, $4, $5, 'preview', $6::jsonb)`,
+        VALUES ($1, $2, $3, $4, $5, 'building', $6::jsonb)`,
       [body.ids.siteId, businessId, userId, body.siteName, body.siteSlug ?? null, siteSettings],
     );
     await query(
       pg,
       `INSERT INTO public.projects
         (id, site_id, business_id, owner_id, name, description, status, publish_status, template_type, settings)
-       VALUES ($1, $2, $3, $4, $5, $6, 'preview', 'draft', $7, $8::jsonb)`,
+       VALUES ($1, $2, $3, $4, $5, $6, 'draft', 'draft', $7, $8::jsonb)`,
       [
         body.ids.projectId,
         body.ids.siteId,
@@ -393,81 +347,10 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
         JSON.stringify({ siteId: body.ids.siteId, source: "system-launcher" }),
       ],
     );
-    for (const agentBinding of body.generatedSiteRuntimeManifest.agents) {
-      const installed = await query<{ id: string }>(
-        pg,
-        `INSERT INTO public.ai_plugin_instances
-          (business_id, agent_id, project_id, placement_key, config, is_enabled)
-         SELECT $1, registry.id, $2, $3, $4::jsonb, true
-         FROM public.ai_agent_registry AS registry
-         WHERE registry.slug = $5 AND registry.is_active = true
-         ON CONFLICT (business_id, project_id, placement_key, agent_id)
-         DO UPDATE SET config = EXCLUDED.config, is_enabled = true, updated_at = now()
-         RETURNING id`,
-        [
-          businessId,
-          body.ids.projectId,
-          `runtime:${agentBinding.agentSlug}`,
-          JSON.stringify({
-            source: 'generated-runtime-manifest',
-            siteId: body.ids.siteId,
-            snapshotId: body.generatedSiteRuntimeManifest.snapshotId,
-            binding: agentBinding,
-          }),
-          agentBinding.agentSlug,
-        ],
-      );
-      if (!installed[0]?.id) {
-        throw new Error(`GENERATED_RUNTIME_AGENT_UNAVAILABLE:${agentBinding.agentSlug}`);
-      }
-    }
-    for (const binding of body.dataBindings) {
-      await query(
-        pg,
-        `INSERT INTO public.site_data_bindings
-          (business_id, project_id, snapshot_id, page_path, section_id, slot_key, binding_type,
-           source_kind, source_table, collection_id, filters, sort, limit_count, display_mapping, fallback_mode)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14::jsonb, $15)`,
-        [
-          businessId,
-          body.ids.projectId,
-          binding.snapshotId,
-          binding.pagePath,
-          binding.sectionId,
-          binding.slotKey,
-          binding.bindingType,
-          binding.sourceKind,
-          binding.sourceTable,
-          binding.collectionId,
-          JSON.stringify(binding.filters),
-          JSON.stringify(binding.sort),
-          binding.limitCount,
-          JSON.stringify(binding.displayMapping),
-          binding.fallbackMode,
-        ],
-      );
-    }
-    for (const definition of body.formDefinitions) {
-      await query(
-        pg,
-        `INSERT INTO public.form_definitions
-          (business_id, project_id, site_id, external_id, name, intent, fields, destination, success_behavior, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, '{}'::jsonb, '{}'::jsonb, true)`,
-        [
-          businessId,
-          body.ids.projectId,
-          body.ids.siteId,
-          definition.externalId,
-          definition.name,
-          definition.intent,
-          JSON.stringify(definition.fields),
-        ],
-      );
-    }
     await query(
       pg,
-      `INSERT INTO public.site_builds (id, site_id, mode, version, status, current_stage, started_at, finished_at, context)
-       VALUES ($1, $2, 'preview', 1, 'completed', 'confirmed-launch', now(), now(), $3::jsonb)`,
+      `INSERT INTO public.site_builds (id, site_id, mode, version, status, current_stage, started_at, context)
+       VALUES ($1, $2, 'preview', 1, 'pending', 'awaiting-canonical-commit', now(), $3::jsonb)`,
       [
         body.ids.buildId,
         body.ids.siteId,
@@ -476,35 +359,19 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
           industry: body.industry,
           templateId: body.templateId,
           themePresetId: body.themePresetId,
-          wizardSelections: body.wizardSelections,
-          businessRuntime,
         }),
       ],
     );
     await query(
       pg,
-      `INSERT INTO public.site_bundles (id, site_id, build_id, version, schema_version, bundle)
-       VALUES ($1, $2, $3, '1.0.0', 1, $4::jsonb)`,
-      [body.ids.bundleId, body.ids.siteId, body.ids.buildId, JSON.stringify(body.siteBundleSnapshot)],
-    );
-    await query(
-      pg,
-      `UPDATE public.sites SET current_build_id = $2, updated_at = now() WHERE id = $1`,
-      [body.ids.siteId, body.ids.buildId],
-    );
-    await query(
-      pg,
       `INSERT INTO public.site_runtime_configs
         (site_id, api_version, public_runtime_enabled, external_deploy_allowed, attribution_required, settings)
-       VALUES ($1, '2026-07-27', true, true, true, $2::jsonb)`,
+       VALUES ($1, '2026-07-27', false, false, true, $2::jsonb)`,
       [
         body.ids.siteId,
         JSON.stringify({
           businessId,
           projectId: body.ids.projectId,
-          runtimeManifest: body.runtimeManifest,
-          generatedSiteRuntimeManifest: body.generatedSiteRuntimeManifest,
-          businessRuntime,
           poweredByUnison: true,
         }),
       ],
@@ -513,7 +380,7 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
       pg,
       `INSERT INTO public.builder_drafts
         (id, user_id, business_id, project_id, site_id, name, code, editor_code, vfs_files, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8::jsonb, $9::jsonb)`,
+       VALUES ($1, $2, $3, $4, $5, $6, '', '', '{}'::jsonb, $7::jsonb)`,
       [
         body.ids.draftId,
         userId,
@@ -521,37 +388,20 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
         body.ids.projectId,
         body.ids.siteId,
         body.siteName,
-        body.code,
-        JSON.stringify(body.vfsFiles),
         JSON.stringify({
           name: body.siteName,
           projectName: body.siteName,
           industry: body.industry,
           systemType: body.systemType,
-          entryPoint: body.runtimeManifest.entryPoint ?? "/src/App.tsx",
           themePresetId: body.themePresetId,
           siteId: body.ids.siteId,
           siteBuildId: body.ids.buildId,
           siteBundleId: body.ids.bundleId,
-          siteBundleSnapshot: body.siteBundleSnapshot,
-          runtimeManifest: body.runtimeManifest,
-          generatedSiteRuntimeManifest: body.generatedSiteRuntimeManifest,
-          wizardSelections: body.wizardSelections,
-          businessRuntime,
           launchConfirmation: { confirmedAt: new Date().toISOString(), confirmedBy: userId },
         }),
       ],
     );
 
-    for (const capabilityId of new Set(body.capabilities)) {
-      await query(
-        pg,
-        `INSERT INTO public.site_capabilities (site_id, capability_id, status, enabled_by)
-         VALUES ($1, $2, 'enabled', $3)
-         ON CONFLICT (site_id, capability_id) DO NOTHING`,
-        [body.ids.siteId, capabilityId, userId],
-      );
-    }
     await query(
       pg,
       `INSERT INTO public.usage_events (business_id, event_type, resource_type, resource_id, metadata)
@@ -578,7 +428,7 @@ Deno.serve(async (req) => {
   const auth = await verifyAuth(req);
   if (!auth.user) return authError(auth.error || "Unauthorized", auth.status, corsHeaders);
 
-  const { data, error } = await safeParseBody(req, MAX_TOTAL_BYTES + 200_000);
+  const { data, error } = await safeParseBody(req, 200_000);
   if (error || !data) return errorResponse(error || "Invalid request body", error?.includes("exceeds") ? 413 : 400, corsHeaders);
   const parsed = BodySchema.safeParse(data);
   if (!parsed.success) {
@@ -586,9 +436,6 @@ Deno.serve(async (req) => {
       details: parsed.error.issues.slice(0, 10).map((issue) => ({ path: issue.path, message: issue.message })),
     });
   }
-  const fileError = validateFiles(parsed.data.vfsFiles);
-  if (fileError) return errorResponse(fileError, 400, corsHeaders);
-
   try {
     // Instantiate once here to fail closed when the function environment is incomplete.
     createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });

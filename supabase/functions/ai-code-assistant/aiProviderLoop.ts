@@ -3,7 +3,7 @@
  * Returns content, reasoning, and the model that succeeded.
  */
 
-import type { ProviderPlan } from "./providerRouter.ts";
+import { isGeminiExclusiveProviderMode, type ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
 import {
   createLastResortGatewayChatCompletion,
@@ -37,6 +37,8 @@ export interface ProviderCallResult {
   /** Non-null when we should return an early HTTP error (rate limit, payment required) */
   earlyError?: ProviderEarlyError;
 }
+
+export const PROVIDER_LOOP_TOTAL_BUDGET_MS = 135_000;
 
 export function buildPlannedChatCompletionRequest(opts: {
   model: ModelSpec;
@@ -96,12 +98,12 @@ export async function runProviderLoop(opts: {
   // repair, persistence and the response trip before the browser deadline.
   // Provider failover is owned here; providerClient must not nest another
   // fallback chain inside these attempts.
-  const TOTAL_BUDGET_MS = 105_000;
   const startedAt = Date.now();
-  const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
-  const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));
+  const budgetRemaining = () => PROVIDER_LOOP_TOTAL_BUDGET_MS - (Date.now() - startedAt);
+  const geminiExclusive = isGeminiExclusiveProviderMode();
+  const hasDirectOpenAI = allowDirectFallbacks && !geminiExclusive && Boolean(Deno.env.get('OPENAI_API_KEY'));
   const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY'));
-  const hasLastResortGateway = allowDirectFallbacks && Boolean(Deno.env.get('LOVABLE_API_KEY'));
+  const hasLastResortGateway = allowDirectFallbacks && !geminiExclusive && Boolean(Deno.env.get('LOVABLE_API_KEY'));
   const lastResortReserveMs = hasLastResortGateway ? 20_000 : 0;
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
@@ -392,7 +394,7 @@ export async function runProviderLoop(opts: {
     const totalChars = aiMessages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
     console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
     
-    for (const model of providerPlan.gatewayModels) {
+    for (const [modelIndex, model] of providerPlan.gatewayModels.entries()) {
       throwIfCancelled();
       const remaining = budgetRemaining();
       if (remaining < 8000) {
@@ -411,9 +413,13 @@ export async function runProviderLoop(opts: {
         : lastResortReserveMs;
       const headroom = Math.max(8000, remaining - 2000 - reserveMs);
       const leadShare = Math.max(30000, Math.floor(headroom * 0.6));
-      const perModelMs = isLeadModel
-        ? Math.min(cap, headroom, providerPlan.preferLongLeadAttempt ? headroom : leadShare)
-        : Math.min(cap, Math.max(12000, headroom));
+      const remainingModels = providerPlan.gatewayModels.length - modelIndex;
+      const balancedAttemptMs = Math.max(12000, Math.floor(cap / remainingModels));
+      const perModelMs = providerPlan.balancedProviderAttempts
+        ? Math.min(cap, headroom, balancedAttemptMs)
+        : isLeadModel
+          ? Math.min(cap, headroom, providerPlan.preferLongLeadAttempt ? headroom : leadShare)
+          : Math.min(cap, Math.max(12000, headroom));
 
 
       try {
@@ -520,7 +526,7 @@ export async function runProviderLoop(opts: {
     model.id.startsWith('google/') || model.id.startsWith('gemini-') ? 'gemini' :
     'other'
   )));
-  if (!content && allowDirectFallbacks) {
+  if (!content && allowDirectFallbacks && !geminiExclusive) {
     if (hasDirectOpenAI && !plannedProviders.has('openai')) await runDirectOpenAI();
     if (!content && hasDirectGemini && !plannedProviders.has('gemini')) await runDirectGemini();
   }
@@ -657,9 +663,11 @@ export async function runProviderLoop(opts: {
       hasDirectOpenAI ? 'openai' : '',
     ].filter(Boolean);
     const errorTrail = providerErrors.slice(-10).join(' | ') || lastError || 'no provider attempts completed';
-    const gatewayStatus = hasLastResortGateway
-      ? 'The managed AI gateway fallback was configured but did not recover the request.'
-      : 'No managed AI gateway fallback is configured.';
+    const gatewayStatus = geminiExclusive
+      ? 'Gemini-only provider mode is active; OpenAI and managed fallbacks are disabled.'
+      : hasLastResortGateway
+        ? 'The managed AI gateway fallback was configured but did not recover the request.'
+        : 'No managed AI gateway fallback is configured.';
     throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. ${gatewayStatus}`);
   }
 

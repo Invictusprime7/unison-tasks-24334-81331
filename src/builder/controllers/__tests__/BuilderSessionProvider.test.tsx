@@ -18,6 +18,7 @@ import {
   BuilderSessionProvider,
   type BuilderSessionValue,
 } from '../BuilderSessionProvider';
+import type { ProjectRuntimeEnvelope } from '@/types/projectRuntimeEnvelope';
 
 function Probe({ onValue }: { onValue: (v: BuilderSessionValue) => void }) {
   const value = useContext(BuilderSessionContext);
@@ -91,6 +92,59 @@ describe('BuilderSessionProvider', () => {
       </BuilderSessionProvider>,
     );
 
+    expect(captured?.runtimeContext).toEqual(runtimeContext);
+  });
+
+  it('uses the durable runtime envelope instead of conflicting navigation hints', () => {
+    const runtimeContext = {
+      workspaceId: 'workspace-1',
+      businessId: 'business-1',
+      projectId: 'project-1',
+      websiteId: 'website-1',
+      snapshotId: 'snapshot-1',
+      environment: 'builder' as const,
+    };
+    const projectRuntime = {
+      version: '1.0',
+      identity: {
+        workspaceId: 'workspace-1',
+        businessId: 'business-1',
+        projectId: 'project-1',
+        draftId: 'draft-1',
+      },
+      snapshot: {
+        snapshotId: 'snapshot-1',
+        vfsFiles: { '/src/App.tsx': 'export default function App() { return null; }' },
+        appContext: { runtimeContext },
+      },
+      snapshotVersion: 'snapshot-1',
+      revisionId: 'revision-1',
+      activePublishedRevisionId: null,
+      navigation: { activePagePath: '/src/App.tsx' },
+      runtimeMode: 'draft',
+      provisionedCapabilities: [],
+      persistence: { status: 'persisted', persistedAt: null, error: null },
+      synchronization: { status: 'synchronized', synchronizedAt: null, error: null },
+    } as unknown as ProjectRuntimeEnvelope;
+    let captured: BuilderSessionValue | undefined;
+
+    renderToStaticMarkup(
+      <BuilderSessionProvider
+        value={{
+          projectRuntime,
+          projectId: 'route-project',
+          businessId: 'route-business',
+          currentUserId: 'user-1',
+          draftId: 'route-draft',
+        }}
+      >
+        <Probe onValue={(value) => (captured = value)} />
+      </BuilderSessionProvider>,
+    );
+
+    expect(captured?.projectId).toBe('project-1');
+    expect(captured?.businessId).toBe('business-1');
+    expect(captured?.draftId).toBe('draft-1');
     expect(captured?.runtimeContext).toEqual(runtimeContext);
   });
 

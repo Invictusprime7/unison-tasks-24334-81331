@@ -4,6 +4,7 @@ import {
   planLaneBBatches,
   LANE_B_MAX_PAGES_PER_BATCH,
 } from '@/services/laneBBatchPlanner';
+import { buildWizardLaneBVfsPayload } from '@/services/wizardLaneBVfsPayload';
 
 const pages = (n: number) => Array.from({ length: n }, (_, i) => `/src/pages/Page${i}.tsx`);
 
@@ -19,6 +20,14 @@ describe('laneBBatchPlanner', () => {
     expect(plan.pagesPerBatch).toBeGreaterThan(0);
     expect(plan.pagesPerBatch).toBeLessThanOrEqual(LANE_B_MAX_PAGES_PER_BATCH);
     expect(plan.batches.flat()).toHaveLength(12);
+  });
+
+  it('pre-batches the observed eight-page production workload', () => {
+    const plan = planLaneBBatches({ pages: pages(8), basePayloadBytes: 33_255 });
+
+    expect(plan.pagesPerBatch).toBe(2);
+    expect(plan.batches).toHaveLength(4);
+    expect(plan.limitedBy).toBe('wall-clock');
   });
 
   it('tightens batches when the shared context nearly fills the body budget', () => {
@@ -61,5 +70,16 @@ describe('laneBBatchPlanner', () => {
 
     expect(context['/.unison/ui-manifest.json']).toBe(files['/.unison/ui-manifest.json']);
     expect(context['/src/unison/ui/index.ts']).toBe(files['/src/unison/ui/index.ts']);
+  });
+
+  it('uses the canonical bounded context for Wizard Lane B payloads', () => {
+    const files = {
+      '/.unison/ui-manifest.json': '{"importRoot":"@/unison/ui"}',
+      '/src/unison/ui/index.ts': "export * from './button';",
+      '/src/pages/Home.tsx': 'export default function Home() { return <main />; }',
+      '/src/components/Internal.tsx': 'export default function Internal() { return null; }',
+    };
+
+    expect(buildWizardLaneBVfsPayload(files)).toEqual(buildLaneBVfsContext(files));
   });
 });

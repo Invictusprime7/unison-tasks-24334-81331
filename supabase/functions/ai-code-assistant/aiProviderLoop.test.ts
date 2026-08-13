@@ -1,10 +1,17 @@
-import { buildPlannedChatCompletionRequest } from './aiProviderLoop.ts';
+import {
+  buildPlannedChatCompletionRequest,
+  PROVIDER_LOOP_TOTAL_BUDGET_MS,
+} from './aiProviderLoop.ts';
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
 }
 
 const messages = [{ role: 'user', content: 'Generate the requested site.' }];
+
+Deno.test('keeps server headroom beyond the funded Wizard lead attempt', () => {
+  assert(PROVIDER_LOOP_TOTAL_BUDGET_MS === 135_000, 'provider loop should allow 135 seconds');
+});
 
 Deno.test('omits reasoning_effort for the GPT-4.1 Wizard fallback', () => {
   const request = buildPlannedChatCompletionRequest({

@@ -8,8 +8,6 @@
  *  1. Resolve the current user's businesses.
  *  2. For each business without a `unison_ai` plugin instance,
  *     fire `install-system` to provision agents + recipe packs.
- *  3. Verify the `intent_execution_log` RLS INSERT policy is in place
- *     (uses the `builder-provision` edge function as a lightweight guard).
  *
  * All steps are best-effort — failures are logged but never throw or
  * block the UI render.
@@ -78,17 +76,6 @@ async function provisionBusiness(business: BootstrapBusiness): Promise<void> {
   });
 }
 
-async function ensureRlsPolicies(): Promise<void> {
-  // builder-provision handles idempotent RLS policy creation for
-  // intent_execution_log and other tables that need runtime-safe INSERT access.
-  const { error } = await supabase.functions.invoke('builder-provision', {
-    body: { task: 'ensure_rls_policies' },
-  });
-  if (error) {
-    console.warn('[SupabaseBootstrap] builder-provision hint:', error.message);
-  }
-}
-
 function isWebBuilderRoute(): boolean {
   return typeof window !== 'undefined' && window.location.pathname === WEB_BUILDER_PATH;
 }
@@ -140,10 +127,7 @@ export function useSupabaseBootstrap(): void {
         sessionStorage.setItem(BOOTSTRAP_CACHE_KEY, '1');
         markPersistentRun(userId);
 
-        // Step 1: ensure RLS policies are in place (idempotent, fast)
-        await ensureRlsPolicies().catch(() => {});
-
-        // Step 2: auto-provision plugin instances for unprovisioned businesses
+        // Auto-provision plugin instances for unprovisioned businesses.
         const businesses = await resolveUserBusinesses(userId);
         for (const biz of businesses.slice(0, MAX_BOOTSTRAP_PROVISION_ATTEMPTS)) {
           const alreadyProvisioned = await hasPluginInstance(biz.id);

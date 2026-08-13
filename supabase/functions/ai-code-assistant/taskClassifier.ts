@@ -65,19 +65,21 @@ export function classifyTask(opts: {
     wizardSeed,
   } = opts;
 
-  // ── Wizard seed — sole launch lane. Routes to Lane B so wizard launches
-  //    share the builder brain (memory, research, VFS, transactional patches).
+  // ── Wizard seed — sole launch lane. The seed already supplies the selected
+  //    template, industry, theme, route registry, and intent contract. Avoid
+  //    delaying a first launch on historical drafts or generic web research;
+  //    an interpreter envelope can still explicitly request research.
   //    Wizard launches MUST send `mode: "wizard-seed"` with a structured
   //    `wizardSeed`; no alternate launcher generation route is supported.
   if (mode === "wizard-seed") {
     return {
       type: "wizard_seed_generation",
-      fastPath: false,
-      shouldUseMemory: true,
+      fastPath: true,
+      shouldUseMemory: false,
       shouldUseCompactContext: true,
       prefersJsonOutput: true,
-      skipResearch: false,
-      skipThinking: false,
+      skipResearch: true,
+      skipThinking: true,
     };
   }
 

@@ -12,6 +12,87 @@ import { buildThemedIndexCss } from "@/components/onboarding/themePresetToIndexC
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 
 describe("launchStateToSandpackFiles", () => {
+  it('blocks a wizard preview when Sandpack disconnects a registered route from its router', () => {
+    const snapshot = {
+      snapshotId: 'snap_route_reachability',
+      businessName: 'Vela',
+      industry: 'salon',
+      pageRegistry: {
+        homePageId: 'home',
+        pages: {
+          home: { pageId: 'home', isHome: true, filePath: '/src/pages/Home.tsx', path: '/', navOrder: 0 },
+          contact: { pageId: 'contact', isHome: false, filePath: '/src/pages/Contact.tsx', path: '/contact', navOrder: 1 },
+        },
+      },
+      vfsFiles: {
+        '/src/App.tsx': "import Home from './pages/Home'; export default function App(){ return <Home />; }",
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Home</main>; }',
+        '/src/pages/Contact.tsx': 'export default function Contact(){ return <main>Contact</main>; }',
+        '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      },
+      meta: {
+        source: 'wizard',
+        themePresetId: 'modern',
+        themeInjection: { version: '1.0', stage: '4b', presetId: 'modern', cssPath: '/src/index.css' },
+      },
+    };
+
+    expect(() => buildPreviewArtifacts({
+      sourceFiles: {
+        '/.unison/site-bundle-snapshot.json': JSON.stringify(snapshot),
+      },
+    })).toThrow(/disconnected from \/App\.tsx/);
+  });
+
+  it('keeps every generated runtime file, including public assets, in the Sandpack overlay', () => {
+    const snapshot = {
+      snapshotId: 'snap_file_coverage',
+      pageRegistry: { pages: {} },
+      vfsFiles: {
+        '/src/App.tsx': 'export default function App(){ return <main>Coverage</main>; }',
+        '/src/components/Notice.tsx': 'export default function Notice(){ return <aside>Notice</aside>; }',
+        '/src/assets/wordmark.svg': '<svg viewBox="0 0 1 1" />',
+        '/public/images/hero.svg': '<svg viewBox="0 0 1 1" />',
+        '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      },
+      meta: {
+        source: 'wizard',
+        themePresetId: 'modern',
+        themeInjection: { version: '1.0', stage: '4b', presetId: 'modern', cssPath: '/src/index.css' },
+      },
+    };
+
+    const result = buildPreviewArtifacts({
+      sourceFiles: { '/.unison/site-bundle-snapshot.json': JSON.stringify(snapshot) },
+    });
+
+    expect(result.sandpackFiles['/components/Notice.tsx']).toContain('function Notice');
+    expect(result.sandpackFiles['/assets/wordmark.svg']).toContain('<svg');
+    expect(result.sandpackFiles['/public/images/hero.svg']).toContain('<svg');
+  });
+
+  it('rejects generated files that would collide after Sandpack path flattening', () => {
+    const snapshot = {
+      snapshotId: 'snap_file_collision',
+      pageRegistry: { pages: {} },
+      vfsFiles: {
+        '/src/App.tsx': 'export default function App(){ return <main>Collision</main>; }',
+        '/src/components/Notice.tsx': 'export default function Notice(){ return <aside>Source</aside>; }',
+        '/components/Notice.tsx': 'export default function Notice(){ return <aside>Root</aside>; }',
+        '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      },
+      meta: {
+        source: 'wizard',
+        themePresetId: 'modern',
+        themeInjection: { version: '1.0', stage: '4b', presetId: 'modern', cssPath: '/src/index.css' },
+      },
+    };
+
+    expect(() => buildPreviewArtifacts({
+      sourceFiles: { '/.unison/site-bundle-snapshot.json': JSON.stringify(snapshot) },
+    })).toThrow(/refusing to drop either generated file/);
+  });
+
   it("merges the lightweight preview runtime with final artifact imports while preserving themePresetId CSS", () => {
     const organic = THEME_PRESETS.find((preset) => preset.id === "organic");
     expect(organic).toBeDefined();

@@ -65,6 +65,7 @@ type RevisionRow = {
 
 const revisionStore: RevisionRow[] = [];
 const draftProjectionUpdates: Array<{ id: unknown; userId: unknown; revisionId: unknown }> = [];
+let canonicalCommitRpcError: { message: string } | null = null;
 
 vi.mock('@/integrations/supabase/client', () => {
   const insert = (payload: Record<string, unknown>) => ({
@@ -139,6 +140,43 @@ vi.mock('@/integrations/supabase/client', () => {
         };
       },
       functions: { invoke: runtimeReconcileInvoke },
+      rpc: async (functionName: string, payload: Record<string, unknown>) => {
+        if (functionName !== 'commit_canonical_site_revision') {
+          return { data: null, error: { message: `Unexpected RPC ${functionName}` } };
+        }
+        if (canonicalCommitRpcError) return { data: null, error: canonicalCommitRpcError };
+        const seq = String(revisionStore.length + 1).padStart(12, '0');
+        const id = `00000000-0000-0000-0000-${seq}`;
+        const row: RevisionRow = {
+          id,
+          project_id: String(payload.p_project_id),
+          business_id: String(payload.p_business_id),
+          draft_id: String(payload.p_draft_id),
+          parent_revision_id: (payload.p_parent_revision_id as string | null) ?? null,
+          source: String(payload.p_source),
+          status: payload.p_status as RevisionRow['status'],
+          vfs_files: (payload.p_vfs_files ?? {}) as Record<string, unknown>,
+          site_bundle_snapshot: (payload.p_site_bundle_snapshot ?? {}) as Record<string, unknown>,
+          runtime_manifest: (payload.p_runtime_manifest ?? {}) as Record<string, unknown>,
+          playground_state: (payload.p_playground_state ?? {}) as Record<string, unknown>,
+          readiness_report: (payload.p_readiness_report ?? {}) as Record<string, unknown>,
+          diagnostics: (payload.p_diagnostics ?? []) as unknown[],
+          created_by: IDENTITY.userId,
+          created_at: new Date().toISOString(),
+          publish_ready: payload.p_publish_ready,
+          publish_blockers: payload.p_publish_blockers,
+          vfs_hash: payload.p_vfs_hash,
+        } as RevisionRow;
+        revisionStore.push(row);
+        if (row.status === 'committed') {
+          draftProjectionUpdates.push({
+            id: payload.p_draft_id,
+            userId: IDENTITY.userId,
+            revisionId: id,
+          });
+        }
+        return { data: id, error: null };
+      },
     },
   };
 });
@@ -197,11 +235,57 @@ function mockIntents(previewBlocked = 0, publishBlocked = 0) {
 beforeEach(() => {
   revisionStore.length = 0;
   draftProjectionUpdates.length = 0;
+  canonicalCommitRpcError = null;
   vi.clearAllMocks();
   runtimeReconcileInvoke.mockResolvedValue({ data: { success: true }, error: null });
 });
 
 describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
+  it('records Wizard capabilities without provisioning before revision persistence', async () => {
+    const files = {
+      '/src/App.tsx': 'export default function App(){return null}',
+      '/.unison/wizard-seed.json': JSON.stringify({
+        canonical: { capabilities: ['booking', 'contact'] },
+      }),
+    };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents(0, 0);
+
+    const launch = await commitMutation({
+      source: 'wizard-launch',
+      identity: IDENTITY,
+      current: { vfsFiles: {}, activePagePath: '/src/App.tsx' },
+      patch: legacyFilesToPatchPlan(files, 'capability request'),
+      options: { selections: { industry: 'salon' } as never },
+    });
+
+    expect(executeBackendOps).not.toHaveBeenCalled();
+    expect(launch.siteBundleSnapshot?.businessSystem?.capabilities).toEqual([
+      expect.objectContaining({ id: 'booking', status: 'approved' }),
+      expect.objectContaining({ id: 'contact', status: 'approved' }),
+    ]);
+  });
+
+  it('hard-fails when the atomic canonical revision transaction fails', async () => {
+    const files = { '/src/App.tsx': 'export default function App(){return null}' };
+    mockPipeline(files);
+    mockPreflight(files);
+    mockIntents(0, 0);
+    canonicalCommitRpcError = { message: 'draft projection update denied' };
+
+    await expect(commitMutation({
+      source: 'wizard-launch',
+      identity: IDENTITY,
+      current: { vfsFiles: {}, activePagePath: '/src/App.tsx' },
+      patch: legacyFilesToPatchPlan(files, 'atomic failure'),
+      options: { selections: { industry: 'salon' } as never },
+    })).rejects.toThrow('canonical revision transaction failed');
+
+    expect(revisionStore).toEqual([]);
+    expect(draftProjectionUpdates).toEqual([]);
+  });
+
   it('chains five commits across sources and persists a revision per step', async () => {
     const salonFiles = {
       '/src/App.tsx': 'export default function App(){return null}',

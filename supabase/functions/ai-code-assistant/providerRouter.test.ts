@@ -29,6 +29,12 @@ const wizardTask: ClassifiedTask = {
 const bothProviders = (name: string): string | undefined => ({
   GEMINI_API_KEY: "gemini-test-key",
   OPENAI_API_KEY: "openai-test-key",
+  AI_PROVIDER_MODE: "hybrid",
+}[name]);
+
+const unfundedOpenAI = (name: string): string | undefined => ({
+  GEMINI_API_KEY: "gemini-test-key",
+  OPENAI_API_KEY: "openai-test-key",
 }[name]);
 
 Deno.test("parses explicit Gemini/OpenAI traffic weights", () => {
@@ -94,44 +100,69 @@ Deno.test("uses the only configured text provider", () => {
     undefined,
     "moderate",
     "any-key",
-    (name) => name === "OPENAI_API_KEY" ? "openai-test-key" : undefined,
+    (name) => ({ OPENAI_API_KEY: "openai-test-key", AI_PROVIDER_MODE: "hybrid" }[name]),
   );
 
   assertEquals(plan.primaryProvider, "openai");
 });
 
-Deno.test("keeps Wizard provider slices within the bounded failover window", () => {
+Deno.test("uses Gemini exclusively while OpenAI funding is disabled", () => {
   const plan = buildProviderPlan(
     wizardTask,
     true,
     { timeoutMs: 120_000 },
     "advanced",
     "wizard-route",
-    bothProviders,
+    unfundedOpenAI,
   );
 
-  assertEquals(plan.gatewayModels.length, 2);
-  assertEquals(plan.gatewayModels[0]?.id, "google/gemini-2.5-flash");
-  assertEquals(plan.gatewayModels[1]?.id, "openai/gpt-4.1");
-  assertEquals(plan.perModelTimeoutMs, 95_000);
-  assertEquals(plan.preferLongLeadAttempt, true);
+  assertEquals(plan.primaryProvider, "gemini");
+  assertEquals(plan.gatewayModels.map((model) => model.id), [
+    "google/gemini-2.5-flash",
+    "google/gemini-2.5-flash-lite",
+  ]);
 });
 
-Deno.test("honors lower Wizard resource caps without changing its model lineup", () => {
+Deno.test("uses the funded Gemini Wizard provider without spending time on OpenAI fallback", () => {
   const plan = buildProviderPlan(
     wizardTask,
     true,
-    { timeoutMs: 50_000, maxTokens: 12_000 },
+    { timeoutMs: 130_000 },
+    "advanced",
+    "wizard-route",
+    bothProviders,
+  );
+
+  assertEquals(plan.gatewayModels.map((model) => model.id), [
+    "google/gemini-2.5-flash",
+    "google/gemini-2.5-flash-lite",
+  ]);
+  assertEquals(plan.perModelTimeoutMs, 125_000);
+  assertEquals(plan.preferLongLeadAttempt, true);
+});
+
+Deno.test("balances focused Wizard page completion across Gemini fallbacks", () => {
+  const plan = buildProviderPlan(
+    wizardTask,
+    true,
+    {
+      timeoutMs: 50_000,
+      maxTokens: 12_000,
+      autoModelSelection: false,
+      selectedModelId: "google/gemini-2.5-flash-lite",
+    },
     "advanced",
     "wizard-page-route",
     bothProviders,
   );
 
   assertEquals(plan.gatewayModels.map((model) => model.id), [
+    "google/gemini-2.5-flash-lite",
     "google/gemini-2.5-flash",
-    "openai/gpt-4.1",
   ]);
   assertEquals(plan.gatewayModels.map((model) => model.maxTokens), [12_000, 12_000]);
   assertEquals(plan.fallbackMaxTokens, 12_000);
   assertEquals(plan.perModelTimeoutMs, 50_000);
+  assertEquals(plan.preferLongLeadAttempt, false);
+  assertEquals(plan.balancedProviderAttempts, true);
 });

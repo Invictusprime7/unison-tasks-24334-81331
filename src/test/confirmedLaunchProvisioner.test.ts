@@ -16,11 +16,7 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-import {
-  REQUIRED_SITE_CAPABILITIES,
-  provisionConfirmedLaunchSite,
-} from '@/services/confirmedLaunchProvisioner';
-import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
+import { provisionConfirmedLaunchSite } from '@/services/confirmedLaunchProvisioner';
 
 const ids = {
   businessId: '11111111-1111-4111-8111-111111111111',
@@ -31,129 +27,79 @@ const ids = {
   bundleId: '66666666-6666-4666-8666-666666666666',
 };
 
-const businessRuntime = {
-  version: '1.0' as const,
-  businessId: ids.businessId,
-  profile: {
-    source: 'businesses' as const,
-    version: '2026-07-28T12:00:00.000Z',
-    completenessPercent: 100,
-    publishReady: true,
-    missingRequiredFields: [],
-  },
-  dataBindings: {
-    source: 'site_data_bindings' as const,
-    snapshotId: 'snapshot-1',
-    expectedCount: 0,
-    status: 'ready' as const,
-  },
-  generatedAt: '2026-07-28T13:00:00.000Z',
-};
-
-const generatedSiteRuntimeManifest = {
-  version: '1.0' as const,
-  siteId: ids.siteId,
-  snapshotId: 'snapshot-1',
-  enabledCapabilities: [],
-  components: [],
-  reads: [],
-  intents: [],
-  controllers: [],
-  agents: [],
-  requiredBackendFunctions: [],
-  readiness: { status: 'ready' as const, blockers: [] },
-  generatedAt: '2026-07-28T13:00:00.000Z',
+const shellInput = {
+  ids,
+  businessName: 'Northstar Studio',
+  industry: 'agency',
+  siteName: 'Northstar Studio Site',
+  systemType: 'agency',
+  themePresetId: 'modern',
 };
 
 describe('provisionConfirmedLaunchSite', () => {
-  it('sends the complete live-site capability contract to the confirmed launch endpoint', async () => {
-    const foundation = buildGeneratedUiFoundation({ themePresetId: 'modern' });
-    const vfsFiles = {
-      ...foundation.files,
-      '/src/App.tsx': 'export default function App() { return null; }',
-    };
+  it('sends only the identity shell contract to the confirmed launch endpoint', async () => {
     invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
     maybeSingle.mockResolvedValueOnce({
-      data: { id: ids.draftId, vfs_files: vfsFiles },
+      data: {
+        id: ids.draftId,
+        project_id: ids.projectId,
+        business_id: ids.businessId,
+        site_id: ids.siteId,
+        last_revision_id: null,
+        vfs_files: {},
+        metadata: {},
+      },
       error: null,
     });
 
-    await expect(provisionConfirmedLaunchSite({
-      ids,
-      businessName: 'Northstar Studio',
-      industry: 'agency',
-      siteName: 'Northstar Studio Site',
-      systemType: 'agency',
-      themePresetId: 'modern',
-      code: 'export default function App() { return null; }',
-      vfsFiles,
-      siteBundleSnapshot: {},
-      runtimeManifest: {},
-      generatedSiteRuntimeManifest,
-      wizardSelections: {},
-      businessRuntime,
-      dataBindings: [],
-    })).resolves.toEqual(ids);
+    await expect(provisionConfirmedLaunchSite(shellInput)).resolves.toEqual(ids);
 
-    expect(invoke).toHaveBeenCalledWith('provision-launch-site', expect.objectContaining({
-      body: expect.objectContaining({
-        ids,
-        capabilities: REQUIRED_SITE_CAPABILITIES,
-        businessRuntime,
-        generatedSiteRuntimeManifest,
-        dataBindings: [],
-      }),
-    }));
+    expect(invoke).toHaveBeenCalledWith('provision-launch-site', { body: shellInput });
+    expect(invoke.mock.calls[0]?.[1]?.body).not.toHaveProperty('vfsFiles');
+    expect(invoke.mock.calls[0]?.[1]?.body).not.toHaveProperty('siteBundleSnapshot');
+    expect(invoke.mock.calls[0]?.[1]?.body).not.toHaveProperty('runtimeManifest');
+    expect(invoke.mock.calls[0]?.[1]?.body).not.toHaveProperty('activePagePath');
   });
 
   it('rejects incomplete root identities instead of navigating to an unlinked project', async () => {
     invoke.mockResolvedValueOnce({ data: { data: { projectId: ids.projectId } }, error: null });
 
-    await expect(provisionConfirmedLaunchSite({
-      ids,
-      businessName: 'Northstar Studio',
-      industry: 'agency',
-      siteName: 'Northstar Studio Site',
-      systemType: 'agency',
-      themePresetId: 'modern',
-      code: 'export default function App() { return null; }',
-      vfsFiles: { '/src/App.tsx': 'export default function App() { return null; }' },
-      siteBundleSnapshot: {},
-      runtimeManifest: {},
-      generatedSiteRuntimeManifest,
-      wizardSelections: {},
-      businessRuntime,
-      dataBindings: [],
-    })).rejects.toThrow('incomplete site identity');
+    await expect(provisionConfirmedLaunchSite(shellInput)).rejects.toThrow('incomplete site identity');
   });
 
-  it('rejects a persisted draft that lost the generated UI foundation', async () => {
-    const foundation = buildGeneratedUiFoundation({ themePresetId: 'modern' });
-    const vfsFiles = {
-      ...foundation.files,
-      '/src/App.tsx': 'export default function App() { return null; }',
-    };
+  it('rejects a provisioning shell that contains VFS content before canonical commit', async () => {
     invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
     maybeSingle.mockResolvedValueOnce({
-      data: { id: ids.draftId, vfs_files: { '/src/App.tsx': 'export default function App() {}' } },
+      data: {
+        id: ids.draftId,
+        project_id: ids.projectId,
+        business_id: ids.businessId,
+        site_id: ids.siteId,
+        last_revision_id: null,
+        vfs_files: { '/src/App.tsx': 'export default function App() {}' },
+        metadata: {},
+      },
       error: null,
     });
 
-    await expect(provisionConfirmedLaunchSite({
-      ids,
-      businessName: 'Northstar Studio',
-      industry: 'agency',
-      siteName: 'Northstar Studio Site',
-      systemType: 'agency',
-      themePresetId: 'modern',
-      code: 'export default function App() { return null; }',
-      vfsFiles,
-      siteBundleSnapshot: {},
-      runtimeManifest: {},
-      generatedSiteRuntimeManifest,
-      wizardSelections: {},
-      businessRuntime,
-      dataBindings: [],
-    })).rejects.toThrow('confirmed launch builder_drafts read-back lost the snapshot-owned UI foundation');
+    await expect(provisionConfirmedLaunchSite(shellInput)).rejects.toThrow('content outside the canonical commit pipeline');
+  });
+
+  it('accepts an empty shell without a pre-commit active page projection', async () => {
+    invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
+    maybeSingle.mockResolvedValueOnce({
+      data: {
+        id: ids.draftId,
+        project_id: ids.projectId,
+        business_id: ids.businessId,
+        site_id: ids.siteId,
+        last_revision_id: null,
+        vfs_files: {},
+        metadata: {},
+      },
+      error: null,
+    });
+
+    await expect(provisionConfirmedLaunchSite(shellInput)).resolves.toEqual(ids);
   });
 });

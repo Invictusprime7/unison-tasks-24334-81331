@@ -247,6 +247,7 @@ export interface VFSCodeViewProps {
   getOpenFiles: () => VirtualFile[];
   updateFileContent: (id: string, content: string) => void;
   importFiles: (files: Record<string, string>) => void;
+  replaceFiles: (files: Record<string, string>) => void;
   loadDefaultTemplate: () => void;
   getSandpackFiles: () => Record<string, string>;
 
@@ -293,6 +294,7 @@ export function VFSCodeView({
   getOpenFiles,
   updateFileContent,
   importFiles,
+  replaceFiles,
   loadDefaultTemplate,
   getSandpackFiles,
   modifiedFiles,
@@ -779,6 +781,7 @@ export function VFSCodeView({
                   <VFSPreview
                     nodes={nodes}
                     onImportFiles={importFiles}
+                    onSyncFiles={replaceFiles}
                     activeFile={activeFile?.path}
                     className="h-full"
                     showToolbar={false}

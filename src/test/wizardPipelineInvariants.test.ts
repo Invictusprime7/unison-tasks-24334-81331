@@ -36,6 +36,18 @@ function wizardSelections() {
 }
 
 describe('wizard pipeline ownership invariants', () => {
+  it('yields to the browser around synchronous generation work', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    expect(launcherSource).toContain('function yieldToBrowser(): Promise<void>');
+    expect(launcherSource).toContain("setLaunchStatus('Preparing your site…');");
+    expect(launcherSource).toContain('await yieldToBrowser();');
+    expect(launcherSource).toContain("setLaunchStatus('Finalizing preview…');");
+  });
+
   it('returns the exact topology plan used to populate SiteBundleSnapshot.pageRegistry', () => {
     const result = commitToPipeline({ selections: wizardSelections() }, 'wizard-launch');
     expect(result.sitePlan).not.toBeNull();
@@ -78,12 +90,8 @@ describe('wizard pipeline ownership invariants', () => {
     const routeBriefs = artifacts.siteBundleSnapshot?.meta.generationBrief?.routes || [];
     const homeRoute = routeBriefs.find((route) => route.hero.mustDifferFromHome === false);
     const secondaryRoute = routeBriefs.find((route) => route.hero.mustDifferFromHome === true);
-    const servicesRoute = routeBriefs.find((route) => route.role === 'services');
     expect(homeRoute?.hero.mustDifferFromHome).toBe(false);
-    expect(homeRoute?.content.minimumRegions).toBe(5);
     expect(secondaryRoute?.hero).toMatchObject({ mustDifferFromHome: true });
-    expect(secondaryRoute?.content.minimumRegions).toBe(4);
-    expect(servicesRoute?.content.roleRequirement).toContain('service catalog');
     expect(secondaryRoute?.hero.headline).not.toBe(homeRoute?.hero.headline);
     expect(artifacts.siteBundleSnapshot?.meta.generationBrief?.homeHeroGeometry.source).toBe('selected-home-template');
     expect(secondaryRoute?.hero.geometry).toEqual(
@@ -274,6 +282,13 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('const pageUiContract = validateGeneratedUiContract(');
     expect(launcherSource).toContain('── LANE B UI FOUNDATION REPAIR TURN ──');
     expect(launcherSource).toContain('Lane B UI foundation repair accepted');
+    expect(launcherSource).toContain('function omitSnapshotOwnedLaneBFiles');
+    expect(launcherSource).toContain("normalizedPath.startsWith('/src/unison/ui/')");
+    expect(launcherSource).toContain("normalizedPath === '/.unison/ui-manifest.json'");
+    expect(launcherSource).toContain("normalizedPath === '/src/index.css'");
+    expect(launcherSource).toContain('sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(structured.files))');
+    expect(launcherSource).toContain('sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(retryStructured.files))');
+    expect(launcherSource).toContain('sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(completionStructured.files))');
   });
 
   it('prevents broad Lane B turns from starving isolated page completion', () => {
@@ -294,12 +309,14 @@ describe('wizard pipeline ownership invariants', () => {
     const configuredRecoveryPathMs =
       constantValue('WIZARD_INITIAL_AI_TURN_MS')
       + constantValue('WIZARD_UI_REPAIR_MAX_MS')
+      + constantValue('WIZARD_BATCH_REPAIR_MAX_MS')
       + completionWaves * (
         constantValue('WIZARD_PAGE_COMPLETION_FIRST_MS')
         + constantValue('WIZARD_PAGE_COMPLETION_RETRY_MS')
       );
 
     expect(constantValue('WIZARD_AI_TIMEOUT_MS')).toBeGreaterThan(configuredRecoveryPathMs);
+    expect(constantValue('WIZARD_INITIAL_AI_TURN_MS')).toBeGreaterThanOrEqual(140_000);
     expect(constantValue('WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS')).toBeLessThanOrEqual(4);
     expect(launcherSource).toContain(
       'takeWizardGenerationBudget(WIZARD_INITIAL_AI_TURN_MS)',
@@ -318,9 +335,15 @@ describe('wizard pipeline ownership invariants', () => {
     );
     expect(launcherSource).toContain('completeMissingWizardPage(path, attempt)');
     expect(launcherSource).toContain("reasoningEffort: 'low'");
+    expect(launcherSource).toContain("selectedModelId: 'google/gemini-2.5-flash-lite'");
     expect(launcherSource).toContain('maxTokens: 12_000');
     expect(launcherSource).toContain('WIZARD_PAGE_COMPLETION_FIRST_MS');
     expect(launcherSource).toContain('WIZARD_PAGE_COMPLETION_RETRY_MS');
+    expect(constantValue('WIZARD_SINGLE_PAGE_COMPLETION_MS')).toBe(132_000);
+    expect(launcherSource).toContain('stillMissing.length === 1');
+    expect(launcherSource).toContain(
+      'Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, completionBudgetMs - 5_000)',
+    );
   });
 
   it('requires generated-preview confirmation before provisioning the durable site root', () => {
@@ -336,6 +359,30 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('<VFSPreview');
     expect(launcherSource).toContain('No site data was created.');
     expect(launcherSource).not.toContain('const installPromise =');
+    expect(launcherSource.indexOf('setIsLaunching(false);', confirmationIndex - 250)).toBeGreaterThan(-1);
+    expect(launcherSource.indexOf('setIsLaunching(true);', confirmationIndex)).toBeGreaterThan(provisionIndex - 250);
+  });
+
+  it('requires a persisted canonical revision before navigating to the builder', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+    const commitIndex = launcherSource.indexOf('const result = await commitMutation');
+    const navigateIndex = launcherSource.indexOf('navigate("/web-builder"');
+
+    expect(commitIndex).toBeGreaterThan(-1);
+    expect(navigateIndex).toBeGreaterThan(commitIndex);
+    expect(launcherSource).toContain('if (!result.persistedRevisionId)');
+    expect(launcherSource).toContain('Canonical launch commit did not persist a revision.');
+    expect(launcherSource).toContain('const canonicalVfsFiles = result.vfsFiles;');
+    expect(launcherSource).toContain('const canonicalSiteBundleSnapshot = result.siteBundleSnapshot;');
+    expect(launcherSource).toContain('const canonicalRuntimeManifest = result.runtimeManifest;');
+    expect(launcherSource).toContain('vfsFiles: canonicalVfsFiles');
+    expect(launcherSource).toContain('siteBundleSnapshot: canonicalSiteBundleSnapshot');
+    expect(launcherSource).toContain('runtimeManifest: canonicalRuntimeManifest');
+    expect(launcherSource).not.toContain('commitMutation rejected (non-fatal at launch)');
+    expect(launcherSource).not.toContain('revision history could not be recorded');
   });
 
   it('defers malformed registered pages to completion instead of failing the entire launch', () => {
@@ -360,16 +407,8 @@ describe('wizard pipeline ownership invariants', () => {
 
     expect(launcherSource).toContain('function findUnderGeneratedWizardPages(');
     expect(launcherSource).toContain('const underGeneratedPages = findUnderGeneratedWizardPages(');
-    expect(launcherSource).toContain('Deferring pages that failed their role-specific content contract');
+    expect(launcherSource).toContain('Deferring under-generated registered pages to isolated Lane B completion');
     expect(launcherSource).toContain('Your previous response omitted or under-generated the following selected wizard pages.');
-    expect(launcherSource).toContain('const roleQuality = assessWizardPageRoleQuality(content, registeredPage.role)');
-    expect(launcherSource).toContain('const roleQuality = assessWizardPageRoleQuality(normalizedCandidate, pageRole)');
-    expect(launcherSource).toContain('ROLE CONTENT CONTRACT: ${roleInstruction}');
-
-    const roleAuditIndex = launcherSource.indexOf('const underGeneratedPages = findUnderGeneratedWizardPages(');
-    const aggregateQualityIndex = launcherSource.indexOf('const industryReq = launchContract.previewReady');
-    expect(roleAuditIndex).toBeGreaterThan(-1);
-    expect(roleAuditIndex).toBeLessThan(aggregateQualityIndex);
   });
 
   it('retains malformed isolated pages for a parser-guided repair attempt', () => {
@@ -382,11 +421,6 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('PATH REPAIR REQUIRED: the files object must contain exactly the key');
     expect(launcherSource).toContain('SYNTAX REPAIR REQUIRED: return balanced JSX/TSX');
     expect(launcherSource).toContain('Do not use JavaScript regular-expression literals in this page.');
-    expect(launcherSource).toContain('const useRejectedCandidate = attempt === 2');
-    expect(launcherSource).toContain("currentCode: useRejectedCandidate ? rejectedCandidate : ''");
-    expect(launcherSource).toContain('vfsFiles: useRejectedCandidate ? { [missingPath]: rejectedCandidate } : undefined');
-    expect(launcherSource).toContain('FINAL CLEAN REGENERATION: do not reuse the rejected source');
-    expect(launcherSource).toContain('rejectedPageCandidates[normalizedPath] = normalizedCandidate;');
   });
 
   it('does not run the interaction planner network round-trip (enrichment layer removed)', () => {

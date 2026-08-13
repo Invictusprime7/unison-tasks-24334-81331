@@ -66,6 +66,29 @@ export interface BuilderTurnOptions {
 
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
 const MAX_RATE_LIMIT_RETRY_MS = 2_500;
+const MIN_BUILDER_GATEWAY_TIMEOUT_MS = 5_000;
+// Wizard seed generation gives Gemini's long structured response a 125 second
+// lead attempt. The client must not abort it at 120 seconds before the provider
+// loop can return a successful response.
+export const MAX_BUILDER_GATEWAY_TIMEOUT_MS = 135_000;
+
+export function clampBuilderGatewayTimeout(
+  configuredTimeoutMs: number,
+  remainingBeforeInvokeMs: number,
+): number {
+  const configured = Number.isFinite(configuredTimeoutMs)
+    ? configuredTimeoutMs
+    : MAX_BUILDER_GATEWAY_TIMEOUT_MS;
+  const remainingProviderBudget = Math.max(
+    MIN_BUILDER_GATEWAY_TIMEOUT_MS,
+    remainingBeforeInvokeMs - 5_000,
+  );
+
+  return Math.max(
+    MIN_BUILDER_GATEWAY_TIMEOUT_MS,
+    Math.min(configured, remainingProviderBudget, MAX_BUILDER_GATEWAY_TIMEOUT_MS),
+  );
+}
 
 export function getShortRateLimitRetryMs(retryAfter: string | null, now = Date.now()): number | null {
   if (!retryAfter) return DEFAULT_RATE_LIMIT_RETRY_MS;
@@ -124,6 +147,16 @@ export function isRateLimitError(err: unknown): boolean {
   const anyErr = err as { message?: string; status?: number; context?: { status?: number } };
   if (anyErr?.status === 429 || anyErr?.context?.status === 429) return true;
   return false;
+}
+
+/** A funded provider or Builder client timeout can be recovered by splitting a Wizard into page batches. */
+export function isProviderTimeoutError(err: unknown): boolean {
+  if (!err) return false;
+  const anyErr = err as { message?: string; context?: { body?: string; status?: number } };
+  const detail = [anyErr.message, anyErr.context?.body]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ');
+  return /provider attempt timed out|provider (?:attempt )?timed out|provider slice timeout|builder turn deadline exceeded|ai generation exceeded the wizard generation deadline/i.test(detail);
 }
 
 
@@ -222,8 +255,9 @@ export async function runBuilderTurn<TResponse = any>(
         ...sentPayload,
         gatewayOptions: {
           ...gatewayOptions,
-          // The edge provider loop must finish before this client's abort fires.
-          timeoutMs: Math.max(1_000, Math.min(configuredTimeout, remainingBeforeInvoke - 5_000)),
+          // Keep the provider loop inside both this client's deadline and the
+          // Edge request schema's 5s..135s gateway timeout contract.
+          timeoutMs: clampBuilderGatewayTimeout(configuredTimeout, remainingBeforeInvoke),
         },
       };
     }

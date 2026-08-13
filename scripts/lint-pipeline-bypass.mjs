@@ -32,17 +32,11 @@ const FORBIDDEN_SYMBOLS = ['executeCanonicalPipeline', 'recompileFromPlayground'
 
 // These modules predate the revision-backed writer migration. Keep this list
 // deliberately small and shrink it as each writer moves behind commitMutation.
-const BUILDER_DRAFT_MUTATION_ALLOWLIST = new Set([
-  // Canonical writer: advances only builder_drafts.last_revision_id after a
-  // committed site_revisions row exists; never persists mutable site VFS.
-  'src/services/vfsCommitService.ts',
-  'src/hooks/useTemplateFiles.ts',
-  'src/services/aiHistoryStore.ts',
-  'src/services/draftFrameworkMigrationService.ts',
-  'src/utils/topologyResolver.ts',
-  'src/components/onboarding/ImportUnisonSiteZipButton.tsx',
+const BUILDER_DRAFT_MUTATION_ALLOWLIST = new Map([
+  ['src/hooks/useTemplateFiles.ts', new Set(['insert', 'update', 'delete'])],
+  ['src/components/onboarding/ImportUnisonSiteZipButton.tsx', new Set(['insert'])],
   // Deletes only orphaned legacy drafts as part of project lifecycle cleanup.
-  'src/components/cloud/CloudProjects.tsx',
+  ['src/components/cloud/CloudProjects.tsx', new Set(['delete'])],
 ]);
 const BUILDER_DRAFT_MUTATION_METHODS = new Set(['insert', 'update', 'upsert', 'delete']);
 
@@ -151,8 +145,10 @@ function collectViolations(dir) {
       for (const usage of findForbiddenUsages(text, full)) {
         violations.push({ file: rel, ...usage });
       }
-      if (!BUILDER_DRAFT_MUTATION_ALLOWLIST.has(rel)) {
-        for (const mutation of findBuilderDraftMutations(text, full)) {
+      const allowedDraftMethods = BUILDER_DRAFT_MUTATION_ALLOWLIST.get(rel) ?? new Set();
+      for (const mutation of findBuilderDraftMutations(text, full)) {
+        const method = mutation.symbol.slice('builder_drafts.'.length);
+        if (!allowedDraftMethods.has(method)) {
           violations.push({ file: rel, ...mutation });
         }
       }

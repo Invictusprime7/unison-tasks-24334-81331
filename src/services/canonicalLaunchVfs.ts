@@ -58,6 +58,11 @@ export const CANONICAL_METADATA_FILE_PATHS = {
 export const PUBLISHED_RUNTIME_MODULE_PATH = '/src/unison/publishedRuntime.ts';
 export const GENERATED_SITE_RUNTIME_MANIFEST_MODULE_PATH = '/src/unison/generatedSiteRuntimeManifest.ts';
 
+const LEGACY_REVEAL_GROUP_IMPORT = /\bimport\s+(?:type\s+)?[^;\n]+?\s+from\s+['"](\.?\.?\/(?:[^'"]*\/)?components\/RevealGroup)['"];?/g;
+const LEGACY_REVEAL_GROUP_MODULE = `export { RevealGroup } from '../../unison/ui/motion';
+export { RevealGroup as default } from '../../unison/ui/motion';
+`;
+
 export interface PublishedRuntimeConfig {
   version: '1.0';
   runtimeVersion: '1.0';
@@ -123,6 +128,35 @@ export interface BuildCanonicalLaunchArtifactsInput {
   allowCanonicalPageFallback?: boolean;
   /** Throw if internal preflight has to quarantine generated code. */
   strictPreflight?: boolean;
+}
+
+function resolveRelativeVfsModulePath(filePath: string, importPath: string): string {
+  const pathParts = filePath.split('/').filter(Boolean);
+  pathParts.pop();
+  for (const segment of importPath.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') pathParts.pop();
+    else pathParts.push(segment);
+  }
+  return `/${pathParts.join('/')}.tsx`;
+}
+
+/**
+ * Preserve the real motion facade for older page generators that emitted a
+ * relative RevealGroup import. This is a compatibility bridge, not a general
+ * missing-module fallback: all other unresolved modules still fail strict VFS
+ * preflight with a useful diagnostic.
+ */
+function restoreLegacyRevealGroupModules(files: Record<string, string>): Record<string, string> {
+  const restored = { ...files };
+  for (const [filePath, source] of Object.entries(files)) {
+    if (!/\.(?:tsx|jsx)$/i.test(filePath)) continue;
+    for (const match of source.matchAll(LEGACY_REVEAL_GROUP_IMPORT)) {
+      const modulePath = resolveRelativeVfsModulePath(filePath, match[1]);
+      if (!restored[modulePath]) restored[modulePath] = LEGACY_REVEAL_GROUP_MODULE;
+    }
+  }
+  return restored;
 }
 
 export function buildPublishedRuntimeConfig(
@@ -766,6 +800,7 @@ export function buildCanonicalLaunchArtifacts(
         // registry/router/bindings and Stage 4b owns /src/index.css.
       })
     : { ...safeFiles };
+  Object.assign(mergedFiles, restoreLegacyRevealGroupModules(mergedFiles));
   mergedFiles[BUSINESS_PROFILE_HYDRATION_PATH] = BUSINESS_PROFILE_HYDRATION_MODULE;
   mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
   mergedFiles[PUBLISHED_ACTION_RUNTIME_PATH] = PUBLISHED_ACTION_RUNTIME_MODULE;
@@ -779,7 +814,7 @@ export function buildCanonicalLaunchArtifacts(
   );
   // Interaction artifacts are snapshot-owned. The launch adapter must not
   // synthesize or replace them after the canonical projection.
-  appContext.interactionManifest = input.siteBundleSnapshot?.meta?.interactionManifest;
+  appContext.interactionManifest = input.interactionManifest ?? input.siteBundleSnapshot?.meta?.interactionManifest;
   appContext.themeInjection = {
     version: '1.0',
     stage: '4b',
@@ -833,7 +868,12 @@ export function buildCanonicalLaunchArtifacts(
   }
   const verifiedViteFiles = snapshotRepair.files;
   const siteBundleSnapshot = runtimeSnapshotSeed
-    ? cloneSnapshotWithRuntimeVfs(runtimeSnapshotSeed, appContext, verifiedViteFiles)
+    ? cloneSnapshotWithRuntimeVfs(
+        runtimeSnapshotSeed,
+        appContext,
+        verifiedViteFiles,
+        input.interactionManifest,
+      )
     : undefined;
   if (siteBundleSnapshot && resolvedThemePresetId) {
     assertSnapshotThemeSeed(siteBundleSnapshot, resolvedThemePresetId, 'canonical launch -> SiteBundleSnapshot');

@@ -5945,8 +5945,7 @@ export function prepareSandpackFiles(
         normalizedPath.includes('/.') ||
         normalizedPath.endsWith('.json') ||
         normalizedPath.endsWith('.config.ts') ||
-        normalizedPath.endsWith('.config.js') ||
-        normalizedPath.includes('/public/')) {
+        normalizedPath.endsWith('.config.js')) {
       continue;
     }
 

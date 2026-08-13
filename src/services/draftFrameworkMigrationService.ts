@@ -46,18 +46,11 @@ export async function upgradeCurrentUserDraftFrameworkVfs(): Promise<DraftFramew
         metadata: draft.metadata,
       });
       if (!migration.changed) continue;
-
-      const { error: updateError } = await supabase
-        .from('builder_drafts')
-        .update({ vfs_files: migration.vfsFiles, metadata: migration.metadata })
-        .eq('id', draft.id)
-        .eq('user_id', user.id);
-      if (updateError) {
-        summary.failed += 1;
-        console.warn('[draftFrameworkMigration] Failed to update draft:', draft.id, updateError);
-      } else {
-        summary.upgraded += 1;
-      }
+      summary.failed += 1;
+      console.warn(
+        '[draftFrameworkMigration] Skipped direct draft migration; migrate through commitMutation:',
+        draft.id,
+      );
     }
 
     lastId = drafts[drafts.length - 1].id;

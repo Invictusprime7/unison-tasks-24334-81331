@@ -87,10 +87,18 @@ import { AIActivityPanel } from "@/components/ai-agent/AIActivityPanel";
 import { useAIActivityMonitor } from "@/hooks/useAIActivityMonitor";
 import {
   commitMutation,
-  isCommitServiceEnabled,
   CommitRejectedError,
+  loadRevision,
   loadLatestRevisionForProject,
+  loadProjectedRevisionForDraft,
+  type CommitMutationResult,
+  type LoadedRevision,
 } from "@/services/vfsCommitService";
+import {
+  buildProjectRuntimeEnvelope,
+  loadProjectRuntimeProjection,
+  resolveProjectActivePagePath,
+} from '@/services/projectRuntimeEnvelope';
 import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
 import { emptyPatchPlan, legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
@@ -168,6 +176,7 @@ import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegist
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
 import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot, markLiveEditedVfsPaths, clearLiveEditedVfsPaths } from '@/services/snapshotProjector';
+import { createVfsHandoffSignature } from '@/services/vfsHandoffSignature';
 import { isPreviewPipelineError } from '@/services/previewPipelineError';
 import { ThemeSeedError } from '@/platform/core/themeSeedAssert';
 import { PreviewOverlayManager, type OverlayConfig } from '@/components/preview/PreviewOverlayManager';
@@ -628,6 +637,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [showLauncher, setShowLauncher] = useState(false);
   const routeStateHasStructuredProject = !!(
     effectiveRouteState?.vfsFiles ||
+    effectiveRouteState?.siteBundleSnapshot?.vfsFiles ||
     effectiveRouteState?.generatedCode ||
     effectiveRouteState?.generatedTemplate ||
     effectiveRouteState?.siteBundle
@@ -2477,37 +2487,85 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // `site_revisions` over the sessionStorage / launch-context VFS. This closes
   // the launcher→builder loop so the canonical revision chain is authoritative.
   const hydratedRevisionRef = useRef<string | null>(null);
+  const [hydratedRevision, setHydratedRevision] = useState<LoadedRevision | null>(null);
+  const [runtimeProjectionRevisionId, setRuntimeProjectionRevisionId] = useState<string | null>(null);
+  const [canonicalHydrationError, setCanonicalHydrationError] = useState<string | null>(null);
+  const [activePublishedRevisionId, setActivePublishedRevisionId] = useState<string | null>(null);
   const [currentRevisionId, setCurrentRevisionId] = useState<string>(
     effectiveRouteState?.revisionId || ''
   );
   currentRevisionIdRef.current = currentRevisionId;
 
   useEffect(() => {
-    const revId = effectiveRouteState?.revisionId;
-    if (!revId || hydratedRevisionRef.current === revId) return;
-    hydratedRevisionRef.current = revId;
+    const revId = currentRevisionId || effectiveRouteState?.revisionId;
+    const durableProjectId = resolvedProjectId || projectId;
+    const hasCanonicalDraft = Boolean(durableProjectId && currentDraftId);
+    const hydrationKey = hasCanonicalDraft
+      ? `draft:${durableProjectId}:${currentDraftId}`
+      : revId || (durableProjectId ? `latest:${durableProjectId}` : '');
+    if (!hydrationKey || hydratedRevisionRef.current === hydrationKey) return;
+    hydratedRevisionRef.current = hydrationKey;
 
     let cancelled = false;
     void (async () => {
       try {
-        const { loadRevision } = await import('@/services/vfsCommitService');
-        const revision = await loadRevision(revId);
+        if (hasCanonicalDraft) {
+          setCanonicalHydrationError(null);
+          setHydratedRevision(null);
+          setRuntimeProjectionRevisionId(null);
+        }
+        const revision = hasCanonicalDraft
+          ? await loadProjectedRevisionForDraft(durableProjectId!, currentDraftId!)
+          : revId
+            ? await loadRevision(revId)
+            : await loadLatestRevisionForProject(durableProjectId!);
         if (cancelled || !revision) return;
         const files = revision.vfsFiles || {};
         if (Object.keys(files).length === 0) {
-          console.warn('[WebBuilder] revision', revId, 'returned empty vfsFiles — keeping launch state');
+          if (hasCanonicalDraft) {
+            throw new Error(`Canonical revision ${revision.id} contains no VFS files`);
+          }
+          console.warn('[WebBuilder] revision', revId, 'returned empty vfsFiles');
           return;
         }
-        console.log('[WebBuilder] hydrated from site_revisions:', revId, Object.keys(files).length, 'files');
+        console.log('[WebBuilder] hydrated from site_revisions:', revision.id, Object.keys(files).length, 'files');
         importBuilderFiles(files, { entryPoint: launchEntryPoint });
-        setCurrentRevisionId(revId);
+        setHydratedRevision(revision);
+        setCurrentRevisionId(revision.id);
       } catch (err) {
-        console.warn('[WebBuilder] loadRevision failed (non-fatal):', err);
+        const message = err instanceof Error ? err.message : String(err);
+        if (hasCanonicalDraft && !cancelled) setCanonicalHydrationError(message);
+        console.warn('[WebBuilder] revision hydration failed:', err);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [effectiveRouteState?.revisionId, importBuilderFiles, launchEntryPoint]);
+  }, [currentDraftId, currentRevisionId, effectiveRouteState?.revisionId, importBuilderFiles, launchEntryPoint, projectId, resolvedProjectId]);
+
+  useEffect(() => {
+    if (!hydratedRevision) return;
+    const revisionSnapshot = hydratedRevision.siteBundleSnapshot as SiteBundleSnapshot;
+    setActivePublishedRevisionId(null);
+    setRuntimeProjectionRevisionId(null);
+    let cancelled = false;
+    void loadProjectRuntimeProjection(hydratedRevision.projectId, hydratedRevision.draftId)
+      .then((projection) => {
+        if (cancelled) return;
+        setActivePublishedRevisionId(projection.activePublishedRevisionId);
+        setActivePagePath(resolveProjectActivePagePath(
+          revisionSnapshot,
+          projection.activePagePath,
+        ));
+        setRuntimeProjectionRevisionId(hydratedRevision.id);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setCanonicalHydrationError(error instanceof Error ? error.message : String(error));
+          console.warn('[WebBuilder] project runtime projection load failed:', error);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [hydratedRevision]);
 
   // ── Move 2: layout fast-path → VFSCommitService bridge ───────────────────
   // Each deterministic layout edit additively chains through commitMutation so
@@ -2515,7 +2573,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // AI Builder LLM applies. Non-blocking; preview/editor already updated.
   useEffect(() => {
     commitLayoutFastPathRef.current = (nextCode, summary) => {
-      if (!isCommitServiceEnabled() || !businessId || !currentDraftId) return;
+      if (!businessId || !currentDraftId) return;
       const targetPath = activePagePath?.endsWith('.tsx') ? activePagePath : launchEntryPoint;
       if (!targetPath || !nextCode) return;
       const beforeFiles = virtualFSRef.current.getSandpackFiles();
@@ -2577,7 +2635,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // this bridge reconciles it against the returned canonical VFS/snapshot.
   const presentationCommitInFlightRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!isCommitServiceEnabled() || !businessId || !currentDraftId) return;
+    if (!businessId || !currentDraftId) return;
     const desiredVariants = templateCustomizer.activeVariants;
     if (Object.keys(desiredVariants).length === 0) return;
 
@@ -2667,7 +2725,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // intent readiness gating.
   useEffect(() => {
     commitToolbarMutationRef.current = (nextCode, summary) => {
-      if (!isCommitServiceEnabled() || !businessId || !currentDraftId) return;
+      if (!businessId || !currentDraftId) return;
       const targetPath = activePagePath?.endsWith('.tsx') ? activePagePath : launchEntryPoint;
       if (!targetPath || !nextCode) return;
       const beforeFiles = virtualFSRef.current.getSandpackFiles();
@@ -3025,7 +3083,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     let cancelled = false;
     const load = async () => {
       try {
-        const rev = await loadLatestRevisionForProject(projectId);
+        const rev = currentDraftId
+          ? await loadProjectedRevisionForDraft(projectId, currentDraftId)
+          : await loadLatestRevisionForProject(projectId);
         if (cancelled || !rev) return;
         const er = (rev.readinessReport as { elementReadiness?: { records?: Array<{ intent: string; canonicalIntent: string | null; status: string; blocker?: string; fixPath?: string }> } })?.elementReadiness;
         const records = er?.records ?? [];
@@ -3055,7 +3115,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       window.clearInterval(id);
       window.removeEventListener('unison:ledger-updated', onLedgerEvt);
     };
-  }, [projectId]);
+  }, [currentDraftId, projectId]);
 
   const selectedElementReadiness = useMemo(() => {
     // Pull data-ut-intent off the selected element so we can decorate the
@@ -3701,43 +3761,41 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     const persist = async (): Promise<boolean> => {
       try {
         const existingDraftId = currentDraftIdRef.current;
-        let persisted = false;
-        let resolvedDraftId = existingDraftId;
-        if (existingDraftId) {
-          let payload;
-          try {
-            payload = {
-              ...buildSavePayloadOrFallback(currentVfsFiles),
-              vfsFiles: currentVfsFiles,
-            };
-          } catch (error) {
-            if (!isRecompileInputError(error)) throw error;
-            console.warn('[AutoSave] Canonical recompile deferred for recovered VFS:', error.summary);
-            payload = {
-              vfsFiles: currentVfsFiles,
-              entryPoint: launchEntryPoint,
-              activePagePath,
-              businessId: businessId ?? null,
-              projectId: projectId ?? null,
-            };
-          }
-          persisted = await templateFiles.autoSave(codeForSave, {
-            ...payload,
-            metadata: {
-              autoSaved: true,
-              autoSaveReason: reason,
-              autoSavedAt: new Date().toISOString(),
-              vfsFileCount: Object.keys(currentVfsFiles).length,
-            },
-          }, existingDraftId);
-        } else {
-          resolvedDraftId = await ensureLauncherDraftSaved(reason, currentVfsFiles, codeForSave);
-          persisted = Boolean(resolvedDraftId);
+        const canonicalProjectId = resolvedProjectId || projectId;
+        if (!existingDraftId || !businessId || !canonicalProjectId) {
+          throw new Error('Canonical project identity is required before cloud autosave.');
         }
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        if (!user) throw new Error('Authenticated project identity is required before cloud autosave.');
 
-        if (!persisted) throw new Error('Cloud autosave was not acknowledged by the draft store.');
-        if (resolvedDraftId) currentDraftIdRef.current = resolvedDraftId;
-        markBuilderRecoveryPersisted(snapshot, resolvedDraftId);
+        const commit = await commitMutation({
+          source: 'playground-edit',
+          identity: {
+            userId: user.id,
+            businessId,
+            projectId: canonicalProjectId,
+            draftId: existingDraftId,
+            revisionId: currentRevisionIdRef.current,
+            sessionId: `web-builder:${existingDraftId}`,
+          },
+          current: {
+            vfsFiles: currentVfsFiles,
+            siteBundleSnapshot: hydratedRevision?.siteBundleSnapshot ?? undefined,
+            activePagePath,
+          },
+          patch: legacyFilesToPatchPlan(currentVfsFiles, `Autosave: ${reason}`),
+          options: {
+            requirePreviewPass: true,
+            requireReadinessPass: false,
+          },
+        });
+        if (!commit.persistedRevisionId) {
+          throw new Error('Canonical autosave did not persist a revision.');
+        }
+        currentRevisionIdRef.current = commit.persistedRevisionId;
+        setCurrentRevisionId(commit.persistedRevisionId);
+        currentDraftIdRef.current = existingDraftId;
+        markBuilderRecoveryPersisted(snapshot, existingDraftId);
         lastSavedCodeRef.current = codeForSave;
         lastSavedVfsSignatureRef.current = vfsSignature;
         setLastSavedAt(new Date());
@@ -3759,14 +3817,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   }, [
     previewCode,
     editorCode,
-    templateFiles,
-    buildSavePayloadOrFallback,
-    ensureLauncherDraftSaved,
     computeVfsSignature,
-    launchEntryPoint,
     activePagePath,
     businessId,
     projectId,
+    resolvedProjectId,
+    hydratedRevision,
   ]);
 
   // Keep latest saveDraft in a ref so unload/visibility handlers always call the freshest version.
@@ -4590,8 +4646,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     const navStateSignature = navState
       ? JSON.stringify({
           hasVfsFiles: !!navState.vfsFiles,
+          vfsSignature: createVfsHandoffSignature(navState.vfsFiles),
+          snapshotId: navState.siteBundleSnapshot?.snapshotId ?? null,
+          snapshotVfsSignature: createVfsHandoffSignature(navState.siteBundleSnapshot?.vfsFiles),
+          revisionId: navState.revisionId ?? null,
           hasSiteBundle: !!navState.siteBundle,
-          vfsKeys: navState.vfsFiles ? Object.keys(navState.vfsFiles).sort() : [],
           generatedCodeLength: navState.generatedCode?.length ?? 0,
           templateName: navState.templateName ?? null,
           systemType: navState.systemType ?? null,
@@ -4616,8 +4675,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           })
         : null;
 
-      if (navState.vfsFiles) {
-        const mergedFiles = { ...navState.vfsFiles };
+      const snapshotVfsFiles = navState.siteBundleSnapshot?.vfsFiles;
+      if (navState.vfsFiles || snapshotVfsFiles) {
+        const mergedFiles = { ...snapshotVfsFiles, ...navState.vfsFiles };
         if (siteBundleFiles) {
           for (const [path, content] of Object.entries(siteBundleFiles)) {
             if (!mergedFiles[path]) {
@@ -5885,14 +5945,70 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   console.log('[WebBuilder] About to return JSX...');
 
   const builderRuntimeContext = normalizeUnisonRuntimeContext(
-    effectiveRouteState?.runtimeManifest?.appContext?.runtimeContext ??
-    effectiveRouteState?.siteBundleSnapshot?.appContext?.runtimeContext ??
-    launch?.runtimeManifest?.appContext?.runtimeContext,
+    hydratedRevision
+      ? (hydratedRevision.siteBundleSnapshot as SiteBundleSnapshot | null)?.appContext?.runtimeContext
+      : effectiveRouteState?.runtimeManifest?.appContext?.runtimeContext
+        ?? effectiveRouteState?.siteBundleSnapshot?.appContext?.runtimeContext
+        ?? launch?.runtimeManifest?.appContext?.runtimeContext,
   );
+  const projectRuntime = useMemo(() => {
+    if (
+      !hydratedRevision
+      || runtimeProjectionRevisionId !== hydratedRevision.id
+      || !builderRuntimeContext?.workspaceId
+    ) return undefined;
+    return buildProjectRuntimeEnvelope({
+      workspaceId: builderRuntimeContext.workspaceId,
+      revision: hydratedRevision,
+      activePublishedRevisionId,
+      activePagePath,
+      runtimeMode: activePublishedRevisionId === hydratedRevision.id ? 'published' : 'draft',
+    });
+  }, [activePagePath, activePublishedRevisionId, builderRuntimeContext?.workspaceId, hydratedRevision, runtimeProjectionRevisionId]);
+
+  const hasCanonicalIdentity = Boolean((resolvedProjectId || projectId) && currentDraftId);
+  const canonicalRuntimeError = canonicalHydrationError
+    || (hasCanonicalIdentity
+      && hydratedRevision
+      && runtimeProjectionRevisionId === hydratedRevision.id
+      && !builderRuntimeContext?.workspaceId
+      ? 'Canonical revision is missing its persisted workspace runtime identity.'
+      : null);
+  const canonicalHydrationPending = hasCanonicalIdentity
+    && !canonicalRuntimeError
+    && (!hydratedRevision || runtimeProjectionRevisionId !== hydratedRevision.id);
+
+  if (canonicalRuntimeError) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] px-6 text-zinc-100">
+        <div className="w-full max-w-md border border-red-900/70 bg-zinc-950 p-6 shadow-2xl">
+          <Shield className="mb-4 h-7 w-7 text-red-400" aria-hidden="true" />
+          <h1 className="text-lg font-semibold">Canonical project state unavailable</h1>
+          <p className="mt-2 text-sm leading-6 text-zinc-400">{canonicalRuntimeError}</p>
+          <Button className="mt-5" onClick={() => window.location.reload()}>
+            <RefreshCcw className="mr-2 h-4 w-4" aria-hidden="true" />
+            Retry project load
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (canonicalHydrationPending) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] text-zinc-100">
+        <div className="flex items-center gap-3 text-sm text-zinc-400">
+          <RefreshCcw className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Loading committed project state
+        </div>
+      </div>
+    );
+  }
 
   return (
     <BuilderSessionProvider
       value={{
+        projectRuntime,
         runtimeContext: builderRuntimeContext
           ? { ...builderRuntimeContext, environment: 'builder' }
           : undefined,
@@ -6304,7 +6420,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   // Mirrors the System Launcher pipeline so AI Builder chat
                   // edits cannot crash preview, ship un-stamped nav links, or
                   // leak intents disallowed by the active industry profile.
-                  const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
+                  const snapshotForPreflight = (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null;
                   const beforeFiles = virtualFS.getSandpackFiles();
                   const canonicalFiles = canonicalizeAIFilePaths(rawFiles, beforeFiles);
                   const preflight = runFullPreflight(canonicalFiles, {
@@ -6328,21 +6444,35 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         beforeFiles,
                         nextFiles: proposedFiles,
                         snapshotForPreflight,
+                        activePagePath,
                       }
                     : null;
-                  if (commitCtx) {
-                    const dry = await dryRunAiCommit(commitCtx);
-                    if (!dry.accepted) {
-                      console.warn('[WebBuilder] AI apply rejected by commit gate:', dry.blockers);
-                      toast.error('AI edit rejected — preview would break', {
-                        description: dry.rejectMessage ?? 'Canonical preview gate blocked this patch.',
-                        duration: 8000,
-                      });
-                      return { success: false, errors: dry.blockers.map((blocker) => blocker.message) };
-                    }
+                  if (!commitCtx) {
+                    return { success: false, errors: ['Canonical project identity is unavailable.'] };
+                  }
+                  const dry = await dryRunAiCommit(commitCtx);
+                  if (!dry.accepted) {
+                    console.warn('[WebBuilder] AI apply rejected by commit gate:', dry.blockers);
+                    toast.error('AI edit rejected — preview would break', {
+                      description: dry.rejectMessage ?? 'Canonical preview gate blocked this patch.',
+                      duration: 8000,
+                    });
+                    return { success: false, errors: dry.blockers.map((blocker) => blocker.message) };
+                  }
+                  let canonicalCommit: CommitMutationResult;
+                  try {
+                    canonicalCommit = await persistAiCommit(commitCtx);
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    toast.error('AI edit could not be committed', { description: message });
+                    return { success: false, errors: [message] };
                   }
 
-                  const result = aiVFS.applyCode(files);
+                  const committedPatch: Record<string, string> = Object.fromEntries(
+                    Object.entries(canonicalCommit.vfsFiles)
+                      .filter(([path, contents]) => beforeFiles[path] !== contents),
+                  );
+                  const result = aiVFS.applyCode(committedPatch);
                   console.log('[WebBuilder] aiVFS.applyCode result:', { success: result.success, filesWritten: result.filesWritten, errors: result.errors });
                   if (result.success) {
                     // Protect these paths from the snapshot projection until the
@@ -6354,9 +6484,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         .map((path) => [path, files[path]]),
                     );
                     const mergedFiles = {
-                      ...beforeFiles,
-                      ...appliedFiles,
-                      ...(result.packageJson ? { '/package.json': result.packageJson } : {}),
+                      ...canonicalCommit.vfsFiles,
                     };
                     const syncedEntry = syncBuilderFromFiles(mergedFiles, activePagePath);
                     console.log('[WebBuilder] Entry file for preview:', syncedEntry?.entryPath || 'NOT FOUND');
@@ -6378,24 +6506,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         meta: applyMeta,
                       });
                     }
-                    // Persist the committed revision so site_revisions chains
-                    // off this AI apply (durable writer contract).
-                    if (commitCtx) {
-                      void persistAiCommit(commitCtx).then((revId) => {
-                        if (revId) setCurrentRevisionId(revId);
-                      });
-                    }
-                    const saved = await saveDraft({
-                      force: true,
-                      reason: 'ai_edit',
-                      vfsFiles: mergedFiles,
-                    });
-                    if (!saved) {
-                      return {
-                        success: false,
-                        errors: ['The edit was applied locally, but its saved project state could not be confirmed.'],
-                      };
-                    }
+                    setCurrentRevisionId(canonicalCommit.persistedRevisionId!);
                   } else {
                     console.error('[WebBuilder] aiVFS.applyCode failed:', result.errors);
                   }
@@ -6785,7 +6896,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               layoutOps={layoutOpsForAI}
               onApproveCapabilityPlan={approveCapabilityPlanFromPanel}
               onApplyToVFS={async (rawFiles, applyMeta) => {
-                const snapshotForPreflight = effectiveRouteState?.siteBundleSnapshot ?? null;
+                const snapshotForPreflight = (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null;
                 const beforeFiles = virtualFS.getSandpackFiles();
                 const canonicalFiles = canonicalizeAIFilePaths(rawFiles, beforeFiles);
                 const files = runFullPreflight(canonicalFiles, {
@@ -6805,20 +6916,34 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       beforeFiles,
                       nextFiles: proposedFiles,
                       snapshotForPreflight,
+                      activePagePath,
                     }
                   : null;
-                if (commitCtx) {
-                  const dry = await dryRunAiCommit(commitCtx);
-                  if (!dry.accepted) {
-                    toast.error('AI edit rejected — preview would break', {
-                      description: dry.rejectMessage ?? 'Canonical preview gate blocked this patch.',
-                      duration: 8000,
-                    });
-                    return { success: false, errors: dry.blockers.map((blocker) => blocker.message) };
-                  }
+                if (!commitCtx) {
+                  return { success: false, errors: ['Canonical project identity is unavailable.'] };
+                }
+                const dry = await dryRunAiCommit(commitCtx);
+                if (!dry.accepted) {
+                  toast.error('AI edit rejected — preview would break', {
+                    description: dry.rejectMessage ?? 'Canonical preview gate blocked this patch.',
+                    duration: 8000,
+                  });
+                  return { success: false, errors: dry.blockers.map((blocker) => blocker.message) };
+                }
+                let canonicalCommit: CommitMutationResult;
+                try {
+                  canonicalCommit = await persistAiCommit(commitCtx);
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : String(error);
+                  toast.error('AI edit could not be committed', { description: message });
+                  return { success: false, errors: [message] };
                 }
 
-                const result = aiVFS.applyCode(files);
+                const committedPatch: Record<string, string> = Object.fromEntries(
+                  Object.entries(canonicalCommit.vfsFiles)
+                    .filter(([path, contents]) => beforeFiles[path] !== contents),
+                );
+                const result = aiVFS.applyCode(committedPatch);
                 if (result.success) {
                   markLiveEditedVfsPaths(result.filesWritten);
                   const appliedFiles = Object.fromEntries(
@@ -6827,9 +6952,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       .map((path) => [path, files[path]]),
                   );
                   const mergedFiles = {
-                    ...beforeFiles,
-                    ...appliedFiles,
-                    ...(result.packageJson ? { '/package.json': result.packageJson } : {}),
+                    ...canonicalCommit.vfsFiles,
                   };
                   syncBuilderFromFiles(mergedFiles, activePagePath);
                   setViewMode('canvas');
@@ -6848,22 +6971,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       meta: applyMeta,
                     });
                   }
-                  if (commitCtx) {
-                    void persistAiCommit(commitCtx).then((revId) => {
-                      if (revId) setCurrentRevisionId(revId);
-                    });
-                  }
-                  const saved = await saveDraft({
-                    force: true,
-                    reason: 'ai_edit',
-                    vfsFiles: mergedFiles,
-                  });
-                  if (!saved) {
-                    return {
-                      success: false,
-                      errors: ['The edit was applied locally, but its saved project state could not be confirmed.'],
-                    };
-                  }
+                  setCurrentRevisionId(canonicalCommit.persistedRevisionId!);
                 }
                 return { success: result.success, errors: result.errors };
               }}
@@ -6972,6 +7080,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       nodes={virtualFS.nodes}
                       files={!virtualFS.hasFiles ? effectiveRouteState?.vfsFiles : undefined}
                       onImportFiles={virtualFS.importFiles}
+                      onSyncFiles={virtualFS.replaceFiles}
                       activeFile={activePagePath}
                       className="w-full h-full min-h-0 flex-1"
                       showToolbar={false}
@@ -7076,6 +7185,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   getOpenFiles={virtualFS.getOpenFiles}
                   updateFileContent={virtualFS.updateFileContent}
                   importFiles={virtualFS.importFiles}
+                  replaceFiles={virtualFS.replaceFiles}
                   loadDefaultTemplate={virtualFS.loadDefaultTemplate}
                   getSandpackFiles={virtualFS.getSandpackFiles}
                   modifiedFiles={modifiedFiles}
@@ -7143,6 +7253,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         nodes={virtualFS.nodes}
                         files={!virtualFS.hasFiles ? effectiveRouteState?.vfsFiles : undefined}
                         onImportFiles={virtualFS.importFiles}
+                        onSyncFiles={virtualFS.replaceFiles}
                         activeFile={activePagePath}
                         className="w-full h-full min-h-0 flex-1"
                         showToolbar={false}

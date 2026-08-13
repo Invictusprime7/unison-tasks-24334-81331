@@ -206,65 +206,6 @@ export function subscribeAIHistory(
 }
 
 // ---------------------------------------------------------------------------
-// Supabase mirror (best-effort, debounced)
-// ---------------------------------------------------------------------------
-
-const remoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-async function mirrorToSupabase(draftId: string, record: AIHistoryRecord): Promise<void> {
-  if (!isUuid(draftId)) return;
-  try {
-    const { data: row, error: selErr } = await supabase
-      .from('builder_drafts')
-      .select('id, metadata')
-      .eq('id', draftId)
-      .maybeSingle();
-    if (selErr || !row) return;
-    const meta = (row.metadata && typeof row.metadata === 'object' ? row.metadata : {}) as Record<string, unknown>;
-    // Don't write the full file blobs to Supabase — keep them local-only to
-    // avoid bloating the row. Persist messages + snapshot metadata.
-    const trimmedSnapshots = record.snapshots.map((s) => ({
-      id: s.id,
-      label: s.label,
-      timestamp: s.timestamp,
-      source: s.source,
-      changedPaths: s.changedPaths,
-      fileStats: s.fileStats,
-      totals: s.totals,
-      meta: s.meta,
-    }));
-    const nextMeta = {
-      ...meta,
-      aiHistory: {
-        v: 1,
-        draftId,
-        messages: record.messages.slice(-50),
-        snapshots: trimmedSnapshots,
-        updatedAt: new Date().toISOString(),
-      },
-    };
-    await supabase
-      .from('builder_drafts')
-      .update({ metadata: nextMeta as unknown as never })
-      .eq('id', row.id);
-  } catch {
-    // best-effort only
-  }
-}
-
-function scheduleRemoteMirror(draftId: string | null | undefined, record: AIHistoryRecord) {
-  if (!isUuid(draftId)) return;
-  const key = lsKey(draftId);
-  const existing = remoteTimers.get(key);
-  if (existing) clearTimeout(existing);
-  const timer = setTimeout(() => {
-    remoteTimers.delete(key);
-    void mirrorToSupabase(draftId, record);
-  }, 1500);
-  remoteTimers.set(key, timer);
-}
-
-// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -405,7 +346,6 @@ export function setMessages(
   };
   writeLocal(projectId, next);
   emit(projectId, next);
-  scheduleRemoteMirror(projectId, next);
 }
 
 export function pushSnapshot(
@@ -438,7 +378,6 @@ export function pushSnapshot(
   };
   writeLocal(projectId, next);
   emit(projectId, next);
-  scheduleRemoteMirror(projectId, next);
   return full;
 }
 
@@ -456,7 +395,6 @@ export function getSnapshot(
 export function clearAIHistory(projectId: string | null | undefined): void {
   writeLocal(projectId, { ...EMPTY });
   emit(projectId, { ...EMPTY });
-  scheduleRemoteMirror(projectId, { ...EMPTY });
 }
 
 /** Compute the changed-paths list between two file maps (for snapshot UI). */

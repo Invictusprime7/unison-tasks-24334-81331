@@ -449,10 +449,6 @@ export interface WizardSeedShape {
       path?: string;
       role?: string;
       title?: string;
-      content?: {
-        minimumRegions?: number;
-        roleRequirement?: string;
-      };
       hero?: {
         headline?: string;
         contentAngle?: string;
@@ -563,7 +559,6 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
     lines.push(`Never invent or alter: ${(brief.research.mustNotInvent || []).join(', ')}. Canonical data bindings and capability contracts remain authoritative.`);
     for (const route of brief.routes || []) {
       const hero = route.hero || {};
-      const content = route.content || {};
       const geometry = hero.geometry;
       const geometryAttributes = geometry?.layout
         ? [`data-ut-layout="${geometry.layout}"`, geometry.mediaTreatment ? `data-ut-media-treatment="${geometry.mediaTreatment}"` : '', geometry.variantId ? `data-ut-variant="${geometry.variantId}"` : ''].filter(Boolean).join(' ')
@@ -572,9 +567,6 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
         ? `; geometry LOCKED: ${geometry.layout}/${geometry.mediaTreatment || 'media treatment'}. Declare ${geometryAttributes} on the hero section.`
         : '';
       lines.push(`  • ${route.title || route.role || 'Page'} (${route.path || 'path'}): hero "${hero.headline || route.title || 'route title'}"; angle: ${hero.contentAngle || 'route intent'}${hero.mustDifferFromHome ? '; MUST differ from Home hero copy.' : ''}${geometryInstruction}`);
-      if (content.minimumRegions || content.roleRequirement) {
-        lines.push(`    Content contract: at least ${content.minimumRegions || 4} literal body regions.${content.roleRequirement ? ` ${content.roleRequirement}` : ''}`);
-      }
     }
     if (brief.ui) {
       lines.push(`Approved UI formats — forms: ${(brief.ui.formFormats || []).join(', ') || 'none'}; buttons: ${(brief.ui.buttonFormats || []).join(', ') || 'none'}; icons: ${(brief.ui.iconFormats || []).join(', ') || 'none'}.`);

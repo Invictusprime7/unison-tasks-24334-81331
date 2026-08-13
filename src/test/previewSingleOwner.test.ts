@@ -23,8 +23,10 @@ describe('Web Builder preview ownership', () => {
     expect(sharedPreview).toContain('if (previewCompiling) return;');
     expect(sharedPreview).toContain('if (!hasCompiledPreview) {');
     expect(sharedPreview).toContain('dependencySignatureRef.current = null;');
+    expect(sharedPreview).toContain('syncIntoOwner(snapshot)');
     expect(sharedPreview).toContain('importIntoOwner(changedFiles)');
     expect(builder.match(/onImportFiles=\{virtualFS\.importFiles\}/g)).toHaveLength(2);
+    expect(builder.match(/onSyncFiles=\{virtualFS\.replaceFiles\}/g)).toHaveLength(2);
   });
 
   it('keeps the connected Sandpack provider mounted during background recompiles', () => {

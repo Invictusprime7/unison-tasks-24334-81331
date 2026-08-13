@@ -13,6 +13,7 @@
  */
 
 import type { CoreIntent, ActionIntent } from './coreIntents';
+import type { CapabilityPack } from './playground';
 
 // ============================================================================
 // Capability Definition
@@ -461,6 +462,36 @@ export function getCapabilitiesForIntent(intent: string): CapabilityDefinition[]
       cap.primaryIntent === intent ||
       cap.supportingIntents.includes(intent as CoreIntent)
     );
+}
+
+/**
+ * Convert the deterministic Wizard capability plan into the operational
+ * capability IDs consumed by generated-site runtime authorization.
+ */
+export function resolveOperationalCapabilities(
+  pack: Pick<CapabilityPack, 'requiredFunnels' | 'requiredForms' | 'requiredCalendars' | 'requiredProducts'>,
+  baseline: readonly CapabilityId[] = [],
+): CapabilityId[] {
+  const capabilities = new Set<CapabilityId>(baseline);
+
+  for (const funnel of pack.requiredFunnels) {
+    if (funnel === 'booking') capabilities.add('booking');
+    if (funnel === 'purchase') capabilities.add('commerce');
+    if (funnel === 'lead_capture') capabilities.add('lead-capture');
+    if (funnel === 'quote_request') capabilities.add('quoting');
+  }
+
+  for (const form of pack.requiredForms) {
+    if (form === 'contact') capabilities.add('contact');
+    if (form.includes('quote')) capabilities.add('quoting');
+    if (form.includes('booking') || form.includes('reservation')) capabilities.add('booking');
+    if (form.includes('newsletter')) capabilities.add('newsletter');
+  }
+
+  if (pack.requiredCalendars.length > 0) capabilities.add('booking');
+  if (pack.requiredProducts.length > 0) capabilities.add('commerce');
+
+  return Array.from(capabilities).sort();
 }
 
 /** Get all canonical intents allowed for a set of capabilities */

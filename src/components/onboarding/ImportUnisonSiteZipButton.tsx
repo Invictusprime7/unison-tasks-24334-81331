@@ -90,6 +90,7 @@ export function ImportUnisonSiteZipButton({
           vfsFiles: {},
           siteBundleSnapshot: imported.siteBundleSnapshot,
           playground: imported.canonicalPlayground as never,
+          activePagePath: imported.entryPoint,
         },
         patch: legacyFilesToPatchPlan(imported.vfsFiles, `Restore ${imported.projectName} from Unison export`),
         options: {

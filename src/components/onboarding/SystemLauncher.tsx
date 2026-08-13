@@ -50,12 +50,8 @@ import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import { runBuilderTurn, isRateLimitError, isTransportError } from "@/services/builderBrainClient";
-import {
-  buildLaneBVfsContext,
-  planLaneBBatches,
-  measurePayloadBytes,
-} from "@/services/laneBBatchPlanner";
+import { runBuilderTurn, isProviderTimeoutError, isRateLimitError, isTransportError } from "@/services/builderBrainClient";
+import { planLaneBBatches, measurePayloadBytes } from "@/services/laneBBatchPlanner";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -104,11 +100,7 @@ import {
 } from "@/services/launcherHandoffPersistence";
 import { ImportProjectZipButton } from "@/components/onboarding/ImportProjectZipButton";
 import { ImportUnisonSiteZipButton } from "@/components/onboarding/ImportUnisonSiteZipButton";
-import {
-  commitMutation,
-  isCommitServiceEnabled,
-  CommitRejectedError,
-} from "@/services/vfsCommitService";
+import { commitMutation } from "@/services/vfsCommitService";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
 import { useUserDesignProfile } from "@/hooks/useUserDesignProfile";
@@ -126,16 +118,16 @@ import {
   buildTemplateLayoutPrompt,
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
-import { preserveCanonicalHomePresentation } from "@/services/wizardPresentationGuard";
+import {
+  preserveCanonicalHomePresentation,
+  preserveCanonicalPagePresentations,
+} from "@/services/wizardPresentationGuard";
 import {
   ensureGeneratedUiFoundation,
   validateGeneratedUiContract,
 } from "@/platform/core/generatedUiFoundation";
-import {
-  assessWizardPageRoleQuality,
-  countWizardPageSections,
-  getWizardPageRoleInstruction,
-} from "@/services/wizardPageQuality";
+import { countWizardPageSections } from "@/services/wizardPageQuality";
+import { buildWizardLaneBVfsPayload } from "@/services/wizardLaneBVfsPayload";
 import { loadBusinessProfile } from '@/services/businessProfileService';
 import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
@@ -178,9 +170,22 @@ interface LaunchPreviewConfirmation {
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
 type LauncherPayload = NonNullable<ReturnType<typeof extractLauncherPayload>>;
 
-function omitSnapshotOwnedSharedChrome(files: Record<string, string>): Record<string, string> {
+function isSnapshotOwnedLaneBPath(path: string): boolean {
+  const normalizedPath = path
+    .replace(/\\/g, '/')
+    .replace(/^\/?/, '/')
+    .replace(/\/+/g, '/')
+    .toLowerCase();
+  return isCanonicalWizardSharedChromePath(normalizedPath)
+    || normalizedPath.startsWith('/src/unison/ui/')
+    || normalizedPath === '/.unison/ui-manifest.json'
+    || normalizedPath === '/.unison/design-intervention.json'
+    || normalizedPath === '/src/index.css';
+}
+
+function omitSnapshotOwnedLaneBFiles(files: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(files).filter(([path]) => !isCanonicalWizardSharedChromePath(path)),
+    Object.entries(files).filter(([path]) => !isSnapshotOwnedLaneBPath(path)),
   );
 }
 
@@ -531,19 +536,24 @@ const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
 // The overall Wizard lifecycle can span several Edge requests, but each request
 // stays below Supabase's 150s request-idle ceiling. Capping the broad turns keeps
 // them from consuming the page-specific completion window.
-const WIZARD_AI_TIMEOUT_MS = 460_000;
+const WIZARD_AI_TIMEOUT_MS = 600_000;
 const WIZARD_MIN_AI_TURN_MS = 15_000;
-const WIZARD_INITIAL_AI_TURN_MS = 115_000;
+// The funded Gemini Wizard lead can take up to 125 seconds for a complete
+// multi-page JSON payload. Leave browser and post-processing headroom beyond it.
+const WIZARD_INITIAL_AI_TURN_MS = 142_000;
 const WIZARD_UI_REPAIR_MAX_MS = 65_000;
 const WIZARD_BATCH_REPAIR_MAX_MS = 65_000;
 const WIZARD_BATCH_REPAIR_MAX_PAGES = 2;
 const WIZARD_PAGE_COMPLETION_FIRST_MS = 60_000;
 const WIZARD_PAGE_COMPLETION_RETRY_MS = 70_000;
+// A single isolated page can take as long as a successful Gemini page batch.
+// The shared lifecycle deadline remains the final authority for both attempts.
+const WIZARD_SINGLE_PAGE_COMPLETION_MS = 132_000;
 const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 4;
 const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
-  timeoutMs: 120_000,
+  timeoutMs: 132_000,
   reasoningEffort: 'medium',
   autoModelSelection: true,
   maxTokens: 64_000,
@@ -784,6 +794,16 @@ async function withTimeout<T>(
   }
 }
 
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => window.setTimeout(resolve, 0));
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
 async function getFunctionErrorMessage(error: unknown): Promise<string> {
   if (error instanceof Error) {
     const withContext = error as Error & {
@@ -976,13 +996,13 @@ function assessWizardGenerationQuality(
  */
 function findUnderGeneratedWizardPages(
   files: Record<string, string>,
-  registeredPages: ReadonlyArray<{ path: string; role?: string }>,
+  registeredPagePaths: readonly string[],
   requiredSections: readonly string[],
 ): Array<{ path: string; reason: string }> {
   const homeMinimum = Math.max(3, Math.min(requiredSections.length || 3, 5));
 
-  return registeredPages.flatMap((registeredPage) => {
-    const path = registeredPage.path.startsWith('/') ? registeredPage.path : `/${registeredPage.path}`;
+  return registeredPagePaths.flatMap((registeredPath) => {
+    const path = registeredPath.startsWith('/') ? registeredPath : `/${registeredPath}`;
     const content = files[path] || files[path.replace(/^\//, '')];
     if (!content?.trim()) return [];
 
@@ -993,10 +1013,6 @@ function findUnderGeneratedWizardPages(
     }
     if (semanticSections < minimumSections) {
       return [{ path, reason: `too few sections (${semanticSections}/${minimumSections})` }];
-    }
-    const roleQuality = assessWizardPageRoleQuality(content, registeredPage.role);
-    if (!roleQuality.ok) {
-      return [{ path, reason: roleQuality.reason || `${roleQuality.role} page failed its content contract` }];
     }
     return [];
   });
@@ -1563,6 +1579,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   };
 
   const handleLaunch = async () => {
+    if (isLaunching || launchPreviewConfirmation) return;
     if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
     if (!system) return;
@@ -1578,7 +1595,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     }
 
     setIsLaunching(true);
+  setLaunchStatus('Preparing your site…');
     setValidationAttempts([]);
+  // Let the generating state paint before composing the sizeable canonical VFS.
+  await yieldToBrowser();
     
     try {
       console.log('[SystemLauncher] Launching with:', {
@@ -1646,19 +1666,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // off and never re-enter through the launch contract.
       const resolvedRequestedPages = uniqueValues(selectedPages);
       const resolvedScaffoldMode: WizardSelections['scaffoldMode'] = 'selected-pages';
-
-
-      const installSystemType = selectedSystem as string;
-      const installBody: any = {
-        systemType: installSystemType,
-        industry: resolvedIndustry,
-        businessName: businessName.trim(),
-        templateName: effectiveTemplate?.label || system.name,
-        templateCategory: generationCategory,
-        designPreset: selectedTheme?.id || undefined,
-        ownerEmail: ownerEmail || undefined,
-        publishMode: launchContract.nativePublishCapable && ownerEmail ? 'native' : undefined,
-      };
 
       // ── Resolve canonical aesthetic preset (Style card → ThemePreset) EARLY ──
       // Must run before commitToPipeline so the canonical pipeline can lock the
@@ -1776,6 +1783,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (pipelineResult.errors.length > 0) {
         console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
       }
+      await yieldToBrowser();
 
       // ── ASSERTION: Stage 4b must have overwritten /src/index.css with the
       // exact themed stylesheet for the resolved preset. If this fails, some
@@ -2009,7 +2017,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }).files;
       const siteAnalysis = analyzeReactSite(canonicalScaffoldFiles);
       const wizardCurrentCode = buildWizardCurrentCodeContext(canonicalScaffoldFiles);
-      const wizardVfsPayload = buildLaneBVfsContext(canonicalScaffoldFiles);
+      const wizardVfsPayload = buildWizardLaneBVfsPayload(canonicalScaffoldFiles);
       const siteElementsLibraryContext = generateLibraryPrompt({
         systemType: selectedSystem,
         userPrompt: baseAiUserPrompt,
@@ -2209,14 +2217,15 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         );
         aiError = result.error;
 
-        // ── Transport recovery: batched Lane B ───────────────────────────────
-        // A whole-site Lane B turn for many pages can exceed the edge runtime's
-        // wall-clock budget; the connection is dropped and supabase-js surfaces
-        // "Failed to send a request to the Edge Function". That is a transport
-        // failure, NOT a contract failure — so instead of blocking the launch we
-        // re-run the SAME Lane B brain over small page batches and merge the
-        // results. Minimal/default scaffolds are still never used.
-        if (aiError && isTransportError(aiError)) {
+        // ── Recoverable whole-site failure: batched Lane B ───────────────────
+        // A whole-site Lane B turn can exceed either the Edge wall-clock budget
+        // or a funded provider's single-response window. Neither failure is a
+        // contract violation, so retry the SAME Lane B brain over small page
+        // batches and merge the results. Minimal/default scaffolds are never used.
+        const canRecoverLaneBInBatches = aiError && (
+          isTransportError(aiError) || isProviderTimeoutError(aiError)
+        );
+        if (canRecoverLaneBInBatches) {
           const batchTargets = canonicalPages
             .map((page) => page.path)
             .filter((path): path is string => Boolean(path));
@@ -2241,7 +2250,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           const batches = batchPlan.batches;
           if (batches.length > 1) {
             console.warn(
-              `[SystemLauncher] Lane B transport failure — retrying in ${batches.length} batches of ${batchPlan.pagesPerBatch} page(s) ` +
+              `[SystemLauncher] Lane B recoverable whole-site failure — retrying in ${batches.length} batches of ${batchPlan.pagesPerBatch} page(s) ` +
                 `(limited by ${batchPlan.limitedBy}; base context ${laneBBasePayloadBytes}B, ` +
                 `~${Math.round(batchPlan.estimatedMsPerBatch / 1000)}s/batch)`,
             );
@@ -2361,7 +2370,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 aiPayloadSource,
                 fileCount: Object.keys(structured.files).length,
               });
-              let sanitized = sanitizeGeneratedFiles(omitSnapshotOwnedSharedChrome(structured.files));
+              let sanitized = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(structured.files));
               let uiContract = validateGeneratedUiContract(
                 sanitized.files,
                 generatedUiFoundation?.primitiveImports?.length
@@ -2424,7 +2433,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   if (!repairedStructured?.files || Object.keys(repairedStructured.files).length === 0) {
                     throw new Error('Lane B UI foundation repair returned no structured files.');
                   }
-                  const repaired = sanitizeGeneratedFiles(omitSnapshotOwnedSharedChrome(repairedStructured.files));
+                  const repaired = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(repairedStructured.files));
                   const repairedContract = validateGeneratedUiContract(
                     repaired.files,
                     generatedUiFoundation?.primitiveImports?.length
@@ -2558,6 +2567,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   Object.assign(normalizedFiles, earlySyntaxRepair.files);
                 }
               }
+              await yieldToBrowser();
 
               const bindingApplication = (() => {
                 try {
@@ -2599,6 +2609,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               if (bindingApplication?.missingBindings?.length) {
                 console.warn('[SystemLauncher] Wizard binding pass left missing bindings before quality gate:', bindingApplication.missingBindings);
               }
+              await yieldToBrowser();
 
               const themeTokenViolations = findWizardThemeTokenViolations(sanitized.files);
               if (themeTokenViolations.length > 0) {
@@ -2639,29 +2650,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   console.warn('[SystemLauncher] AI has malformed non-entry files; continuing launch', {
                     invalidFiles: sanitized.invalidFiles,
                     report: sanitized.report,
-                  });
-                }
-
-                const registeredPages = Object.values(siteBundleSnapshot.pageRegistry.pages)
-                  .filter((page) => Boolean(page.filePath))
-                  .map((page) => ({
-                    path: page.filePath,
-                    role: page.pageRole || page.pageType || (page.isHome ? 'home' : 'custom'),
-                  }));
-                const underGeneratedPages = findUnderGeneratedWizardPages(
-                  sanitized.files,
-                  registeredPages,
-                  composition.sections.map((section) => section.type),
-                );
-                if (underGeneratedPages.length > 0) {
-                  for (const page of underGeneratedPages) {
-                    delete sanitized.files[page.path];
-                    delete sanitized.files[page.path.replace(/^\//, '')];
-                    deferredPageCompletions.add(page.path);
-                  }
-                  launchReliabilityMode = 'lane-b-degraded';
-                  console.warn('[SystemLauncher] Deferring pages that failed their role-specific content contract', {
-                    pages: underGeneratedPages,
                   });
                 }
 
@@ -2707,6 +2695,30 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       reason: quality.reason || 'Output failed wizard quality contract',
                     }]);
                     console.warn('[SystemLauncher] AI returned minimal/fallback output', quality);
+                    const registeredPagePaths = Object.values(siteBundleSnapshot.pageRegistry.pages)
+                      .map((page) => (page as { filePath?: string }).filePath)
+                      .filter((path): path is string => Boolean(path));
+                    const underGeneratedPages = findUnderGeneratedWizardPages(
+                      sanitized.files,
+                      registeredPagePaths,
+                      composition.sections.map((section) => section.type),
+                    );
+                    if (underGeneratedPages.length > 0 && !aiError) {
+                      // A present page with one section is as incomplete as a
+                      // missing page. Remove it from the provisional Lane B
+                      // payload so the registered-page completion ledger
+                      // regenerates the exact path with wizard context.
+                      for (const page of underGeneratedPages) {
+                        delete sanitized.files[page.path];
+                        delete sanitized.files[page.path.replace(/^\//, '')];
+                        deferredPageCompletions.add(page.path);
+                      }
+                      console.warn('[SystemLauncher] Deferring under-generated registered pages to isolated Lane B completion', {
+                        pages: underGeneratedPages,
+                      });
+                      generationResult = { structured, sanitized };
+                      launchReliabilityMode = 'lane-b-degraded';
+                    }
                     if (deferredPageCompletions.size > 0 && !aiError) {
                       // The complete-site quality gate is expected to fail when
                       // one or more registered pages were deliberately removed.
@@ -2865,7 +2877,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             : null,
         );
         if (!pageUiContract.valid) {
-          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
             attempt,
@@ -2897,23 +2908,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             attempt,
             accepted: false,
             reason: quality.reason || 'Page failed the wizard quality contract',
-          });
-          return false;
-        }
-
-        const registryPage = Object.values(siteBundleSnapshot.pageRegistry.pages).find((page) => {
-          const filePath = page.filePath?.startsWith('/') ? page.filePath : `/${page.filePath || ''}`;
-          return filePath === normalizedPath;
-        });
-        const pageRole = registryPage?.pageRole || registryPage?.pageType || (registryPage?.isHome ? 'home' : 'custom');
-        const roleQuality = assessWizardPageRoleQuality(normalizedCandidate, pageRole);
-        if (!roleQuality.ok) {
-          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
-          laneBCompletionDiagnostics.push({
-            path: normalizedPath,
-            attempt,
-            accepted: false,
-            reason: roleQuality.reason || `${roleQuality.role} page failed its content contract`,
           });
           return false;
         }
@@ -2963,14 +2957,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             return normalizedMissing.includes(n);
           })
           .map((page) => {
-            const p = page as { filePath?: string; title?: string; path?: string; pageType?: string; pageRole?: string; isHome?: boolean };
+            const p = page as { filePath?: string; title?: string; path?: string; pageType?: string };
             const fp = (p.filePath || '').startsWith('/') ? p.filePath! : `/${p.filePath}`;
-            const role = p.pageRole || p.pageType || (p.isHome ? 'home' : 'custom');
-            const roleInstruction = getWizardPageRoleInstruction(role);
-            return [
-              `  • ${p.title || fp} → ${fp}  [route ${p.path || '/'}, role ${role}]`,
-              roleInstruction ? `    Required content: ${roleInstruction}` : '',
-            ].filter(Boolean).join('\n');
+            return `  • ${p.title || fp} → ${fp}  [route ${p.path || '/'}${p.pageType ? `, type ${p.pageType}` : ''}]`;
           })
           .join('\n');
         const retryPrompt = [
@@ -3025,7 +3014,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               `${brand} ${system.name}`,
             );
             if (retryStructured?.files) {
-              const retrySanitized = sanitizeGeneratedFiles(omitSnapshotOwnedSharedChrome(retryStructured.files));
+              const retrySanitized = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(retryStructured.files));
               for (const missing of normalizedMissing) {
                 acceptCompletedWizardPage(missing, retrySanitized.files, 1);
               }
@@ -3071,8 +3060,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           title?: string;
           path?: string;
           pageType?: string;
-          pageRole?: string;
-          isHome?: boolean;
           filePath?: string;
         } | undefined;
 
@@ -3080,13 +3067,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const behaviorContract = INDUSTRY_INTENT_PROFILES[resolvedIndustry];
         const requiredIntents = (industryRequirements?.requiredIntents || []).join(', ') || 'nav.goto';
         const industryVocabulary = (industryRequirements?.vocabulary || []).slice(0, 16).join(', ');
-        const pageRole = page?.pageRole || page?.pageType || (page?.isHome ? 'home' : 'custom');
-        const roleInstruction = getWizardPageRoleInstruction(pageRole);
 
         if (!aiSourcedFiles[missingPath]) {
           setLaunchStatus(`Completing ${page?.title || missingPath} (${attempt - 1}/2)…`);
           const rejectedCandidate = rejectedPageCandidates[missingPath];
-          const useRejectedCandidate = attempt === 2 && Boolean(rejectedCandidate);
           const previousFailure = [...laneBCompletionDiagnostics]
             .reverse()
             .find((diagnostic) => diagnostic.path === missingPath && !diagnostic.accepted)?.reason;
@@ -3104,12 +3088,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           };
           const pageCompletionPrompt = [
             '── LANE B PAGE COMPLETION TURN ──',
-            useRejectedCandidate
+            rejectedCandidate
               ? `Improve the supplied near-complete page without replacing its working content: ${missingPath}.`
               : `Generate exactly one missing selected wizard page: ${missingPath}.`,
             `Page title: ${page?.title || 'Page'}`,
             `Route: ${page?.path || '/'}`,
-            `Page type/role: ${pageRole}`,
+            `Page type/role: ${page?.pageType || 'generic'}`,
             `Selected template ID: ${wizardSelections.templateId}`,
             `Selected theme preset ID: ${wizardSelections.themePresetId}`,
             `Wizard seed ID: ${wizardSelections.wizardSeedId}`,
@@ -3125,37 +3109,36 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             previousFailure && /Unterminated regular expression|Unexpected token|expected ["']?[})\]]/i.test(previousFailure)
               ? 'SYNTAX REPAIR REQUIRED: return balanced JSX/TSX with every tag, brace, parenthesis, quote, and template literal closed. Do not use JavaScript regular-expression literals in this page.'
               : '',
-            attempt === 3 && rejectedCandidate
-              ? 'FINAL CLEAN REGENERATION: do not reuse the rejected source. Generate fresh balanced TSX from the canonical page role and validation diagnosis.'
-              : '',
             '',
             'Return ONLY this file in the WizardSeed multi-file JSON contract.',
-            'The page must contain at least 4 complete semantic regions and 1200+ characters of specific, useful copy.',
-            'The validator must count at least 4 literal sectioning regions: use <main>, <section>, <article>, or <aside> elements rather than only nested <div> blocks.',
-            roleInstruction ? `ROLE CONTENT CONTRACT: ${roleInstruction}` : '',
+            'The page must contain at least 3 complete semantic sections and 1200+ characters of real copy.',
+            'The validator must count at least 3 literal sectioning regions: use <section>, <article>, or <aside> elements rather than only nested <div> blocks.',
             previousFailure?.includes('too few sections')
-              ? `STRUCTURAL REPAIR REQUIRED: ${previousFailure}. Add distinct literal sectioning elements until the body-region count is at least 4.`
+              ? `STRUCTURAL REPAIR REQUIRED: ${previousFailure}. Add distinct literal sectioning elements until the page count is at least 3.`
               : '',
-            useRejectedCandidate
+            rejectedCandidate
               ? 'Preserve all valid existing sections and behavior; add or repair only what the validation failure requires.'
               : '',
             'Use only semantic theme classes backed by the supplied Stage 4b HSL tokens.',
             'Include working data-ut-intent behavior appropriate to this page role.',
             'Do not emit App.tsx, shared chrome, placeholder copy, quarantine UI, or a preset scaffold.',
-            useRejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
+            rejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
           ].join('\n');
 
           try {
-            const completionBudgetMs = takeWizardGenerationBudget(
-              attempt === 2
+            const completionTurnCapMs = stillMissing.length === 1
+              ? WIZARD_SINGLE_PAGE_COMPLETION_MS
+              : attempt === 2
                 ? WIZARD_PAGE_COMPLETION_FIRST_MS
-                : WIZARD_PAGE_COMPLETION_RETRY_MS,
+                : WIZARD_PAGE_COMPLETION_RETRY_MS;
+            const completionBudgetMs = takeWizardGenerationBudget(
+              completionTurnCapMs,
             );
             const completion = await withTimeout(
               (signal) => runBuilderTurn<any>({
                 messages: [{ role: 'user', content: pageCompletionPrompt }],
                 mode: 'wizard-seed',
-                currentCode: useRejectedCandidate ? rejectedCandidate : '',
+                currentCode: rejectedCandidate || '',
                 editMode: false,
                 templateName: effectiveTemplate?.label || system.name,
                 aesthetic: resolvedPreset.id,
@@ -3173,12 +3156,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   template_intents: blueprint.template_intents,
                 },
                 userDesignProfile: laneBDesignProfile,
-                vfsFiles: useRejectedCandidate ? { [missingPath]: rejectedCandidate } : undefined,
+                vfsFiles: rejectedCandidate ? { [missingPath]: rejectedCandidate } : undefined,
                 recentChangedFiles: [missingPath],
                 gatewayOptions: {
                   ...WIZARD_LANE_B_GATEWAY_OPTIONS,
                   reasoningEffort: 'low',
-                  timeoutMs: Math.min(attempt === 2 ? 50_000 : 60_000, completionBudgetMs - 5_000),
+                  autoModelSelection: false,
+                  selectedModelId: 'google/gemini-2.5-flash-lite',
+                  timeoutMs: Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, completionBudgetMs - 5_000),
                   maxTokens: 12_000,
                 },
                 wizardSeed: isolatedWizardSeed,
@@ -3208,7 +3193,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               });
               return;
             }
-            const completionSanitized = sanitizeGeneratedFiles(omitSnapshotOwnedSharedChrome(completionStructured.files));
+            const completionSanitized = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(completionStructured.files));
             acceptCompletedWizardPage(missingPath, completionSanitized.files, attempt);
           } catch (completionError) {
             laneBCompletionDiagnostics.push({
@@ -3256,6 +3241,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         throw new Error(
           `Wizard Lane B could not complete ${unresolvedAfterCompletion.length} selected page file(s) after isolated industry-aware generation: ${unresolvedAfterCompletion.join(', ')}. ${completionReasons}`,
         );
+      }
+
+      const presentationGuard = preserveCanonicalPagePresentations({
+        aiFiles: aiSourcedFiles,
+        canonicalFiles: siteBundleSnapshot.vfsFiles,
+        pagePaths: Object.values(siteBundleSnapshot.pageRegistry.pages)
+          .map((page) => (page as { filePath?: string }).filePath)
+          .filter((path): path is string => Boolean(path)),
+        homePath: (Object.values(siteBundleSnapshot.pageRegistry.pages)
+          .find((page) => (page as { isHome?: boolean }).isHome) as { filePath?: string } | undefined)?.filePath,
+        requiredHeroGeometry: siteBundleSnapshot.meta.generationBrief?.homeHeroGeometry,
+      });
+      aiSourcedFiles = presentationGuard.files;
+      if (presentationGuard.restoredPaths.length > 0) {
+        console.warn('[SystemLauncher] Restored canonical page presentations after Lane B visual drift', {
+          templateId: templateLayoutContract.templateId,
+          paths: presentationGuard.restoredPaths,
+          reasons: presentationGuard.reasons,
+        });
       }
 
       // Stamp gaps so downstream readiness artifacts can record them.
@@ -3343,6 +3347,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const intentBindingsFile = buildIntentBindingsFile(materializedPlayground);
       const intentSurfacesFile = buildIntentSurfacesFile(materializedPlayground);
 
+      setLaunchStatus('Finalizing preview…');
+      await yieldToBrowser();
       const launchArtifacts = buildCanonicalLaunchArtifacts({
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
@@ -3405,7 +3411,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // snapshot VFS and returns the exact validated files represented by the
       // cloned SiteBundleSnapshot. This launcher only appends metadata files.
       const wiredVfsFiles = preWiredVfsFiles;
-      const runtimeManifest = launchArtifacts.runtimeManifest;
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
         console.log(
@@ -3413,8 +3418,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         );
       }
 
-      const durableCode = wiredVfsFiles['/src/App.tsx'] || wiredVfsFiles['/App.tsx'] || '';
       setLaunchStatus('Review the generated site before creating its live data workspace.');
+      // Generation is complete. The confirmation dialog is an intentional
+      // user decision, not an active loading state.
+      setIsLaunching(false);
+      setLaunchStatus('');
       const confirmed = await requestLaunchConfirmation({
         businessName: brand,
         siteName: `${brand} Site`,
@@ -3427,6 +3435,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         return;
       }
 
+      setIsLaunching(true);
       setLaunchStatus('Creating the site workspace and live data contracts…');
       const confirmedLaunch = await provisionConfirmedLaunchSite({
         ids: launchIds,
@@ -3441,15 +3450,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         systemType: selectedSystem,
         templateId: effectiveTemplate?.id,
         themePresetId: resolvedPreset.id,
-        code: durableCode,
-        vfsFiles: wiredVfsFiles,
-        siteBundleSnapshot: (launchArtifacts.siteBundleSnapshot || {}) as unknown as Record<string, unknown>,
-        runtimeManifest: runtimeManifest as unknown as Record<string, unknown>,
-        generatedSiteRuntimeManifest: launchArtifacts.generatedSiteRuntimeManifest,
-        wizardSelections: wizardSelections as unknown as Record<string, unknown>,
-        businessRuntime,
-        dataBindings: plannedDataBindings,
-        formDefinitions: plannedFormDefinitions,
       });
       const launchProjectId = confirmedLaunch.projectId;
       const launcherDraftId = confirmedLaunch.draftId;
@@ -3458,175 +3458,57 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         localStorage.setItem('unison:lastBusinessId', confirmedLaunch.businessId);
       } catch { /* browser storage is best-effort */ }
 
-      // Keep existing pack and demo-data provisioning, but only after the
-      // confirmed root graph exists and with the transaction's business id.
-      const { error: installError } = await supabase.functions.invoke('install-system', {
-        body: { ...installBody, businessId: confirmedLaunch.businessId },
+      // The platform-core commit pipeline is authoritative. Confirmed launch
+      // may create the tenant root, but no builder handoff exists until the
+      // canonical snapshot has persisted as revision 1.
+      const identity: BuilderIdentity = {
+        userId: launcherUser.id,
+        businessId: confirmedLaunch.businessId,
+        projectId: launchProjectId,
+        draftId: launcherDraftId,
+        revisionId: '',
+        sessionId: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+          ? crypto.randomUUID()
+          : `sess_${Date.now().toString(36)}`,
+      };
+      const patch = legacyFilesToPatchPlan(wiredVfsFiles);
+      const result = await commitMutation({
+        source: 'wizard-launch',
+        identity,
+        current: {
+          vfsFiles: {},
+          playground: materializedPlayground ?? undefined,
+          activePagePath: launchArtifacts.entryPoint,
+        },
+        patch,
+        options: {
+          requirePreviewPass: false,
+          requireReadinessPass: false,
+          businessName: brand,
+          industry: String(generationCategory),
+          selectedTemplateId: effectiveTemplate?.id,
+          themePresetId: resolvedPreset.id,
+          selections: wizardSelections,
+        },
       });
-      if (installError) {
-        console.warn('[SystemLauncher] install-system post-confirmation seed failed:', installError);
-        toast.warning('The site workspace was created, but starter data is still provisioning.');
+      if (!result.persistedRevisionId) {
+        throw new Error('Canonical launch commit did not persist a revision.');
       }
-
-      // Auto-apply the full-stack capability packs implied by the wizard
-      // selections so no launch lands with stub capabilities.
-      try {
-        const { capabilityPlanFromWizard, approveCapabilityPlan } = await import('@/services/businessCapabilityPlanner');
-        const { applyCapabilityMigration } = await import('@/services/capabilityMigrationRunner');
-        const { planArtifactHydration } = await import('@/services/artifactHydrationPlan');
-
-        const hydrationEntries = planArtifactHydration(launchArtifacts.siteBundleSnapshot);
-        const wizardPlan = capabilityPlanFromWizard({
-          industry: resolvedIndustry,
-          sectionTypes: hydrationEntries.map((entry) => entry.rawSectionType),
-          pageSlugs: Object.values(launchArtifacts.siteBundleSnapshot?.pageRegistry?.pages ?? {})
-            .map((page) => String((page as { path?: string }).path ?? '').replace(/^\//, '')),
-          businessId: confirmedLaunch.businessId,
-          projectId: launchProjectId,
-        });
-
-        if (wizardPlan.packs.length > 0) {
-          setLaunchStatus('Installing backend capabilities for this site…');
-          const approved = approveCapabilityPlan(wizardPlan, {
-            approvedBy: 'wizard-launch-auto-apply',
-            approvedAt: new Date().toISOString(),
-          });
-          const migration = await applyCapabilityMigration({
-            packs: approved.packs,
-            businessId: confirmedLaunch.businessId,
-            projectId: launchProjectId,
-            summary: approved.proposal.summary,
-          });
-          if (!migration.success) {
-            console.warn('[SystemLauncher] capability auto-apply failed:', migration.error);
-            toast.warning('Some backend capabilities need approval before they go live.');
-          } else {
-            console.log('[SystemLauncher] Capability packs applied', migration.packs, migration.tables);
-          }
-        }
-      } catch (err) {
-        console.warn('[SystemLauncher] capability auto-apply skipped (non-fatal)', err);
+      const launcherRevisionId = result.persistedRevisionId;
+      const canonicalVfsFiles = result.vfsFiles;
+      const canonicalSiteBundleSnapshot = result.siteBundleSnapshot;
+      const canonicalRuntimeManifest = result.runtimeManifest;
+      if (!(launchArtifacts.entryPoint in canonicalVfsFiles)) {
+        throw new Error('Canonical launch commit removed the persisted active page.');
       }
-
-      // Persist generated bindings → site_intent_bindings (launcher-native wiring).
-      // Best-effort; failures never block launch.
-      if (confirmedLaunch.businessId && launchProjectId) {
-        try {
-          const { persistGeneratedBindings } = await import('@/services/persistGeneratedBindings');
-          const result = await persistGeneratedBindings({
-            businessId: confirmedLaunch.businessId,
-            projectId: launchProjectId,
-            files: wiredVfsFiles,
-          });
-          console.log('[SystemLauncher] Persisted generated bindings', result);
-        } catch (err) {
-          console.warn('[SystemLauncher] persistGeneratedBindings failed (non-fatal)', err);
-        }
-
-        // Track B, Pass 2 — auto-emit site_data_bindings for every generated
-        // section type that the catalog runtime knows how to hydrate. Idempotent.
-        try {
-          const { autoEmitSectionBindings } = await import('@/services/autoEmitSectionBindings');
-          const emitResult = await autoEmitSectionBindings({
-            businessId: confirmedLaunch.businessId,
-            projectId: launchProjectId,
-            snapshot: launchArtifacts.siteBundleSnapshot,
-          });
-          console.log('[SystemLauncher] Auto-emitted catalog bindings', emitResult);
-          // Signal downstream consumers (CatalogInspectorPanel, catalog
-          // runtime, readiness gate) that fresh rows have landed so they
-          // re-query without waiting for a manual refresh.
-          if (typeof window !== 'undefined' && emitResult.emitted > 0) {
-            window.dispatchEvent(
-              new CustomEvent('unison:catalog-seeded', {
-                detail: {
-                  businessId: confirmedLaunch.businessId,
-                  projectId: launchProjectId,
-                  industry: resolvedIndustry,
-                  bindingIds: emitResult.bindingIds,
-                },
-              }),
-            );
-          }
-        } catch (err) {
-          console.warn('[SystemLauncher] autoEmitSectionBindings failed (non-fatal)', err);
-        }
-      }
-
-      // ── Move 2: additive commit through VFSCommitService (behind flag) ──
-      // Persists revision 1 into `site_revisions` so WebBuilder can hydrate
-      // by revisionId instead of relying on sessionStorage. Best-effort;
-      // failures never block launch.
-      let launcherRevisionId: string | null = null;
-      if (isCommitServiceEnabled() && confirmedLaunch.businessId && launchProjectId) {
-        try {
-          if (launcherUser.id) {
-            const identity: BuilderIdentity = {
-              userId: launcherUser.id,
-              businessId: confirmedLaunch.businessId,
-              projectId: launchProjectId,
-              draftId: launcherDraftId,
-              revisionId: '',
-              sessionId: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-                ? crypto.randomUUID()
-                : `sess_${Date.now().toString(36)}`,
-            };
-            const patch = legacyFilesToPatchPlan(wiredVfsFiles);
-            // Move C: declare transactional backend ops so the commit pipeline
-            // provisions and seeds the selected system atomically with the VFS
-            // write. Maps the launcher's selectedSystem to capability ids that
-            // the backendOpExecutor knows how to provision + seed.
-            const SYSTEM_TO_CAPABILITIES: Record<string, string[]> = {
-              booking: ['booking'],
-              store: ['commerce'],
-              agency: ['lead-capture', 'quoting'],
-              content: ['newsletter'],
-              portfolio: ['lead-capture'],
-              saas: ['auth'],
-            };
-            const caps = SYSTEM_TO_CAPABILITIES[String(selectedSystem)] ?? [];
-            for (const cap of caps) {
-              patch.backendOps.push({ type: 'requireCapability', capability: cap });
-              patch.backendOps.push({ type: 'seedCapability', capability: cap });
-            }
-            const result = await commitMutation({
-              source: 'wizard-launch',
-              identity,
-              current: { vfsFiles: {}, playground: materializedPlayground ?? undefined },
-              patch,
-              options: {
-                requirePreviewPass: false, // launcher already ran preflight; do not re-fail here
-                requireReadinessPass: false,
-                businessName: brand,
-                industry: String(generationCategory),
-                selectedTemplateId: effectiveTemplate?.id,
-                themePresetId: resolvedPreset.id,
-                selections: wizardSelections,
-              },
-            });
-
-            launcherRevisionId = result.persistedRevisionId;
-            if (launcherRevisionId) {
-              console.log('[SystemLauncher] commitMutation persisted revision', launcherRevisionId);
-            }
-          }
-        } catch (err) {
-          if (err instanceof CommitRejectedError) {
-            console.warn('[SystemLauncher] commitMutation rejected (non-fatal at launch)', err.result.diagnostics);
-            toast.warning('Site saved, but revision history was rejected. Preview uses the saved draft.');
-          } else {
-            console.warn('[SystemLauncher] commitMutation threw (non-fatal)', err);
-            toast.warning('Site saved, but revision history could not be recorded.');
-          }
-        }
-      }
+      console.log('[SystemLauncher] canonical revision persisted', launcherRevisionId);
 
 
 
 
       const navState = {
-        vfsFiles: wiredVfsFiles,
-        runtimeManifest,
+        vfsFiles: canonicalVfsFiles,
+        runtimeManifest: canonicalRuntimeManifest,
         entryPoint: launchArtifacts.entryPoint,
         templateName: `${brand} Site`,
         aesthetic: resolvedPreset.id,
@@ -3644,7 +3526,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         draftId: launcherDraftId,
         materializedPlayground,
         compiledPlayground,
-        siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+        siteBundleSnapshot: canonicalSiteBundleSnapshot,
         pipelineManifest,
         wizardSelections,
         wizardSeed,
@@ -3652,7 +3534,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         launchContract,
         setupSnapshot: nativeSetupSnapshot,
         nativeReadinessManifest,
-        revisionId: launcherRevisionId || undefined,
+        revisionId: launcherRevisionId,
       };
 
       const launchState = createLaunchState({
@@ -3662,7 +3544,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         templateName: `${brand} Site`,
         templateCategory: generationCategory as any,
         blueprint: blueprint as any,
-        vfsFiles: wiredVfsFiles,
+        vfsFiles: canonicalVfsFiles,
         aesthetic: resolvedPreset.id,
         themePresetId: resolvedPreset.id,
         templateId: effectiveTemplate?.id,
@@ -3672,10 +3554,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         businessId: confirmedLaunch.businessId,
         projectId: launchProjectId,
         industry: resolvedIndustry,
-        runtimeManifest,
+        runtimeManifest: canonicalRuntimeManifest,
         entryPoint: launchArtifacts.entryPoint,
         sitePlan,
-        siteBundleSnapshot: launchArtifacts.siteBundleSnapshot,
+        siteBundleSnapshot: canonicalSiteBundleSnapshot,
         materializedPlayground,
         compiledPlayground,
         pipelineManifest,

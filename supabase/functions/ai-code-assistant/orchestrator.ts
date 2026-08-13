@@ -18,7 +18,7 @@ import {
 
 import type { ClassifiedTask } from "./taskClassifier.ts";
 import type { AIRequest } from "./requestSchema.ts";
-import { buildProviderPlan } from "./providerRouter.ts";
+import { buildProviderPlan, isGeminiExclusiveProviderMode } from "./providerRouter.ts";
 import { postProcessContent, buildResponseBody } from "./responseNormalizer.ts";
 import { extractTextContent } from "./utils.ts";
 import { performPromptResearch, formatResearchContext, type ResearchResult } from "./webResearch.ts";
@@ -158,8 +158,10 @@ async function runLaunchDeskLane(
     parsed.gatewayOptions?.reasoningEffort,
     launchComplexity,
   );
+  const geminiExclusive = isGeminiExclusiveProviderMode();
   const providerPlan = buildProviderPlan(task, Boolean(
-    Deno.env.get('OPENAI_API_KEY') || Deno.env.get('GEMINI_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY'),
+    Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY') ||
+    (!geminiExclusive && (Deno.env.get('OPENAI_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY'))),
   ), parsed.gatewayOptions, launchComplexity, userContent);
   const providerResult = await runProviderLoop({
     aiMessages,
@@ -226,14 +228,14 @@ async function runBuilderLane(
     'builder_generate'
   })`);
 
-  // Gemini or OpenAI direct API both count as configured text providers so
-  // wizard/builder tasks get their full per-task model plan (e.g. 110 s for
-  // wizard_seed_generation) instead of the degraded no-provider fallback plan.
+  // Only funded providers count toward the full model plan. Gemini-only is the
+  // safe default until AI_PROVIDER_MODE is explicitly switched to "hybrid".
+  const geminiExclusive = isGeminiExclusiveProviderMode();
   const hasConfiguredProvider = Boolean(
     Deno.env.get('GEMINI_API_KEY') ||
     Deno.env.get('GOOGLE_API_KEY') ||
-    Deno.env.get('OPENAI_API_KEY') ||
-    Deno.env.get('ANTHROPIC_API_KEY')
+    Deno.env.get('UNISONGEMINI_API_KEY') ||
+    (!geminiExclusive && (Deno.env.get('OPENAI_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY')))
   );
   const {
     messages, mode, savePattern = true, generateImage = false, imagePlacement,

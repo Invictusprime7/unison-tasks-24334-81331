@@ -329,6 +329,17 @@ export default function About(){ return <main><Image src="/team.jpg" alt="Our te
     expect(sanitized.code).not.toContain('priority');
   });
 
+  it('normalizes next/image imports that include named helpers', () => {
+    const sanitized = sanitizeTsxFile('/src/pages/Gallery.tsx', `import Image, { type StaticImageData } from 'next/image';
+export default function Gallery(){ const image: StaticImageData | string = '/gallery.jpg'; return <main><Image src={image} alt="Gallery highlight" fill /></main>; }`);
+
+    expect(sanitized.valid).toBe(true);
+    expect(sanitized.applied).toContain('normalizeNextImage');
+    expect(sanitized.code).not.toContain('next/image');
+    expect(sanitized.code).toContain('<img');
+    expect(sanitized.code).not.toContain(' fill');
+  });
+
   it('repairs Contact default and named component import mismatches before React renders', () => {
     const prepared = prepareSandpackFiles({
       ...foundation.files,

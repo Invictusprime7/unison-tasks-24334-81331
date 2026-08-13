@@ -2,6 +2,30 @@ import { describe, expect, it } from 'vitest';
 import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import { ALL_COMPOSITIONS, getCompositionById } from '@/sections/templates';
 import { buildWizardDesignIntervention } from '@/services/wizardDesignIntervention';
+import { generateTopologyPlaceholderFiles } from '@/utils/topologyVFSScaffolder';
+import type { GeneratedSitePlan, PageRouteNode } from '@/platform/core/siteTopologyPlanner';
+import type { SectionEntry } from '@/sections/types';
+
+function readSections(source: string): SectionEntry[] {
+  const match = source.match(/const SECTIONS = ([\s\S]*?);\nconst HYDRATABLE/);
+  if (!match) throw new Error('Compiled page did not serialize sections');
+  return JSON.parse(match[1]) as SectionEntry[];
+}
+
+function routePlan(templateId: string, industry: string, page: PageRouteNode): GeneratedSitePlan {
+  return {
+    siteId: `test-${templateId}`,
+    industry,
+    businessName: 'Test Studio',
+    homePageId: 'home-page',
+    pages: [page],
+    navItems: [page.id],
+    funnels: [],
+    redirects: [],
+    generatedAt: '2026-08-06T00:00:00.000Z',
+    selectedTemplateId: templateId,
+  };
+}
 
 function compileHome(templateId: string) {
   const composition = getCompositionById(templateId);
@@ -10,6 +34,84 @@ function compileHome(templateId: string) {
 }
 
 describe('composition VFS variants', () => {
+  it('derives a route-specific hero instead of serializing the home hero on subpages', () => {
+    const template = getCompositionById('restaurant-premium');
+    if (!template) throw new Error('Missing restaurant composition');
+    const page: PageRouteNode = {
+      id: 'services-page', name: 'Services', title: 'Services', route: '/services', role: 'services',
+      filePath: '/src/pages/Services.tsx', visibleInNav: true, isHome: false, generatedBy: 'wizard',
+    };
+    const plan: GeneratedSitePlan = {
+      siteId: 'test-site', industry: 'restaurant', businessName: 'Table', homePageId: 'home-page',
+      pages: [page], navItems: [page.id], funnels: [], redirects: [], generatedAt: '2026-08-06T00:00:00.000Z',
+      selectedTemplateId: template.id,
+    };
+    const files = generateTopologyPlaceholderFiles(page, plan, template);
+    const source = files['/src/pages/Services.tsx'];
+    const homeHero = template.sections.find(
+      (section): section is SectionEntry<'hero'> => section.type === 'hero',
+    );
+    if (!homeHero) throw new Error('Restaurant composition must include a hero');
+    const routeSectionsMatch = source.match(/const SECTIONS = ([\s\S]*?);\nconst HYDRATABLE/);
+    if (!routeSectionsMatch) throw new Error('Route page did not serialize sections');
+    const routeSections = JSON.parse(routeSectionsMatch[1]) as Array<SectionEntry>;
+    const routeHero = routeSections.find(
+      (section): section is SectionEntry<'hero'> => section.type === 'hero',
+    );
+    if (!routeHero) throw new Error('Route page must include a hero');
+
+    expect(source).toContain('"headline": "Services"');
+    expect(source).toContain('"badge": "Services"');
+    expect(source).not.toContain(`"headline": ${JSON.stringify(homeHero?.props.headline)}`);
+    expect(source).not.toContain(JSON.stringify(homeHero?.props.backgroundImage));
+    expect(routeHero.props.layout).toBe(homeHero.props.layout);
+    expect(routeHero.variantId).toBe(homeHero.variantId);
+  });
+
+  it('keeps the selected hero variant module when the hero is cloned for a route', () => {
+    const template = getCompositionById('salon-premium');
+    if (!template) throw new Error('Missing salon composition');
+    const hero = template.sections.find((section): section is SectionEntry<'hero'> => section.type === 'hero');
+    if (!hero) throw new Error('Salon composition must include a hero');
+    const page: PageRouteNode = {
+      id: 'salon-contact', name: 'Contact', title: 'Contact', route: '/contact', role: 'contact',
+      filePath: '/src/pages/Contact.tsx', visibleInNav: true, isHome: false, generatedBy: 'wizard',
+    };
+    const files = generateTopologyPlaceholderFiles(page, routePlan(template.id, template.industry, page), template, {
+      globalSharedChrome: true,
+      designIntervention: {
+        motionRecipes: [],
+        sectionVariants: [],
+        activeVariants: { [hero.id]: 'hero:full-bleed' },
+      },
+    });
+    const routeHero = readSections(files[page.filePath]).find(
+      (section): section is SectionEntry<'hero'> => section.type === 'hero',
+    );
+
+    expect(routeHero?.sourceSectionId).toBe(hero.id);
+    expect(routeHero?.variantId).toBe('hero:full-bleed');
+    expect(files[page.filePath]).toContain('"variantId": "hero:full-bleed"');
+    expect(Object.values(files).some((source) => source.includes('SECTION_VARIANT = "hero:full-bleed"'))).toBe(true);
+  });
+
+  it('emits at least four canonical body sections for contact routes across all industries', () => {
+    for (const template of ALL_COMPOSITIONS) {
+      const page: PageRouteNode = {
+        id: `${template.id}-contact`, name: 'Contact', title: 'Contact', route: '/contact', role: 'contact',
+        filePath: '/src/pages/Contact.tsx', visibleInNav: true, isHome: false, generatedBy: 'wizard',
+      };
+      const files = generateTopologyPlaceholderFiles(page, routePlan(template.id, template.industry, page), template, {
+        globalSharedChrome: true,
+      });
+      const sections = readSections(files[page.filePath]);
+
+      expect(sections.length, template.id).toBeGreaterThanOrEqual(4);
+      expect(sections[0]?.type, template.id).toBe('hero');
+      expect(sections.some((section) => section.type === 'navbar' || section.type === 'footer'), template.id).toBe(false);
+    }
+  });
+
   it('serializes each selected composition layout into the canonical page VFS', () => {
     const restaurant = compileHome('restaurant-premium');
     const saas = compileHome('saas-dark');
@@ -43,6 +145,9 @@ describe('composition VFS variants', () => {
     expect(files['/src/components/CTA.tsx']).toContain('data-ut-variant="cta:split-card"');
     expect(files['/src/components/Contact.tsx']).toContain('data-ut-variant="contact:split-card"');
     expect(files['/src/components/Footer.tsx']).toContain('data-ut-variant="footer:dark-band"');
+    expect(files['/src/components/Hero.tsx']).toContain('{media && <div className="ut-media-frame min-h-80">');
+    expect(files['/src/components/Services.tsx']).toContain("item.image ? 'grid items-center gap-8 md:grid-cols-2 lg:gap-14' : 'max-w-2xl'");
+    expect(files['/src/pages/Home.tsx']).toContain('data-ut-media-treatment={section.type === \'hero\' ? mediaTreatment : undefined}');
   });
 
   it('emits selected snapshot-owned motion recipes without changing global CSS', () => {
@@ -84,16 +189,24 @@ describe('composition VFS variants', () => {
     if (!restaurant) throw new Error('Restaurant composition must be registered');
     const hero = restaurant.sections.find((section) => section.type === 'hero');
     if (!hero) throw new Error('Restaurant composition must include a hero');
-    const page = compositionToReactFileSet(restaurant, '/src/pages/Home.tsx', {
+    const files = compositionToReactFileSet(restaurant, '/src/pages/Home.tsx', {
       designIntervention: {
         motionRecipes: [],
         sectionVariants: [],
         activeVariants: { [hero.id]: 'hero:split-image' },
       },
-    })['/src/pages/Home.tsx'];
+    });
+    const page = files['/src/pages/Home.tsx'];
+    const variantModule = Object.entries(files).find(([path, source]) => (
+      path.startsWith('/src/components/variants/') && source.includes('SECTION_VARIANT = "hero:split-image"')
+    ));
 
     expect(page).toContain(`"variantId": "hero:split-image"`);
     expect(page).toContain('data-ut-variant={section.variantId || undefined}');
+    expect(page).toContain('SECTION_MAP[section.id] || SECTION_MAP[section.type]');
+    expect(variantModule).toBeDefined();
+    expect(variantModule?.[1]).toContain('SECTION_LAYOUT = "split"');
+    expect(variantModule?.[1]).toContain('<Hero props={{ ...props, layout: SECTION_LAYOUT }} />');
   });
 
   it('preserves section variant identity when presentation order changes', () => {

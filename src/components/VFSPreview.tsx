@@ -36,6 +36,7 @@ import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
 import { PreviewPipelineError, isPreviewPipelineError } from '@/services/previewPipelineError';
+import { createVfsHandoffSignature } from '@/services/vfsHandoffSignature';
 import { PreviewRuntimeError } from '@/components/PreviewRuntimeError';
 import { LaunchGateNotice } from '@/components/creatives/web-builder/LaunchGateNotice';
 import { isCanonicalRuntimeError } from '@/platform/core/canonicalRuntimeContract';
@@ -86,6 +87,8 @@ export interface VFSPreviewProps {
   files?: Record<string, string>;
   /** Import terminal/AI mutations back into the VFS that owns this preview. */
   onImportFiles?: (files: Record<string, string>) => void;
+  /** Atomically reconcile a complete terminal/AI VFS snapshot with its owner. */
+  onSyncFiles?: (files: Record<string, string>) => void;
   /** Active file path */
   activeFile?: string;
   /** Additional CSS classes */
@@ -309,30 +312,6 @@ function hasRenderablePreviewSource(files: Record<string, string>): boolean {
   });
 }
 
-function stablePreviewFileSignature(files: Record<string, string>): string {
-  let hash = 2166136261;
-  const update = (value: string) => {
-    for (let i = 0; i < value.length; i += 1) {
-      hash ^= value.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
-    }
-  };
-
-  for (const path of Object.keys(files).sort()) {
-    const content = files[path] ?? '';
-    update(path);
-    update(String(content.length));
-    if (content.length > 12000) {
-      update(content.slice(0, 4096));
-      update(content.slice(-4096));
-    } else {
-      update(content);
-    }
-  }
-
-  return `${Object.keys(files).length}:${(hash >>> 0).toString(36)}`;
-}
-
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -341,6 +320,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   nodes,
   files: propFiles,
   onImportFiles,
+  onSyncFiles,
   activeFile,
   className,
   showConsole = false,
@@ -409,7 +389,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     const nodeFiles = nodesToFileMap(nodes);
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
-  const filesSignature = useMemo(() => stablePreviewFileSignature(files), [files]);
+  const filesSignature = useMemo(() => createVfsHandoffSignature(files) || 'empty-vfs', [files]);
 
   useEffect(() => {
     timeoutRecoveryCountRef.current = 0;
@@ -547,13 +527,23 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   useEffect(() => {
     const importIntoOwner = onImportFiles
       || (canUseContextPreview && vfsContext ? vfsContext.importFiles : null);
-    if (!importIntoOwner) return;
+    const syncIntoOwner = onSyncFiles
+      || (canUseContextPreview && vfsContext ? vfsContext.replaceFiles : null);
+    if (!importIntoOwner && !syncIntoOwner) return;
 
     const bridge = getGlobalAITerminalBridge();
     return bridge.watchVFS((changes) => {
+      const snapshot = bridge.getVFSSnapshot();
       if (!changes || changes.length === 0) return;
 
-      const snapshot = bridge.getVFSSnapshot();
+      // The terminal bridge is authoritative for its VFS session. Reconcile
+      // its complete snapshot whenever available so deletions cannot leave a
+      // stale generated module in the preview owner.
+      if (syncIntoOwner) {
+        syncIntoOwner(snapshot);
+        return;
+      }
+
       const changedFiles: Record<string, string> = {};
       changes.forEach((path) => {
         if (snapshot[path] !== undefined) {
@@ -561,11 +551,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         }
       });
 
-      if (Object.keys(changedFiles).length > 0) {
+      if (Object.keys(changedFiles).length > 0 && importIntoOwner) {
         importIntoOwner(changedFiles);
       }
     });
-  }, [canUseContextPreview, onImportFiles, vfsContext]);
+  }, [canUseContextPreview, onImportFiles, onSyncFiles, vfsContext]);
 
   const normalizedActiveFile = useMemo(() => {
     if (!activeFile) return null;

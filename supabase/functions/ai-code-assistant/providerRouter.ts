@@ -23,6 +23,8 @@ export interface ProviderPlan {
   fallbackMaxTokens: number;
   /** Give the lead model nearly the whole turn; quick failures may still fall through. */
   preferLongLeadAttempt?: boolean;
+  /** Split a bounded focused turn across compatible provider attempts. */
+  balancedProviderAttempts?: boolean;
 }
 
 export interface GatewayOverrides {
@@ -39,6 +41,12 @@ type EnvReader = (name: string) => string | undefined;
 export interface ProviderDistribution {
   gemini: number;
   openai: number;
+}
+
+export function isGeminiExclusiveProviderMode(
+  readEnv: EnvReader = (name) => Deno.env.get(name),
+): boolean {
+  return (readEnv('AI_PROVIDER_MODE') || 'gemini-only').trim().toLowerCase() !== 'hybrid';
 }
 
 // Gemini is the default direct provider. OpenAI is retained as a fallback
@@ -94,7 +102,7 @@ function selectPrimaryProvider(
   readEnv: EnvReader,
 ): ParallelTextProvider | undefined {
   const hasGemini = Boolean(readEnv('GEMINI_API_KEY') || readEnv('GOOGLE_API_KEY'));
-  const hasOpenAI = Boolean(readEnv('OPENAI_API_KEY'));
+  const hasOpenAI = !isGeminiExclusiveProviderMode(readEnv) && Boolean(readEnv('OPENAI_API_KEY'));
   if (!hasGemini && !hasOpenAI) return undefined;
   if (!hasGemini) return 'openai';
   if (!hasOpenAI) return 'gemini';
@@ -209,15 +217,19 @@ export function buildProviderPlan(
           // newer 3.6 tier for shorter tasks until it proves reliable under
           // full-site Lane B response sizes.
           m(MODELS.gemini25Flash, 36_000),
+          // Focused page-completion turns can use this bounded fallback when
+          // the full-size Flash request runs long.
+          m(MODELS.geminiFlashLite, 12_000),
           // GPT-4.1 has a 32k output window without a reasoning phase, making
           // it a better bounded fallback for this large structured response.
           m(MODELS.gpt41, 32_000),
         ],
         // Production Wizard responses commonly exceed 20k output tokens.
-        // Observed successful Gemini generations take 80–90 seconds, so a
-        // 35-second slice deterministically cancels valid funded requests.
+        // Production traces include valid large Wizard generations that run
+        // beyond 95 seconds. Keep this below the provider loop's 135-second
+        // ceiling while allowing funded Gemini requests to finish.
         // Fast failures (auth/429) still fall through to the next provider.
-        perModelTimeoutMs: 95_000,
+        perModelTimeoutMs: 125_000,
         fallbackMaxTokens: 36000,
         preferLongLeadAttempt: true,
       };
@@ -306,8 +318,10 @@ export function buildProviderPlan(
   // these caps are ignored, the server keeps producing a 36k/95s response
   // after the browser's shorter isolated-page deadline has already aborted.
   if (overrides) {
+    const isFocusedWizardCompletion =
+      task.type === "wizard_seed_generation" && (overrides.maxTokens ?? Infinity) <= 12_000;
     if (
-      task.type !== "wizard_seed_generation"
+      (task.type !== "wizard_seed_generation" || isFocusedWizardCompletion)
       && overrides.autoModelSelection === false
       && overrides.selectedModelId
     ) {
@@ -329,21 +343,37 @@ export function buildProviderPlan(
         maxTokens: Math.min(model.maxTokens, overrides.maxTokens!),
       }));
       plan.fallbackMaxTokens = Math.min(plan.fallbackMaxTokens, overrides.maxTokens);
+      if (task.type === "wizard_seed_generation" && overrides.maxTokens <= 12_000) {
+        plan.preferLongLeadAttempt = false;
+        plan.balancedProviderAttempts = true;
+      }
     }
   }
 
-  // Explicit user model selections always win. Wizard generation always leads
-  // with configured Gemini: it is the long-output provider selected for this
-  // contract, while OpenAI remains a quick-failure fallback only. Other tasks
-  // use the stable weighted split.
+  // Explicit user model selections always win. A funded Gemini Wizard is a
+  // long-output, single-provider contract: an exhausted OpenAI fallback can
+  // only consume the tail of the launch deadline after Gemini has timed out.
+  // Other tasks retain the stable weighted provider split.
   const hasExplicitModel = overrides?.autoModelSelection === false && Boolean(overrides.selectedModelId);
+  const wizardGeminiConfigured = task.type === "wizard_seed_generation"
+    && Boolean(readEnv('GEMINI_API_KEY') || readEnv('GOOGLE_API_KEY') || readEnv('UNISONGEMINI_API_KEY'));
   if (!hasExplicitModel) {
-    const wizardGeminiConfigured = task.type === "wizard_seed_generation"
-      && Boolean(readEnv('GEMINI_API_KEY') || readEnv('GOOGLE_API_KEY') || readEnv('UNISONGEMINI_API_KEY'));
     plan.primaryProvider = wizardGeminiConfigured
       ? 'gemini'
       : selectPrimaryProvider(routingKey, readEnv);
     plan.gatewayModels = prioritizeProviderModels(plan.gatewayModels, plan.primaryProvider);
+  }
+
+  if (wizardGeminiConfigured) {
+    plan.gatewayModels = plan.gatewayModels.filter((model) => providerForModel(model.id) === 'gemini');
+    plan.primaryProvider = plan.gatewayModels.length > 0 ? 'gemini' : undefined;
+  }
+
+  // OpenAI and managed fallbacks are intentionally opt-in while only Gemini
+  // is funded. Setting AI_PROVIDER_MODE=hybrid re-enables the existing chain.
+  if (isGeminiExclusiveProviderMode(readEnv)) {
+    plan.gatewayModels = plan.gatewayModels.filter((model) => providerForModel(model.id) === 'gemini');
+    plan.primaryProvider = plan.gatewayModels.length > 0 ? 'gemini' : undefined;
   }
 
   return plan;

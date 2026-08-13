@@ -19,12 +19,6 @@
  *      so the durable revision chain — not sessionStorage — becomes the
  *      contract that ties launcher → builder → AI panel → publish.
  *
- * Feature flag: `VITE_USE_COMMIT_SERVICE`. When unset/false, callers that
- * have been migrated fall back to their pre-existing direct paths to avoid
- * a big-bang regression. The lint rule in
- * `scripts/lint-pipeline-bypass.mjs` enforces that, once a writer migrates,
- * it cannot regress to a direct canonical-pipeline call.
- *
  * See: mem://architecture/site-os/vfs-commit-service
  */
 
@@ -36,6 +30,7 @@ import {
   type CommitSource as CanonicalCommitSource,
 } from '@/platform/core/commitToPipeline';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
+import type { RuntimeManifest } from '@/platform/core/runtimeManifest';
 import type { PlaygroundState } from '@/platform/core/playground';
 import type { CompiledContract } from '@/platform/core/contractCompiler';
 import type { ThemeTokens } from '@/sections/types';
@@ -84,6 +79,7 @@ export interface CommitMutationInput {
     vfsFiles: Record<string, string>;
     playground?: PlaygroundState;
     siteBundleSnapshot?: unknown;
+    activePagePath?: string;
   };
   patch: PatchPlan;
   options?: {
@@ -118,8 +114,8 @@ export interface CommitMutationResult {
   source: PatchSource;
   identity: BuilderIdentity;
   vfsFiles: Record<string, string>;
-  siteBundleSnapshot: unknown;
-  runtimeManifest: unknown;
+  siteBundleSnapshot: SiteBundleSnapshot | null;
+  runtimeManifest: RuntimeManifest | null;
   playground: PlaygroundState | null;
   readinessReport: Record<string, unknown>;
   diagnostics: CommitDiagnostic[];
@@ -209,18 +205,6 @@ function sanitizePreviewArtifacts(contents: string): string {
   return sanitized.replace(/\n{3,}/g, '\n\n');
 }
 
-/**
- * Returns true if the feature flag enables the commit service.
- * Defaults to ON now that Moves 1–6 are wired end-to-end; set
- * `VITE_USE_COMMIT_SERVICE=false` to opt out for debugging.
- */
-export function isCommitServiceEnabled(): boolean {
-  const v = (import.meta as { env?: Record<string, string | undefined> }).env
-    ?.VITE_USE_COMMIT_SERVICE;
-  if (v === 'false' || v === '0') return false;
-  return true;
-}
-
 // ----------------------------------------------------------------------------
 // commitMutation — the only legal writer
 // ----------------------------------------------------------------------------
@@ -289,7 +273,7 @@ export async function commitMutation(
       input,
       status: 'rejected',
       vfsFiles: workingFiles,
-      siteBundleSnapshot: input.current.siteBundleSnapshot ?? null,
+      siteBundleSnapshot: null,
       runtimeManifest: null,
       playground: input.current.playground ?? null,
       readinessReport: {},
@@ -321,7 +305,11 @@ export async function commitMutation(
   snapshotForPersistence = stampBusinessSystemState(
     snapshotForPersistence as SiteBundleSnapshot | null,
     presentationSnapshot,
-    input.patch.businessSystem,
+    input.patch.businessSystem ?? (
+      input.source === 'wizard-launch'
+        ? buildWizardBusinessSystemState(files)
+        : undefined
+    ),
   );
 
   const requirePreview = input.options?.requirePreviewPass !== false;
@@ -784,6 +772,27 @@ function readWizardEnabledCapabilities(files: Record<string, string>): Capabilit
   }
 }
 
+function buildWizardBusinessSystemState(files: Record<string, string>): BusinessSystemState | undefined {
+  const capabilities = readWizardEnabledCapabilities(files);
+  if (capabilities.length === 0) return undefined;
+  const approvedAt = new Date().toISOString();
+  return {
+    version: '1.0',
+    requestedCapabilities: Array.from(new Set(
+      capabilities.flatMap((capability) => CAPABILITY_REGISTRY[capability].provides),
+    )),
+    capabilities: capabilities.map((capability) => ({
+      id: capability,
+      provides: [...CAPABILITY_REGISTRY[capability].provides],
+      status: 'approved',
+      approval: {
+        approvedBy: 'wizard-launch',
+        approvedAt,
+      },
+    })),
+  };
+}
+
 async function reconcileGeneratedRuntime(input: {
   identity: BuilderIdentity;
   files: Record<string, string>;
@@ -851,8 +860,8 @@ async function finalize(args: {
   input: CommitMutationInput;
   status: 'committed' | 'rejected';
   vfsFiles: Record<string, string>;
-  siteBundleSnapshot: unknown;
-  runtimeManifest: unknown;
+  siteBundleSnapshot: SiteBundleSnapshot | null;
+  runtimeManifest: RuntimeManifest | null;
   playground: PlaygroundState | null;
   readinessReport: Record<string, unknown>;
   publishReady: boolean;
@@ -884,65 +893,37 @@ async function finalize(args: {
   const dryRun = input.options?.dryRun === true;
 
   if (!dryRun) {
-    try {
-      const row = {
-        project_id: input.identity.projectId,
-        business_id: input.identity.businessId,
-        draft_id: input.identity.draftId,
-        parent_revision_id: parentRevisionId,
-        source: input.source,
-        status,
-        patch_json: input.patch as unknown as Record<string, unknown>,
-        vfs_files: vfsFiles as unknown as Record<string, unknown>,
-        site_bundle_snapshot: (siteBundleSnapshot ?? {}) as Record<string, unknown>,
-        runtime_manifest: (runtimeManifest ?? {}) as Record<string, unknown>,
-        playground_state: (playground ?? {}) as unknown as Record<string, unknown>,
-        readiness_report: readinessReport,
-        diagnostics: diagnostics as unknown as Record<string, unknown>[],
-        publish_ready: publishReady,
-        publish_blockers: publishBlockers as unknown as Record<string, unknown>[],
-        backend_ops_applied: backendOpsApplied as unknown as Record<string, unknown>[],
-        vfs_hash: vfsHash,
-        created_by: input.identity.userId,
-      };
-      const { data, error } = await supabase
-        .from('site_revisions')
-        .insert(row)
-        .select('id')
-        .single();
-      if (error) {
-        diagnostics.push({
-          stage: 'persist',
-          level: 'warn',
-          message: 'failed to persist site_revisions row',
-          detail: error.message,
-        });
-      } else if (data) {
-        persistedRevisionId = (data as { id: string }).id;
-        if (status === 'committed') {
-          const { error: projectionError } = await (supabase
-            .from('builder_drafts') as any)
-            .update({ last_revision_id: persistedRevisionId })
-            .eq('id', input.identity.draftId)
-            .eq('user_id', input.identity.userId);
-          if (projectionError) {
-            diagnostics.push({
-              stage: 'draftProjection',
-              level: 'warn',
-              message: 'failed to advance builder draft revision projection',
-              detail: projectionError.message,
-            });
-          }
-        }
-      }
-    } catch (err) {
+    const { data, error } = await (supabase.rpc as any)('commit_canonical_site_revision', {
+      p_project_id: input.identity.projectId,
+      p_business_id: input.identity.businessId,
+      p_draft_id: input.identity.draftId,
+      p_parent_revision_id: parentRevisionId,
+      p_source: input.source,
+      p_status: status,
+      p_patch_json: input.patch,
+      p_vfs_files: vfsFiles,
+      p_site_bundle_snapshot: siteBundleSnapshot ?? {},
+      p_runtime_manifest: runtimeManifest ?? {},
+      p_playground_state: playground ?? {},
+      p_readiness_report: readinessReport,
+      p_diagnostics: diagnostics,
+      p_publish_ready: publishReady,
+      p_publish_blockers: publishBlockers,
+      p_backend_ops_applied: backendOpsApplied,
+      p_vfs_hash: vfsHash,
+      p_active_page_path: input.current.activePagePath ?? null,
+    });
+    if (error || typeof data !== 'string' || !data) {
+      const detail = error?.message || 'atomic commit returned no revision id';
       diagnostics.push({
         stage: 'persist',
-        level: 'warn',
-        message: 'persist threw',
-        detail: String(err),
+        level: 'error',
+        message: 'canonical revision transaction failed',
+        detail,
       });
+      throw new Error(`[VFSCommitService] canonical revision transaction failed: ${detail}`);
     }
+    persistedRevisionId = data;
 
     // Move F #1 — fire-and-forget commit telemetry. Never block on failure.
     try {
@@ -1061,6 +1042,40 @@ export async function loadLatestRevisionForProject(
     .maybeSingle();
   if (error || !data) return null;
   return mapRevisionRow(data as Record<string, unknown>);
+}
+
+/** Load only the committed revision selected by the durable draft projection. */
+export async function loadProjectedRevisionForDraft(
+  projectId: string,
+  draftId: string,
+): Promise<LoadedRevision> {
+  const { data: draft, error: draftError } = await (supabase
+    .from('builder_drafts') as any)
+    .select('last_revision_id')
+    .eq('id', draftId)
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (draftError) throw draftError;
+  if (!draft) {
+    throw new Error(`[VFSCommitService] canonical draft ${draftId} was not found for project ${projectId}`);
+  }
+  if (typeof draft.last_revision_id !== 'string' || !draft.last_revision_id) {
+    throw new Error(`[VFSCommitService] canonical draft ${draftId} has no committed revision projection`);
+  }
+
+  const { data: revision, error: revisionError } = await supabase
+    .from('site_revisions')
+    .select('*')
+    .eq('id', draft.last_revision_id)
+    .eq('project_id', projectId)
+    .eq('draft_id', draftId)
+    .eq('status', 'committed')
+    .maybeSingle();
+  if (revisionError) throw revisionError;
+  if (!revision) {
+    throw new Error(`[VFSCommitService] draft ${draftId} points to an invalid committed revision`);
+  }
+  return mapRevisionRow(revision as Record<string, unknown>);
 }
 
 /**

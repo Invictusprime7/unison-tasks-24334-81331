@@ -1,22 +1,4 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
-import type { PlannedSectionDataBinding } from '@/services/autoEmitSectionBindings';
-import type { PlannedFormDefinition } from '@/services/launchFormDefinitions';
-import type { GeneratedSiteRuntimeManifest } from '@/services/generatedSiteRuntimeManifest';
-import { assertGeneratedUiFoundationPersistence } from '@/platform/core/generatedUiFoundation';
-
-export const REQUIRED_SITE_CAPABILITIES = [
-  'business_profile',
-  'forms.contact',
-  'crm.leads',
-  'analytics.events',
-  'catalog.products',
-  'booking',
-  'cms.content',
-  'customer.accounts',
-  'payments',
-  'automations',
-] as const;
 
 export interface ConfirmedLaunchIds {
   businessId: string;
@@ -37,16 +19,6 @@ export interface ConfirmedLaunchProvisionInput {
   systemType: string;
   templateId?: string | null;
   themePresetId: string;
-  code: string;
-  vfsFiles: Record<string, string>;
-  siteBundleSnapshot: Record<string, unknown>;
-  runtimeManifest: Record<string, unknown>;
-  generatedSiteRuntimeManifest: GeneratedSiteRuntimeManifest;
-  wizardSelections: Record<string, unknown>;
-  businessRuntime: BusinessRuntimeContract;
-  dataBindings: PlannedSectionDataBinding[];
-  formDefinitions?: PlannedFormDefinition[];
-  capabilities?: readonly string[];
 }
 
 export function createConfirmedLaunchIds(existingBusinessId?: string | null): ConfirmedLaunchIds {
@@ -64,11 +36,7 @@ export async function provisionConfirmedLaunchSite(
   input: ConfirmedLaunchProvisionInput,
 ): Promise<ConfirmedLaunchIds> {
   const { data, error } = await supabase.functions.invoke('provision-launch-site', {
-    body: {
-      ...input,
-      formDefinitions: input.formDefinitions ?? [],
-      capabilities: input.capabilities ?? REQUIRED_SITE_CAPABILITIES,
-    },
+    body: input,
   });
   if (error) throw new Error(error.message || 'Unable to provision the confirmed site launch.');
 
@@ -77,25 +45,31 @@ export async function provisionConfirmedLaunchSite(
     throw new Error('Confirmed launch provisioning returned an incomplete site identity.');
   }
 
-  // Durability gate: a launch is only real once the generated VFS is readable
-  // back out of `builder_drafts`. Without this check a silently-rolled-back
-  // transaction produces a project that paints an empty preview canvas.
+  // Provisioning owns identity only. Any site content present before the
+  // platform-core commit would create a competing source of truth.
   const { data: draftRow, error: verifyError } = await supabase
     .from('builder_drafts')
-    .select('id, vfs_files')
+    .select('id, project_id, business_id, site_id, last_revision_id, vfs_files, metadata')
     .eq('id', result.draftId)
     .maybeSingle();
   if (verifyError) {
     throw new Error(`Launch persisted but could not be verified: ${verifyError.message}`);
   }
-  const persistedFiles = (draftRow?.vfs_files ?? {}) as Record<string, unknown>;
-  if (!draftRow || Object.keys(persistedFiles).length === 0) {
-    throw new Error('Launch did not persist the generated site files. Nothing was saved — please retry.');
+  if (!draftRow
+    || draftRow.project_id !== result.projectId
+    || draftRow.business_id !== result.businessId
+    || draftRow.site_id !== result.siteId) {
+    throw new Error('Confirmed launch shell identity could not be verified.');
   }
-  assertGeneratedUiFoundationPersistence(
-    persistedFiles as Record<string, string>,
-    'confirmed launch builder_drafts read-back',
-  );
-
+  const persistedFiles = (draftRow.vfs_files ?? {}) as Record<string, unknown>;
+  const persistedMetadata = draftRow.metadata && typeof draftRow.metadata === 'object'
+    ? draftRow.metadata as Record<string, unknown>
+    : {};
+  if (draftRow.last_revision_id !== null
+    || Object.keys(persistedFiles).length > 0
+    || persistedMetadata.siteBundleSnapshot !== undefined
+    || persistedMetadata.runtimeManifest !== undefined) {
+    throw new Error('Confirmed launch shell contains content outside the canonical commit pipeline.');
+  }
   return result as ConfirmedLaunchIds;
 }

@@ -5,7 +5,13 @@ import { applySandpackRuntimeShims, prepareSandpackFiles } from '@/utils/sandpac
 import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
-import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
+import {
+  assertNoMinimalFallbackPreview,
+  assertSnapshotPreviewFileCoverage,
+  assertSnapshotPreviewRouteReachability,
+  projectSnapshotVfsFiles,
+  resolveSnapshot,
+} from '@/services/snapshotProjector';
 
 export interface PreviewArtifactsOptions {
   sourceFiles: Record<string, string>;
@@ -96,6 +102,11 @@ export function buildPreviewArtifacts(
   // /.unison metadata files. Preserve the authoritative pre-projection
   // classification so wizard previews still receive their runtime contract.
   const isWizardPreview = initialResolution.isWizardDraft || wizardResolution.isWizardDraft;
+  const finalPreviewResolution = wizardResolution.snapshot
+    ? wizardResolution
+    : initialResolution.snapshot
+      ? initialResolution
+      : wizardResolution;
   assertNoMinimalFallbackPreview(stampedFiles, wizardResolution, 'Preview artifact gate');
 
 
@@ -128,6 +139,10 @@ export function buildPreviewArtifacts(
       }
     }
   }
+
+  assertNoMinimalFallbackPreview(sandpackFiles, finalPreviewResolution, 'Preview artifact integrity gate');
+  assertSnapshotPreviewFileCoverage(sourceFiles, sandpackFiles, finalPreviewResolution, 'Preview artifact coverage gate');
+  assertSnapshotPreviewRouteReachability(sandpackFiles, finalPreviewResolution, 'Preview artifact route gate');
 
   // Resolve dependencies from Sandpack's actual entry graph. Snapshot-owned
   // VFS facades may expose many optional libraries, but an unreferenced

@@ -39,6 +39,27 @@ function getAdminClient(): ReturnType<typeof createClient> {
 }
 
 /**
+ * Verify user JWTs with the public client and the request's bearer token.
+ * `getClaims()` supports the backend signing-key system and verifies the JWT
+ * locally against the project's published keys. Using the admin client's
+ * legacy `getUser(token)` path here can reject otherwise-valid signing-key
+ * sessions during key migrations or runtime credential drift.
+ */
+function getClaimsClient(authHeader: string): ReturnType<typeof createClient> {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_ANON_KEY");
+
+  if (!url || !key) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY");
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: authHeader } },
+  });
+}
+
+/**
  * Extract and verify the Bearer JWT from the Authorization header.
  * Returns the authenticated user or an error.
  * 
@@ -56,18 +77,19 @@ export async function verifyAuth(req: Request): Promise<AuthResult> {
   const token = authHeader.replace("Bearer ", "");
 
   try {
-    const admin = getAdminClient();
-    const { data: { user }, error } = await admin.auth.getUser(token);
+    const authClient = getClaimsClient(authHeader);
+    const { data, error } = await authClient.auth.getClaims(token);
+    const claims = data?.claims;
 
-    if (error || !user) {
+    if (error || !claims?.sub) {
       return { user: null, error: "Invalid or expired token", status: 401 };
     }
 
     return {
       user: {
-        id: user.id,
-        email: user.email || "",
-        role: user.role || "authenticated",
+        id: claims.sub,
+        email: typeof claims.email === "string" ? claims.email : "",
+        role: typeof claims.role === "string" ? claims.role : "authenticated",
       },
       error: null,
       status: 200,

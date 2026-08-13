@@ -78,10 +78,21 @@ export async function verifyAuth(req: Request): Promise<AuthResult> {
 
   try {
     const authClient = getClaimsClient(authHeader);
-    const { data, error } = await authClient.auth.getClaims(token);
-    const claims = data?.claims;
+    // Some edge-runtime bundles still resolve a supabase-js build without
+    // getClaims(). Feature-detect it so those deployments continue through
+    // the server-validated getUser() path instead of throwing a false 503/401.
+    const claimsVerifier = (authClient.auth as unknown as {
+      getClaims?: (jwt: string) => Promise<{
+        data: { claims?: Record<string, unknown> } | null;
+        error: unknown;
+      }>;
+    }).getClaims;
+    const claimsResult = typeof claimsVerifier === "function"
+      ? await claimsVerifier.call(authClient.auth, token)
+      : null;
+    const claims = claimsResult?.data?.claims;
 
-    if (!error && claims?.sub) {
+    if (!claimsResult?.error && typeof claims?.sub === "string") {
       return {
         user: {
           id: claims.sub,

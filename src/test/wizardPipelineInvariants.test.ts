@@ -272,7 +272,8 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('Required industry behaviors/intents: ${requiredIntents}');
     expect(launcherSource).toContain('Forbidden industry intents: ${(behaviorContract?.forbidden || [])');
     expect(launcherSource).toContain('acceptCompletedWizardPage(missingPath');
-    expect(launcherSource).toContain('{ isolatedPage: true }');
+    expect(launcherSource).toContain('isolatedPage: true,');
+    expect(launcherSource).toContain('pageRoles: { [normalizedPath]: findRegisteredPageRole(siteBundleSnapshot, normalizedPath) }');
     expect(launcherSource).toContain('Completed wizard page contains residual visual literals after token normalization');
     expect(launcherSource).not.toContain('Page contains hardcoded visual colors instead of Stage 4b theme tokens');
     expect(launcherSource).toContain('allowCanonicalPageFallback: false');
@@ -413,16 +414,54 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('Your previous response omitted or under-generated the following selected wizard pages.');
   });
 
-  it('retains malformed isolated pages for a parser-guided repair attempt', () => {
+  it('routes every non-Home page structural check through one role-aware contract, not a flat footer-inclusive count', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
       'utf8',
     );
 
-    expect(launcherSource).toContain('rejectedPageCandidates[normalizedPath] = candidate;');
+    // Single shared helper — no second, independent flat/minimum-3 check remains.
+    expect(launcherSource).toContain('function assessNonHomeWizardPageStructure(');
+    expect(launcherSource).toContain('assessWizardPageRoleQuality(content, role)');
+    expect(launcherSource.match(/assessNonHomeWizardPageStructure\(content, role\)/g) || []).toHaveLength(2);
+    expect(launcherSource).not.toMatch(/isHomePage \? expectedSections : 3/);
+    expect(launcherSource).not.toMatch(/\? homeMinimum : 3/);
+
+    // Role data flows from the canonical pageRegistry into every completion prompt.
+    expect(launcherSource).toContain('assessWizardPageRoleQuality,');
+    expect(launcherSource).toContain('getWizardPageRoleInstruction,');
+    expect(launcherSource).toContain('} from "@/services/wizardPageQuality";');
+    expect(launcherSource).toContain('function findRegisteredPageRole(');
+    expect(launcherSource).toContain('pageRoles?: Record<string, string | undefined>');
+    expect(launcherSource).toContain('registeredPages: ReadonlyArray<{ path: string; role?: string }>');
+    expect(launcherSource).toContain('getWizardPageRoleInstruction(p.pageType)');
+    expect(launcherSource).toContain('getWizardPageRoleInstruction(page?.pageType)');
+  });
+
+  it('regenerates malformed isolated pages without feeding invalid TSX back to the model', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    expect(launcherSource).toContain('delete rejectedPageCandidates[normalizedPath];');
+    expect(launcherSource).toContain('!isSyntaxCompletionFailure(previousFailure)');
     expect(launcherSource).toContain('PATH REPAIR REQUIRED: the files object must contain exactly the key');
-    expect(launcherSource).toContain('SYNTAX REPAIR REQUIRED: return balanced JSX/TSX');
+    expect(launcherSource).toContain('SYNTAX REPAIR REQUIRED: regenerate cleanly from the Wizard context.');
     expect(launcherSource).toContain('Do not use JavaScript regular-expression literals in this page.');
+  });
+
+  it('repairs missing isolated-page intent wiring with the canonical industry profile', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    expect(launcherSource).toContain('selectIndustryIntentForIsolatedPage(resolvedIndustry, pageRole)');
+    expect(launcherSource).toContain('autoRepairMissingIntents(');
+    expect(launcherSource).toContain('[selectedPageIntent],');
+    expect(launcherSource).toContain('Accepted after canonical industry intent repair:');
+    expect(launcherSource).toContain('INTENT REPAIR REQUIRED: wire a real page action');
   });
 
   it('does not run the interaction planner network round-trip (enrichment layer removed)', () => {

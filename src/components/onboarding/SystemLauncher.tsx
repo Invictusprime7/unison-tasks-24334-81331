@@ -127,7 +127,15 @@ import {
   healKnownGeneratedUiImportMistakes,
   validateGeneratedUiContract,
 } from "@/platform/core/generatedUiFoundation";
-import { countWizardPageSections } from "@/services/wizardPageQuality";
+import {
+  countWizardPageSections,
+  assessWizardPageRoleQuality,
+  getWizardPageRoleInstruction,
+} from "@/services/wizardPageQuality";
+import {
+  isSyntaxCompletionFailure,
+  selectIndustryIntentForIsolatedPage,
+} from "@/services/wizardPageCompletionRecovery";
 import { buildWizardLaneBVfsPayload } from "@/services/wizardLaneBVfsPayload";
 import { loadBusinessProfile } from '@/services/businessProfileService';
 import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
@@ -702,7 +710,7 @@ function buildWizardAiSeedPrompt(opts: {
     `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
     `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
     `VISUAL EXECUTION CONTRACT: This is an art-directed, image-led selected template, not a generic section stack. Preserve the selected section geometry, use the canonical media treatment in every media-bearing section, give cards deliberate hierarchy and responsive density, and use staged Reveal/Stagger motion where the selected intervention calls for it. Render the chosen layout recipe and visual variants rather than substituting plain centered text, default buttons, or flat grids.`,
-    `GENERATED UI CONTRACT: Prefer snapshot-owned VFS imports over raw packages: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. From @/unison/ui/form-fields, import only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, or FormError. Use Button variants or IconButton for actions, with accessible labels for icon-only controls. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
+    `GENERATED UI CONTRACT: Prefer snapshot-owned VFS imports over raw packages: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. Always include the slash in the @/ alias. From @/unison/ui/form-fields, import only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, or FormError; never import flat @/unison/ui/input, textarea, select, checkbox, or label modules. Use Button variants or IconButton for actions, with accessible labels for icon-only controls. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
     opts.designIntervention
       ? `DESIGN INTERVENTION (LOCKED): Use ${opts.designIntervention.layoutRecipe}; prioritize ${opts.designIntervention.sectionVariants.join(', ')}; use ${opts.designIntervention.motionRecipes.join(', ')} within a ${opts.designIntervention.motionBudget} motion budget; and compose only these interactions: ${opts.designIntervention.interactionRecipes.join(', ')}. ${opts.designIntervention.aiDirective}`
       : '',
@@ -883,6 +891,32 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
   return "Generation failed";
 }
 
+/**
+ * The single structural-completeness check for a non-Home wizard page. Home
+ * keeps its own composition-derived section-order contract below (a
+ * different, non-competing axis — exact section types/order from the
+ * selected Template card). Every other page is judged here, and only here:
+ * no second flat/footer-inclusive minimum exists anywhere else in the
+ * launcher. `countWizardPageSections` counts nav/header/footer as sections,
+ * so a page with 2 real content sections + a footer could clear a flat
+ * minimum of 3 — this is exactly the "2 sections and a footer" inconsistency
+ * reported against the platform pipeline. `assessWizardPageRoleQuality`
+ * counts only body content regions and requires role-defining evidence.
+ */
+function assessNonHomeWizardPageStructure(
+  content: string,
+  role: string | undefined,
+): { ok: boolean; reason?: string } {
+  if (content.trim().length < 1200) {
+    return { ok: false, reason: `is too small (${content.trim().length} chars; minimum 1200)` };
+  }
+  const roleQuality = assessWizardPageRoleQuality(content, role);
+  if (!roleQuality.ok) {
+    return { ok: false, reason: roleQuality.reason };
+  }
+  return { ok: true };
+}
+
 function assessWizardGenerationQuality(
   files: Record<string, string>,
   requiredSections: string[],
@@ -894,7 +928,11 @@ function assessWizardGenerationQuality(
     /** Label for diagnostics (e.g. "salon"). */
     label?: string;
   },
-  options: { isolatedPage?: boolean } = {},
+  options: {
+    isolatedPage?: boolean;
+    /** Path (with or without leading slash) → registered page role/type. */
+    pageRoles?: Record<string, string | undefined>;
+  } = {},
 ): { ok: boolean; reason?: string; totalChars: number; sectionCount: number; intentCount: number } {
   const tsxEntries = Object.entries(files).filter(([path]) => /\.(tsx|jsx)$/.test(path));
   const combined = tsxEntries.map(([, content]) => content).join('\n');
@@ -931,22 +969,35 @@ function assessWizardGenerationQuality(
   }
 
   for (const [path, content] of pageEntries) {
-    const pageSectionCount = countWizardPageSections(content);
     const isHomePage = /\/Home\.(tsx|jsx)$/i.test(path);
-    const minimumSections = isHomePage ? expectedSections : 3;
-    if (content.trim().length < 1200) {
-      return {
-        ok: false,
-        reason: `generated page ${path} is too small (${content.trim().length} chars; minimum 1200)`,
-        totalChars,
-        sectionCount,
-        intentCount,
-      };
+    if (isHomePage) {
+      const pageSectionCount = countWizardPageSections(content);
+      if (content.trim().length < 1200) {
+        return {
+          ok: false,
+          reason: `generated page ${path} is too small (${content.trim().length} chars; minimum 1200)`,
+          totalChars,
+          sectionCount,
+          intentCount,
+        };
+      }
+      if (pageSectionCount < expectedSections) {
+        return {
+          ok: false,
+          reason: `generated page ${path} has too few sections (${pageSectionCount}/${expectedSections})`,
+          totalChars,
+          sectionCount,
+          intentCount,
+        };
+      }
+      continue;
     }
-    if (pageSectionCount < minimumSections) {
+    const role = options.pageRoles?.[path] ?? options.pageRoles?.[path.replace(/^\//, '')];
+    const structure = assessNonHomeWizardPageStructure(content, role);
+    if (!structure.ok) {
       return {
         ok: false,
-        reason: `generated page ${path} has too few sections (${pageSectionCount}/${minimumSections})`,
+        reason: `generated page ${path} ${structure.reason}`,
         totalChars,
         sectionCount,
         intentCount,
@@ -993,30 +1044,55 @@ function assessWizardGenerationQuality(
  * A complete multi-page launch can look healthy in aggregate while one routed
  * page is only a stub. Identify those present-but-under-generated pages so the
  * existing Lane B completion pass can replace them with AI-authored content.
- * This deliberately never fills a page from the canonical scaffold.
+ * This deliberately never fills a page from the canonical scaffold. Routes
+ * through the same `assessNonHomeWizardPageStructure` used by
+ * `assessWizardGenerationQuality` and `acceptCompletedWizardPage` — one
+ * structural contract, not three independent ones.
  */
 function findUnderGeneratedWizardPages(
   files: Record<string, string>,
-  registeredPagePaths: readonly string[],
+  registeredPages: ReadonlyArray<{ path: string; role?: string }>,
   requiredSections: readonly string[],
 ): Array<{ path: string; reason: string }> {
   const homeMinimum = Math.max(3, Math.min(requiredSections.length || 3, 5));
 
-  return registeredPagePaths.flatMap((registeredPath) => {
+  return registeredPages.flatMap(({ path: registeredPath, role }) => {
     const path = registeredPath.startsWith('/') ? registeredPath : `/${registeredPath}`;
     const content = files[path] || files[path.replace(/^\//, '')];
     if (!content?.trim()) return [];
 
-    const semanticSections = countWizardPageSections(content);
-    const minimumSections = /\/Home\.(tsx|jsx)$/i.test(path) ? homeMinimum : 3;
-    if (content.trim().length < 1200) {
-      return [{ path, reason: `too small (${content.trim().length} chars; minimum 1200)` }];
+    if (/\/Home\.(tsx|jsx)$/i.test(path)) {
+      const semanticSections = countWizardPageSections(content);
+      if (content.trim().length < 1200) {
+        return [{ path, reason: `too small (${content.trim().length} chars; minimum 1200)` }];
+      }
+      if (semanticSections < homeMinimum) {
+        return [{ path, reason: `too few sections (${semanticSections}/${homeMinimum})` }];
+      }
+      return [];
     }
-    if (semanticSections < minimumSections) {
-      return [{ path, reason: `too few sections (${semanticSections}/${minimumSections})` }];
-    }
-    return [];
+
+    const structure = assessNonHomeWizardPageStructure(content, role);
+    return structure.ok ? [] : [{ path, reason: structure.reason || 'page failed its role-specific structural contract' }];
   });
+}
+
+/**
+ * Resolves a registered page's canonical role/type from the pageRegistry so
+ * every structural check and completion prompt reads the same source of
+ * truth topology assigned — never a second, independently-guessed role.
+ */
+function findRegisteredPageRole(
+  siteBundleSnapshot: { pageRegistry: { pages: Record<string, unknown> } },
+  path: string,
+): string | undefined {
+  const normalizedTarget = path.startsWith('/') ? path : `/${path}`;
+  const page = Object.values(siteBundleSnapshot.pageRegistry.pages).find((candidate) => {
+    const filePath = (candidate as { filePath?: string }).filePath;
+    if (!filePath) return false;
+    return (filePath.startsWith('/') ? filePath : `/${filePath}`) === normalizedTarget;
+  }) as { pageType?: string; pageRole?: string } | undefined;
+  return page?.pageType || page?.pageRole;
 }
 
 /**
@@ -2725,12 +2801,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       reason: quality.reason || 'Output failed wizard quality contract',
                     }]);
                     console.warn('[SystemLauncher] AI returned minimal/fallback output', quality);
-                    const registeredPagePaths = Object.values(siteBundleSnapshot.pageRegistry.pages)
-                      .map((page) => (page as { filePath?: string }).filePath)
-                      .filter((path): path is string => Boolean(path));
+                    const registeredPages = Object.values(siteBundleSnapshot.pageRegistry.pages)
+                      .map((page) => ({
+                        path: (page as { filePath?: string }).filePath,
+                        role: (page as { pageType?: string; pageRole?: string }).pageType
+                          || (page as { pageType?: string; pageRole?: string }).pageRole,
+                      }))
+                      .filter((page) => Boolean(page.path)) as Array<{ path: string; role?: string }>;
                     const underGeneratedPages = findUnderGeneratedWizardPages(
                       sanitized.files,
-                      registeredPagePaths,
+                      registeredPages,
                       composition.sections.map((section) => section.type),
                     );
                     if (underGeneratedPages.length > 0 && !aiError) {
@@ -2882,7 +2962,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         });
         const syntaxReport = syntax.reports[0];
         if (!syntaxReport || syntaxReport.status === 'quarantined') {
-          rejectedPageCandidates[normalizedPath] = candidate;
+          // Do not feed invalid TSX back through currentCode/vfsFiles. The
+          // model otherwise copies the same malformed expression and fails at
+          // the identical parser location on the final attempt.
+          delete rejectedPageCandidates[normalizedPath];
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
             attempt,
@@ -2897,7 +2980,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           [normalizedPath]: repairedCandidate,
         });
         const importHeal = healKnownGeneratedUiImportMistakes(tokenNormalized.files);
-        const normalizedCandidate = importHeal.files[normalizedPath];
+        let normalizedCandidate = importHeal.files[normalizedPath];
         const pageUiContract = validateGeneratedUiContract(
           { [normalizedPath]: normalizedCandidate },
           generatedUiFoundation?.primitiveImports?.length
@@ -2926,11 +3009,33 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           });
         }
 
+        const pageRole = findRegisteredPageRole(siteBundleSnapshot, normalizedPath);
+        const selectedPageIntent = selectIndustryIntentForIsolatedPage(resolvedIndustry, pageRole);
+        let injectedPageIntents: string[] = [];
+        if (!/data-ut-intent\s*=/.test(normalizedCandidate) && selectedPageIntent) {
+          const intentRepair = autoRepairMissingIntents(
+            { [normalizedPath]: normalizedCandidate },
+            [selectedPageIntent],
+          );
+          normalizedCandidate = intentRepair.files[normalizedPath];
+          injectedPageIntents = intentRepair.injected;
+          if (injectedPageIntents.length > 0) {
+            console.info('[SystemLauncher] Repaired isolated page intent wiring', {
+              path: normalizedPath,
+              pageRole,
+              injected: injectedPageIntents,
+            });
+          }
+        }
+
         const quality = assessWizardGenerationQuality(
           { [normalizedPath]: normalizedCandidate },
           composition.sections.map((section) => section.type),
           undefined,
-          { isolatedPage: true },
+          {
+            isolatedPage: true,
+            pageRoles: { [normalizedPath]: pageRole },
+          },
         );
         if (!quality.ok) {
           rejectedPageCandidates[normalizedPath] = normalizedCandidate;
@@ -2969,7 +3074,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           accepted: true,
           reason: syntaxReport.status === 'repaired'
             ? `Accepted after syntax repair: ${(syntaxReport.passes || []).join(', ')}`
-            : 'Accepted',
+            : injectedPageIntents.length > 0
+              ? `Accepted after canonical industry intent repair: ${injectedPageIntents.join(', ')}`
+              : 'Accepted',
         });
         return true;
       };
@@ -2990,7 +3097,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           .map((page) => {
             const p = page as { filePath?: string; title?: string; path?: string; pageType?: string };
             const fp = (p.filePath || '').startsWith('/') ? p.filePath! : `/${p.filePath}`;
-            return `  • ${p.title || fp} → ${fp}  [route ${p.path || '/'}${p.pageType ? `, type ${p.pageType}` : ''}]`;
+            const roleInstruction = getWizardPageRoleInstruction(p.pageType);
+            return `  • ${p.title || fp} → ${fp}  [route ${p.path || '/'}${p.pageType ? `, type ${p.pageType}` : ''}]`
+              + (roleInstruction ? `\n    Structural requirement: ${roleInstruction}` : '');
           })
           .join('\n');
         const retryPrompt = [
@@ -3105,6 +3214,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           const previousFailure = [...laneBCompletionDiagnostics]
             .reverse()
             .find((diagnostic) => diagnostic.path === missingPath && !diagnostic.accepted)?.reason;
+          const pageIntent = selectIndustryIntentForIsolatedPage(resolvedIndustry, page?.pageType);
           const isolatedWizardSeed = {
             ...wizardSeed,
             canonical: {
@@ -3125,6 +3235,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             `Page title: ${page?.title || 'Page'}`,
             `Route: ${page?.path || '/'}`,
             `Page type/role: ${page?.pageType || 'generic'}`,
+            getWizardPageRoleInstruction(page?.pageType)
+              ? `Structural requirement for this role: ${getWizardPageRoleInstruction(page?.pageType)}`
+              : '',
             `Selected template ID: ${wizardSelections.templateId}`,
             `Selected theme preset ID: ${wizardSelections.themePresetId}`,
             `Wizard seed ID: ${wizardSelections.wizardSeedId}`,
@@ -3138,20 +3251,30 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               ? `PATH REPAIR REQUIRED: the files object must contain exactly the key "${missingPath}".`
               : '',
             previousFailure && /Unterminated regular expression|Unexpected token|expected ["']?[})\]]/i.test(previousFailure)
-              ? 'SYNTAX REPAIR REQUIRED: return balanced JSX/TSX with every tag, brace, parenthesis, quote, and template literal closed. Do not use JavaScript regular-expression literals in this page.'
+              ? 'SYNTAX REPAIR REQUIRED: regenerate cleanly from the Wizard context. Return balanced JSX/TSX with every tag, brace, parenthesis, quote, and template literal closed. Do not copy malformed source and do not use JavaScript regular-expression literals in this page.'
+              : '',
+            previousFailure && /imports unapproved UI module|imports unsupported module/i.test(previousFailure)
+              ? `IMPORT REPAIR REQUIRED: ${previousFailure}. Replace it with an approved "@/unison/ui" sub-path (Radix primitives live at "@/unison/ui/radix/<primitive>") or a plain HTML/React equivalent — do not import from "next" or any other framework.`
+              : '',
+            previousFailure?.includes('no canonical data-ut-intent wiring') && pageIntent
+              ? `INTENT REPAIR REQUIRED: wire a real page action with data-ut-intent="${pageIntent}".`
               : '',
             '',
             'Return ONLY this file in the WizardSeed multi-file JSON contract.',
-            'The page must contain at least 3 complete semantic sections and 1200+ characters of real copy.',
-            'The validator must count at least 3 literal sectioning regions: use <section>, <article>, or <aside> elements rather than only nested <div> blocks.',
-            previousFailure?.includes('too few sections')
-              ? `STRUCTURAL REPAIR REQUIRED: ${previousFailure}. Add distinct literal sectioning elements until the page count is at least 3.`
+            'This is a Vite + React Router project, not Next.js/Remix/Gatsby: never import from "next", "next/image", "next/link", or "next/router"; use plain <img> for images.',
+            'Only import UI primitives from "@/unison/ui" and its documented sub-paths, always including the slash in the @/ alias. Import Input, Textarea, Select, Checkbox, Label, and related form controls from "@/unison/ui/form-fields" or the "@/unison/ui" root; never from flat input/textarea/select/checkbox/label modules. Radix-derived primitives (accordion, dialog, aspect-ratio, tabs, tooltip, etc.) live at "@/unison/ui/radix/<primitive>", never at the flat "@/unison/ui/<primitive>" path.',
+            'The page must contain at least 4 complete body content regions (not counting nav/header/footer) and 1200+ characters of real copy.',
+            'Use <section>, <article>, or <aside> elements for each body content region rather than only nested <div> blocks.',
+            (previousFailure?.includes('too few sections') || previousFailure?.includes('too few body content regions'))
+              ? `STRUCTURAL REPAIR REQUIRED: ${previousFailure}. Add distinct literal sectioning elements (excluding nav/header/footer) until the body content region count is sufficient.`
               : '',
             rejectedCandidate
               ? 'Preserve all valid existing sections and behavior; add or repair only what the validation failure requires.'
               : '',
             'Use only semantic theme classes backed by the supplied Stage 4b HSL tokens.',
-            'Include working data-ut-intent behavior appropriate to this page role.',
+            pageIntent
+              ? `Include working data-ut-intent="${pageIntent}" behavior appropriate to this page role and industry.`
+              : 'Include working data-ut-intent behavior appropriate to this page role.',
             'Do not emit App.tsx, shared chrome, placeholder copy, quarantine UI, or a preset scaffold.',
             rejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
           ].join('\n');
@@ -3169,7 +3292,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               (signal) => runBuilderTurn<any>({
                 messages: [{ role: 'user', content: pageCompletionPrompt }],
                 mode: 'wizard-seed',
-                currentCode: rejectedCandidate || '',
+                currentCode: rejectedCandidate && !isSyntaxCompletionFailure(previousFailure)
+                  ? rejectedCandidate
+                  : '',
                 editMode: false,
                 templateName: effectiveTemplate?.label || system.name,
                 aesthetic: resolvedPreset.id,
@@ -3187,7 +3312,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   template_intents: blueprint.template_intents,
                 },
                 userDesignProfile: laneBDesignProfile,
-                vfsFiles: rejectedCandidate ? { [missingPath]: rejectedCandidate } : undefined,
+                vfsFiles: rejectedCandidate && !isSyntaxCompletionFailure(previousFailure)
+                  ? { [missingPath]: rejectedCandidate }
+                  : undefined,
                 recentChangedFiles: [missingPath],
                 gatewayOptions: {
                   ...WIZARD_LANE_B_GATEWAY_OPTIONS,

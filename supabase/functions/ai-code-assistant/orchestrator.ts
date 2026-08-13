@@ -86,7 +86,16 @@ OUTPUT RULES:
 - Do not use markdown fences or prose.
 - Do not author /src/App.tsx, /src/main.tsx, config files, or package files.
 - Emit complete React/TypeScript page/section files using semantic Tailwind tokens.
-- Preserve the canonical routes and data-ut-intent contract from the WizardSeed.`;
+- Preserve the canonical routes and data-ut-intent contract from the WizardSeed.
+
+RUNTIME + IMPORT CONTRACT (HARD):
+- This project is a Vite + React Router single-page app. It is NOT Next.js, Remix, or Gatsby.
+- Never import from "next", "next/image", "next/link", "next/router", "next/head", "gatsby", or any framework other than "react", "react-dom", and "react-router-dom".
+- Use only "@/unison/ui" and its documented sub-paths for UI primitives: "@/unison/ui/button", "@/unison/ui/card", "@/unison/ui/icons", "@/unison/ui/media", "@/unison/ui/motion", "@/unison/ui/animation", "@/unison/ui/navigation", "@/unison/ui/recipes", "@/unison/ui/styles", "@/unison/ui/form-fields", "@/unison/ui/forms", "@/unison/ui/zod".
+- Always include the slash in the "@/" alias. Import Input, Textarea, Select, Checkbox, Label, and related form controls from "@/unison/ui/form-fields" or "@/unison/ui"; never from flat input/textarea/select/checkbox/label modules.
+- Radix-derived primitives (accordion, alert-dialog, aspect-ratio, avatar, checkbox, collapsible, context-menu, dialog, dropdown-menu, hover-card, label, menubar, navigation-menu, popover, progress, radio-group, scroll-area, select, separator, slider, slot, switch, tabs, toast, toggle, toggle-group, tooltip) live ONLY at "@/unison/ui/radix/<primitive>" — never at the flat "@/unison/ui/<primitive>" path.
+- Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally.
+- Use plain <img> for images, not a framework-specific Image component.`;
 }
 
 function buildWizardInteractionBasePrompt(): string {

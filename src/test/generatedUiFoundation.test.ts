@@ -285,6 +285,38 @@ describe('generated UI foundation', () => {
     expect(acceptedAfter).toEqual({ valid: true, violations: [] });
   });
 
+  it('heals the production Contact alias and flat form-control import failures', () => {
+    const hallucinated = {
+      '/src/pages/Contact.tsx': `import { z } from '@unison/ui/zod';\nimport { Input } from '@/unison/ui/input';\nimport { Textarea as MessageField } from '@/unison/ui/textarea';\nimport { Select } from '@/unison/ui/select';\nimport { Checkbox } from '@/unison/ui/checkbox';\nimport { Label as ContactLabel } from '@/unison/ui/label';\nexport default function Contact(){ const schema = z.string(); return <form><ContactLabel>Email</ContactLabel><Input aria-label={schema.parse('Email')} /><MessageField aria-label="Message" /><Select aria-label="Topic" /><Checkbox aria-label="Consent" /></form>; }`,
+    };
+
+    const rejectedBefore = validateGeneratedUiContract(hallucinated, foundation.manifest);
+    expect(rejectedBefore.valid).toBe(false);
+    expect(rejectedBefore.violations.join(' ')).toContain('unsupported module "@unison/ui/zod"');
+    expect(rejectedBefore.violations.join(' ')).toContain('unapproved UI module "@/unison/ui/input"');
+    expect(rejectedBefore.violations.join(' ')).toContain('unapproved UI module "@/unison/ui/textarea"');
+
+    const healed = healKnownGeneratedUiImportMistakes(hallucinated);
+    expect(healed.healed).toEqual(['/src/pages/Contact.tsx']);
+    expect(healed.files['/src/pages/Contact.tsx']).toContain("from '@/unison/ui/zod'");
+    expect(healed.files['/src/pages/Contact.tsx']).toContain("import { Input } from '@/unison/ui/form-fields'");
+    expect(healed.files['/src/pages/Contact.tsx']).toContain("import { Textarea as MessageField } from '@/unison/ui/form-fields'");
+    expect(healed.files['/src/pages/Contact.tsx']).toContain("import { Select } from '@/unison/ui/form-fields'");
+    expect(healed.files['/src/pages/Contact.tsx']).toContain("import { Checkbox } from '@/unison/ui/form-fields'");
+    expect(healed.files['/src/pages/Contact.tsx']).toContain("import { Label as ContactLabel } from '@/unison/ui/form-fields'");
+
+    const acceptedAfter = validateGeneratedUiContract(healed.files, foundation.manifest);
+    expect(acceptedAfter).toEqual({ valid: true, violations: [] });
+  });
+
+  it('does not rewrite ambiguous flat Radix or shadcn-style imports into incompatible exports', () => {
+    const source = `import { Accordion, AccordionItem } from '@/unison/ui/accordion';\nexport default function Faq(){ return <Accordion><AccordionItem /></Accordion>; }`;
+    const healed = healKnownGeneratedUiImportMistakes({ '/src/pages/Faq.tsx': source });
+
+    expect(healed).toEqual({ files: { '/src/pages/Faq.tsx': source }, healed: [] });
+    expect(validateGeneratedUiContract(healed.files, foundation.manifest).valid).toBe(false);
+  });
+
   it('does not strip a binding import from the global Tailwind stylesheet', () => {
     const source = `import styles from '@/unison/ui/tailwind.css';\nexport default function About(){ return <main>{String(styles)}</main>; }`;
     const healed = healKnownGeneratedUiImportMistakes({ '/src/pages/About.tsx': source });

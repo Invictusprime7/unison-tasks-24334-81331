@@ -137,7 +137,7 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
     'Prefer manifest-backed @/unison/ui imports; supported Sandpack UI packages are also available.',
     'Use semantic Stage 4b Tailwind tokens; do not overwrite /src/index.css.',
     'Use @/unison/ui/icons for Lucide icons and provide accessible labels for icon-only actions.',
-    'Use manifest-backed form formats: FormGrid/FormFields, FormField, Input, Textarea, Select, Checkbox, FieldLabel, FormHint, and FormError.',
+    'Import FormGrid/FormFields, FormField, Input, Textarea, Select, Checkbox, FieldLabel, FormHint, and FormError from @/unison/ui/form-fields or @/unison/ui; never invent flat input/textarea/select/checkbox/label modules.',
     'Use Button variants or IconButton for actions; icon-only actions require an accessible label.',
     'Use responsive Tailwind variants and preserve data-ut-intent attributes on actionable controls.',
     'For @/unison/ui/motion, use only Reveal, RevealGroup, Stagger, StaggerItem, and MotionRecipe.',
@@ -713,6 +713,19 @@ export function assertGeneratedUiFoundationPersistence(
 const KNOWN_IMPORT_MISTAKE_REDIRECTS: ReadonlyArray<{ from: string; to: string }> = [
   { from: '@/unison/lib/utils', to: '@/unison/ui' },
 ];
+const KNOWN_NAMED_IMPORT_REDIRECTS: ReadonlyArray<{
+  from: string;
+  to: string;
+  exports: readonly string[];
+}> = [
+  { from: '@/unison/ui/input', to: '@/unison/ui/form-fields', exports: ['Input', 'TextInput'] },
+  { from: '@/unison/ui/text-input', to: '@/unison/ui/form-fields', exports: ['Input', 'TextInput'] },
+  { from: '@/unison/ui/textarea', to: '@/unison/ui/form-fields', exports: ['Textarea', 'TextArea'] },
+  { from: '@/unison/ui/text-area', to: '@/unison/ui/form-fields', exports: ['Textarea', 'TextArea'] },
+  { from: '@/unison/ui/select', to: '@/unison/ui/form-fields', exports: ['Select'] },
+  { from: '@/unison/ui/checkbox', to: '@/unison/ui/form-fields', exports: ['Checkbox'] },
+  { from: '@/unison/ui/label', to: '@/unison/ui/form-fields', exports: ['FieldLabel', 'Label', 'FormLabel'] },
+];
 const KNOWN_PAGE_LEVEL_IMPORTS_TO_STRIP: readonly string[] = [
   '@/unison/ui/tailwind',
   '@/unison/ui/tailwind.css',
@@ -724,6 +737,35 @@ function redirectImportSpecifier(source: string, from: string, to: string): stri
     new RegExp(`(\\bfrom\\s*['"])${escaped}(['"])`, 'g'),
     `$1${to}$2`,
   );
+}
+
+function canonicalizeUnisonAliasPrefix(source: string): string {
+  return source.replace(
+    /(\b(?:from|import)\s*['"])@unison\//g,
+    '$1@/unison/',
+  );
+}
+
+function redirectKnownNamedImport(
+  source: string,
+  redirect: (typeof KNOWN_NAMED_IMPORT_REDIRECTS)[number],
+): string {
+  const escaped = redirect.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const allowedExports = new Set(redirect.exports);
+  const namedImport = new RegExp(
+    `(\\bimport\\s+(?:type\\s+)?\\{)([^}]+)(\\}\\s+from\\s*['"])${escaped}(['"])`,
+    'g',
+  );
+  return source.replace(namedImport, (full, prefix: string, bindings: string, suffix: string, quote: string) => {
+    const importedNames = bindings
+      .split(',')
+      .map((binding) => binding.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0].trim())
+      .filter(Boolean);
+    if (importedNames.length === 0 || importedNames.some((name) => !allowedExports.has(name))) {
+      return full;
+    }
+    return `${prefix}${bindings}${suffix}${redirect.to}${quote}`;
+  });
 }
 
 function stripImportsForSpecifier(source: string, specifier: string): string {
@@ -748,9 +790,12 @@ export function healKnownGeneratedUiImportMistakes(
   for (const [path, source] of Object.entries(files)) {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     if (!/\.(tsx|jsx)$/i.test(path) || normalizedPath.startsWith('/src/unison/ui/')) continue;
-    let updated = source;
+    let updated = canonicalizeUnisonAliasPrefix(source);
     for (const { from, to } of KNOWN_IMPORT_MISTAKE_REDIRECTS) {
       if (updated.includes(from)) updated = redirectImportSpecifier(updated, from, to);
+    }
+    for (const redirect of KNOWN_NAMED_IMPORT_REDIRECTS) {
+      if (updated.includes(redirect.from)) updated = redirectKnownNamedImport(updated, redirect);
     }
     for (const specifier of KNOWN_PAGE_LEVEL_IMPORTS_TO_STRIP) {
       if (updated.includes(specifier)) updated = stripImportsForSpecifier(updated, specifier);

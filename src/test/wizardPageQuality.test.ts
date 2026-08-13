@@ -113,3 +113,22 @@ describe('assessWizardPageRoleQuality', () => {
     expect(assessWizardPageRoleQuality(about, 'about').ok).toBe(true);
   });
 });
+
+describe('consolidated non-Home structural gate (regression for the flat footer-inclusive count)', () => {
+  it('a page with 2 content sections + a footer clears the old flat count(>=3) but fails the role-aware gate', () => {
+    const twoSectionsAndAFooter = `
+      <section className="hero">Welcome</section>
+      <section className="cta">Book now</section>
+      <footer>Copyright</footer>
+    `;
+
+    // The previously-wired flat check counted the footer as a "section",
+    // so 2 real sections + 1 footer = 3, clearing a flat minimum of 3.
+    expect(countWizardPageSections(twoSectionsAndAFooter)).toBe(3);
+
+    // The consolidated gate excludes chrome and requires role evidence,
+    // so the same markup is correctly rejected as under-generated.
+    const result = assessWizardPageRoleQuality(twoSectionsAndAFooter, 'services');
+    expect(result.ok).toBe(false);
+  });
+});

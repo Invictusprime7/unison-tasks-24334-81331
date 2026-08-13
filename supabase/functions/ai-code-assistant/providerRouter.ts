@@ -159,6 +159,7 @@ function applyComplexityUpgrade(
     const advancedTokens = Math.min(baseMaxTokens + 8000, 48000);
     const advancedModels: ModelSpec[] = [
       m(MODELS.geminiFlash, advancedTokens),
+      m(MODELS.gpt41, advancedTokens),
       m(MODELS.gpt4oMini, advancedTokens),
       m(MODELS.gpt4o, advancedTokens),
     ];
@@ -242,6 +243,7 @@ export function buildProviderPlan(
         gatewayModels: [
           m(MODELS.geminiFlashLite, 12000),
           m(MODELS.geminiFlash, 12000),
+          m(MODELS.gpt41, 12000),
           m(MODELS.gpt4oMini, 12000),
         ],
         perModelTimeoutMs: 30000,
@@ -253,6 +255,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 24000),
+          m(MODELS.gpt41, 24000),
           m(MODELS.gpt4oMini, 24000),
           m(MODELS.gpt4o, 24000),
         ],
@@ -266,6 +269,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.gpt41, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],
@@ -279,6 +283,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.gpt41, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],
@@ -294,6 +299,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.gpt41, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],

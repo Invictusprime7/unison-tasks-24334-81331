@@ -383,9 +383,20 @@ export function buildProviderPlan(
     plan.gatewayModels = prioritizeProviderModels(plan.gatewayModels, plan.primaryProvider);
   }
 
+  // Gemini leads the Wizard when funded, but OpenAI models stay in the chain as
+  // fallbacks so a Gemini billing 429 does not fail the whole turn.
   if (wizardGeminiConfigured) {
-    plan.gatewayModels = plan.gatewayModels.filter((model) => providerForModel(model.id) === 'gemini');
-    plan.primaryProvider = plan.gatewayModels.length > 0 ? 'gemini' : undefined;
+    const openAiFallbackAvailable = !isGeminiExclusiveProviderMode(readEnv)
+      && Boolean(readEnv('OPENAI_API_KEY'));
+    const geminiModels = plan.gatewayModels.filter((model) => providerForModel(model.id) === 'gemini');
+    const openAiModels = openAiFallbackAvailable
+      ? plan.gatewayModels.filter((model) => providerForModel(model.id) === 'openai')
+      : [];
+    plan.gatewayModels = [...geminiModels, ...openAiModels];
+    if (openAiModels.length > 0) plan.preferLongLeadAttempt = false;
+    plan.primaryProvider = geminiModels.length > 0
+      ? 'gemini'
+      : (openAiModels.length > 0 ? 'openai' : undefined);
   }
 
   // OpenAI and managed fallbacks are intentionally opt-in while only Gemini

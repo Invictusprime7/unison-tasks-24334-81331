@@ -210,14 +210,18 @@ export async function runBuilderTurn<TResponse = any>(
    */
   const getAccessToken = async (forceRefresh = false): Promise<string | null> => {
     const { data: sessionData } = await supabase.auth.getSession();
-    let session = sessionData.session;
+    const session = sessionData.session;
     const expiresAt = (session?.expires_at ?? 0) * 1000;
     if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
       return session.access_token;
     }
-    const { data: refreshed } = await supabase.auth.refreshSession();
-    session = refreshed.session ?? session;
-    return session?.access_token ?? null;
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !refreshed.session) {
+      // Never replay the rejected/expired token. The caller will surface the
+      // sign-in-required state rather than issuing another guaranteed 401.
+      return null;
+    }
+    return refreshed.session.access_token;
   };
 
   const invokeWithSignal = async (

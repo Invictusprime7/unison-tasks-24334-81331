@@ -160,12 +160,35 @@ export interface StructuredWizardFaqPageInput {
   businessName: string;
   industry: string;
   intent: string;
+  content?: StructuredWizardFaqContent;
 }
 
 export interface StructuredWizardFaqPageResult {
   filePath: string;
   source: string;
 }
+
+export interface StructuredWizardFaqContent {
+  presentation: {
+    faqLayout: 'split' | 'stacked';
+    processStyle: 'cards' | 'numbered';
+    emphasis: 'quiet' | 'contrast';
+  };
+  eyebrow: string;
+  title: string;
+  introduction: string;
+  items: Array<{ question: string; answer: string }>;
+  process: Array<{ title: string; detail: string }>;
+  assuranceTitle: string;
+  assurance: string;
+  ctaTitle: string;
+  ctaBody: string;
+  ctaLabel: string;
+}
+
+const FAQ_LAYOUTS = new Set(['split', 'stacked']);
+const FAQ_PROCESS_STYLES = new Set(['cards', 'numbered']);
+const FAQ_EMPHASIS = new Set(['quiet', 'contrast']);
 
 function normalizePageRole(pageRole: string | undefined): string {
   const normalized = (pageRole || '').trim().toLowerCase();
@@ -200,6 +223,105 @@ function assertStructuredFaqInput(input: StructuredWizardFaqPageInput): void {
   }
 }
 
+function parseJsonLike(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const content = (value as { content?: unknown }).content;
+      if (typeof content === 'string') return parseJsonLike(content);
+    }
+    return value;
+  }
+  try {
+    const json = value.trim().replace(/^```json?\s*/i, '').replace(/\s*```$/i, '');
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function boundedString(value: unknown, minimum: number, maximum: number): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized.length >= minimum && normalized.length <= maximum ? normalized : null;
+}
+
+export function parseStructuredWizardFaqContent(
+  value: unknown,
+  requirements: { vocabulary: readonly string[] },
+): StructuredWizardFaqContent | null {
+  const parsed = parseJsonLike(value);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const faq = 'faq' in parsed ? (parsed as { faq?: unknown }).faq : parsed;
+  if (!faq || typeof faq !== 'object' || Array.isArray(faq)) return null;
+  const candidate = faq as Record<string, unknown>;
+  const presentation = candidate.presentation;
+  if (!presentation || typeof presentation !== 'object' || Array.isArray(presentation)) return null;
+  const presentationValues = presentation as Record<string, unknown>;
+  if (
+    typeof presentationValues.faqLayout !== 'string'
+    || !FAQ_LAYOUTS.has(presentationValues.faqLayout)
+    || typeof presentationValues.processStyle !== 'string'
+    || !FAQ_PROCESS_STYLES.has(presentationValues.processStyle)
+    || typeof presentationValues.emphasis !== 'string'
+    || !FAQ_EMPHASIS.has(presentationValues.emphasis)
+  ) return null;
+
+  const eyebrow = boundedString(candidate.eyebrow, 3, 80);
+  const title = boundedString(candidate.title, 10, 160);
+  const introduction = boundedString(candidate.introduction, 100, 700);
+  const assuranceTitle = boundedString(candidate.assuranceTitle, 8, 120);
+  const assurance = boundedString(candidate.assurance, 100, 700);
+  const ctaTitle = boundedString(candidate.ctaTitle, 8, 120);
+  const ctaBody = boundedString(candidate.ctaBody, 80, 500);
+  const ctaLabel = boundedString(candidate.ctaLabel, 3, 60);
+  if (!eyebrow || !title || !introduction || !assuranceTitle || !assurance || !ctaTitle || !ctaBody || !ctaLabel) {
+    return null;
+  }
+
+  if (!Array.isArray(candidate.items) || candidate.items.length < 6 || candidate.items.length > 8) return null;
+  const items = candidate.items.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const question = boundedString((item as { question?: unknown }).question, 10, 180);
+    const answer = boundedString((item as { answer?: unknown }).answer, 100, 700);
+    return question && answer ? { question, answer } : null;
+  });
+  if (items.some((item) => item === null)) return null;
+
+  if (!Array.isArray(candidate.process) || candidate.process.length !== 3) return null;
+  const process = candidate.process.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const stepTitle = boundedString((item as { title?: unknown }).title, 3, 80);
+    const detail = boundedString((item as { detail?: unknown }).detail, 80, 500);
+    return stepTitle && detail ? { title: stepTitle, detail } : null;
+  });
+  if (process.some((item) => item === null)) return null;
+
+  const content = {
+    presentation: {
+      faqLayout: presentationValues.faqLayout as StructuredWizardFaqContent['presentation']['faqLayout'],
+      processStyle: presentationValues.processStyle as StructuredWizardFaqContent['presentation']['processStyle'],
+      emphasis: presentationValues.emphasis as StructuredWizardFaqContent['presentation']['emphasis'],
+    },
+    eyebrow,
+    title,
+    introduction,
+    items: items as StructuredWizardFaqContent['items'],
+    process: process as StructuredWizardFaqContent['process'],
+    assuranceTitle,
+    assurance,
+    ctaTitle,
+    ctaBody,
+    ctaLabel,
+  };
+  const combined = JSON.stringify(content).toLowerCase();
+  if (combined.length < 1200) return null;
+  if (
+    requirements.vocabulary.length > 0
+    && !requirements.vocabulary.some((term) => combined.includes(term.toLowerCase()))
+  ) return null;
+  return content;
+}
+
 export function compileStructuredWizardFaqPage(
   input: StructuredWizardFaqPageInput,
 ): StructuredWizardFaqPageResult {
@@ -207,8 +329,12 @@ export function compileStructuredWizardFaqPage(
   const filePath = input.filePath.startsWith('/') ? input.filePath : `/${input.filePath}`;
   const businessName = input.businessName.trim();
   const language = FAQ_INDUSTRY_LANGUAGE[normalizeIndustry(input.industry)] || DEFAULT_FAQ_LANGUAGE;
-  const pageData = {
-    businessName,
+  const fallbackContent: StructuredWizardFaqContent = {
+    presentation: {
+      faqLayout: 'split',
+      processStyle: 'cards',
+      emphasis: 'quiet',
+    },
     eyebrow: 'Questions and guidance',
     title: `Answers from ${businessName}`,
     introduction: `Explore practical answers about ${language.offering}. These details explain what to expect, how to prepare, and how to choose ${language.decision}.`,
@@ -239,9 +365,9 @@ export function compileStructuredWizardFaqPage(
       },
     ],
     process: [
-      { step: '01', title: 'Share your needs', detail: `Tell ${businessName} what you are trying to accomplish and when you would like to begin.` },
-      { step: '02', title: 'Review the recommendation', detail: `Receive guidance on ${language.decision}, including expectations and the next decision.` },
-      { step: '03', title: 'Confirm the next step', detail: 'Approve the recommended direction only after timing, responsibilities, and important details are clear.' },
+      { title: 'Share your needs', detail: `Tell ${businessName} what you are trying to accomplish and when you would like to begin.` },
+      { title: 'Review the recommendation', detail: `Receive guidance on ${language.decision}, including expectations and the next decision.` },
+      { title: 'Confirm the next step', detail: 'Approve the recommended direction only after timing, responsibilities, and important details are clear.' },
     ],
     assuranceTitle: 'Clarity before commitment',
     assurance: `${businessName} uses ${language.vocabulary.join(', ')}, and direct communication to keep expectations visible. If your question is not covered here, send it with your request and the team will answer it directly.`,
@@ -249,6 +375,16 @@ export function compileStructuredWizardFaqPage(
     ctaBody: `Tell ${businessName} what you need help with. A focused request makes it easier to provide an accurate, useful response.`,
     ctaLabel: 'Ask the team',
   };
+  const pageData = input.content || fallbackContent;
+  const faqLayoutClass = pageData.presentation.faqLayout === 'stacked'
+    ? 'mx-auto grid w-full max-w-4xl gap-10 px-6 sm:px-8'
+    : 'mx-auto grid w-full max-w-6xl gap-10 px-6 sm:px-8 lg:grid-cols-[0.7fr_1.3fr]';
+  const processItemClass = pageData.presentation.processStyle === 'numbered'
+    ? 'border-l-2 border-primary/40 py-2 pl-6'
+    : 'rounded-[var(--radius)] border border-border bg-card p-6 text-card-foreground';
+  const assuranceClass = pageData.presentation.emphasis === 'contrast'
+    ? 'rounded-[var(--radius)] border border-primary/30 bg-primary/10 p-8 text-card-foreground sm:p-10'
+    : 'rounded-[var(--radius)] border border-border bg-card p-8 text-card-foreground sm:p-10';
   const serializedPageData = JSON.stringify(pageData, null, 2);
   const componentName = componentNameFromFilePath(filePath);
   const source = `const page = ${serializedPageData} as const;
@@ -264,8 +400,8 @@ export default function ${componentName}() {
         </div>
       </section>
 
-      <section data-ut-section="faq" className="py-20 sm:py-24">
-        <div className="mx-auto grid w-full max-w-6xl gap-10 px-6 sm:px-8 lg:grid-cols-[0.7fr_1.3fr]">
+      <section data-ut-section="faq" data-faq-layout="${pageData.presentation.faqLayout}" className="py-20 sm:py-24">
+        <div className="${faqLayoutClass}">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-primary">Frequently asked</p>
             <h2 className="mt-3 text-3xl font-semibold">Useful details, without the runaround</h2>
@@ -291,9 +427,9 @@ export default function ${componentName}() {
           <p className="text-sm font-semibold uppercase tracking-wide text-primary">What happens next</p>
           <h2 className="mt-3 max-w-2xl text-3xl font-semibold">A simple path from question to confident decision</h2>
           <div className="mt-10 grid gap-5 md:grid-cols-3">
-            {page.process.map((item) => (
-              <article key={item.step} className="rounded-[var(--radius)] border border-border bg-card p-6 text-card-foreground">
-                <p className="text-sm font-semibold text-primary">{item.step}</p>
+            {page.process.map((item, index) => (
+              <article key={item.title} className="${processItemClass}">
+                <p className="text-sm font-semibold text-primary">{String(index + 1).padStart(2, '0')}</p>
                 <h3 className="mt-4 text-xl font-semibold">{item.title}</h3>
                 <p className="mt-3 leading-7 text-muted-foreground">{item.detail}</p>
               </article>
@@ -304,7 +440,7 @@ export default function ${componentName}() {
 
       <aside data-ut-section="assurance" className="py-16">
         <div className="mx-auto w-full max-w-4xl px-6 sm:px-8">
-          <div className="rounded-[var(--radius)] border border-border bg-card p-8 text-card-foreground sm:p-10">
+          <div className="${assuranceClass}">
             <h2 className="text-2xl font-semibold">{page.assuranceTitle}</h2>
             <p className="mt-4 leading-7 text-muted-foreground">{page.assurance}</p>
           </div>

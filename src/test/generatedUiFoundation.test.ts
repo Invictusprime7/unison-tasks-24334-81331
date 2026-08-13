@@ -376,6 +376,19 @@ describe('generated UI foundation', () => {
     expect(acceptedAfter).toEqual({ valid: true, violations: [] });
   });
 
+  it('splits mixed raw animation and curated recipe imports across the correct facades', () => {
+    const source = `import { motion, Reveal, AnimatePresence as Presence, type MotionRecipe } from '@/unison/ui/motion';\nexport default function Services(){ return <Reveal><motion.div /></Reveal>; }`;
+    const healed = healKnownGeneratedUiImportMistakes({ '/src/pages/Services.tsx': source });
+    const healedSource = healed.files['/src/pages/Services.tsx'];
+
+    expect(healedSource).toContain("import { motion, AnimatePresence as Presence } from '@/unison/ui/animation'");
+    expect(healedSource).toContain("import { Reveal, type MotionRecipe } from '@/unison/ui/motion'");
+    expect(validateGeneratedUiContract(
+      { '/src/pages/Services.tsx': healedSource },
+      { importRoot: '@/unison/ui', primitiveImports: ['@/unison/ui/motion', '@/unison/ui/animation'] },
+    ).valid).toBe(true);
+  });
+
   it('does not touch a valid mixed @/unison/ui/motion import of only curated recipe exports', () => {
     const source = `import { Reveal, Stagger } from '@/unison/ui/motion';\nexport default function Gallery(){ return <Reveal><Stagger>ok</Stagger></Reveal>; }`;
     const healed = healKnownGeneratedUiImportMistakes({ '/src/pages/Gallery.tsx': source });

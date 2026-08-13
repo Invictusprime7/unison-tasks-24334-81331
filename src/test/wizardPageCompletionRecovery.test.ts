@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compileStructuredWizardFaqPage,
   isSyntaxCompletionFailure,
+  parseStructuredWizardFaqContent,
   selectIndustryIntentForIsolatedPage,
 } from '@/services/wizardPageCompletionRecovery';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
@@ -59,6 +60,62 @@ describe('isolated Wizard page completion recovery', () => {
     expect(compiled.source).toContain('A \\"quoted\\" studio\\nwith context');
     const syntax = runPreflightRepair({ [compiled.filePath]: compiled.source });
     expect(syntax.reports[0]).toMatchObject({ status: 'clean' });
+  });
+
+  it('accepts rich AI FAQ content while keeping presentation choices inside approved enums', () => {
+    const enriched = parseStructuredWizardFaqContent({
+      faq: {
+        presentation: {
+          faqLayout: 'stacked',
+          processStyle: 'numbered',
+          emphasis: 'contrast',
+        },
+        eyebrow: 'Before we build',
+        title: 'Northstar Agency, explained clearly',
+        introduction: 'A practical guide to our strategy engagements, proposal process, delivery rhythm, and the decisions clients make before a project begins.',
+        items: Array.from({ length: 6 }, (_, index) => ({
+          question: `How does agency strategy question ${index + 1} work?`,
+          answer: `Our consultation starts with business context and turns it into a focused proposal. This detailed answer explains responsibilities, timing, collaboration, review points, and the decision a client can expect before strategy work begins. Item ${index + 1}.`,
+        })),
+        process: [
+          { title: 'Discover', detail: 'We review the business, audience, constraints, current performance, and the outcome the engagement must support.' },
+          { title: 'Shape', detail: 'We translate the consultation into a strategy proposal with scope, responsibilities, timing, and review points.' },
+          { title: 'Begin', detail: 'The client confirms the direction after deliverables, communication, dependencies, and measures of progress are understood.' },
+        ],
+        assuranceTitle: 'A proposal with no hidden edges',
+        assurance: 'Every recommendation connects to the consultation and strategy goals. The team explains assumptions, dependencies, and choices before the engagement is approved.',
+        ctaTitle: 'Bring us the difficult question',
+        ctaBody: 'Share the business context, audience, current challenge, and decision you need to make. Northstar Agency will respond with the most useful next step.',
+        ctaLabel: 'Start a consultation',
+      },
+    }, { vocabulary: ['agency', 'strategy', 'proposal', 'consultation'] });
+
+    expect(enriched?.presentation).toEqual({
+      faqLayout: 'stacked',
+      processStyle: 'numbered',
+      emphasis: 'contrast',
+    });
+    const compiled = compileStructuredWizardFaqPage({
+      filePath: '/src/pages/Faq.tsx',
+      businessName: 'Northstar Agency',
+      industry: 'agency',
+      intent: 'lead.capture',
+      content: enriched || undefined,
+    });
+    expect(compiled.source).toContain('Bring us the difficult question');
+    expect(compiled.source).toContain('data-faq-layout="stacked"');
+    expect(runPreflightRepair({ [compiled.filePath]: compiled.source }).reports[0].status).toBe('clean');
+  });
+
+  it('rejects malformed, shallow, or industry-disconnected AI FAQ content', () => {
+    expect(parseStructuredWizardFaqContent('{"faq":', { vocabulary: ['strategy'] })).toBeNull();
+    expect(parseStructuredWizardFaqContent({
+      faq: {
+        presentation: { faqLayout: 'invented', processStyle: 'cards', emphasis: 'quiet' },
+        title: 'Generic questions',
+        items: [],
+      },
+    }, { vocabulary: ['strategy'] })).toBeNull();
   });
 
   it.each([

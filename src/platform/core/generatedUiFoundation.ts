@@ -823,14 +823,26 @@ function redirectKnownNamedImport(
     'g',
   );
   return source.replace(namedImport, (full, prefix: string, bindings: string, suffix: string, quote: string) => {
-    const importedNames = bindings
+    const parsedBindings = bindings
       .split(',')
-      .map((binding) => binding.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0].trim())
-      .filter(Boolean);
-    if (importedNames.length === 0 || importedNames.some((name) => !allowedExports.has(name))) {
-      return full;
-    }
-    return `${prefix}${bindings}${suffix}${redirect.to}${quote}`;
+      .map((binding) => ({
+        source: binding.trim(),
+        importedName: binding.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0].trim(),
+      }))
+      .filter((binding) => Boolean(binding.source && binding.importedName));
+    const redirectedBindings = parsedBindings.filter((binding) => allowedExports.has(binding.importedName));
+    if (redirectedBindings.length === 0) return full;
+
+    const retainedBindings = parsedBindings.filter((binding) => !allowedExports.has(binding.importedName));
+    const redirectedImport = `${prefix} ${redirectedBindings.map((binding) => binding.source).join(', ')} ${suffix}${redirect.to}${quote}`;
+    if (retainedBindings.length === 0) return redirectedImport;
+
+    // A single declaration can mix raw animation exports with curated recipe
+    // exports, e.g. `{ motion, Reveal }`. Move only the known raw exports and
+    // keep the valid Reveal/Stagger names on the recipe facade. Unknown names
+    // deliberately remain for the strict validator to reject.
+    const retainedImport = `${prefix} ${retainedBindings.map((binding) => binding.source).join(', ')} ${suffix}${redirect.from}${quote}`;
+    return `${redirectedImport};\n${retainedImport}`;
   });
 }
 

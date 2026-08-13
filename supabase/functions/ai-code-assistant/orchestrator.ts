@@ -109,6 +109,13 @@ Do not return TSX, CSS, imports, files, routes, handlers, selectors outside the 
 You may choose at most 12 interactions. Preserve all template layout, semantic HSL tokens, data-ut-intent attributes, routes, and page topology.`;
 }
 
+function buildWizardContentBasePrompt(): string {
+  return `You are the content planner for a validated System Launcher page.
+Return ONLY raw JSON containing authored content and approved presentation choices. The client compiler owns TSX, routes, imports, theme classes, and behavior.
+Do not return files, source code, JSX, CSS, markdown, prose outside JSON, arbitrary keys, or executable expressions.
+Follow the exact JSON schema and enum values supplied in the user message. Write specific, polished copy grounded in the supplied business and industry context.`;
+}
+
 // ── Main Orchestrator Entry ─────────────────────────────────────────────────
 
 export function runAssistantOrchestrator(
@@ -314,6 +321,8 @@ async function runBuilderLane(
     basePrompt = buildWizardSeedBasePrompt();
   } else if (task.type === 'wizard_interaction_enrichment') {
     basePrompt = buildWizardInteractionBasePrompt();
+  } else if (task.type === 'wizard_content_enrichment') {
+    basePrompt = buildWizardContentBasePrompt();
   } else if (mode === 'template-json' || mode === 'template-html' || mode === 'template-react') {
     const templatePromptText = templateName
       ? `${templateName} ${aesthetic || ''} ${source || ''}`
@@ -461,6 +470,10 @@ async function runBuilderLane(
 
   if (task.type === 'wizard_interaction_enrichment') {
     finalSystemPrompt += '\n\n[WIZARD INTERACTION ENRICHMENT — PLAN ONLY]\nReturn the interaction JSON object only. The client compiler owns all implementation and will reject any unsupported value.';
+  }
+
+  if (task.type === 'wizard_content_enrichment') {
+    finalSystemPrompt += '\n\n[WIZARD CONTENT ENRICHMENT — DATA ONLY]\nReturn the requested content JSON object only. Never return a files envelope or executable source. The client compiler validates every field and owns implementation.';
   }
 
   // Inject parsed intent summary into system prompt for better understanding
@@ -638,6 +651,20 @@ async function runBuilderLane(
   let repairAttempted = false;
   let repairAccepted = false;
   let outcome = runReviewPass(content);
+
+  // A syntactically valid `{ "files": {} }` response (or a response whose
+  // files were all removed by review) still violates the WizardSeed contract.
+  // Treat it exactly like non-JSON/raw output so the same provider turn gets
+  // the existing exact-path contract repair instead of returning an empty
+  // payload that the launcher can only diagnose as an omitted page.
+  if (
+    task.type === 'wizard_seed_generation' &&
+    outcome &&
+    Object.keys(outcome.files).length === 0
+  ) {
+    console.warn('[orchestrator] wizard output contained no approved files — running contract repair');
+    outcome = undefined;
+  }
 
   // A provider can occasionally follow the visual brief but ignore the
   // WizardSeed transport contract and emit one raw TSX/HTML document. The

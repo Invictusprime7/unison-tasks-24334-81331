@@ -202,14 +202,48 @@ export async function runBuilderTurn<TResponse = any>(
 
   const remainingMs = () => deadlineAt - Date.now();
 
-  const invokeWithSignal = async (payload: Record<string, unknown>, signal: AbortSignal) => {
+  /**
+   * Resolve a *user* access token. The edge function verifies the bearer token
+   * with `auth.getUser()`, so an expired token (or the anon key) yields a hard
+   * 401 "Invalid or expired token". Refresh proactively when the session is
+   * within 60s of expiry, and force a refresh after a 401.
+   */
+  const getAccessToken = async (forceRefresh = false): Promise<string | null> => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData.session;
+    const expiresAt = (session?.expires_at ?? 0) * 1000;
+    if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
+      return session.access_token;
+    }
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !refreshed.session) {
+      // Never replay the rejected/expired token. The caller will surface the
+      // sign-in-required state rather than issuing another guaranteed 401.
+      return null;
+    }
+    return refreshed.session.access_token;
+  };
+
+  const invokeWithSignal = async (
+    payload: Record<string, unknown>,
+    signal: AbortSignal,
+    forceRefresh = false,
+  ) => {
     if (!isSupabaseEnvConfigured) {
       throw new Error("Builder backend configuration is unavailable");
     }
     const url = SUPABASE_URL.replace(/\/$/, "");
     const anon = SUPABASE_PUBLISHABLE_KEY;
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token || anon;
+    const token = await getAccessToken(forceRefresh);
+    if (!token) {
+      return {
+        data: null,
+        error: Object.assign(
+          new Error("Your session expired. Please sign in again to continue building."),
+          { context: { status: 401, body: "no-session" } },
+        ),
+      };
+    }
     const response = await fetch(`${url}/functions/v1/ai-code-assistant`, {
       method: "POST",
       headers: {
@@ -233,6 +267,7 @@ export async function runBuilderTurn<TResponse = any>(
       ),
     };
   };
+
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (options.signal?.aborted || remainingMs() <= 0) {
@@ -279,9 +314,20 @@ export async function runBuilderTurn<TResponse = any>(
         () => attemptController.abort(new DOMException("Builder turn deadline exceeded", "TimeoutError")),
         Math.max(1, remainingMs()),
       );
-      const { data, error } = await invokeWithSignal(sentPayload, attemptController.signal);
+      let { data, error } = await invokeWithSignal(sentPayload, attemptController.signal);
+      // Expired JWT: refresh once and replay immediately (does not consume a
+      // transport retry — the edge function never ran the model).
+      if (
+        error &&
+        (error as { context?: { status?: number } }).context?.status === 401 &&
+        !attemptController.signal.aborted
+      ) {
+        console.warn("[builderBrainClient] 401 from edge function — refreshing session and retrying once");
+        ({ data, error } = await invokeWithSignal(sentPayload, attemptController.signal, true));
+      }
       clearTimeout(attemptTimer);
       options.signal?.removeEventListener("abort", onOuterAbort);
+
 
       if (error && isTransportError(error) && attempt < maxAttempts) {
         lastError = error;

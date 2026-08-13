@@ -959,6 +959,14 @@ export function CloudProjects({ userId, businessId: propBusinessId, onProjectSel
   const selectedScopeProject =
     projects.find((project) => project.id === selectedProjectScopeId) || null;
 
+  // Landing on /crm or /dashboard/leads without an explicit project scope must not
+  // strand the user on an empty placeholder — fall back to the first project.
+  useEffect(() => {
+    if (!selectedScopeProject && projects.length > 0) {
+      setSelectedProjectScopeId(projects[0].id);
+    }
+  }, [selectedScopeProject, projects]);
+
   const businessSettingsSnapshot =
     selectedBusiness?.settings && typeof selectedBusiness.settings === 'object' && !Array.isArray(selectedBusiness.settings)
       ? (selectedBusiness.settings as Record<string, any>)

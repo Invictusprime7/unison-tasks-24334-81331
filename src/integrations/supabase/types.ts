@@ -1573,38 +1573,59 @@ export type Database = {
       crm_automations: {
         Row: {
           actions: Json | null
+          business_id: string | null
           conditions: Json | null
           created_at: string | null
           id: string
           is_active: boolean | null
           name: string
+          project_id: string | null
           trigger_event: string
           updated_at: string | null
           user_id: string | null
         }
         Insert: {
           actions?: Json | null
+          business_id?: string | null
           conditions?: Json | null
           created_at?: string | null
           id?: string
           is_active?: boolean | null
           name: string
+          project_id?: string | null
           trigger_event: string
           updated_at?: string | null
           user_id?: string | null
         }
         Update: {
           actions?: Json | null
+          business_id?: string | null
           conditions?: Json | null
           created_at?: string | null
           id?: string
           is_active?: boolean | null
           name?: string
+          project_id?: string | null
           trigger_event?: string
           updated_at?: string | null
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "crm_automations_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_automations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       crm_contacts: {
         Row: {
@@ -3475,7 +3496,6 @@ export type Database = {
       }
       projects: {
         Row: {
-          active_published_revision_id: string | null
           business_id: string | null
           created_at: string | null
           custom_domain: string | null
@@ -3493,7 +3513,6 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          active_published_revision_id?: string | null
           business_id?: string | null
           created_at?: string | null
           custom_domain?: string | null
@@ -3511,7 +3530,6 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          active_published_revision_id?: string | null
           business_id?: string | null
           created_at?: string | null
           custom_domain?: string | null
@@ -3529,13 +3547,6 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "projects_active_published_revision_id_fkey"
-            columns: ["active_published_revision_id"]
-            isOneToOne: false
-            referencedRelation: "site_revisions"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "projects_business_id_fkey"
             columns: ["business_id"]

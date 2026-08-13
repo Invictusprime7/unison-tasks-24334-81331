@@ -46,13 +46,17 @@ export interface ProviderDistribution {
 export function isGeminiExclusiveProviderMode(
   readEnv: EnvReader = (name) => Deno.env.get(name),
 ): boolean {
-  return (readEnv('AI_PROVIDER_MODE') || 'gemini-only').trim().toLowerCase() !== 'hybrid';
+  const mode = (readEnv('AI_PROVIDER_MODE') || 'hybrid').trim().toLowerCase();
+  if (mode === 'hybrid') return false;
+  // Never lock to Gemini when it has no key but OpenAI does.
+  if (!readEnv('GEMINI_API_KEY') && !readEnv('GOOGLE_API_KEY')) return false;
+  return mode === 'gemini-only';
 }
 
 // Gemini is the default direct provider. OpenAI is retained as a fallback
 // but given a small share so a persistent OpenAI 429 storm doesn't eat ~half
 // the wizard generation budget before Gemini is tried.
-const DEFAULT_PROVIDER_DISTRIBUTION: ProviderDistribution = { gemini: 85, openai: 15 };
+const DEFAULT_PROVIDER_DISTRIBUTION: ProviderDistribution = { gemini: 20, openai: 80 };
 
 /** Parses `gemini=50,openai=50` or `gemini:50,openai:50`. */
 export function parseProviderDistribution(raw?: string): ProviderDistribution {
@@ -159,6 +163,7 @@ function applyComplexityUpgrade(
     const advancedTokens = Math.min(baseMaxTokens + 8000, 48000);
     const advancedModels: ModelSpec[] = [
       m(MODELS.geminiFlash, advancedTokens),
+      m(MODELS.gpt41, advancedTokens),
       m(MODELS.gpt4oMini, advancedTokens),
       m(MODELS.gpt4o, advancedTokens),
     ];
@@ -251,6 +256,7 @@ export function buildProviderPlan(
         gatewayModels: [
           m(MODELS.geminiFlashLite, 12000),
           m(MODELS.geminiFlash, 12000),
+          m(MODELS.gpt41, 12000),
           m(MODELS.gpt4oMini, 12000),
         ],
         perModelTimeoutMs: 30000,
@@ -262,6 +268,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 24000),
+          m(MODELS.gpt41, 24000),
           m(MODELS.gpt4oMini, 24000),
           m(MODELS.gpt4o, 24000),
         ],
@@ -275,6 +282,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.gpt41, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],
@@ -288,6 +296,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.gpt41, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],
@@ -303,6 +312,7 @@ export function buildProviderPlan(
       plan = {
         gatewayModels: [
           m(MODELS.geminiFlash, 32000),
+          m(MODELS.gpt41, 32000),
           m(MODELS.gpt4oMini, 32000),
           m(MODELS.gpt4o, 32000),
         ],
@@ -385,9 +395,20 @@ export function buildProviderPlan(
     plan.gatewayModels = prioritizeProviderModels(plan.gatewayModels, plan.primaryProvider);
   }
 
+  // Gemini leads the Wizard when funded, but OpenAI models stay in the chain as
+  // fallbacks so a Gemini billing 429 does not fail the whole turn.
   if (wizardGeminiConfigured) {
-    plan.gatewayModels = plan.gatewayModels.filter((model) => providerForModel(model.id) === 'gemini');
-    plan.primaryProvider = plan.gatewayModels.length > 0 ? 'gemini' : undefined;
+    const openAiFallbackAvailable = !isGeminiExclusiveProviderMode(readEnv)
+      && Boolean(readEnv('OPENAI_API_KEY'));
+    const geminiModels = plan.gatewayModels.filter((model) => providerForModel(model.id) === 'gemini');
+    const openAiModels = openAiFallbackAvailable
+      ? plan.gatewayModels.filter((model) => providerForModel(model.id) === 'openai')
+      : [];
+    plan.gatewayModels = [...geminiModels, ...openAiModels];
+    if (openAiModels.length > 0) plan.preferLongLeadAttempt = false;
+    plan.primaryProvider = geminiModels.length > 0
+      ? 'gemini'
+      : (openAiModels.length > 0 ? 'openai' : undefined);
   }
 
   // OpenAI and managed fallbacks are intentionally opt-in while only Gemini

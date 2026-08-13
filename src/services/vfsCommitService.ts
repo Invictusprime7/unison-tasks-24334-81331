@@ -518,11 +518,13 @@ export async function commitMutation(
       );
     } catch (error) {
       runtimeReconciliationError = error instanceof Error ? error.message : String(error);
-      status = 'rejected';
+      // Reconciliation only exists for launched sites. Projects that have not been
+      // provisioned yet must still be able to save edits — the failure is recorded
+      // as a publish blocker instead of rejecting the author's work.
       log(
         'generatedRuntime',
-        'error',
-        'generated runtime reconciliation rejected the commit',
+        'warn',
+        'generated runtime reconciliation deferred (publish blocked, save preserved)',
         runtimeReconciliationError,
       );
     }

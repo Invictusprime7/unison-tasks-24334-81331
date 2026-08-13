@@ -1631,8 +1631,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     const preselect = LAUNCHER_PRESELECTS[systemId];
     if (preselect) {
       setPrimaryGoal(preselect.primaryGoal);
-      setCustomerNeeds((prev) => uniqueValues([...preselect.customerNeeds, ...prev]));
-      setSelectedPages((prev) => uniqueValues([...preselect.pages, ...prev]));
+      // Replace, not merge: each preselect is already a complete, industry-
+      // sufficient list. Merging with `prev` accumulated every previously
+      // visited industry's pages/needs across back-and-forth navigation,
+      // eventually making every industry show the same superset of pages.
+      setCustomerNeeds(uniqueValues(preselect.customerNeeds));
+      setSelectedPages(uniqueValues(preselect.pages));
       setSelectedTemplate(getDefaultTemplateCardFor(systemId));
     } else {
       setPrimaryGoal(null);

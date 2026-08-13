@@ -535,6 +535,23 @@ describe('wizard pipeline ownership invariants', () => {
     expect(builderSource).toContain('const effectiveThemeTokens =');
     expect(builderSource).toContain('themeTokens: effectiveThemeTokens,');
   });
+
+  it('replaces (not merges) auto-selected pages/needs when a new industry is chosen', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    // Each LAUNCHER_PRESELECTS entry is already a complete, industry-sufficient
+    // list. Merging it with `prev` accumulated every previously visited
+    // industry's pages across back-and-forth wizard navigation, eventually
+    // making every industry show the same superset of pages — this is the
+    // regression this test locks in against.
+    expect(launcherSource).toContain('setCustomerNeeds(uniqueValues(preselect.customerNeeds));');
+    expect(launcherSource).toContain('setSelectedPages(uniqueValues(preselect.pages));');
+    expect(launcherSource).not.toContain('setCustomerNeeds((prev) => uniqueValues([...preselect.customerNeeds, ...prev]));');
+    expect(launcherSource).not.toContain('setSelectedPages((prev) => uniqueValues([...preselect.pages, ...prev]));');
+  });
 });
   const templateId = getCompositionsBySystemType('booking')[0]?.id;
   if (!templateId) throw new Error('Booking composition must be registered');

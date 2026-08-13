@@ -81,15 +81,32 @@ export async function verifyAuth(req: Request): Promise<AuthResult> {
     const { data, error } = await authClient.auth.getClaims(token);
     const claims = data?.claims;
 
-    if (error || !claims?.sub) {
+    if (!error && claims?.sub) {
+      return {
+        user: {
+          id: claims.sub,
+          email: typeof claims.email === "string" ? claims.email : "",
+          role: typeof claims.role === "string" ? claims.role : "authenticated",
+        },
+        error: null,
+        status: 200,
+      };
+    }
+
+    // Legacy HS256 sessions do not have an asymmetric JWKS entry for local
+    // claims verification. Validate those against Auth using the same
+    // request-scoped public client rather than the service-role client.
+    const { data: userData, error: userError } = await authClient.auth.getUser(token);
+    const user = userData.user;
+    if (userError || !user) {
       return { user: null, error: "Invalid or expired token", status: 401 };
     }
 
     return {
       user: {
-        id: claims.sub,
-        email: typeof claims.email === "string" ? claims.email : "",
-        role: typeof claims.role === "string" ? claims.role : "authenticated",
+        id: user.id,
+        email: user.email || "",
+        role: user.role || "authenticated",
       },
       error: null,
       status: 200,

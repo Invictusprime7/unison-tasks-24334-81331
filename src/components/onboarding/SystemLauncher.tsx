@@ -137,6 +137,10 @@ import {
   selectIndustryIntentForIsolatedPage,
 } from "@/services/wizardPageCompletionRecovery";
 import { buildWizardLaneBVfsPayload } from "@/services/wizardLaneBVfsPayload";
+import {
+  buildWizardFirstAttemptContract,
+  scopeWizardSeedToPageFiles,
+} from "@/services/wizardFirstAttemptContract";
 import { loadBusinessProfile } from '@/services/businessProfileService';
 import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
@@ -707,10 +711,10 @@ function buildWizardAiSeedPrompt(opts: {
     customInstructionsPresent ? opts.customInstructionsRaw : ``,
     customInstructionsPresent ? `--- END VERBATIM CUSTOM INSTRUCTIONS ---` : ``,
     ``,
-    `STRUCTURAL CONTRACT: You MUST emit exactly the section types listed above, in that order. Do not add, remove, or reorder sections.`,
+    `HOME STRUCTURAL CONTRACT: /src/pages/Home.tsx MUST emit exactly the section types listed above, in that order. Secondary pages must follow their own registered role contract instead of copying the Home section sequence.`,
     `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
     `VISUAL EXECUTION CONTRACT: This is an art-directed, image-led selected template, not a generic section stack. Preserve the selected section geometry, use the canonical media treatment in every media-bearing section, give cards deliberate hierarchy and responsive density, and use staged Reveal/Stagger motion where the selected intervention calls for it. Render the chosen layout recipe and visual variants rather than substituting plain centered text, default buttons, or flat grids.`,
-    `GENERATED UI CONTRACT: Prefer snapshot-owned VFS imports over raw packages: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. Always include the slash in the @/ alias. From @/unison/ui/form-fields, import only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, or FormError; never import flat @/unison/ui/input, textarea, select, checkbox, or label modules. Use Button variants or IconButton for actions, with accessible labels for icon-only controls. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
+    `GENERATED UI CONTRACT: Use snapshot-owned VFS modules for UI: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. Never import a UI package or application framework outside the supplied snapshot contract. Always include the slash in the @/ alias. From @/unison/ui/form-fields, import only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, or FormError; never import flat @/unison/ui/input, textarea, select, checkbox, or label modules. Use Button variants or IconButton for actions, with accessible labels for icon-only controls. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
     opts.designIntervention
       ? `DESIGN INTERVENTION (LOCKED): Use ${opts.designIntervention.layoutRecipe}; prioritize ${opts.designIntervention.sectionVariants.join(', ')}; use ${opts.designIntervention.motionRecipes.join(', ')} within a ${opts.designIntervention.motionBudget} motion budget; and compose only these interactions: ${opts.designIntervention.interactionRecipes.join(', ')}. ${opts.designIntervention.aiDirective}`
       : '',
@@ -1092,7 +1096,7 @@ function findRegisteredPageRole(
     if (!filePath) return false;
     return (filePath.startsWith('/') ? filePath : `/${filePath}`) === normalizedTarget;
   }) as { pageType?: string; pageRole?: string } | undefined;
-  return page?.pageType || page?.pageRole;
+  return page?.pageRole || page?.pageType;
 }
 
 /**
@@ -2156,6 +2160,26 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         'Use image-led hero and gallery treatments where the canonical composition includes media. Cards, CTAs, navigation, overlays, and forms must visibly use the selected composition variants and responsive interaction patterns.',
       ].join('\n');
       const aiUserPrompt = [baseAiUserPrompt, laneBVisualIntelligence].join('\n\n');
+      const buildFirstAttemptPrompt = (targetPaths: readonly string[]) => {
+        const targets = new Set(targetPaths.map((path) => (path.startsWith('/') ? path : `/${path}`)));
+        const targetPages = canonicalPages.filter((page) => targets.has(
+          page.path.startsWith('/') ? page.path : `/${page.path}`,
+        ));
+        return [
+          aiUserPrompt,
+          buildWizardFirstAttemptContract({
+            pages: targetPages.map((page) => ({
+              path: page.path,
+              title: page.title,
+              role: page.role,
+              route: page.route,
+            })),
+            industry: resolvedIndustry,
+            homeSectionOrder: composition.sections.map((section) => section.type),
+            approvedLocalImports: generatedUiFoundation?.primitiveImports || [],
+          }),
+        ].join('\n\n');
+      };
 
       const wizardSeed = {
         version: '1.0',
@@ -2267,31 +2291,147 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           industry_context: blueprint.industry_context,
         };
 
-        const initialGenerationBudgetMs = takeWizardGenerationBudget(WIZARD_INITIAL_AI_TURN_MS);
-        const result = await withTimeout(
-          (signal) => runBuilderTurn<any>({
-            messages: [{ role: 'user', content: aiUserPrompt }],
-            mode: 'wizard-seed',
-            currentCode: wizardCurrentCode,
-            editMode: false,
-            templateName: effectiveTemplate?.label || system.name,
-            aesthetic: resolvedPreset.id,
-            source: resolvedIndustry,
-            systemType: selectedSystem,
-            systemsBuildContext: slimBlueprint,
-            userDesignProfile: laneBDesignProfile,
-            siteElementsLibraryContext,
-            vfsFiles: wizardVfsPayload,
-            previewSnapshot: wizardPreviewSnapshot,
-            recentChangedFiles: canonicalPages
-              .map((page) => page.path)
-              .filter((path): path is string => Boolean(path)),
-            gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
-            wizardSeed,
-          }, { signal, timeoutMs: initialGenerationBudgetMs - 2_000 }),
-          initialGenerationBudgetMs,
-          `AI generation exceeded the Wizard generation deadline.`,
-        );
+        const initialTargetPaths = canonicalPages
+          .map((page) => page.path)
+          .filter((path): path is string => Boolean(path));
+        const firstAttemptAiUserPrompt = buildFirstAttemptPrompt(initialTargetPaths);
+        const firstAttemptPayloadBytes = measurePayloadBytes({
+          currentCode: wizardCurrentCode,
+          systemsBuildContext: slimBlueprint,
+          userDesignProfile: laneBDesignProfile,
+          siteElementsLibraryContext,
+          vfsFiles: wizardVfsPayload,
+          previewSnapshot: wizardPreviewSnapshot,
+          wizardSeed,
+          prompt: firstAttemptAiUserPrompt,
+        });
+        const firstAttemptBatchPlan = planLaneBBatches({
+          pages: initialTargetPaths,
+          basePayloadBytes: firstAttemptPayloadBytes,
+        });
+        let result: { data: any | null; error: unknown };
+
+        if (firstAttemptBatchPlan.batches.length > 1) {
+          console.info(
+            `[SystemLauncher] Lane B first-pass authoring scoped to ${firstAttemptBatchPlan.batches.length} batch(es) ` +
+              `of up to ${firstAttemptBatchPlan.pagesPerBatch} page(s) (limited by ${firstAttemptBatchPlan.limitedBy}).`,
+          );
+          const mergedFirstAttemptFiles: Record<string, string> = {};
+          let firstAttemptFailure: unknown = null;
+          let completedFirstAttemptBatches = 0;
+          setLaunchStatus(`Generating site… (0/${firstAttemptBatchPlan.batches.length} page groups)`);
+
+          for (
+            let batchOffset = 0;
+            batchOffset < firstAttemptBatchPlan.batches.length;
+            batchOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
+          ) {
+            const batchWave = firstAttemptBatchPlan.batches.slice(
+              batchOffset,
+              batchOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS,
+            );
+            const outcomes = await Promise.all(batchWave.map(async (batch, waveIndex) => {
+              const batchNumber = batchOffset + waveIndex + 1;
+              const batchPrompt = buildFirstAttemptPrompt(batch);
+              try {
+                const batchBudgetMs = takeWizardGenerationBudget(
+                  Math.min(
+                    WIZARD_INITIAL_AI_TURN_MS,
+                    Math.max(45_000, Math.round(firstAttemptBatchPlan.estimatedMsPerBatch * 1.5)),
+                  ),
+                );
+                const batchResult = await withTimeout(
+                  (signal) => runBuilderTurn<any>({
+                    messages: [{ role: 'user', content: batchPrompt }],
+                    mode: 'wizard-seed',
+                    currentCode: wizardCurrentCode,
+                    editMode: false,
+                    templateName: effectiveTemplate?.label || system.name,
+                    aesthetic: resolvedPreset.id,
+                    source: resolvedIndustry,
+                    systemType: selectedSystem,
+                    systemsBuildContext: slimBlueprint,
+                    userDesignProfile: laneBDesignProfile,
+                    siteElementsLibraryContext,
+                    vfsFiles: wizardVfsPayload,
+                    previewSnapshot: wizardPreviewSnapshot,
+                    recentChangedFiles: batch,
+                    gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
+                    wizardSeed: scopeWizardSeedToPageFiles(wizardSeed, batch),
+                  }, { signal, timeoutMs: batchBudgetMs - 2_000 }),
+                  batchBudgetMs,
+                  `Lane B first-pass batch ${batchNumber} exceeded the Wizard generation deadline.`,
+                );
+                if (batchResult.error) return { error: batchResult.error };
+                const { structured: batchStructured } = extractLaneBLauncherPayload(
+                  batchResult.data as Record<string, unknown> | null,
+                  `${brand} ${system.name}`,
+                );
+                if (!batchStructured?.files || Object.keys(batchStructured.files).length === 0) {
+                  return { error: new Error(`Lane B first-pass batch ${batchNumber} returned no structured files.`) };
+                }
+                const requestedPaths = new Set(batch.map((path) => (
+                  path.startsWith('/') ? path : `/${path}`
+                )));
+                const scopedFiles = Object.fromEntries(
+                  Object.entries(batchStructured.files)
+                    .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content] as const)
+                    .filter(([path]) => requestedPaths.has(path)),
+                );
+                if (Object.keys(scopedFiles).length === 0) {
+                  return { error: new Error(`Lane B first-pass batch ${batchNumber} omitted every requested page file.`) };
+                }
+                return { files: scopedFiles };
+              } catch (batchError) {
+                return { error: batchError };
+              }
+            }));
+
+            for (const outcome of outcomes) {
+              completedFirstAttemptBatches += 1;
+              setLaunchStatus(
+                `Generating site… (${completedFirstAttemptBatches}/${firstAttemptBatchPlan.batches.length} page groups)`,
+              );
+              if (outcome.error) {
+                firstAttemptFailure ||= outcome.error;
+                continue;
+              }
+              for (const [path, content] of Object.entries(outcome.files || {})) {
+                if (typeof content === 'string' && content.trim()) {
+                  mergedFirstAttemptFiles[path] = content;
+                }
+              }
+            }
+          }
+
+          result = Object.keys(mergedFirstAttemptFiles).length > 0
+            ? { data: { files: mergedFirstAttemptFiles }, error: null }
+            : { data: null, error: firstAttemptFailure || new Error('Lane B first-pass authoring returned no files.') };
+        } else {
+          const initialGenerationBudgetMs = takeWizardGenerationBudget(WIZARD_INITIAL_AI_TURN_MS);
+          result = await withTimeout(
+            (signal) => runBuilderTurn<any>({
+              messages: [{ role: 'user', content: firstAttemptAiUserPrompt }],
+              mode: 'wizard-seed',
+              currentCode: wizardCurrentCode,
+              editMode: false,
+              templateName: effectiveTemplate?.label || system.name,
+              aesthetic: resolvedPreset.id,
+              source: resolvedIndustry,
+              systemType: selectedSystem,
+              systemsBuildContext: slimBlueprint,
+              userDesignProfile: laneBDesignProfile,
+              siteElementsLibraryContext,
+              vfsFiles: wizardVfsPayload,
+              previewSnapshot: wizardPreviewSnapshot,
+              recentChangedFiles: initialTargetPaths,
+              gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
+              wizardSeed,
+            }, { signal, timeoutMs: initialGenerationBudgetMs - 2_000 }),
+            initialGenerationBudgetMs,
+            `AI generation exceeded the Wizard generation deadline.`,
+          );
+        }
         aiError = result.error;
 
         // ── Recoverable whole-site failure: batched Lane B ───────────────────
@@ -2318,7 +2458,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             vfsFiles: wizardVfsPayload,
             previewSnapshot: wizardPreviewSnapshot,
             wizardSeed,
-            prompt: aiUserPrompt,
+            prompt: firstAttemptAiUserPrompt,
           });
           const batchPlan = planLaneBBatches({
             pages: batchTargets,
@@ -2346,7 +2486,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             // to max(batches) instead.
             const batchOutcomes = await Promise.all(batches.map(async (batch, i) => {
               const batchPrompt = [
-                aiUserPrompt,
+                buildFirstAttemptPrompt(batch),
                 '',
                 '── LANE B BATCH TURN ──',
                 `Generate ONLY these page files in this response: ${batch.join(', ')}.`,
@@ -2374,7 +2514,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     previewSnapshot: wizardPreviewSnapshot,
                     recentChangedFiles: batch,
                     gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
-                    wizardSeed,
+                    wizardSeed: scopeWizardSeedToPageFiles(wizardSeed, batch),
                   }, { signal, timeoutMs: batchBudgetMs - 2_000 }),
                   batchBudgetMs,
                   `Lane B batch ${i + 1} exceeded the remaining Wizard generation deadline.`,
@@ -2388,7 +2528,15 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   batchResult.data as Record<string, unknown> | null,
                   `${brand} ${system.name}`,
                 );
-                return { files: batchStructured?.files || {} };
+                const requestedPaths = new Set(batch.map((path) => (
+                  path.startsWith('/') ? path : `/${path}`
+                )));
+                const scopedFiles = Object.fromEntries(
+                  Object.entries(batchStructured?.files || {})
+                    .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content] as const)
+                    .filter(([path]) => requestedPaths.has(path)),
+                );
+                return { files: scopedFiles };
               } catch (batchThrow) {
                 completedBatches += 1;
                 setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
@@ -3200,6 +3348,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           title?: string;
           path?: string;
           pageType?: string;
+          pageRole?: string;
           filePath?: string;
         } | undefined;
 
@@ -3214,7 +3363,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           const previousFailure = [...laneBCompletionDiagnostics]
             .reverse()
             .find((diagnostic) => diagnostic.path === missingPath && !diagnostic.accepted)?.reason;
-          const pageIntent = selectIndustryIntentForIsolatedPage(resolvedIndustry, page?.pageType);
+          const resolvedPageRole = page?.pageRole || page?.pageType;
+          const pageIntent = selectIndustryIntentForIsolatedPage(resolvedIndustry, resolvedPageRole);
           const isolatedWizardSeed = {
             ...wizardSeed,
             canonical: {
@@ -3234,9 +3384,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               : `Generate exactly one missing selected wizard page: ${missingPath}.`,
             `Page title: ${page?.title || 'Page'}`,
             `Route: ${page?.path || '/'}`,
-            `Page type/role: ${page?.pageType || 'generic'}`,
-            getWizardPageRoleInstruction(page?.pageType)
-              ? `Structural requirement for this role: ${getWizardPageRoleInstruction(page?.pageType)}`
+            `Page type/role: ${resolvedPageRole || 'generic'}`,
+            getWizardPageRoleInstruction(resolvedPageRole)
+              ? `Structural requirement for this role: ${getWizardPageRoleInstruction(resolvedPageRole)}`
               : '',
             `Selected template ID: ${wizardSelections.templateId}`,
             `Selected theme preset ID: ${wizardSelections.themePresetId}`,

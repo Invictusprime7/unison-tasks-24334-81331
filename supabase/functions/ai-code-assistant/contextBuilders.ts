@@ -637,15 +637,16 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   lines.push('4. Every interactive CTA needs a data-ut-intent attribute mapped to the');
   lines.push('   wired intents above (contact.submit, booking.create, lead.capture,');
   lines.push('   newsletter.subscribe, quote.request, cart.checkout, nav.anchor, …).');
-  lines.push('5. Use react, lucide-react, framer-motion, and only the allowed @/unison/ui modules listed above. No other imports.');
+  lines.push('5. External imports are limited to react, react-dom, and react-router-dom. Use the allowed @/unison/ui snapshot facades listed above for icons, motion, forms, schemas, styles, and UI controls. No other imports.');
   lines.push('5a. From @/unison/ui/motion, import only Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe.');
   lines.push('6. Lucide social brand casing: Github, Linkedin, Youtube, Twitter (NOT GitHub/LinkedIn/YouTube/X).');
   lines.push('7. Images: prefer https://images.unsplash.com/photo-... static strings.');
   lines.push('8. Home must implement the full template section order with a minimum of 3-5 substantial sections.');
-  lines.push('9. Every secondary page must have at least 3 purpose-specific sections and 1200+ characters of authored TSX.');
+  lines.push('9. Every secondary page must have at least 4 purpose-specific body regions and 1200+ characters of authored TSX.');
   lines.push('   A title, nav, gallery grid, or footer alone is not a complete page.');
   lines.push('10. Each page should be visually unique while sharing the navbar/footer/theme.');
-  lines.push('11. Use Framer Motion only for purposeful fade/reveal and staggered entrances; every generated page must remain fully usable with reduced motion.');
+  lines.push('11. Use the snapshot motion facade only for purposeful fade/reveal and staggered entrances; every generated page must remain fully usable with reduced motion.');
+  lines.push('12. Before returning JSON, silently verify that every requested file parses independently as TSX and that every import matches this contract.');
   lines.push('═══════════════════════════════════════════════════════════════');
   lines.push('');
 

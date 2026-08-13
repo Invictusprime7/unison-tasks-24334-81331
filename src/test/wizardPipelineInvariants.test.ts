@@ -273,7 +273,8 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('Forbidden industry intents: ${(behaviorContract?.forbidden || [])');
     expect(launcherSource).toContain('acceptCompletedWizardPage(missingPath');
     expect(launcherSource).toContain('isolatedPage: true,');
-    expect(launcherSource).toContain('pageRoles: { [normalizedPath]: findRegisteredPageRole(siteBundleSnapshot, normalizedPath) }');
+    expect(launcherSource).toContain('const pageRole = findRegisteredPageRole(siteBundleSnapshot, normalizedPath);');
+    expect(launcherSource).toContain('pageRoles: { [normalizedPath]: pageRole }');
     expect(launcherSource).toContain('Completed wizard page contains residual visual literals after token normalization');
     expect(launcherSource).not.toContain('Page contains hardcoded visual colors instead of Stage 4b theme tokens');
     expect(launcherSource).toContain('allowCanonicalPageFallback: false');
@@ -435,7 +436,8 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('pageRoles?: Record<string, string | undefined>');
     expect(launcherSource).toContain('registeredPages: ReadonlyArray<{ path: string; role?: string }>');
     expect(launcherSource).toContain('getWizardPageRoleInstruction(p.pageType)');
-    expect(launcherSource).toContain('getWizardPageRoleInstruction(page?.pageType)');
+    expect(launcherSource).toContain('const resolvedPageRole = page?.pageRole || page?.pageType;');
+    expect(launcherSource).toContain('getWizardPageRoleInstruction(resolvedPageRole)');
   });
 
   it('regenerates malformed isolated pages without feeding invalid TSX back to the model', () => {
@@ -448,7 +450,9 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('!isSyntaxCompletionFailure(previousFailure)');
     expect(launcherSource).toContain('PATH REPAIR REQUIRED: the files object must contain exactly the key');
     expect(launcherSource).toContain('SYNTAX REPAIR REQUIRED: regenerate cleanly from the Wizard context.');
-    expect(launcherSource).toContain('Do not use JavaScript regular-expression literals in this page.');
+    expect(launcherSource).toContain(
+      'Do not copy malformed source and do not use JavaScript regular-expression literals in this page.',
+    );
   });
 
   it('repairs missing isolated-page intent wiring with the canonical industry profile', () => {

@@ -90,12 +90,14 @@ OUTPUT RULES:
 
 RUNTIME + IMPORT CONTRACT (HARD):
 - This project is a Vite + React Router single-page app. It is NOT Next.js, Remix, or Gatsby.
-- Never import from "next", "next/image", "next/link", "next/router", "next/head", "gatsby", or any framework other than "react", "react-dom", and "react-router-dom".
+- External imports are limited to "react", "react-dom", and "react-router-dom". Never import from "next", any "next/*" module, "gatsby", "remix", or another application framework.
+- Import icons, motion, schemas, forms, styling helpers, and UI controls only through the supplied "@/unison/ui" snapshot facades rather than raw packages.
 - Use only "@/unison/ui" and its documented sub-paths for UI primitives: "@/unison/ui/button", "@/unison/ui/card", "@/unison/ui/icons", "@/unison/ui/media", "@/unison/ui/motion", "@/unison/ui/animation", "@/unison/ui/navigation", "@/unison/ui/recipes", "@/unison/ui/styles", "@/unison/ui/form-fields", "@/unison/ui/forms", "@/unison/ui/zod".
 - Always include the slash in the "@/" alias. Import Input, Textarea, Select, Checkbox, Label, and related form controls from "@/unison/ui/form-fields" or "@/unison/ui"; never from flat input/textarea/select/checkbox/label modules.
 - Radix-derived primitives (accordion, alert-dialog, aspect-ratio, avatar, checkbox, collapsible, context-menu, dialog, dropdown-menu, hover-card, label, menubar, navigation-menu, popover, progress, radio-group, scroll-area, select, separator, slider, slot, switch, tabs, toast, toggle, toggle-group, tooltip) live ONLY at "@/unison/ui/radix/<primitive>" — never at the flat "@/unison/ui/<primitive>" path.
 - Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally.
-- Use plain <img> for images, not a framework-specific Image component.`;
+- Use plain <img alt="..."> for images, not a framework-specific Image component.
+- Every emitted source string must independently parse as TSX. Balance every JSX tag, brace, bracket, parenthesis, quote, and template literal before returning JSON.`;
 }
 
 function buildWizardInteractionBasePrompt(): string {
@@ -452,7 +454,7 @@ async function runBuilderLane(
   }
 
   if (task.type === 'wizard_seed_generation') {
-    finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, root files, SiteNavbar, or SiteFooter.\nThe deterministic App router renders route-registry-derived shared chrome exactly once around every page. Emit body-only page files and never import or render shared chrome inside them.\nThe Home page must be a complete production landing page with at least 5 semantic sections, real industry-specific copy, and working data-ut-intent attributes.\n`;
+    finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, root files, SiteNavbar, or SiteFooter.\nThe deterministic App router renders route-registry-derived shared chrome exactly once around every page. Emit body-only page files and never import or render shared chrome inside them.\nThe Home page must be a complete production landing page with at least 5 body content regions, real industry-specific copy, and working data-ut-intent attributes.\nEvery secondary page must contain at least 4 purpose-specific body regions and 1200+ characters of authored TSX, matching the launcher quality gate exactly.\nSilently self-check every requested file for parseable TSX, snapshot-approved imports, accessible image alt text, and canonical data-ut-intent wiring before returning JSON.\n`;
   }
 
   if (task.type === 'wizard_interaction_enrichment') {

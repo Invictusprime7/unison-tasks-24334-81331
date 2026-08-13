@@ -46,13 +46,17 @@ export interface ProviderDistribution {
 export function isGeminiExclusiveProviderMode(
   readEnv: EnvReader = (name) => Deno.env.get(name),
 ): boolean {
-  return (readEnv('AI_PROVIDER_MODE') || 'gemini-only').trim().toLowerCase() !== 'hybrid';
+  const mode = (readEnv('AI_PROVIDER_MODE') || 'hybrid').trim().toLowerCase();
+  if (mode === 'hybrid') return false;
+  // Never lock to Gemini when it has no key but OpenAI does.
+  if (!readEnv('GEMINI_API_KEY') && !readEnv('GOOGLE_API_KEY')) return false;
+  return mode === 'gemini-only';
 }
 
 // Gemini is the default direct provider. OpenAI is retained as a fallback
 // but given a small share so a persistent OpenAI 429 storm doesn't eat ~half
 // the wizard generation budget before Gemini is tried.
-const DEFAULT_PROVIDER_DISTRIBUTION: ProviderDistribution = { gemini: 85, openai: 15 };
+const DEFAULT_PROVIDER_DISTRIBUTION: ProviderDistribution = { gemini: 20, openai: 80 };
 
 /** Parses `gemini=50,openai=50` or `gemini:50,openai:50`. */
 export function parseProviderDistribution(raw?: string): ProviderDistribution {

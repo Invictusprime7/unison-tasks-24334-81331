@@ -40,14 +40,16 @@ const bothProviders = (name: string): string | undefined => ({
   AI_PROVIDER_MODE: "hybrid",
 }[name]);
 
-const unfundedOpenAI = (name: string): string | undefined => ({
+// AI_PROVIDER_MODE now defaults to "hybrid"; exclusivity is opt-in.
+const geminiOnlyMode = (name: string): string | undefined => ({
   GEMINI_API_KEY: "gemini-test-key",
   OPENAI_API_KEY: "openai-test-key",
+  AI_PROVIDER_MODE: "gemini-only",
 }[name]);
 
 Deno.test("parses explicit Gemini/OpenAI traffic weights", () => {
   assertEquals(parseProviderDistribution("gemini=70,openai=30"), { gemini: 70, openai: 30 });
-  assertEquals(parseProviderDistribution("invalid"), { gemini: 85, openai: 15 });
+  assertEquals(parseProviderDistribution("invalid"), { gemini: 20, openai: 80 });
 });
 
 Deno.test("honors fixed Gemini and OpenAI distributions", () => {
@@ -114,14 +116,14 @@ Deno.test("uses the only configured text provider", () => {
   assertEquals(plan.primaryProvider, "openai");
 });
 
-Deno.test("uses Gemini exclusively while OpenAI funding is disabled", () => {
+Deno.test("uses Gemini exclusively when AI_PROVIDER_MODE opts out of the OpenAI fallback", () => {
   const plan = buildProviderPlan(
     wizardTask,
     true,
     { timeoutMs: 120_000 },
     "advanced",
     "wizard-route",
-    unfundedOpenAI,
+    geminiOnlyMode,
   );
 
   assertEquals(plan.primaryProvider, "gemini");
@@ -131,7 +133,7 @@ Deno.test("uses Gemini exclusively while OpenAI funding is disabled", () => {
   ]);
 });
 
-Deno.test("uses the funded Gemini Wizard provider without spending time on OpenAI fallback", () => {
+Deno.test("keeps a funded Gemini Wizard leading, with OpenAI retained as a fallback", () => {
   const plan = buildProviderPlan(
     wizardTask,
     true,
@@ -144,9 +146,11 @@ Deno.test("uses the funded Gemini Wizard provider without spending time on OpenA
   assertEquals(plan.gatewayModels.map((model) => model.id), [
     "google/gemini-2.5-flash",
     "google/gemini-2.5-flash-lite",
+    "openai/gpt-4.1",
   ]);
+  assertEquals(plan.primaryProvider, "gemini");
   assertEquals(plan.perModelTimeoutMs, 125_000);
-  assertEquals(plan.preferLongLeadAttempt, true);
+  assertEquals(plan.preferLongLeadAttempt, false);
 });
 
 Deno.test("gives focused Wizard page completion one model with its full budget, no fallback split", () => {

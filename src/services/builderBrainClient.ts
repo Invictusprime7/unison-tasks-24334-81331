@@ -310,9 +310,20 @@ export async function runBuilderTurn<TResponse = any>(
         () => attemptController.abort(new DOMException("Builder turn deadline exceeded", "TimeoutError")),
         Math.max(1, remainingMs()),
       );
-      const { data, error } = await invokeWithSignal(sentPayload, attemptController.signal);
+      let { data, error } = await invokeWithSignal(sentPayload, attemptController.signal);
+      // Expired JWT: refresh once and replay immediately (does not consume a
+      // transport retry — the edge function never ran the model).
+      if (
+        error &&
+        (error as { context?: { status?: number } }).context?.status === 401 &&
+        !attemptController.signal.aborted
+      ) {
+        console.warn("[builderBrainClient] 401 from edge function — refreshing session and retrying once");
+        ({ data, error } = await invokeWithSignal(sentPayload, attemptController.signal, true));
+      }
       clearTimeout(attemptTimer);
       options.signal?.removeEventListener("abort", onOuterAbort);
+
 
       if (error && isTransportError(error) && attempt < maxAttempts) {
         lastError = error;

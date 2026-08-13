@@ -18,7 +18,7 @@ import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFi
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 import { preflightNavWiring } from './preflightNavWiring';
-import { runPreflightRepair } from './aiSitePreflightRepair';
+import { runPreflightRepair, runPreflightRepairSteps } from './aiSitePreflightRepair';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
 import type { WizardInteractionManifest } from './wizardInteractionEnrichment';
@@ -649,19 +649,18 @@ function* buildCanonicalLaunchArtifactSteps(
   // mutations never operate on broken JSX (which would amplify errors and
   // surface a "syntax error" screen in the preview iframe).
   yield;
-  const earlyRepair = (() => {
-    try {
-      return runPreflightRepair(normalizedFiles, {
-        context: {
-          industry: input.industry,
-          brand: input.businessName,
-        },
-      });
-    } catch (error) {
-      console.warn('[canonicalLaunchVfs] Early preflight syntax repair failed; continuing', error);
-      return null;
-    }
-  })();
+  let earlyRepair: ReturnType<typeof runPreflightRepair> | null = null;
+  try {
+    earlyRepair = yield* runPreflightRepairSteps(normalizedFiles, {
+      context: {
+        industry: input.industry,
+        brand: input.businessName,
+      },
+    });
+  } catch (error) {
+    console.warn('[canonicalLaunchVfs] Early preflight syntax repair failed; continuing', error);
+    earlyRepair = null;
+  }
   const repairedFiles = earlyRepair?.files || normalizedFiles;
   if (earlyRepair && (earlyRepair.repairedCount > 0 || earlyRepair.quarantinedCount > 0)) {
     console.warn('[canonicalLaunchVfs] Early syntax repair:', {
@@ -762,16 +761,15 @@ function* buildCanonicalLaunchArtifactSteps(
   // Catch any syntax damage introduced by binding/nav-wiring attribute
   // injection before files reach the preview iframe.
   yield;
-  const finalRepair = (() => {
-    try {
-      return runPreflightRepair(filesAfterStrip, {
-        context: { industry: input.industry, brand: input.businessName },
-      });
-    } catch (error) {
-      console.warn('[canonicalLaunchVfs] Final preflight syntax repair failed; continuing', error);
-      return null;
-    }
-  })();
+  let finalRepair: ReturnType<typeof runPreflightRepair> | null = null;
+  try {
+    finalRepair = yield* runPreflightRepairSteps(filesAfterStrip, {
+      context: { industry: input.industry, brand: input.businessName },
+    });
+  } catch (error) {
+    console.warn('[canonicalLaunchVfs] Final preflight syntax repair failed; continuing', error);
+    finalRepair = null;
+  }
   const safeFiles = finalRepair?.files || filesAfterStrip;
   if (finalRepair && (finalRepair.repairedCount > 0 || finalRepair.quarantinedCount > 0)) {
     console.warn('[canonicalLaunchVfs] Final syntax repair:', {
@@ -859,7 +857,7 @@ function* buildCanonicalLaunchArtifactSteps(
     themePresetId: appContext.themePresetId || (input.aesthetic as string | undefined) || null,
   });
   yield;
-  const snapshotRepair = runPreflightRepair(viteReadyFiles, {
+  const snapshotRepair = yield* runPreflightRepairSteps(viteReadyFiles, {
     context: { industry: input.industry, brand: input.businessName },
   });
   if (input.strictPreflight && snapshotRepair.quarantinedCount > 0) {

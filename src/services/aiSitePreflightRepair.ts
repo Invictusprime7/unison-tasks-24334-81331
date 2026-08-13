@@ -263,11 +263,18 @@ function trimParseableTrailingSuffix(source: string): string | null {
 
 // ────────────────────────────────────────────────────────────────── public
 
-export function runPreflightRepair(
+/**
+ * Per-file generator form of the preflight repair. Parsing/repairing a large
+ * wizard VFS is CPU-heavy enough to freeze the shell when run as one blocking
+ * call, so callers on an async host drive this generator and yield between
+ * files to keep the UI responsive.
+ */
+export function* runPreflightRepairSteps(
   files: Record<string, string>,
   options: PreflightOptions = {},
-): PreflightResult {
+): Generator<void, PreflightResult, void> {
   const maxPasses = options.maxPasses ?? 4;
+
   const ctx: QuarantineContext = options.context ?? {};
   const out: Record<string, string> = { ...files };
   const reports: PreflightFileReport[] = [];
@@ -276,10 +283,12 @@ export function runPreflightRepair(
   let quarantined = 0;
 
   for (const [path, source] of Object.entries(files)) {
+    yield;
     if (typeof source !== 'string' || !isCodeFile(path)) {
       out[path] = source;
       continue;
     }
+
 
     const first = tryParse(source);
     if (first.ok === true) {
@@ -338,4 +347,15 @@ export function runPreflightRepair(
     repairedCount: repaired,
     quarantinedCount: quarantined,
   };
+}
+
+/** Blocking convenience wrapper used by callers without an async host. */
+export function runPreflightRepair(
+  files: Record<string, string>,
+  options: PreflightOptions = {},
+): PreflightResult {
+  const steps = runPreflightRepairSteps(files, options);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
 }

@@ -828,14 +828,48 @@ function isRecoverableWizardCompletionTimeout(err: unknown): boolean {
   return /exceeded the remaining wizard generation deadline/i.test(message);
 }
 
+let lastYieldAt = 0;
+
+/**
+ * Cooperative yield used to drive the canonical launch generators without
+ * freezing the shell. Fine-grained pipeline steps call this many hundreds of
+ * times, so only pay for a real frame when the current task has held the main
+ * thread longer than one frame budget; otherwise fall through on a microtask.
+ */
 function yieldToBrowser(): Promise<void> {
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (lastYieldAt && now - lastYieldAt < 12) {
+    return Promise.resolve();
+  }
+  lastYieldAt = now;
   return new Promise((resolve) => {
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => window.setTimeout(resolve, 0));
+      window.requestAnimationFrame(() => window.setTimeout(() => {
+        lastYieldAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        resolve();
+      }, 0));
       return;
     }
     setTimeout(resolve, 0);
   });
+}
+
+
+/**
+ * The final preview wiring pipeline must never leave the shell in a permanent
+ * loading state. If a stage stalls, surface a recoverable error instead.
+ */
+function withLaunchWatchdog<T>(work: Promise<T>, stage: string, timeoutMs = 180_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const guard = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${stage} stalled after ${Math.round(timeoutMs / 1000)}s. Your Wizard selections are preserved—please try Generate again.`)),
+      timeoutMs,
+    );
+  });
+  return Promise.race([work, guard]).finally(() => {
+    if (timer) clearTimeout(timer);
+  }) as Promise<T>;
 }
 
 async function getFunctionErrorMessage(error: unknown): Promise<string> {
@@ -3805,7 +3839,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       setLaunchStatus('Finalizing preview…');
       await yieldToBrowser();
-      const launchArtifacts = await buildCanonicalLaunchArtifactsAsync({
+      const launchArtifacts = await withLaunchWatchdog(buildCanonicalLaunchArtifactsAsync({
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
         siteBundleSnapshot,
@@ -3833,7 +3867,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         strictPreflight: true,
       }, {
         yieldToHost: yieldToBrowser,
-      });
+      }), 'Finalizing preview');
       const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
       const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
         runtime: JSON.parse(launchArtifacts.files['/.unison/published-runtime.json']) as import('@/services/canonicalLaunchVfs').PublishedRuntimeConfig,

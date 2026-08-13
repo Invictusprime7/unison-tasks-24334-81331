@@ -406,7 +406,12 @@ export async function runProviderLoop(opts: {
     
     for (const [modelIndex, model] of providerPlan.gatewayModels.entries()) {
       throwIfCancelled();
+      if (geminiQuotaExhausted && isGeminiModelId(model.id)) {
+        console.warn(`[AI-Hybrid] Skipping ${model.label} — Gemini quota exhausted this turn.`);
+        continue;
+      }
       const remaining = budgetRemaining();
+
       if (remaining < 8000) {
         console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining gateway models`);
         lastError = lastError || 'budget exhausted before all models tried';

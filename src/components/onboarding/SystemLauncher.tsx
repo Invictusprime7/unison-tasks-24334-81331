@@ -855,6 +855,23 @@ function yieldToBrowser(): Promise<void> {
 }
 
 
+/**
+ * The final preview wiring pipeline must never leave the shell in a permanent
+ * loading state. If a stage stalls, surface a recoverable error instead.
+ */
+function withLaunchWatchdog<T>(work: Promise<T>, stage: string, timeoutMs = 180_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const guard = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${stage} stalled after ${Math.round(timeoutMs / 1000)}s. Your Wizard selections are preserved—please try Generate again.`)),
+      timeoutMs,
+    );
+  });
+  return Promise.race([work, guard]).finally(() => {
+    if (timer) clearTimeout(timer);
+  }) as Promise<T>;
+}
+
 async function getFunctionErrorMessage(error: unknown): Promise<string> {
   if (error instanceof Error) {
     const withContext = error as Error & {
@@ -3822,7 +3839,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       setLaunchStatus('Finalizing preview…');
       await yieldToBrowser();
-      const launchArtifacts = await buildCanonicalLaunchArtifactsAsync({
+      const launchArtifacts = await withLaunchWatchdog(buildCanonicalLaunchArtifactsAsync({
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
         siteBundleSnapshot,
@@ -3850,7 +3867,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         strictPreflight: true,
       }, {
         yieldToHost: yieldToBrowser,
-      });
+      }), 'Finalizing preview');
       const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
       const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
         runtime: JSON.parse(launchArtifacts.files['/.unison/published-runtime.json']) as import('@/services/canonicalLaunchVfs').PublishedRuntimeConfig,

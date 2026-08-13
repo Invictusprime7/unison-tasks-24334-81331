@@ -50,7 +50,7 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain("setLaunchStatus('Preparing your site…');");
     expect(launcherSource).toContain('await yieldToBrowser();');
     expect(launcherSource).toContain("setLaunchStatus('Finalizing preview…');");
-    expect(launcherSource).toContain('await buildCanonicalLaunchArtifactsAsync({');
+    expect(launcherSource).toContain('buildCanonicalLaunchArtifactsAsync({');
     expect(launcherSource).toContain('yieldToHost: yieldToBrowser');
     expect(canonicalLaunchSource).toContain('export async function buildCanonicalLaunchArtifactsAsync(');
     expect(canonicalLaunchSource).toContain('function* buildCanonicalLaunchArtifactSteps(');

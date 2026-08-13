@@ -294,7 +294,7 @@ export async function runProviderLoop(opts: {
   // single-shot provider for large wizard seed generation (9+ pages).
   const runDirectGemini = async (): Promise<void> => {
     const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY');
-    if (!GEMINI_API_KEY || content) return;
+    if (!GEMINI_API_KEY || content || geminiQuotaExhausted) return;
 
     const role = 'direct';
     console.log(`[AI-Hybrid] Direct Gemini API configured as ${role} provider`);

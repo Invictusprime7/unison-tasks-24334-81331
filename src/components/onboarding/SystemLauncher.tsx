@@ -124,6 +124,7 @@ import {
 } from "@/services/wizardPresentationGuard";
 import {
   ensureGeneratedUiFoundation,
+  healKnownGeneratedUiImportMistakes,
   validateGeneratedUiContract,
 } from "@/platform/core/generatedUiFoundation";
 import { countWizardPageSections } from "@/services/wizardPageQuality";
@@ -2256,9 +2257,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             );
             const mergedFiles: Record<string, string> = {};
             let batchFailure: unknown = null;
-            for (let i = 0; i < batches.length; i++) {
-              const batch = batches[i];
-              setLaunchStatus(`Generating site… (${i + 1}/${batches.length})`);
+            let completedBatches = 0;
+            setLaunchStatus(
+              batches.length > 1
+                ? `Generating site… (0/${batches.length} sections)`
+                : 'Generating site…',
+            );
+            // Each batch requests a disjoint, non-overlapping page list against
+            // the same fixed shared context (blueprint, design profile, wizard
+            // seed) — there is no batch-to-batch data dependency, so running
+            // them concurrently is safe and cuts wall-clock from sum(batches)
+            // to max(batches) instead.
+            const batchOutcomes = await Promise.all(batches.map(async (batch, i) => {
               const batchPrompt = [
                 aiUserPrompt,
                 '',
@@ -2293,19 +2303,29 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   batchBudgetMs,
                   `Lane B batch ${i + 1} exceeded the remaining Wizard generation deadline.`,
                 );
+                completedBatches += 1;
+                setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
                 if (batchResult.error) {
-                  batchFailure = batchResult.error;
-                  continue;
+                  return { error: batchResult.error };
                 }
                 const { structured: batchStructured } = extractLaneBLauncherPayload(
                   batchResult.data as Record<string, unknown> | null,
                   `${brand} ${system.name}`,
                 );
-                for (const [path, content] of Object.entries(batchStructured?.files || {})) {
-                  if (typeof content === 'string' && content.trim()) mergedFiles[path] = content;
-                }
+                return { files: batchStructured?.files || {} };
               } catch (batchThrow) {
-                batchFailure = batchThrow;
+                completedBatches += 1;
+                setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
+                return { error: batchThrow };
+              }
+            }));
+            for (const outcome of batchOutcomes) {
+              if (outcome.error) {
+                batchFailure = outcome.error;
+                continue;
+              }
+              for (const [path, content] of Object.entries(outcome.files || {})) {
+                if (typeof content === 'string' && content.trim()) mergedFiles[path] = content;
               }
             }
             if (Object.keys(mergedFiles).length > 0) {
@@ -2371,6 +2391,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 fileCount: Object.keys(structured.files).length,
               });
               let sanitized = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(structured.files));
+              const laneBImportHeal = healKnownGeneratedUiImportMistakes(sanitized.files);
+              if (laneBImportHeal.healed.length > 0) {
+                sanitized = { ...sanitized, files: laneBImportHeal.files };
+                console.info('[SystemLauncher] Healed known Lane B import mistakes', laneBImportHeal.healed);
+              }
               let uiContract = validateGeneratedUiContract(
                 sanitized.files,
                 generatedUiFoundation?.primitiveImports?.length
@@ -2434,8 +2459,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     throw new Error('Lane B UI foundation repair returned no structured files.');
                   }
                   const repaired = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(repairedStructured.files));
+                  const repairedImportHeal = healKnownGeneratedUiImportMistakes(repaired.files);
+                  const healedRepaired = repairedImportHeal.healed.length > 0
+                    ? { ...repaired, files: repairedImportHeal.files }
+                    : repaired;
                   const repairedContract = validateGeneratedUiContract(
-                    repaired.files,
+                    healedRepaired.files,
                     generatedUiFoundation?.primitiveImports?.length
                       ? {
                           importRoot: '@/unison/ui' as const,
@@ -2446,16 +2475,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   if (!repairedContract.valid) {
                     throw new Error(repairedContract.violations.join(' | '));
                   }
-                  sanitized = repaired;
+                  sanitized = healedRepaired;
                   uiContract = repairedContract;
                   console.info('[SystemLauncher] Lane B UI foundation repair accepted', {
                     fileCount: Object.keys(sanitized.files).length,
                   });
                 } catch (repairError) {
+                  const originalViolations = uiContract.violations.join(' | ');
                   lastPayloadIssue = {
                     kind: 'quality',
                     qualityReason:
-                      `Lane B violated the snapshot UI contract and repair failed: ` +
+                      `Lane B violated the snapshot UI contract (${originalViolations}) and repair failed: ` +
                       `${repairError instanceof Error ? repairError.message : String(repairError)}`,
                     invalidFiles: Object.keys(sanitized.files),
                   };
@@ -2866,7 +2896,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const tokenNormalized = normalizeWizardThemeTokens({
           [normalizedPath]: repairedCandidate,
         });
-        const normalizedCandidate = tokenNormalized.files[normalizedPath];
+        const importHeal = healKnownGeneratedUiImportMistakes(tokenNormalized.files);
+        const normalizedCandidate = importHeal.files[normalizedPath];
         const pageUiContract = validateGeneratedUiContract(
           { [normalizedPath]: normalizedCandidate },
           generatedUiFoundation?.primitiveImports?.length

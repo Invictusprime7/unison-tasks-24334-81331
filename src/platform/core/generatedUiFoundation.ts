@@ -141,6 +141,8 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
     'Use Button variants or IconButton for actions; icon-only actions require an accessible label.',
     'Use responsive Tailwind variants and preserve data-ut-intent attributes on actionable controls.',
     'For @/unison/ui/motion, use only Reveal, RevealGroup, Stagger, StaggerItem, and MotionRecipe.',
+    'Import `cn` only from `@/unison/ui` — never from `@/unison/lib/utils` or any other path.',
+    'Never import `@/unison/ui/tailwind.css` from a page; it is already applied globally in /src/index.css.',
   ];
 
   if (options.needsBooking) requirements.push('Include an intent-bound booking CTA or form.');
@@ -697,6 +699,68 @@ export function assertGeneratedUiFoundationPersistence(
       `[generatedUiFoundation] ${boundary} lost the snapshot-owned UI foundation: ${violations.join('; ')}`,
     );
   }
+}
+
+/**
+ * Known, deterministic Lane B import hallucinations. `cn` only ever lives at
+ * the `@/unison/ui` root barrel — never under a shadcn-style `lib/utils`
+ * path — and `tailwind.css` is a global stylesheet Stage 4b already wires
+ * into `/src/index.css`, so a page importing it directly is always wrong.
+ * Same "auto-repair, then hard reject" policy as the commit-service's known
+ * Lucide/Framer artifact healing: safe, narrow rewrites before the strict
+ * contract check, not a fallback that hides real violations.
+ */
+const KNOWN_IMPORT_MISTAKE_REDIRECTS: ReadonlyArray<{ from: string; to: string }> = [
+  { from: '@/unison/lib/utils', to: '@/unison/ui' },
+];
+const KNOWN_PAGE_LEVEL_IMPORTS_TO_STRIP: readonly string[] = [
+  '@/unison/ui/tailwind',
+  '@/unison/ui/tailwind.css',
+];
+
+function redirectImportSpecifier(source: string, from: string, to: string): string {
+  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return source.replace(
+    new RegExp(`(\\bfrom\\s*['"])${escaped}(['"])`, 'g'),
+    `$1${to}$2`,
+  );
+}
+
+function stripImportsForSpecifier(source: string, specifier: string): string {
+  const escaped = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const sideEffect = new RegExp(
+    `^[ \\t]*import\\s*['"]${escaped}['"];?[ \\t]*(?:\\r?\\n|$)`,
+    'gm',
+  );
+  return source.replace(sideEffect, '');
+}
+
+/**
+ * Heals known Lane B import mistakes in generated (non-foundation) sources
+ * before the strict contract check runs. Returns the healed files plus the
+ * list of paths actually changed, so callers can log what was repaired.
+ */
+export function healKnownGeneratedUiImportMistakes(
+  files: Record<string, string>,
+): { files: Record<string, string>; healed: string[] } {
+  const healed: string[] = [];
+  const next: Record<string, string> = { ...files };
+  for (const [path, source] of Object.entries(files)) {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    if (!/\.(tsx|jsx)$/i.test(path) || normalizedPath.startsWith('/src/unison/ui/')) continue;
+    let updated = source;
+    for (const { from, to } of KNOWN_IMPORT_MISTAKE_REDIRECTS) {
+      if (updated.includes(from)) updated = redirectImportSpecifier(updated, from, to);
+    }
+    for (const specifier of KNOWN_PAGE_LEVEL_IMPORTS_TO_STRIP) {
+      if (updated.includes(specifier)) updated = stripImportsForSpecifier(updated, specifier);
+    }
+    if (updated !== source) {
+      next[path] = updated;
+      healed.push(path);
+    }
+  }
+  return { files: next, healed };
 }
 
 /**

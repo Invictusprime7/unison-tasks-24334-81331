@@ -3,6 +3,7 @@ import {
   buildGeneratedUiFoundation,
   ensureGeneratedUiFoundation,
   getGeneratedUiFoundationPersistenceViolations,
+  healKnownGeneratedUiImportMistakes,
   readGeneratedUiManifest,
   validateGeneratedUiContract,
 } from '@/platform/core/generatedUiFoundation';
@@ -263,6 +264,32 @@ describe('generated UI foundation', () => {
     }, foundation.manifest);
     expect(unsupportedMotion.valid).toBe(false);
     expect(unsupportedMotion.violations.join(' ')).toContain('unsupported motion facade export(s): MotionGroup');
+  });
+
+  it('heals the cn-utils and bare-tailwind Lane B import hallucinations before validation', () => {
+    const hallucinated = {
+      '/src/pages/About.tsx': `import { Fragment } from 'react';\nimport { cn } from '@/unison/lib/utils';\nimport '@/unison/ui/tailwind';\nconst example = '@/unison/lib/utils';\nexport default function About(){ return <Fragment><main className={cn('bg-background')}>About us</main><span>{example}</span></Fragment>; }`,
+    };
+
+    const rejectedBefore = validateGeneratedUiContract(hallucinated, foundation.manifest);
+    expect(rejectedBefore.valid).toBe(false);
+
+    const healed = healKnownGeneratedUiImportMistakes(hallucinated);
+    expect(healed.healed).toEqual(['/src/pages/About.tsx']);
+    expect(healed.files['/src/pages/About.tsx']).toContain("import { Fragment } from 'react'");
+    expect(healed.files['/src/pages/About.tsx']).toContain("from '@/unison/ui'");
+    expect(healed.files['/src/pages/About.tsx']).toContain("const example = '@/unison/lib/utils'");
+    expect(healed.files['/src/pages/About.tsx']).not.toContain('@/unison/ui/tailwind');
+
+    const acceptedAfter = validateGeneratedUiContract(healed.files, foundation.manifest);
+    expect(acceptedAfter).toEqual({ valid: true, violations: [] });
+  });
+
+  it('does not strip a binding import from the global Tailwind stylesheet', () => {
+    const source = `import styles from '@/unison/ui/tailwind.css';\nexport default function About(){ return <main>{String(styles)}</main>; }`;
+    const healed = healKnownGeneratedUiImportMistakes({ '/src/pages/About.tsx': source });
+
+    expect(healed).toEqual({ files: { '/src/pages/About.tsx': source }, healed: [] });
   });
 
   it('does not misread DOM TypeScript types as missing JSX components during preview prep', () => {

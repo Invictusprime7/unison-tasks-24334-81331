@@ -282,6 +282,8 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('const pageUiContract = validateGeneratedUiContract(');
     expect(launcherSource).toContain('── LANE B UI FOUNDATION REPAIR TURN ──');
     expect(launcherSource).toContain('Lane B UI foundation repair accepted');
+    expect(launcherSource).toContain('healKnownGeneratedUiImportMistakes(sanitized.files)');
+    expect(launcherSource).toContain('Lane B violated the snapshot UI contract (${originalViolations}) and repair failed:');
     expect(launcherSource).toContain('function omitSnapshotOwnedLaneBFiles');
     expect(launcherSource).toContain("normalizedPath.startsWith('/src/unison/ui/')");
     expect(launcherSource).toContain("normalizedPath === '/.unison/ui-manifest.json'");

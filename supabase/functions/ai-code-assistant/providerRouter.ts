@@ -317,9 +317,13 @@ export function buildProviderPlan(
   // completion requests must still be able to lower resource ceilings. If
   // these caps are ignored, the server keeps producing a 36k/95s response
   // after the browser's shorter isolated-page deadline has already aborted.
+  // 20k (not 12k) because the role-aware content gate (4+ body regions, role
+  // evidence, 1200+ chars) can genuinely need more tokens for card-heavy
+  // pages like Services/Pricing — a tighter cap here was truncating output.
+  const FOCUSED_WIZARD_COMPLETION_MAX_TOKENS = 20_000;
   if (overrides) {
     const isFocusedWizardCompletion =
-      task.type === "wizard_seed_generation" && (overrides.maxTokens ?? Infinity) <= 12_000;
+      task.type === "wizard_seed_generation" && (overrides.maxTokens ?? Infinity) <= FOCUSED_WIZARD_COMPLETION_MAX_TOKENS;
     if (
       (task.type !== "wizard_seed_generation" || isFocusedWizardCompletion)
       && overrides.autoModelSelection === false
@@ -348,7 +352,7 @@ export function buildProviderPlan(
         maxTokens: Math.min(model.maxTokens, overrides.maxTokens!),
       }));
       plan.fallbackMaxTokens = Math.min(plan.fallbackMaxTokens, overrides.maxTokens);
-      if (task.type === "wizard_seed_generation" && overrides.maxTokens <= 12_000) {
+      if (task.type === "wizard_seed_generation" && overrides.maxTokens <= FOCUSED_WIZARD_COMPLETION_MAX_TOKENS) {
         plan.preferLongLeadAttempt = false;
         plan.balancedProviderAttempts = true;
       }

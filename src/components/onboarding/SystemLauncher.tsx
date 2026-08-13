@@ -2863,6 +2863,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 }
               })();
               const boundFiles = bindingApplication?.files || normalizedFiles;
+              // preflightNavWiring runs a full TypeScript AST parse over every
+              // generated page — the single most expensive step in this
+              // chain. Yielding immediately before it lets the browser paint
+              // the in-progress status instead of appearing to freeze the
+              // instant the AI response lands.
+              await yieldToBrowser();
               const preflight = (() => {
                 try {
                   return preflightNavWiring(boundFiles, siteBundleSnapshot);
@@ -2872,8 +2878,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 }
               })();
               const wiredFiles = preflight?.files || boundFiles;
+              await yieldToBrowser();
               const themeNormalized = normalizeWizardThemeTokens(wiredFiles);
               sanitized.files = themeNormalized.files;
+              await yieldToBrowser();
               const intentClosure = closeRequiredIndustryIntents(sanitized.files, resolvedIndustry);
               sanitized.files = stampTemplateLayoutIdentity(intentClosure.files, templateLayoutContract);
               if (intentClosure.injected.length > 0 || intentClosure.missing.length > 0) {
@@ -3130,20 +3138,49 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         // (wrong case, missing leading slash, no /src/pages/ prefix) almost
         // certainly meant this path — remap rather than discard real content.
         let candidate = candidateFiles[normalizedPath] || candidateFiles[relativePath];
+        const nonEmptyEntries = Object.entries(candidateFiles).filter(
+          ([, content]) => typeof content === 'string' && content.trim().length > 0,
+        );
         if (!candidate?.trim()) {
-          const pageFileEntries = Object.entries(candidateFiles).filter(
-            ([, content]) => typeof content === 'string' && content.trim().length > 0,
+          // Case-insensitive exact-path match (model changed case anywhere in
+          // the path, e.g. "/src/Pages/Faq.tsx" or "/src/pages/faq.tsx").
+          const caseInsensitiveMatch = nonEmptyEntries.find(
+            ([key]) => key.replace(/\\/g, '/').toLowerCase() === normalizedPath.toLowerCase(),
           );
-          if (pageFileEntries.length === 1) {
-            candidate = pageFileEntries[0][1];
+          if (caseInsensitiveMatch) {
+            candidate = caseInsensitiveMatch[1];
+          }
+        }
+        if (!candidate?.trim()) {
+          if (nonEmptyEntries.length === 1) {
+            candidate = nonEmptyEntries[0][1];
+          } else if (nonEmptyEntries.length > 1) {
+            // The model ignored "return ONLY this file" and included other
+            // files (App.tsx, shared chrome, etc.) alongside the real page.
+            // If exactly one entry's basename matches the requested page's
+            // basename, that is unambiguously the intended file.
+            const targetBasename = normalizedPath.split('/').pop()?.toLowerCase();
+            const basenameMatches = nonEmptyEntries.filter(
+              ([key]) => key.replace(/\\/g, '/').split('/').pop()?.toLowerCase() === targetBasename,
+            );
+            if (basenameMatches.length === 1) {
+              candidate = basenameMatches[0][1];
+            }
           }
         }
         if (!candidate || !candidate.trim()) {
+          // Surface exactly what the model DID return so the diagnostic is
+          // actionable — both for us reading logs and for the next retry's
+          // prompt, which echoes `previousFailure` back to the model.
+          const returnedKeys = Object.keys(candidateFiles);
+          const describedKeys = returnedKeys.length > 0
+            ? returnedKeys.map((key) => (candidateFiles[key]?.trim() ? key : `${key} (empty)`)).join(', ')
+            : 'none — empty files object';
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
             attempt,
             accepted: false,
-            reason: 'Lane B response omitted the requested page file',
+            reason: `Lane B response omitted the requested page file (returned keys: ${describedKeys})`,
           });
           return false;
         }
@@ -3382,7 +3419,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // page being returned correctly in one model response. Complete each
       // unresolved registry page independently, carrying the exact wizard
       // template/theme identity and the full industry behavior contract.
-      const completeMissingWizardPage = async (missingPath: string, attempt: 2 | 3): Promise<void> => {
+      const completeMissingWizardPage = async (missingPath: string, attempt: 2 | 3 | 4): Promise<void> => {
         const page = Object.values(siteBundleSnapshot.pageRegistry.pages).find((candidatePage) => {
           const filePath = (candidatePage as { filePath?: string }).filePath;
           if (!filePath) return false;
@@ -3401,7 +3438,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const industryVocabulary = (industryRequirements?.vocabulary || []).slice(0, 16).join(', ');
 
         if (!aiSourcedFiles[missingPath]) {
-          setLaunchStatus(`Completing ${page?.title || missingPath} (${attempt - 1}/2)…`);
+          setLaunchStatus(`Completing ${page?.title || missingPath} (${attempt - 1}/3)…`);
           const rejectedCandidate = rejectedPageCandidates[missingPath];
           const previousFailure = [...laneBCompletionDiagnostics]
             .reverse()
@@ -3441,7 +3478,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             `Industry vocabulary/context: ${industryVocabulary || generationCategory}`,
             previousFailure ? `Exact validation failure to repair: ${previousFailure}` : '',
             previousFailure?.includes('omitted the requested page file')
-              ? `PATH REPAIR REQUIRED: the files object must contain exactly the key "${missingPath}".`
+              ? `PATH REPAIR REQUIRED: your last response's "files" object did not contain non-empty content under the exact key "${missingPath}" (see the returned keys listed above). Return a top-level JSON object of the exact shape {"files":{"${missingPath}":"...full file contents..."}} with no other top-level keys and no empty values.`
               : '',
             previousFailure && /Unterminated regular expression|Unexpected token|expected ["']?[})\]]/i.test(previousFailure)
               ? 'SYNTAX REPAIR REQUIRED: regenerate cleanly from the Wizard context. Return balanced JSX/TSX with every tag, brace, parenthesis, quote, and template literal closed. Do not copy malformed source and do not use JavaScript regular-expression literals in this page.'
@@ -3523,7 +3560,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     autoModelSelection: false,
                     selectedModelId: 'google/gemini-2.5-flash-lite',
                     timeoutMs: Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, completionBudgetMs - 5_000),
-                    maxTokens: 12_000,
+                    // Content requirements (4+ body regions, role evidence,
+                    // 1200+ chars) can exceed 12k tokens for card-heavy pages
+                    // like Services/Pricing; a tight cap here was truncating
+                    // output mid-file ("Unexpected token" on later attempts).
+                    maxTokens: 20_000,
                   },
                   wizardSeed: isolatedWizardSeed,
                 }, { signal, timeoutMs: completionBudgetMs - 2_000 }),
@@ -3590,7 +3631,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (stillMissing.length > 0) {
         setLaunchStatus(`Completing ${stillMissing.length} remaining page(s) in parallel`);
       }
-      for (const attempt of [2, 3] as const) {
+      for (const attempt of [2, 3, 4] as const) {
         const roundTargets = stillMissing.filter(
           (path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')],
         );

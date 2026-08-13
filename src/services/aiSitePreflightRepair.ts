@@ -115,6 +115,34 @@ const REPAIR_PASSES: RepairPass[] = [
     apply: (s) => s.replace(/<!--[\s\S]*?-->/g, ''),
   },
   {
+    name: 'close-unterminated-block-comment',
+    // AI sometimes opens a `/* ...` block comment (often truncated mid
+    // response) and never closes it, which swallows the rest of the file and
+    // Babel reports as "Unterminated comment" at EOF. Close it at the end of
+    // the line it was opened on so any real code that follows is preserved
+    // instead of being silently absorbed into the comment.
+    apply: (s) => {
+      let inStr: string | null = null;
+      let inLine = false;
+      let inBlock = false;
+      let blockStart = -1;
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        const n = s[i + 1];
+        if (inLine) { if (c === '\n') inLine = false; continue; }
+        if (inBlock) { if (c === '*' && n === '/') { inBlock = false; i++; } continue; }
+        if (inStr) { if (c === '\\') { i++; continue; } if (c === inStr) inStr = null; continue; }
+        if (c === '/' && n === '/') { inLine = true; i++; continue; }
+        if (c === '/' && n === '*') { inBlock = true; blockStart = i; i++; continue; }
+        if (c === '"' || c === "'" || c === '`') { inStr = c; continue; }
+      }
+      if (!inBlock || blockStart < 0) return s;
+      let closeAt = s.indexOf('\n', blockStart);
+      if (closeAt === -1) closeAt = s.length;
+      return `${s.slice(0, closeAt)} */${s.slice(closeAt)}`;
+    },
+  },
+  {
     name: 'normalize-jsx-boolean-attrs',
     // class= → className= ; for= → htmlFor= (only in code, not strings)
     apply: (s) =>

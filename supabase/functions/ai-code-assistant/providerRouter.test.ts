@@ -147,7 +147,7 @@ Deno.test("gives focused Wizard page completion one model with its full budget, 
     true,
     {
       timeoutMs: 50_000,
-      maxTokens: 12_000,
+      maxTokens: 20_000,
       autoModelSelection: false,
       selectedModelId: "google/gemini-2.5-flash-lite",
     },
@@ -159,8 +159,8 @@ Deno.test("gives focused Wizard page completion one model with its full budget, 
   assertEquals(plan.gatewayModels.map((model) => model.id), [
     "google/gemini-2.5-flash-lite",
   ]);
-  assertEquals(plan.gatewayModels.map((model) => model.maxTokens), [12_000]);
-  assertEquals(plan.fallbackMaxTokens, 12_000);
+  assertEquals(plan.gatewayModels.map((model) => model.maxTokens), [20_000]);
+  assertEquals(plan.fallbackMaxTokens, 20_000);
   assertEquals(plan.perModelTimeoutMs, 50_000);
   assertEquals(plan.preferLongLeadAttempt, false);
   assertEquals(plan.balancedProviderAttempts, true);

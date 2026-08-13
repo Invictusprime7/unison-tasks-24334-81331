@@ -331,12 +331,12 @@ describe('wizard pipeline ownership invariants', () => {
       'takeWizardGenerationBudget(WIZARD_BATCH_REPAIR_MAX_MS)',
     );
     expect(launcherSource).toContain(
-      'for (const attempt of [2, 3] as const)',
+      'for (const attempt of [2, 3, 4] as const)',
     );
     expect(launcherSource).toContain('completeMissingWizardPage(path, attempt)');
     expect(launcherSource).toContain("reasoningEffort: 'low'");
     expect(launcherSource).toContain("selectedModelId: 'google/gemini-2.5-flash-lite'");
-    expect(launcherSource).toContain('maxTokens: 12_000');
+    expect(launcherSource).toContain('maxTokens: 20_000');
     expect(launcherSource).toContain('const completionBudgetMs = takeWizardGenerationBudget(');
     expect(launcherSource).toContain('WIZARD_ISOLATED_PAGE_COMPLETION_MS,');
     expect(launcherSource).toContain(
@@ -416,6 +416,22 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('Your previous response omitted or under-generated the following selected wizard pages.');
   });
 
+  it('describes exactly which keys the model returned when a page completion omits the requested file', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    // A bare "omitted the requested page file" reason gives neither us nor
+    // the next retry attempt anything to act on. Surfacing the actual
+    // returned keys (or "empty files object") makes the failure diagnosable
+    // and lets the repair prompt's echoed previousFailure show the model
+    // exactly what it got wrong.
+    expect(launcherSource).toContain('const returnedKeys = Object.keys(candidateFiles);');
+    expect(launcherSource).toContain('none — empty files object');
+    expect(launcherSource).toContain('Lane B response omitted the requested page file (returned keys: ${describedKeys})');
+  });
+
   it('routes every non-Home page structural check through one role-aware contract, not a flat footer-inclusive count', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
@@ -449,7 +465,7 @@ describe('wizard pipeline ownership invariants', () => {
 
     expect(launcherSource).toContain('delete rejectedPageCandidates[normalizedPath];');
     expect(launcherSource).toContain('!isSyntaxCompletionFailure(previousFailure)');
-    expect(launcherSource).toContain('PATH REPAIR REQUIRED: the files object must contain exactly the key');
+    expect(launcherSource).toContain('PATH REPAIR REQUIRED: your last response');
     expect(launcherSource).toContain('SYNTAX REPAIR REQUIRED: regenerate cleanly from the Wizard context.');
     expect(launcherSource).toContain(
       'Do not copy malformed source and do not use JavaScript regular-expression literals in this page.',
@@ -467,6 +483,34 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('[selectedPageIntent],');
     expect(launcherSource).toContain('Accepted after canonical industry intent repair:');
     expect(launcherSource).toContain('INTENT REPAIR REQUIRED: wire a real page action');
+  });
+
+  it('yields to the browser between each heavy whole-site preflight pass so the tab does not freeze', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    // applyWizardBindingsToVfs and preflightNavWiring each run a full
+    // TypeScript AST parse over every generated page; theme normalization and
+    // intent closure each do another full-file pass. Running all of them in
+    // one unbroken synchronous block is what froze the tab during "wiring" —
+    // lock in a yield between every stage, not just before/after the group.
+    const bindingIdx = launcherSource.indexOf('const bindingApplication = (() => {');
+    const preflightIdx = launcherSource.indexOf('const preflight = (() => {');
+    const themeIdx = launcherSource.indexOf('const themeNormalized = normalizeWizardThemeTokens(wiredFiles);');
+    const intentClosureIdx = launcherSource.indexOf('const intentClosure = closeRequiredIndustryIntents(sanitized.files, resolvedIndustry);');
+    expect(bindingIdx).toBeGreaterThan(-1);
+    expect(preflightIdx).toBeGreaterThan(bindingIdx);
+    expect(themeIdx).toBeGreaterThan(preflightIdx);
+    expect(intentClosureIdx).toBeGreaterThan(themeIdx);
+
+    const betweenBindingAndPreflight = launcherSource.slice(bindingIdx, preflightIdx);
+    const betweenPreflightAndTheme = launcherSource.slice(preflightIdx, themeIdx);
+    const betweenThemeAndClosure = launcherSource.slice(themeIdx, intentClosureIdx);
+    expect(betweenBindingAndPreflight).toContain('await yieldToBrowser();');
+    expect(betweenPreflightAndTheme).toContain('await yieldToBrowser();');
+    expect(betweenThemeAndClosure).toContain('await yieldToBrowser();');
   });
 
   it('does not run the interaction planner network round-trip (enrichment layer removed)', () => {

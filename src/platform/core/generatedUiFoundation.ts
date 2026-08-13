@@ -71,6 +71,41 @@ export interface GeneratedUiContractValidation {
   violations: string[];
 }
 
+/**
+ * The single, manifest-derived statement of "what imports exist and where."
+ * Every AI prompt (initial generation, batch repair, isolated page
+ * completion) must inject this SAME block instead of hand-authoring its own
+ * prose approximation of the contract — that duplication is exactly what let
+ * three prompts drift out of sync with the actual validator and with each
+ * other over time. New import mistakes get fixed here once, not per-prompt.
+ */
+export function buildGeneratedUiFoundationDirective(
+  manifest: { primitiveImports: readonly string[]; iconLibrary: string; requirements: readonly string[] },
+): string {
+  const importList = manifest.primitiveImports
+    .filter((path) => path !== '@/unison/ui/tailwind.css')
+    .map((path) => `  - "${path}"`)
+    .join('\n');
+  const requirementsList = manifest.requirements.map((line) => `  - ${line}`).join('\n');
+
+  return [
+    '── UNISON UI FOUNDATION CONTRACT (AUTHORITATIVE — from the snapshot manifest) ──',
+    'This is a Vite + React Router single-page app. Never import from "next", any "next/*" module, "gatsby", or "remix".',
+    'The ONLY valid "@/unison/ui" import paths that exist in this snapshot are exactly:',
+    importList,
+    'Do not invent any other path under "@/unison/ui" — if it is not in the list above, it does not exist. Radix-derived primitives (accordion, dialog, tabs, tooltip, etc.) live ONLY at the "@/unison/ui/radix/<primitive>" paths listed above, never at a flat "@/unison/ui/<primitive>" path.',
+    'Import Input, Textarea, Select, Checkbox, Label, and related form controls only from "@/unison/ui/form-fields" (or the "@/unison/ui" root barrel) — never from a flat "@/unison/ui/input", "@/unison/ui/textarea", "@/unison/ui/select", "@/unison/ui/checkbox", or "@/unison/ui/label" module.',
+    'Two similarly-named facade pairs are easy to confuse — use exactly the right one:',
+    `  - "@/unison/ui/icons" (plural) is a full ${manifest.iconLibrary} re-export: import any icon name directly from it, e.g. import { Camera, X } from "@/unison/ui/icons". Never nest a sub-path under it.`,
+    '  - "@/unison/ui/icon" (singular) exports only the <Icon icon={...} /> wrapper component, not raw icon glyphs.',
+    '  - "@/unison/ui/motion" exports ONLY Reveal, RevealGroup, Stagger, StaggerItem, and the MotionRecipe type — nothing else.',
+    '  - "@/unison/ui/animation" is the full framer-motion re-export (motion, AnimatePresence, useReducedMotion, useScroll, useInView, etc.) — use this facade for any raw framer-motion export not in the @/unison/ui/motion list above.',
+    'Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally. Use plain <img alt="..."> for images, not a framework-specific Image component.',
+    requirementsList ? 'Manifest requirements for this snapshot:' : '',
+    requirementsList,
+  ].filter(Boolean).join('\n');
+}
+
 const REQUIRED_GENERATED_UI_FOUNDATION_PATHS = [
   '/.unison/ui-manifest.json',
   '/src/unison/ui/index.ts',
@@ -725,7 +760,38 @@ const KNOWN_NAMED_IMPORT_REDIRECTS: ReadonlyArray<{
   { from: '@/unison/ui/select', to: '@/unison/ui/form-fields', exports: ['Select'] },
   { from: '@/unison/ui/checkbox', to: '@/unison/ui/form-fields', exports: ['Checkbox'] },
   { from: '@/unison/ui/label', to: '@/unison/ui/form-fields', exports: ['FieldLabel', 'Label', 'FormLabel'] },
+  // `@/unison/ui/motion` is the curated Reveal/Stagger recipe facade; raw
+  // framer-motion primitives only exist at `@/unison/ui/animation` (which
+  // re-exports the whole framer-motion package). A page that grabs `motion`
+  // itself from the recipe facade meant the raw one.
+  {
+    from: '@/unison/ui/motion',
+    to: '@/unison/ui/animation',
+    exports: [
+      'motion', 'AnimatePresence', 'useAnimation', 'useAnimationControls',
+      'useReducedMotion', 'useScroll', 'useTransform', 'useSpring', 'useInView',
+      'useMotionValue', 'useMotionTemplate', 'useCycle', 'useDragControls',
+      'LayoutGroup', 'MotionConfig',
+    ],
+  },
 ];
+
+// These facades are FULL wildcard passthroughs of one npm package (`export *
+// from '<pkg>'`), so any named import stays valid no matter what nested
+// sub-path Lane B invents — e.g. `@/unison/ui/icons/lucide-react` really
+// means `@/unison/ui/icons`. Curated facades (button, card, motion, etc.)
+// are deliberately excluded: they only re-export specific named symbols, so
+// collapsing an invented nested path there could "fix" the path while the
+// name still doesn't exist — a fallback that would hide a real violation.
+const FLAT_UNISON_UI_FACADES = ['icons', 'animation', 'zod', 'forms'] as const;
+const NESTED_FLAT_FACADE_PATTERN = new RegExp(
+  `(['"])@/unison/ui/(${FLAT_UNISON_UI_FACADES.join('|')})/[^'"]+\\1`,
+  'g',
+);
+
+function collapseNestedFlatFacadeImports(source: string): string {
+  return source.replace(NESTED_FLAT_FACADE_PATTERN, (_full, quote: string, facade: string) => `${quote}@/unison/ui/${facade}${quote}`);
+}
 const KNOWN_PAGE_LEVEL_IMPORTS_TO_STRIP: readonly string[] = [
   '@/unison/ui/tailwind',
   '@/unison/ui/tailwind.css',
@@ -790,7 +856,7 @@ export function healKnownGeneratedUiImportMistakes(
   for (const [path, source] of Object.entries(files)) {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     if (!/\.(tsx|jsx)$/i.test(path) || normalizedPath.startsWith('/src/unison/ui/')) continue;
-    let updated = canonicalizeUnisonAliasPrefix(source);
+    let updated = collapseNestedFlatFacadeImports(canonicalizeUnisonAliasPrefix(source));
     for (const { from, to } of KNOWN_IMPORT_MISTAKE_REDIRECTS) {
       if (updated.includes(from)) updated = redirectImportSpecifier(updated, from, to);
     }

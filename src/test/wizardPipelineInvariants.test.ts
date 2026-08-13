@@ -126,7 +126,10 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('DESIGN MEMORY:');
     expect(launcherSource).toContain('ensureGeneratedUiFoundation({');
     expect(launcherSource).toContain('generationBrief: siteBundleSnapshot.meta.generationBrief');
-    expect(launcherSource).toContain('Select, Checkbox, FormField, FormFields, FormGrid, FormHint, or FormError');
+    // Form-control facade guidance now lives once in the manifest-derived
+    // buildGeneratedUiFoundationDirective(), not duplicated inline here.
+    expect(launcherSource).toContain('buildGeneratedUiFoundationDirective({');
+    expect(launcherSource).toContain('uiFoundationDirective');
   });
 
   it('rejects a themeId substitute when the wizard themePresetId is missing', () => {

@@ -126,6 +126,7 @@ import {
   ensureGeneratedUiFoundation,
   healKnownGeneratedUiImportMistakes,
   validateGeneratedUiContract,
+  buildGeneratedUiFoundationDirective,
 } from "@/platform/core/generatedUiFoundation";
 import {
   countWizardPageSections,
@@ -721,7 +722,7 @@ function buildWizardAiSeedPrompt(opts: {
     `HOME STRUCTURAL CONTRACT: /src/pages/Home.tsx MUST emit exactly the section types listed above, in that order. Secondary pages must follow their own registered role contract instead of copying the Home section sequence.`,
     `AESTHETIC CONTRACT: Use the listed palette HSL vars and typography. Do not invent a different color scheme.`,
     `VISUAL EXECUTION CONTRACT: This is an art-directed, image-led selected template, not a generic section stack. Preserve the selected section geometry, use the canonical media treatment in every media-bearing section, give cards deliberate hierarchy and responsive density, and use staged Reveal/Stagger motion where the selected intervention calls for it. Render the chosen layout recipe and visual variants rather than substituting plain centered text, default buttons, or flat grids.`,
-    `GENERATED UI CONTRACT: Use snapshot-owned VFS modules for UI: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for motion, and @/unison/ui/styles for token-bound typography, colors, components, and motion classes. Never import a UI package or application framework outside the supplied snapshot contract. Always include the slash in the @/ alias. From @/unison/ui/form-fields, import only FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, or FormError; never import flat @/unison/ui/input, textarea, select, checkbox, or label modules. Use Button variants or IconButton for actions, with accessible labels for icon-only controls. For @/unison/ui/motion, only import Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe; never invent another motion facade export. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
+    `GENERATED UI CONTRACT: Use only the snapshot-owned "@/unison/ui" VFS modules for UI — the exact approved import paths are enumerated later in this prompt under UNISON UI FOUNDATION CONTRACT; never import a UI package or application framework outside that list. Use Button variants or IconButton for actions, with accessible labels for icon-only controls. The canonical /src/index.css owns Tailwind CSS and theme tokens; do not emit another global reset, theme preset, or conflicting token sheet.`,
     opts.designIntervention
       ? `DESIGN INTERVENTION (LOCKED): Use ${opts.designIntervention.layoutRecipe}; prioritize ${opts.designIntervention.sectionVariants.join(', ')}; use ${opts.designIntervention.motionRecipes.join(', ')} within a ${opts.designIntervention.motionBudget} motion budget; and compose only these interactions: ${opts.designIntervention.interactionRecipes.join(', ')}. ${opts.designIntervention.aiDirective}`
       : '',
@@ -2182,7 +2183,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           : 'DESIGN MEMORY: Use the selected template and industry research as the visual authority; do not regress to generic landing-page defaults.',
         'Use image-led hero and gallery treatments where the canonical composition includes media. Cards, CTAs, navigation, overlays, and forms must visibly use the selected composition variants and responsive interaction patterns.',
       ].join('\n');
-      const aiUserPrompt = [baseAiUserPrompt, laneBVisualIntelligence].join('\n\n');
+      const uiFoundationDirective = generatedUiFoundation?.primitiveImports?.length
+        ? buildGeneratedUiFoundationDirective({
+            primitiveImports: generatedUiFoundation.primitiveImports,
+            iconLibrary: generatedUiFoundation.iconLibrary || 'lucide-react',
+            requirements: generatedUiFoundation.requirements || [],
+          })
+        : '';
+      const aiUserPrompt = [baseAiUserPrompt, laneBVisualIntelligence, uiFoundationDirective].filter(Boolean).join('\n\n');
       const buildFirstAttemptPrompt = (targetPaths: readonly string[]) => {
         const targets = new Set(targetPaths.map((path) => (path.startsWith('/') ? path : `/${path}`)));
         const targetPages = canonicalPages.filter((page) => targets.has(
@@ -3446,8 +3454,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               : '',
             '',
             'Return ONLY this file in the WizardSeed multi-file JSON contract.',
-            'This is a Vite + React Router project, not Next.js/Remix/Gatsby: never import from "next", "next/image", "next/link", or "next/router"; use plain <img> for images.',
-            'Only import UI primitives from "@/unison/ui" and its documented sub-paths, always including the slash in the @/ alias. Import Input, Textarea, Select, Checkbox, Label, and related form controls from "@/unison/ui/form-fields" or the "@/unison/ui" root; never from flat input/textarea/select/checkbox/label modules. Radix-derived primitives (accordion, dialog, aspect-ratio, tabs, tooltip, etc.) live at "@/unison/ui/radix/<primitive>", never at the flat "@/unison/ui/<primitive>" path.',
+            generatedUiFoundation?.primitiveImports?.length
+              ? buildGeneratedUiFoundationDirective({
+                  primitiveImports: generatedUiFoundation.primitiveImports,
+                  iconLibrary: generatedUiFoundation.iconLibrary || 'lucide-react',
+                  requirements: [],
+                })
+              : '',
+            previousFailure && /imports unsupported motion facade export/i.test(previousFailure)
+              ? `MOTION IMPORT REPAIR REQUIRED: ${previousFailure}. Move those exact exports to an import from "@/unison/ui/animation" instead of "@/unison/ui/motion".`
+              : '',
             'The page must contain at least 4 complete body content regions (not counting nav/header/footer) and 1200+ characters of real copy.',
             'Use <section>, <article>, or <aside> elements for each body content region rather than only nested <div> blocks.',
             (previousFailure?.includes('too few sections') || previousFailure?.includes('too few body content regions'))

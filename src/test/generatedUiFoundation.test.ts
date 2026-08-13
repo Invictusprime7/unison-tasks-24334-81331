@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   buildGeneratedUiFoundation,
+  buildGeneratedUiFoundationDirective,
   ensureGeneratedUiFoundation,
   getGeneratedUiFoundationPersistenceViolations,
   healKnownGeneratedUiImportMistakes,
@@ -69,6 +72,30 @@ describe('generated UI foundation', () => {
     expect(foundation.manifest.formFormats).toContain('appointment');
     expect(foundation.manifest.buttonFormats).toContain('icon');
     expect(foundation.manifest.iconFormats).toContain('social');
+  });
+
+  it('builds one canonical prompt directive enumerating every manifest import path', () => {
+    const directive = buildGeneratedUiFoundationDirective(foundation.manifest);
+
+    // Every real primitive import must be exactly enumerated, so the model
+    // never has to guess a facade path.
+    for (const path of foundation.manifest.primitiveImports) {
+      if (path === '@/unison/ui/tailwind.css') continue;
+      expect(directive).toContain(`"${path}"`);
+    }
+    // The two confusable facade pairs must be explicitly disambiguated.
+    expect(directive).toContain('"@/unison/ui/icons" (plural) is a full lucide-react re-export');
+    expect(directive).toContain('"@/unison/ui/icon" (singular) exports only the <Icon icon={...} /> wrapper component');
+    expect(directive).toContain('"@/unison/ui/motion" exports ONLY Reveal, RevealGroup, Stagger, StaggerItem, and the MotionRecipe type');
+    expect(directive).toContain('"@/unison/ui/animation" is the full framer-motion re-export');
+    expect(directive).toContain('Never import from "next", any "next/*" module, "gatsby", or "remix"');
+    expect(directive).toContain('never from a flat "@/unison/ui/input"');
+    // tailwind.css is never a valid page import — it's mentioned only in the
+    // explicit "don't import this" sentence, not the enumerated path list.
+    expect(directive).not.toContain('- "@/unison/ui/tailwind.css"');
+    for (const requirement of foundation.manifest.requirements) {
+      expect(directive).toContain(requirement);
+    }
   });
 
   it('reads only a valid snapshot-owned manifest from VFS', () => {
@@ -315,6 +342,46 @@ describe('generated UI foundation', () => {
 
     expect(healed).toEqual({ files: { '/src/pages/Faq.tsx': source }, healed: [] });
     expect(validateGeneratedUiContract(healed.files, foundation.manifest).valid).toBe(false);
+  });
+
+  it('collapses an invented nested icons sub-path since @/unison/ui/icons is a full lucide-react passthrough', () => {
+    const source = `import { Camera, X } from '@/unison/ui/icons/lucide-react';\nexport default function Gallery(){ return <div><Camera /><X /></div>; }`;
+
+    const rejectedBefore = validateGeneratedUiContract({ '/src/pages/Gallery.tsx': source }, foundation.manifest);
+    expect(rejectedBefore.valid).toBe(false);
+    expect(rejectedBefore.violations.join(' ')).toContain('unapproved UI module "@/unison/ui/icons/lucide-react"');
+
+    const healed = healKnownGeneratedUiImportMistakes({ '/src/pages/Gallery.tsx': source });
+    expect(healed.healed).toEqual(['/src/pages/Gallery.tsx']);
+    expect(healed.files['/src/pages/Gallery.tsx']).toContain("from '@/unison/ui/icons'");
+    expect(healed.files['/src/pages/Gallery.tsx']).not.toContain('@/unison/ui/icons/lucide-react');
+
+    const acceptedAfter = validateGeneratedUiContract(healed.files, foundation.manifest);
+    expect(acceptedAfter).toEqual({ valid: true, violations: [] });
+  });
+
+  it('redirects raw framer-motion exports out of the curated @/unison/ui/motion recipe facade', () => {
+    const source = `import { motion } from '@/unison/ui/motion';\nexport default function Gallery(){ return <motion.div animate={{ opacity: 1 }} />; }`;
+
+    const rejectedBefore = validateGeneratedUiContract({ '/src/pages/Gallery.tsx': source }, foundation.manifest);
+    expect(rejectedBefore.valid).toBe(false);
+    expect(rejectedBefore.violations.join(' ')).toContain('unsupported motion facade export(s): motion');
+
+    const healed = healKnownGeneratedUiImportMistakes({ '/src/pages/Gallery.tsx': source });
+    expect(healed.healed).toEqual(['/src/pages/Gallery.tsx']);
+    expect(healed.files['/src/pages/Gallery.tsx']).toContain("import { motion } from '@/unison/ui/animation'");
+    expect(healed.files['/src/pages/Gallery.tsx']).not.toContain("from '@/unison/ui/motion'");
+
+    const acceptedAfter = validateGeneratedUiContract(healed.files, foundation.manifest);
+    expect(acceptedAfter).toEqual({ valid: true, violations: [] });
+  });
+
+  it('does not touch a valid mixed @/unison/ui/motion import of only curated recipe exports', () => {
+    const source = `import { Reveal, Stagger } from '@/unison/ui/motion';\nexport default function Gallery(){ return <Reveal><Stagger>ok</Stagger></Reveal>; }`;
+    const healed = healKnownGeneratedUiImportMistakes({ '/src/pages/Gallery.tsx': source });
+
+    expect(healed).toEqual({ files: { '/src/pages/Gallery.tsx': source }, healed: [] });
+    expect(validateGeneratedUiContract(healed.files, foundation.manifest).valid).toBe(true);
   });
 
   it('does not strip a binding import from the global Tailwind stylesheet', () => {
@@ -565,5 +632,26 @@ export default function Gallery(){ const image: StaticImageData | string = '/gal
     const twiceContact = twice['/pages/Contact.tsx'];
     expect((twiceContact.match(/const MapPin\s*=/g) || []).length).toBe(1);
     expect(twiceContact).not.toMatch(/import\s*\{\s*MapPin\s*\}\s*from\s*['"]lucide-react['"]/);
+  });
+
+  it('keeps the server wizard-seed system prompt from silently drifting off the client manifest facades', () => {
+    // orchestrator.ts runs in Deno and cannot import this Vite module, so its
+    // prompt text is a separately hand-maintained mirror of the same facade
+    // knowledge baked into buildGeneratedUiFoundationDirective(). This guard
+    // doesn't unify the two runtimes, but it makes drift between them a
+    // failing test instead of a silent, discovered-in-production surprise.
+    const serverPromptSource = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/ai-code-assistant/orchestrator.ts'),
+      'utf8',
+    );
+
+    for (const path of foundation.manifest.primitiveImports) {
+      if (path.startsWith('@/unison/ui/radix/')) continue; // enumerated as a class, not per-primitive
+      expect(serverPromptSource, `server prompt should mention ${path}`).toContain(path);
+    }
+    expect(serverPromptSource).toContain('@/unison/ui/radix/<primitive>');
+    expect(serverPromptSource).toContain('Never invent a nested path like "@/unison/ui/icons/lucide-react"');
+    expect(serverPromptSource).toContain('Raw framer-motion primitives');
+    expect(serverPromptSource).toContain('NOT Next.js, Remix, or Gatsby');
   });
 });

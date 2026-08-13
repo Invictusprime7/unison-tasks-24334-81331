@@ -336,15 +336,19 @@ export async function runProviderLoop(opts: {
 
         if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
-          const earlyError: ProviderEarlyError = resp.status === 429
-            ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
-            : { status: 402, error: 'Payment required. Please add credits to your Google AI account.' };
+          const exhausted = isQuotaExhausted(errText) || resp.status === 402;
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
-          deferredEarlyError ??= earlyError;
+          if (exhausted) {
+            geminiQuotaExhausted = true;
+            deferredEarlyError ??= { status: 402, error: 'Payment required. Please add credits to your Google AI account.' };
+            console.warn(`[AI-Hybrid] ${model.label} quota/billing exhausted; abandoning Gemini for this turn.`);
+            break;
+          }
+          deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next...`);
-          if (resp.status === 429) continue;
-          break;
+          continue;
         }
+
 
         if (!resp.ok) {
           const errText = await resp.text();

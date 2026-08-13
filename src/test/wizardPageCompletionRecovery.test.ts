@@ -118,6 +118,36 @@ describe('isolated Wizard page completion recovery', () => {
     }, { vocabulary: ['strategy'] })).toBeNull();
   });
 
+  it('parses the builder response content envelope without accepting executable files', () => {
+    const faq = {
+      presentation: { faqLayout: 'split', processStyle: 'cards', emphasis: 'quiet' },
+      eyebrow: 'Agency decisions',
+      title: 'A practical guide to Northstar Agency',
+      introduction: 'Understand how consultation, strategy, proposal review, delivery planning, and client decisions fit together before an agency engagement begins.',
+      items: Array.from({ length: 6 }, (_, index) => ({
+        question: `What should a client know about strategy step ${index + 1}?`,
+        answer: `This agency answer explains consultation context, proposal expectations, responsibilities, timing, decision criteria, and the review process in enough detail to prepare a client for strategy step ${index + 1}.`,
+      })),
+      process: [
+        { title: 'Consult', detail: 'The agency learns the business context, audience, constraints, current performance, and the decision the strategy must support.' },
+        { title: 'Propose', detail: 'The team turns consultation findings into a proposal with scope, responsibilities, timing, deliverables, and review points.' },
+        { title: 'Confirm', detail: 'The client begins after the strategy direction, dependencies, communication rhythm, and measures of progress are understood.' },
+      ],
+      assuranceTitle: 'Clear strategy and proposal terms',
+      assurance: 'Northstar Agency connects every recommendation to consultation evidence and explains assumptions, dependencies, options, and client responsibilities before approval.',
+      ctaTitle: 'Discuss the decision in front of you',
+      ctaBody: 'Share the business context, audience, current challenge, and strategy decision. The agency will identify the most useful consultation next step.',
+      ctaLabel: 'Request a consultation',
+    };
+    const parsed = parseStructuredWizardFaqContent({
+      content: `\`\`\`json\n${JSON.stringify({ faq })}\n\`\`\``,
+      files: { '/src/pages/Faq.tsx': 'export default function Unsafe() {}' },
+    }, { vocabulary: ['agency', 'strategy', 'proposal', 'consultation'] });
+
+    expect(parsed?.title).toBe(faq.title);
+    expect(JSON.stringify(parsed)).not.toContain('export default');
+  });
+
   it.each([
     ['salon', 'booking.create', /salon|stylist|appointment/i],
     ['local-service', 'quote.request', /estimate|service area|technician/i],

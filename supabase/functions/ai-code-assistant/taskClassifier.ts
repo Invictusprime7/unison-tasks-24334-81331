@@ -4,6 +4,7 @@
 export type AssistantTaskType =
   | "wizard_seed_generation"
   | "wizard_interaction_enrichment"
+  | "wizard_content_enrichment"
   | "nav_page_generation"
   | "template_json_generation"
   | "template_html_generation"
@@ -87,6 +88,18 @@ export function classifyTask(opts: {
     return {
       type: "wizard_interaction_enrichment",
       fastPath: false,
+      shouldUseMemory: false,
+      shouldUseCompactContext: true,
+      prefersJsonOutput: true,
+      skipResearch: true,
+      skipThinking: true,
+    };
+  }
+
+  if (mode === "wizard-content") {
+    return {
+      type: "wizard_content_enrichment",
+      fastPath: true,
       shouldUseMemory: false,
       shouldUseCompactContext: true,
       prefersJsonOutput: true,

@@ -136,6 +136,7 @@ import {
 import {
   compileStructuredWizardFaqPage,
   isSyntaxCompletionFailure,
+  parseStructuredWizardFaqContent,
   selectIndustryIntentForIsolatedPage,
 } from "@/services/wizardPageCompletionRecovery";
 import { buildWizardLaneBVfsPayload } from "@/services/wizardLaneBVfsPayload";
@@ -558,6 +559,7 @@ const WIZARD_MIN_AI_TURN_MS = 15_000;
 const WIZARD_INITIAL_AI_TURN_MS = 142_000;
 const WIZARD_UI_REPAIR_MAX_MS = 65_000;
 const WIZARD_BATCH_REPAIR_MAX_MS = 65_000;
+const WIZARD_FAQ_CONTENT_ENRICHMENT_MS = 45_000;
 const WIZARD_BATCH_REPAIR_MAX_PAGES = 2;
 // Every isolated page — regardless of how many pages are missing in a given
 // round — gets this full allowance. Pages in the same round already run
@@ -3320,11 +3322,77 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         if (!intent) {
           throw new Error(`Structured FAQ compiler could not resolve an authorized industry intent for ${resolvedIndustry}.`);
         }
+        const industryRequirements = getIndustryQualityRequirements(resolvedIndustry);
+        let enrichedContent: ReturnType<typeof parseStructuredWizardFaqContent> = null;
+        try {
+          setLaunchStatus('Writing industry-specific FAQ content…');
+          const enrichmentBudgetMs = takeWizardGenerationBudget(WIZARD_FAQ_CONTENT_ENRICHMENT_MS);
+          const contentPrompt = [
+            'Create rich content data for one FAQ page. Do not write source code.',
+            `Business: ${brand}`,
+            `Industry: ${resolvedIndustry}`,
+            `Page route: ${normalizedPath}`,
+            `Canonical CTA intent (context only; do not implement): ${intent}`,
+            `Industry vocabulary to use naturally: ${(industryRequirements?.vocabulary || []).join(', ') || resolvedIndustry}`,
+            `Brand tone: ${blueprint.brand?.tone || 'clear, specific, and credible'}`,
+            '',
+            'Return ONLY raw JSON with this exact shape:',
+            '{"faq":{"presentation":{"faqLayout":"split|stacked","processStyle":"cards|numbered","emphasis":"quiet|contrast"},"eyebrow":"3-80 chars","title":"10-160 chars","introduction":"100-700 chars","items":[{"question":"10-180 chars","answer":"100-700 chars"}],"process":[{"title":"3-80 chars","detail":"80-500 chars"}],"assuranceTitle":"8-120 chars","assurance":"100-700 chars","ctaTitle":"8-120 chars","ctaBody":"80-500 chars","ctaLabel":"3-60 chars"}}',
+            'Include 6-8 distinct FAQ items and exactly 3 process steps.',
+            'Use only one literal enum value for each presentation field, not the pipe-separated notation.',
+            'Write concrete business- and industry-specific copy with useful policies, process details, preparation guidance, and decision criteria.',
+            'Do not return files, TSX, JSX, imports, markdown fences, placeholders, or generic filler.',
+          ].join('\n');
+          const enrichment = await withTimeout(
+            (signal) => runBuilderTurn<Record<string, unknown>>({
+              messages: [{ role: 'user', content: contentPrompt }],
+              mode: 'wizard-content',
+              editMode: false,
+              templateName: effectiveTemplate?.label || system.name,
+              aesthetic: resolvedPreset.id,
+              source: resolvedIndustry,
+              systemType: selectedSystem,
+              systemsBuildContext: {
+                version: blueprint.version,
+                launcherPolicy: blueprint.launcherPolicy,
+                identity: blueprint.identity,
+                brand: blueprint.brand,
+                design: blueprint.design,
+                theme_tokens: blueprint.theme_tokens,
+                intents: blueprint.intents,
+                template_sections: blueprint.template_sections,
+                template_intents: blueprint.template_intents,
+              },
+              userDesignProfile: laneBDesignProfile,
+              gatewayOptions: {
+                reasoningEffort: 'low',
+                autoModelSelection: false,
+                selectedModelId: 'google/gemini-2.5-flash-lite',
+                timeoutMs: Math.min(40_000, enrichmentBudgetMs - 3_000),
+                maxTokens: 6_000,
+              },
+              wizardSeed,
+            }, { signal, timeoutMs: enrichmentBudgetMs - 1_000 }),
+            enrichmentBudgetMs,
+            'FAQ content enrichment exceeded its Wizard generation budget.',
+          );
+          if (!enrichment.error) {
+            enrichedContent = parseStructuredWizardFaqContent(enrichment.data, {
+              vocabulary: industryRequirements?.vocabulary || [],
+            });
+          }
+          if (!enrichedContent) {
+            console.warn('[SystemLauncher] FAQ content enrichment was unavailable or invalid; using deterministic industry content');
+          }
+        } catch (error) {
+          console.warn('[SystemLauncher] FAQ content enrichment failed; using deterministic industry content', error);
+        }
         const compiledFaq = compileStructuredWizardFaqPage({
           filePath: normalizedPath,
           businessName: brand,
           industry: resolvedIndustry,
           intent,
+          content: enrichedContent || undefined,
         });
         if (!acceptCompletedWizardPage(normalizedPath, { [compiledFaq.filePath]: compiledFaq.source }, 0)) {
           const failure = [...laneBCompletionDiagnostics]

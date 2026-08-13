@@ -338,6 +338,10 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('compileStructuredWizardFaqPage({');
     expect(launcherSource).toContain("if (pageRole !== 'faq') continue;");
     expect(launcherSource).toContain('const unresolvedWizardPageFiles = missingWizardPageFiles.filter(');
+    expect(launcherSource).toContain("mode: 'wizard-content'");
+    expect(launcherSource).toContain('parseStructuredWizardFaqContent(enrichment.data');
+    expect(launcherSource).toContain('content: enrichedContent || undefined');
+    expect(launcherSource).toContain('using deterministic industry content');
     expect(launcherSource).toContain(
       'takeWizardGenerationBudget(WIZARD_BATCH_REPAIR_MAX_MS)',
     );

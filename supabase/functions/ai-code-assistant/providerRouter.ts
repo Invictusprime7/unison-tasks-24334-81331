@@ -235,7 +235,16 @@ export function buildProviderPlan(
       };
       break;
 
-
+    case "wizard_content_enrichment":
+      plan = {
+        gatewayModels: [
+          m(MODELS.geminiFlashLite, 6000),
+          m(MODELS.gemini25Flash, 6000),
+        ],
+        perModelTimeoutMs: 35000,
+        fallbackMaxTokens: 6000,
+      };
+      break;
 
     case "nav_page_generation":
       plan = {
@@ -306,7 +315,10 @@ export function buildProviderPlan(
   // Apply complexity-based auto-upgrade (wizard seed is protected — the
   // wizard seed lineup is intentionally tuned for first-shot success and
   // must not be swapped out for slower advanced-tier models).
-  if (task.type !== "wizard_seed_generation") {
+  const usesProtectedWizardPlan = task.type === "wizard_seed_generation"
+    || task.type === "wizard_content_enrichment"
+    || task.type === "wizard_interaction_enrichment";
+  if (!usesProtectedWizardPlan) {
     const baseTokens = plan.gatewayModels[0]?.maxTokens ?? 32000;
     const upgrade = applyComplexityUpgrade(plan.gatewayModels, complexity, baseTokens);
     plan.gatewayModels = upgrade.models;

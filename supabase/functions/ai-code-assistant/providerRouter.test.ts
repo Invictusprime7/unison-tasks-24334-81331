@@ -26,6 +26,14 @@ const wizardTask: ClassifiedTask = {
   type: "wizard_seed_generation",
 };
 
+const wizardContentTask: ClassifiedTask = {
+  ...task,
+  type: "wizard_content_enrichment",
+  fastPath: true,
+  shouldUseCompactContext: true,
+  skipThinking: true,
+};
+
 const bothProviders = (name: string): string | undefined => ({
   GEMINI_API_KEY: "gemini-test-key",
   OPENAI_API_KEY: "openai-test-key",
@@ -164,4 +172,23 @@ Deno.test("gives focused Wizard page completion one model with its full budget, 
   assertEquals(plan.perModelTimeoutMs, 50_000);
   assertEquals(plan.preferLongLeadAttempt, false);
   assertEquals(plan.balancedProviderAttempts, true);
+});
+
+Deno.test("keeps Wizard content enrichment bounded to small structured-output models", () => {
+  const plan = buildProviderPlan(
+    wizardContentTask,
+    true,
+    undefined,
+    "moderate",
+    "wizard-content-route",
+    bothProviders,
+  );
+
+  assertEquals(plan.gatewayModels.map((model) => model.id), [
+    "google/gemini-2.5-flash-lite",
+    "google/gemini-2.5-flash",
+  ]);
+  assertEquals(plan.gatewayModels.map((model) => model.maxTokens), [6_000, 6_000]);
+  assertEquals(plan.fallbackMaxTokens, 6_000);
+  assertEquals(plan.perModelTimeoutMs, 35_000);
 });

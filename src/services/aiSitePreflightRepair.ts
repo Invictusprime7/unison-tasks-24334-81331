@@ -263,11 +263,18 @@ function trimParseableTrailingSuffix(source: string): string | null {
 
 // ────────────────────────────────────────────────────────────────── public
 
-export function runPreflightRepair(
+/**
+ * Per-file generator form of the preflight repair. Parsing/repairing a large
+ * wizard VFS is CPU-heavy enough to freeze the shell when run as one blocking
+ * call, so callers on an async host drive this generator and yield between
+ * files to keep the UI responsive.
+ */
+export function* runPreflightRepairSteps(
   files: Record<string, string>,
   options: PreflightOptions = {},
-): PreflightResult {
+): Generator<void, PreflightResult, void> {
   const maxPasses = options.maxPasses ?? 4;
+
   const ctx: QuarantineContext = options.context ?? {};
   const out: Record<string, string> = { ...files };
   const reports: PreflightFileReport[] = [];

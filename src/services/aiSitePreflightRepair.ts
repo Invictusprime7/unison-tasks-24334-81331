@@ -283,10 +283,12 @@ export function* runPreflightRepairSteps(
   let quarantined = 0;
 
   for (const [path, source] of Object.entries(files)) {
+    yield;
     if (typeof source !== 'string' || !isCodeFile(path)) {
       out[path] = source;
       continue;
     }
+
 
     const first = tryParse(source);
     if (first.ok === true) {

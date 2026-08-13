@@ -348,3 +348,14 @@ export function* runPreflightRepairSteps(
     quarantinedCount: quarantined,
   };
 }
+
+/** Blocking convenience wrapper used by callers without an async host. */
+export function runPreflightRepair(
+  files: Record<string, string>,
+  options: PreflightOptions = {},
+): PreflightResult {
+  const steps = runPreflightRepairSteps(files, options);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}

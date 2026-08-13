@@ -198,6 +198,13 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
       return;
     }
 
+    // Artifact registry contract (Stage 1): a locked artifact must never
+    // reach Lane B, regardless of DOM scope override.
+    if (!editScope.aiEditable) {
+      setError('This element is locked for AI edits. Use the manual editor or Business Center for this content.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccess(false);
@@ -354,6 +361,8 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
             editableRange: editScope.editableRange ?? undefined,
             lockedBindings: editScope.lockedBindings,
             riskLevel: editScope.riskLevel,
+            artifactId: editScope.artifactId ?? undefined,
+            aiEditScope: editScope.aiEditScope ?? undefined,
           }).filter(([, v]) => v !== null && v !== undefined),
         ),
         selectedSlot,
@@ -507,9 +516,13 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
           value={prompt}
           onChange={e => { setPrompt(e.target.value); setError(null); }}
           onKeyDown={handleKeyDown}
-          placeholder={`Describe changes to this ${element.tagName || 'element'}… (Enter to send, Shift+Enter for newline)`}
+          placeholder={
+            editScope.aiEditable
+              ? `Describe changes to this ${element.tagName || 'element'}… (Enter to send, Shift+Enter for newline)`
+              : 'This element is locked for AI edits — use the manual editor or Business Center.'
+          }
           rows={2}
-          disabled={loading || success}
+          disabled={loading || success || !editScope.aiEditable}
           className={cn(
             'flex-1 min-w-0 resize-none text-xs py-1.5 px-2.5 rounded-lg',
             'bg-white/[0.07] border-white/10 text-white placeholder:text-white/30',
@@ -519,7 +532,7 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         />
         <Button
           onClick={handleSubmit}
-          disabled={!prompt.trim() || loading || success}
+          disabled={!prompt.trim() || loading || success || !editScope.aiEditable}
           size="sm"
           className={cn(
             'h-[54px] w-9 p-0 shrink-0 rounded-lg',

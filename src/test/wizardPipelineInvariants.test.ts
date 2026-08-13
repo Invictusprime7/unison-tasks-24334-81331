@@ -41,11 +41,19 @@ describe('wizard pipeline ownership invariants', () => {
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
       'utf8',
     );
+    const canonicalLaunchSource = readFileSync(
+      resolve(process.cwd(), 'src/services/canonicalLaunchVfs.ts'),
+      'utf8',
+    );
 
     expect(launcherSource).toContain('function yieldToBrowser(): Promise<void>');
     expect(launcherSource).toContain("setLaunchStatus('Preparing your site…');");
     expect(launcherSource).toContain('await yieldToBrowser();');
     expect(launcherSource).toContain("setLaunchStatus('Finalizing preview…');");
+    expect(launcherSource).toContain('await buildCanonicalLaunchArtifactsAsync({');
+    expect(launcherSource).toContain('yieldToHost: yieldToBrowser');
+    expect(canonicalLaunchSource).toContain('export async function buildCanonicalLaunchArtifactsAsync(');
+    expect(canonicalLaunchSource).toContain('function* buildCanonicalLaunchArtifactSteps(');
   });
 
   it('returns the exact topology plan used to populate SiteBundleSnapshot.pageRegistry', () => {
@@ -325,8 +333,11 @@ describe('wizard pipeline ownership invariants', () => {
       'takeWizardGenerationBudget(WIZARD_UI_REPAIR_MAX_MS)',
     );
     expect(launcherSource).toContain(
-      'missingWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES',
+      'unresolvedWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES',
     );
+    expect(launcherSource).toContain('compileStructuredWizardFaqPage({');
+    expect(launcherSource).toContain("if (pageRole !== 'faq') continue;");
+    expect(launcherSource).toContain('const unresolvedWizardPageFiles = missingWizardPageFiles.filter(');
     expect(launcherSource).toContain(
       'takeWizardGenerationBudget(WIZARD_BATCH_REPAIR_MAX_MS)',
     );

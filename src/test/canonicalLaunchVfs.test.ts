@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildCanonicalLaunchArtifacts,
+  buildCanonicalLaunchArtifactsAsync,
   CANONICAL_METADATA_FILE_PATHS,
   mergeGeneratedVfsWithCanonicalSnapshot,
 } from "@/services/canonicalLaunchVfs";
@@ -199,6 +200,36 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.wizardRuntime]).toContain('token-glass');
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.siteBundleSnapshot]).toContain("\"vfsFilePaths\"");
     expect(artifacts.files['/src/components/businessProfile.ts']).toContain('useBusinessProfile');
+  });
+
+  it('yields between finalization stages without changing canonical artifacts', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-13T21:00:00.000Z'));
+    const snapshot = createSnapshot();
+    const input = {
+      generatedFiles: {
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      themePresetId: 'modern',
+      strictPreflight: true,
+    };
+    const synchronous = buildCanonicalLaunchArtifacts(input);
+    let yieldCount = 0;
+
+    const asynchronous = await buildCanonicalLaunchArtifactsAsync(input, {
+      yieldToHost: async () => {
+        yieldCount += 1;
+      },
+    });
+
+    expect(yieldCount).toBeGreaterThanOrEqual(8);
+    expect(asynchronous.files).toEqual(synchronous.files);
+    expect(asynchronous.runtimeManifest).toEqual(synchronous.runtimeManifest);
+    expect(asynchronous.siteBundleSnapshot?.snapshotId).toBe(synchronous.siteBundleSnapshot?.snapshotId);
+    vi.useRealTimers();
   });
 
   it("uses SiteBundleSnapshot VFS instead of a stale compile result at launch", () => {

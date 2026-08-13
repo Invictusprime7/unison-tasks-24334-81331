@@ -81,7 +81,7 @@ import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { preflightNavWiring } from "@/services/preflightNavWiring";
 import { runPreflightRepair } from "@/services/aiSitePreflightRepair";
-import { buildCanonicalLaunchArtifacts } from "@/services/canonicalLaunchVfs";
+import { buildCanonicalLaunchArtifactsAsync } from "@/services/canonicalLaunchVfs";
 import { VFSPreview } from "@/components/VFSPreview";
 import {
   createConfirmedLaunchIds,
@@ -134,6 +134,7 @@ import {
   getWizardPageRoleInstruction,
 } from "@/services/wizardPageQuality";
 import {
+  compileStructuredWizardFaqPage,
   isSyntaxCompletionFailure,
   selectIndustryIntentForIsolatedPage,
 } from "@/services/wizardPageCompletionRecovery";
@@ -3125,6 +3126,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         reason: string;
       }> = [];
       const rejectedPageCandidates: Record<string, string> = {};
+      const structuredCompiledPaths: string[] = [];
 
       const acceptCompletedWizardPage = (
         path: string,
@@ -3309,12 +3311,46 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         return true;
       };
 
+      for (const missingPath of missingWizardPageFiles) {
+        const normalizedPath = missingPath.startsWith('/') ? missingPath : `/${missingPath}`;
+        const pageRole = findRegisteredPageRole(siteBundleSnapshot, normalizedPath);
+        if (pageRole !== 'faq') continue;
+
+        const intent = selectIndustryIntentForIsolatedPage(resolvedIndustry, pageRole);
+        if (!intent) {
+          throw new Error(`Structured FAQ compiler could not resolve an authorized industry intent for ${resolvedIndustry}.`);
+        }
+        const compiledFaq = compileStructuredWizardFaqPage({
+          filePath: normalizedPath,
+          businessName: brand,
+          industry: resolvedIndustry,
+          intent,
+        });
+        if (!acceptCompletedWizardPage(normalizedPath, { [compiledFaq.filePath]: compiledFaq.source }, 0)) {
+          const failure = [...laneBCompletionDiagnostics]
+            .reverse()
+            .find((diagnostic) => diagnostic.path === normalizedPath && !diagnostic.accepted)?.reason;
+          throw new Error(`Structured FAQ compiler failed the canonical page acceptance gate: ${failure || normalizedPath}`);
+        }
+        structuredCompiledPaths.push(normalizedPath);
+      }
+      if (structuredCompiledPaths.length > 0) {
+        console.info('[SystemLauncher] Materialized structured Wizard pages without executable AI output', {
+          paths: structuredCompiledPaths,
+        });
+      }
+
+      const unresolvedWizardPageFiles = missingWizardPageFiles.filter((path) => {
+        const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+        return !aiSourcedFiles[normalizedPath] && !aiSourcedFiles[normalizedPath.replace(/^\//, '')];
+      });
+
       if (
-        missingWizardPageFiles.length > 0 &&
-        missingWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES
+        unresolvedWizardPageFiles.length > 0 &&
+        unresolvedWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES
       ) {
-        setLaunchStatus(`Generating ${missingWizardPageFiles.length} remaining page(s)…`);
-        const normalizedMissing = missingWizardPageFiles.map((p) => (p.startsWith('/') ? p : `/${p}`));
+        setLaunchStatus(`Generating ${unresolvedWizardPageFiles.length} remaining page(s)…`);
+        const normalizedMissing = unresolvedWizardPageFiles.map((p) => (p.startsWith('/') ? p : `/${p}`));
         const missingPageDetails = Object.values(siteBundleSnapshot.pageRegistry.pages)
           .filter((page) => {
             const fp = (page as { filePath?: string }).filePath;
@@ -3396,19 +3432,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         } catch (retryErr) {
           console.warn('[SystemLauncher] Lane B repair pass threw:', retryErr);
         }
-      } else if (missingWizardPageFiles.length > WIZARD_BATCH_REPAIR_MAX_PAGES) {
+      } else if (unresolvedWizardPageFiles.length > WIZARD_BATCH_REPAIR_MAX_PAGES) {
         console.info('[SystemLauncher] Skipping oversized Lane B batch repair; using isolated page completion', {
-          missingPageCount: missingWizardPageFiles.length,
+          missingPageCount: unresolvedWizardPageFiles.length,
           batchRepairLimit: WIZARD_BATCH_REPAIR_MAX_PAGES,
         });
       }
 
-      // Recompute missing after the repair pass — Lane B is the sole author.
-      // We deliberately do NOT backfill from siteBundleSnapshot.vfsFiles: that
-      // scaffold is the industry sitebundle preset and shipping it as a page
-      // body produces the "default template preset" bodies across industries
-      // that the user reported. Hard-fail so the pipeline gets fixed instead
-      // of masked.
+      // Recompute missing after structured compilation and the Lane B repair
+      // pass. Snapshot scaffolds remain blocked: supported structured compilers
+      // or accepted Lane B output must own every selected page body.
       const stillMissing = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .filter((path): path is string => Boolean(path))
@@ -3772,7 +3805,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       setLaunchStatus('Finalizing preview…');
       await yieldToBrowser();
-      const launchArtifacts = buildCanonicalLaunchArtifacts({
+      const launchArtifacts = await buildCanonicalLaunchArtifactsAsync({
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
         siteBundleSnapshot,
@@ -3798,6 +3831,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
         strictPreflight: true,
+      }, {
+        yieldToHost: yieldToBrowser,
       });
       const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
       const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({

@@ -606,9 +606,9 @@ export function upsertCanonicalMetadataFiles(
   return nextFiles;
 }
 
-export function buildCanonicalLaunchArtifacts(
+function* buildCanonicalLaunchArtifactSteps(
   input: BuildCanonicalLaunchArtifactsInput,
-): CanonicalLaunchArtifacts {
+): Generator<void, CanonicalLaunchArtifacts, void> {
   const mergeWithCanonicalSnapshot = input.mergeWithCanonicalSnapshot ?? true;
   const snapshotThemePresetId = input.siteBundleSnapshot
     ? assertSnapshotThemeSeed(
@@ -632,6 +632,7 @@ export function buildCanonicalLaunchArtifacts(
         Object.entries(input.generatedFiles).filter(([path]) => !isCanonicalWizardSharedChromePath(path)),
       )
     : input.generatedFiles;
+  yield;
   const normalizedFiles = normalizeLauncherFiles(generatedFiles, {
     entryPoint: input.preferredEntryPoint,
     themePresetId: resolvedThemePresetId,
@@ -647,6 +648,7 @@ export function buildCanonicalLaunchArtifacts(
   // Run a pre-binding syntax repair pass so wizard binding / nav wiring
   // mutations never operate on broken JSX (which would amplify errors and
   // surface a "syntax error" screen in the preview iframe).
+  yield;
   const earlyRepair = (() => {
     try {
       return runPreflightRepair(normalizedFiles, {
@@ -690,12 +692,14 @@ export function buildCanonicalLaunchArtifacts(
     }
   }
 
+  yield;
   const bindingApplication = input.siteBundleSnapshot
     ? applyWizardBindingsToVfs(repairedFiles, input.siteBundleSnapshot)
     : null;
 
   // The snapshot is the only canonical VFS source once it exists. A compile
   // result is an intermediate stage and may be stale when Lane B is merged.
+  yield;
   const canonicalFiles = input.siteBundleSnapshot
     ? ensureGeneratedUiFoundation(input.siteBundleSnapshot.vfsFiles, {
         industry: input.industry || input.siteBundleSnapshot.industry,
@@ -707,6 +711,7 @@ export function buildCanonicalLaunchArtifacts(
       }).files
     : input.compiledPlayground?.vfsFiles || {};
   const boundFiles = bindingApplication?.files || repairedFiles;
+  yield;
   const preflight = input.siteBundleSnapshot
     ? (() => {
         try {
@@ -756,6 +761,7 @@ export function buildCanonicalLaunchArtifacts(
   // ── Final syntax repair ────────────────────────────────────────────────
   // Catch any syntax damage introduced by binding/nav-wiring attribute
   // injection before files reach the preview iframe.
+  yield;
   const finalRepair = (() => {
     try {
       return runPreflightRepair(filesAfterStrip, {
@@ -793,6 +799,7 @@ export function buildCanonicalLaunchArtifacts(
     }
   }
 
+  yield;
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
         allowCanonicalPageFallback: input.allowCanonicalPageFallback,
@@ -851,6 +858,7 @@ export function buildCanonicalLaunchArtifacts(
     extraDependencies: runtimeManifest.dependencies,
     themePresetId: appContext.themePresetId || (input.aesthetic as string | undefined) || null,
   });
+  yield;
   const snapshotRepair = runPreflightRepair(viteReadyFiles, {
     context: { industry: input.industry, brand: input.businessName },
   });
@@ -902,6 +910,7 @@ export function buildCanonicalLaunchArtifacts(
   // source shape above; this final pass catches unresolved JSX named/default
   // imports after every canonical merge and generated-runtime transformation.
   if (input.strictPreflight) {
+    yield;
     try {
       prepareSandpackFiles(hydratedFiles, {
         entryPoint,
@@ -940,4 +949,26 @@ export function buildCanonicalLaunchArtifacts(
     canonicalPlayground,
     bindingApplication,
   };
+}
+
+export function buildCanonicalLaunchArtifacts(
+  input: BuildCanonicalLaunchArtifactsInput,
+): CanonicalLaunchArtifacts {
+  const steps = buildCanonicalLaunchArtifactSteps(input);
+  let result = steps.next();
+  while (!result.done) result = steps.next();
+  return result.value;
+}
+
+export async function buildCanonicalLaunchArtifactsAsync(
+  input: BuildCanonicalLaunchArtifactsInput,
+  options: { yieldToHost: () => Promise<void> },
+): Promise<CanonicalLaunchArtifacts> {
+  const steps = buildCanonicalLaunchArtifactSteps(input);
+  let result = steps.next();
+  while (!result.done) {
+    await options.yieldToHost();
+    result = steps.next();
+  }
+  return result.value;
 }

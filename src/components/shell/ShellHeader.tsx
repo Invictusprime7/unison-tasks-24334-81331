@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { RouteBreadcrumbItem, RouteNavItem, RouteShellDefinition } from "@/routes";
+import { ShellAccountMenu } from "./ShellAccountMenu";
 import { ShellBreadcrumbs } from "./ShellBreadcrumbs";
 import { ShellStatusBadge } from "./ShellStatusBadge";
 
@@ -42,21 +43,24 @@ export function ShellHeader({
             {description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>}
           </div>
 
-          {primaryAction && (
-            actionHref ? (
-              <Button asChild className="w-full shrink-0 md:w-auto">
-                <Link to={actionHref}>
+          <div className="flex shrink-0 items-center gap-2">
+            {primaryAction && (
+              actionHref ? (
+                <Button asChild className="w-full shrink-0 md:w-auto">
+                  <Link to={actionHref}>
+                    {primaryAction}
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button className="w-full shrink-0 md:w-auto" disabled>
                   {primaryAction}
                   <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-            ) : (
-              <Button className="w-full shrink-0 md:w-auto" disabled>
-                {primaryAction}
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            )
-          )}
+                </Button>
+              )
+            )}
+            <ShellAccountMenu />
+          </div>
         </div>
       </div>
     </header>

@@ -139,10 +139,9 @@ export const appRoutes: AppRouteConfig[] = [
       title: "Dashboard",
       section: "workspace",
       shell: "workspace",
-      chrome: "legacy",
+      chrome: "canonical",
       requiresAuth: true,
       requiresWorkspace: true,
-      primaryAction: "Create project",
     },
   },
   {

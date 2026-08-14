@@ -65,7 +65,6 @@ import {
   type PremiumSectionReference,
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
-import { commitToPipeline } from "@/platform/core";
 import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { preflightNavWiring } from "@/services/preflightNavWiring";
@@ -74,8 +73,10 @@ import { buildCanonicalLaunchArtifactsAsync } from "@/services/canonicalLaunchVf
 import {
   createWizardLaunchRuntime,
   WIZARD_LAUNCH_LIMITS,
+  type WizardLaunchProgress,
   type WizardLaunchRuntime,
 } from "@/services/wizardLaunchRuntime";
+import { runWizardStage4b } from "@/services/wizardStage4bRuntime";
 import {
   createConfirmedLaunchIds,
   provisionConfirmedLaunchSite,
@@ -1456,7 +1457,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [businessName, setBusinessName] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
-  const [launchStatus, setLaunchStatus] = useState("");
+  const [launchProgress, setLaunchProgress] = useState<WizardLaunchProgress | null>(null);
   const [launchFailure, setLaunchFailure] = useState("");
   const launchRuntimeRef = useRef<WizardLaunchRuntime | null>(null);
   // Business Profile selected in the wizard header. When set, the project
@@ -1560,7 +1561,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     setBusinessName("");
     setCustomPrompt("");
     setIsLaunching(false);
-    setLaunchStatus("");
+    setLaunchProgress(null);
     setLaunchFailure("");
     setValidationAttempts([]);
     setDiagnosticsExpanded(false);
@@ -1647,8 +1648,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     setIsLaunching(true);
     launchRuntimeRef.current?.dispose();
     const launchRuntime = createWizardLaunchRuntime({
-      onProgress: ({ label, elapsedMs }) => {
-        setLaunchStatus(`${label} · ${Math.max(1, Math.floor(elapsedMs / 1_000))}s`);
+      onProgress: (progress) => {
+        setLaunchProgress(progress);
       },
     });
     launchRuntimeRef.current = launchRuntime;
@@ -1818,10 +1819,23 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         '/.unison/wizard-seed.json': JSON.stringify(preWizardSeed, null, 2),
       };
 
-      const pipelineResult = commitToPipeline(
-        { selections: wizardSelections, existingVfsFiles: preWiredExistingFiles },
-        'wizard-launch',
-      );
+      const stage4b = await launchRuntime.run({
+        stage: 'foundation',
+        label: 'Building your design system…',
+        capMs: WIZARD_LAUNCH_LIMITS.stage4bMs,
+        operation: ({ signal }) => runWizardStage4b({
+          selections: wizardSelections,
+          existingVfsFiles: preWiredExistingFiles,
+          signal,
+          yieldToHost: yieldToBrowser,
+        }),
+      });
+      const pipelineResult = stage4b.pipelineResult;
+      console.info('[SystemLauncher] Stage 4b ready', {
+        execution: stage4b.execution,
+        durationMs: stage4b.durationMs,
+        fileCount: Object.keys(pipelineResult.siteBundleSnapshot.vfsFiles).length,
+      });
       const {
         playground: materializedPlayground,
         compileResult: compiledPlayground,
@@ -2242,7 +2256,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // preset or scaffold.
       let launchReliabilityMode: 'ai' | 'lane-b-degraded' | 'lane-b-blocked' = 'ai';
       {
-        setLaunchStatus('Generating site…');
+        launchRuntime.update('generate', 'Generating site…');
         // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
         // Pass a SLIM blueprint — wizardSeed already carries brand/theme/intents.
         const slimBlueprint = {
@@ -2286,7 +2300,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           const mergedFirstAttemptFiles: Record<string, string> = {};
           let firstAttemptFailure: unknown = null;
           let completedFirstAttemptBatches = 0;
-          setLaunchStatus(`Generating site… (0/${firstAttemptBatchPlan.batches.length} page groups)`);
+          launchRuntime.update(
+            'generate',
+            `Generating site… (0/${firstAttemptBatchPlan.batches.length} page groups)`,
+          );
 
           for (
             let batchOffset = 0;
@@ -2354,7 +2371,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
             for (const outcome of outcomes) {
               completedFirstAttemptBatches += 1;
-              setLaunchStatus(
+              launchRuntime.update(
+                'generate',
                 `Generating site… (${completedFirstAttemptBatches}/${firstAttemptBatchPlan.batches.length} page groups)`,
               );
               if (outcome.error) {
@@ -2439,7 +2457,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             const mergedFiles: Record<string, string> = {};
             let batchFailure: unknown = null;
             let completedBatches = 0;
-            setLaunchStatus(
+            launchRuntime.update(
+              'generate',
               batches.length > 1
                 ? `Generating site… (0/${batches.length} sections)`
                 : 'Generating site…',
@@ -2486,7 +2505,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   }, { signal, timeoutMs: budgetMs - 2_000 }),
                 });
                 completedBatches += 1;
-                setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
+                launchRuntime.update(
+                  'generate',
+                  `Generating site… (${completedBatches}/${batches.length} sections)`,
+                );
                 if (batchResult.error) {
                   return { error: batchResult.error };
                 }
@@ -2505,7 +2527,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 return { files: scopedFiles };
               } catch (batchThrow) {
                 completedBatches += 1;
-                setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
+                launchRuntime.update(
+                  'generate',
+                  `Generating site… (${completedBatches}/${batches.length} sections)`,
+                );
                 return { error: batchThrow };
               }
             }));
@@ -2600,7 +2625,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 // correction turn before applying the strict no-fallback gate.
                 // This preserves the contract without turning a repairable
                 // import omission into a failed wizard launch.
-                setLaunchStatus('Applying generated UI foundation…');
+                launchRuntime.update('repair', 'Applying generated UI foundation…');
                 const uiRepairPrompt = [
                   aiUserPrompt,
                   '',
@@ -3348,7 +3373,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         unresolvedWizardPageFiles.length > 0 &&
         unresolvedWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES
       ) {
-        setLaunchStatus(`Generating ${unresolvedWizardPageFiles.length} remaining page(s)…`);
+        launchRuntime.update(
+          'repair',
+          `Generating ${unresolvedWizardPageFiles.length} remaining page(s)…`,
+        );
         const normalizedMissing = unresolvedWizardPageFiles.map((p) => (p.startsWith('/') ? p : `/${p}`));
         const missingPageDetails = Object.values(siteBundleSnapshot.pageRegistry.pages)
           .filter((page) => {
@@ -3470,7 +3498,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const industryVocabulary = (industryRequirements?.vocabulary || []).slice(0, 16).join(', ');
 
         if (!aiSourcedFiles[missingPath]) {
-          setLaunchStatus(`Completing ${page?.title || missingPath} (${attempt - 1}/3)…`);
+          launchRuntime.update(
+            'repair',
+            `Completing ${page?.title || missingPath} (${attempt - 1}/3)…`,
+          );
           const rejectedCandidate = rejectedPageCandidates[missingPath];
           const previousFailure = [...laneBCompletionDiagnostics]
             .reverse()
@@ -3631,7 +3662,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         }
       };
       if (stillMissing.length > 0) {
-        setLaunchStatus(`Completing ${stillMissing.length} remaining page(s) in parallel`);
+        launchRuntime.update(
+          'repair',
+          `Completing ${stillMissing.length} remaining page(s) in parallel`,
+        );
       }
       for (const attempt of [2, 3] as const) {
         const roundTargets = stillMissing.filter(
@@ -4015,6 +4049,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // dashboard. `replace: true` so back-nav doesn't re-enter the wizard.
       launchRuntime.update('handoff', 'Opening Web Builder…');
       await yieldToBrowser();
+      launchRuntime.complete('Website ready');
+      await yieldToBrowser();
       navigate("/web-builder", {
         replace: true,
         state: webBuilderNavigationState,
@@ -4033,7 +4069,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         launchRuntimeRef.current = null;
       }
       setIsLaunching(false);
-      setLaunchStatus("");
+      setLaunchProgress(null);
     }
   };
 
@@ -4258,7 +4294,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   <WizardTopAction
                     step={step}
                     isLaunching={isLaunching}
-                    launchStatus={launchStatus}
+                    launchProgress={launchProgress}
                     canContinueQuestions={!!primaryGoal}
                     canGenerate={!!businessName.trim()}
                     onQuestionsNext={handleQuestionsNext}
@@ -4415,7 +4451,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <WizardTopAction
                   step={step}
                   isLaunching={isLaunching}
-                  launchStatus={launchStatus}
+                  launchProgress={launchProgress}
                   canContinueQuestions={!!primaryGoal}
                   canGenerate={!!businessName.trim() && !!selectedTheme}
                   onQuestionsNext={handleQuestionsNext}
@@ -4537,7 +4573,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 <WizardTopAction
                   step={step}
                   isLaunching={isLaunching}
-                  launchStatus={launchStatus}
+                  launchProgress={launchProgress}
                   canContinueQuestions={!!primaryGoal}
                   canGenerate={!!businessName.trim()}
                   onQuestionsNext={handleQuestionsNext}

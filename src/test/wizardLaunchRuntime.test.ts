@@ -52,6 +52,22 @@ describe('wizard launch runtime', () => {
     runtime.dispose();
   });
 
+  it('emits an explicit 100 percent completion frame', () => {
+    const progress: Array<{ completionPercent: number; complete: boolean }> = [];
+    const runtime = createWizardLaunchRuntime({
+      onProgress: ({ completionPercent, complete }) => {
+        progress.push({ completionPercent, complete });
+      },
+    });
+
+    runtime.update('handoff', 'Opening Web Builder…');
+    expect(progress[progress.length - 1]).toMatchObject({ completionPercent: 98, complete: false });
+
+    runtime.complete('Website ready');
+    expect(progress[progress.length - 1]).toEqual({ completionPercent: 100, complete: true });
+    runtime.dispose();
+  });
+
   it('aborts a stage at its bounded deadline', async () => {
     vi.useFakeTimers();
     let observedSignal: AbortSignal | null = null;

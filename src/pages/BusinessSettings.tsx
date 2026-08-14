@@ -113,7 +113,7 @@ export default function BusinessSettings() {
     });
   }, [selectedBusiness?.id]);
 
-  // ── Business hours ───────────────────────────────────────────────────────
+  // ── Business hours ────────────────────────────────────────────────────
   const [hours, setHours] = useState<BusinessHoursRow[]>(defaultHours());
   const [hoursLoading, setHoursLoading] = useState(false);
   const [hoursSaving, setHoursSaving] = useState(false);
@@ -164,7 +164,7 @@ export default function BusinessSettings() {
     }
   }
 
-  // ── Staff ────────────────────────────────────────────────────────────
+  // ── Staff ──────────────────────────────────────────────────────────────
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);
   const [newStaff, setNewStaff] = useState({ name: "", email: "", role: "" });

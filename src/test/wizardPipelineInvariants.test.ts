@@ -315,6 +315,10 @@ describe('wizard pipeline ownership invariants', () => {
       resolve(process.cwd(), 'src/services/wizardLaunchRuntime.ts'),
       'utf8',
     );
+    const progressUiSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/WizardTopAction.tsx'),
+      'utf8',
+    );
 
     expect(runtimeSource).toContain('totalMs: 240_000');
     expect(runtimeSource).toContain('initialGenerationMs: 90_000');
@@ -327,6 +331,7 @@ describe('wizard pipeline ownership invariants', () => {
     // Total worst-case wall-clock time is bounded by takeWizardGenerationBudget
     // (the shared deadline), not by pre-shrinking each page's nominal cap.
     expect(launcherSource).toContain('const launchRuntime = createWizardLaunchRuntime({');
+    expect(launcherSource).toContain("launchRuntime.complete('Website ready')");
     expect(launcherSource).toContain('launchRuntime.run({');
     expect(launcherSource).not.toContain('takeWizardGenerationBudget');
     expect(launcherSource).not.toContain('WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES');
@@ -349,6 +354,10 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain(
       'Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, budgetMs - 5_000)',
     );
+    expect(progressUiSource).toContain('role="progressbar"');
+    expect(progressUiSource).toContain('launchProgress?.completionPercent');
+    expect(progressUiSource).toContain('strokeDashoffset: progressOffset');
+    expect(progressUiSource).not.toContain('PIPELINE_STAGES');
   });
 
   it('moves directly from generation through persistence into Web Builder', () => {

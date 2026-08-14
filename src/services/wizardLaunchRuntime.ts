@@ -1,21 +1,26 @@
 export type WizardLaunchStage =
   | 'prepare'
+  | 'foundation'
   | 'generate'
   | 'repair'
   | 'finalize'
   | 'persist'
-  | 'handoff';
+  | 'handoff'
+  | 'complete';
 
 export interface WizardLaunchProgress {
   stage: WizardLaunchStage;
   label: string;
   elapsedMs: number;
   remainingMs: number;
+  completionPercent: number;
+  complete: boolean;
 }
 
 export const WIZARD_LAUNCH_LIMITS = Object.freeze({
   totalMs: 240_000,
   minimumStageMs: 8_000,
+  stage4bMs: 30_000,
   initialGenerationMs: 90_000,
   uiRepairMs: 35_000,
   batchRepairMs: 40_000,
@@ -26,6 +31,30 @@ export const WIZARD_LAUNCH_LIMITS = Object.freeze({
   parallelPages: 2,
   isolatedRepairRounds: 2,
 } as const);
+
+const WIZARD_STAGE_PROGRESS_FLOOR: Record<WizardLaunchStage, number> = {
+  prepare: 3,
+  foundation: 12,
+  generate: 28,
+  repair: 68,
+  finalize: 82,
+  persist: 91,
+  handoff: 98,
+  complete: 100,
+};
+
+export function getWizardLaunchCompletionPercent(
+  stage: WizardLaunchStage,
+  elapsedMs: number,
+  totalMs: number = WIZARD_LAUNCH_LIMITS.totalMs,
+): number {
+  if (stage === 'complete') return 100;
+  const timeProgress = Math.min(
+    96,
+    Math.floor((Math.max(0, elapsedMs) / Math.max(1, totalMs)) * 96),
+  );
+  return Math.min(98, Math.max(WIZARD_STAGE_PROGRESS_FLOOR[stage], timeProgress));
+}
 
 export class WizardLaunchDeadlineError extends Error {
   constructor(message = 'Wizard generation reached its bounded launch deadline.') {
@@ -56,7 +85,8 @@ interface RunWizardLaunchStageOptions<T> {
 export function createWizardLaunchRuntime(options: CreateWizardLaunchRuntimeOptions) {
   const now = options.now ?? Date.now;
   const startedAt = now();
-  const deadlineAt = startedAt + (options.totalMs ?? WIZARD_LAUNCH_LIMITS.totalMs);
+  const totalMs = options.totalMs ?? WIZARD_LAUNCH_LIMITS.totalMs;
+  const deadlineAt = startedAt + totalMs;
   const activeControllers = new Set<AbortController>();
   let progressTimer: ReturnType<typeof setInterval> | null = null;
   let disposed = false;
@@ -65,11 +95,14 @@ export function createWizardLaunchRuntime(options: CreateWizardLaunchRuntimeOpti
 
   const emit = (stage: WizardLaunchStage, label: string) => {
     if (disposed) return;
+    const elapsedMs = Math.max(0, now() - startedAt);
     options.onProgress({
       stage,
       label,
-      elapsedMs: Math.max(0, now() - startedAt),
+      elapsedMs,
       remainingMs: remainingMs(),
+      completionPercent: getWizardLaunchCompletionPercent(stage, elapsedMs, totalMs),
+      complete: stage === 'complete',
     });
   };
 
@@ -131,6 +164,11 @@ export function createWizardLaunchRuntime(options: CreateWizardLaunchRuntimeOpti
 
   const update = (stage: WizardLaunchStage, label: string) => pulse(stage, label);
 
+  const complete = (label = 'Website ready') => {
+    stopPulse();
+    emit('complete', label);
+  };
+
   const dispose = () => {
     disposed = true;
     stopPulse();
@@ -147,6 +185,7 @@ export function createWizardLaunchRuntime(options: CreateWizardLaunchRuntimeOpti
     takeBudget,
     run,
     update,
+    complete,
     dispose,
   };
 }

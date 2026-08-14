@@ -7,16 +7,7 @@ verify_jwt = true
 verify_jwt = false
 
 
-[functions.ai-design-assistant]
-verify_jwt = true
-
 [functions.generate-image]
-verify_jwt = true
-
-[functions.generate-ai-template]
-verify_jwt = true
-
-[functions.generate-template]
 verify_jwt = true
 
 [functions.generate-template-image]
@@ -105,9 +96,6 @@ verify_jwt = true
 [functions.builder-provision]
 verify_jwt = true
 
-[functions.builder-provision-lite]
-verify_jwt = true
-
 [functions.cms-records]
 verify_jwt = true
 
@@ -119,9 +107,6 @@ verify_jwt = false
 
 [functions.create-order-checkout]
 verify_jwt = false
-
-[functions.generate-fullstack-app]
-verify_jwt = true
 
 [functions.intent-action]
 verify_jwt = false

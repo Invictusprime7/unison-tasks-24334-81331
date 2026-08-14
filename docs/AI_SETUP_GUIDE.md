@@ -55,14 +55,6 @@ Once configured, your app will have:
 - **Edge Function**: `generate-page`
 - **Uses**: Direct OpenAI API
 
-### Template Generation
-- **Edge Functions**: `generate-template`, `generate-ai-template`
-- **Uses**: Direct OpenAI API
-
-### Design Assistant
-- **Edge Function**: `ai-design-assistant`
-- **Uses**: Direct OpenAI API
-
 ### Web Builder AI
 - **Edge Function**: `web-builder-ai`
 - **Uses**: Direct OpenAI API

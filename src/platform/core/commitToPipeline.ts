@@ -131,7 +131,7 @@ export function commitToPipeline(
     gate,
   };
 
-  emitCommit(committed);
+  publishPipelineCommit(committed);
   return committed;
 }
 
@@ -196,7 +196,8 @@ export function onPipelineCommit(listener: CommitListener): () => void {
   return () => listeners.delete(listener);
 }
 
-function emitCommit(commit: CommitResult): void {
+/** Publish a canonical commit produced in a separate browser worker realm. */
+export function publishPipelineCommit(commit: CommitResult): void {
   for (const l of listeners) {
     try {
       l(commit);

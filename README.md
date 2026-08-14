@@ -186,7 +186,6 @@ supabase/
   migrations/              Database schema and row-level access rules
 
 api/                       Vercel API and Inngest endpoints
-preview-service/           Legacy container preview tooling; inactive in Web Builder
 docs/                      Architecture, setup, operations, and integration guides
 scripts/                   Local setup, deployment, and infrastructure helpers
 ```
@@ -305,7 +304,7 @@ npx supabase functions deploy
 | [AI setup](docs/AI_SETUP_GUIDE.md)                                 | AI provider and key setup                               |
 | [AI template troubleshooting](docs/AI_TEMPLATE_TROUBLESHOOTING.md) | Finding and repairing generation problems               |
 | [Build to canvas workflow](docs/BUILD_TO_CANVAS_WORKFLOW.md)       | How the builder and preview work together               |
-| [Preview runtime](docs/PREVIEW_RUNTIME_ARCHITECTURE.md)            | Historical preview-service notes and runtime operations |
+| [Preview runtime](docs/PREVIEW_RUNTIME_ARCHITECTURE.md)            | Sandpack preview pipeline and runtime operations |
 | [VFS preview](docs/VFS_PREVIEW_ARCHITECTURE.md)                    | Project files and Sandpack integration                  |
 | [Universal intent system](docs/UNIVERSAL_INTENT_SYSTEM.md)         | Approved visitor actions and their runtime behavior     |
 | [Automation recipes](docs/AUTOMATION_RECIPES_ENGINE.md)            | Workflow recipe engine                                  |

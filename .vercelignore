@@ -1,9 +1,4 @@
-claude-code-main/
 /docs/
-my-project-html/
-openclaude-main/
 zip_extract/
 *.tar.gz
 *.zip
-build_output.txt
-webbuilder-layouts.patch

@@ -149,10 +149,8 @@ supabase inspect rls --project-ref nfrdomdvyrbwuokathtw
 
 **Status**: Optional - only needed for live preview editing
 
-**Resolution**: 
-- Preview service can be started manually: `docker-compose -f preview-service/docker-compose.yml up`
-- Or disabled if live preview not needed for current workflow
-- Requires Docker Desktop installation
+**Resolution**:
+- `preview-service/` has since been removed; Sandpack is the sole Web Builder preview runtime and does not require Docker.
 
 ## File Changes Summary
 

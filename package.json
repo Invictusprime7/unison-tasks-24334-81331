@@ -25,11 +25,6 @@
     "supabase:sync-secrets": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-auto-update.ps1 -SyncSecrets",
     "supabase:deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-auto-update.ps1 -Force",
     "supabase:watch": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-auto-update.ps1 -Watch",
-    "preview:docker": "powershell -ExecutionPolicy Bypass -File ./scripts/docker-preview-service.ps1 -Background",
-    "preview:docker:start": "powershell -ExecutionPolicy Bypass -File ./scripts/docker-preview-service.ps1 -Start",
-    "preview:docker:stop": "powershell -ExecutionPolicy Bypass -File ./scripts/docker-preview-service.ps1 -Stop",
-    "preview:docker:status": "powershell -ExecutionPolicy Bypass -File ./scripts/docker-preview-service.ps1 -Status",
-    "preview:docker:install": "powershell -ExecutionPolicy Bypass -File ./scripts/docker-preview-service.ps1 -Install",
     "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:3000/api/inngest",
     "inngest:deploy": "npx inngest-cli@latest deploy",
     "automation:dev": "concurrently \"npm run dev\" \"npm run inngest:dev\""

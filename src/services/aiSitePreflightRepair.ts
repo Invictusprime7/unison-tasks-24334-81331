@@ -123,7 +123,7 @@ function tryParse(source: string): { ok: true } | { ok: false; error: string } {
   }
 
   if (parseCache.size >= PARSE_CACHE_LIMIT) parseCache.clear();
-  parseCache.set(key, result.ok ? null : result.error);
+  parseCache.set(key, result.ok === true ? null : result.error);
   return result;
 }
 

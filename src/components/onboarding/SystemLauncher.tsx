@@ -182,7 +182,6 @@ interface SystemLauncherProps {
 interface LaunchPreviewConfirmation {
   businessName: string;
   siteName: string;
-  files: Record<string, string>;
   fileCount: number;
   pagePaths: string[];
   businessId: string;
@@ -3978,7 +3977,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const confirmed = await requestLaunchConfirmation({
         businessName: brand,
         siteName: `${brand} Site`,
-        files: wiredVfsFiles,
         fileCount: Object.keys(wiredVfsFiles).length,
         pagePaths: Object.keys(wiredVfsFiles)
           .filter((path) => /^\/?src\/pages\/.+\.tsx$/i.test(path))

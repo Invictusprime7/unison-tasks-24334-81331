@@ -372,7 +372,10 @@ describe('wizard pipeline ownership invariants', () => {
 
     expect(confirmationIndex).toBeGreaterThan(-1);
     expect(provisionIndex).toBeGreaterThan(confirmationIndex);
-    expect(launcherSource).toContain('<VFSPreview');
+    // Confirmation must stay compile-free. Sandpack starts after handoff in
+    // the Web Builder; mounting it here can freeze the launch decision modal.
+    expect(launcherSource).not.toContain('<VFSPreview');
+    expect(launcherSource).toContain('Live runtime compilation starts once in the Web Builder');
     expect(launcherSource).toContain('No site data was created.');
     expect(launcherSource).not.toContain('const installPromise =');
     expect(launcherSource.indexOf('setIsLaunching(false);', confirmationIndex - 250)).toBeGreaterThan(-1);

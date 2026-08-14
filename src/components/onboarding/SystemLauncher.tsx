@@ -4972,7 +4972,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           <div className="h-[62vh] min-h-[420px] overflow-hidden border border-white/10 bg-black">
             {launchPreviewConfirmation && (
               <VFSPreview
-                nodes={[]}
+                nodes={EMPTY_PREVIEW_NODES}
+
                 files={launchPreviewConfirmation.files}
                 businessId={launchPreviewConfirmation.businessId}
                 siteId={launchPreviewConfirmation.siteId}

@@ -112,7 +112,28 @@ async function refreshBuilderSession(): Promise<BuilderSession | null> {
   return builderRefreshInFlight;
 }
 
+/**
+ * Server-verified token check, memoized per access token so a batched Lane B
+ * run performs at most one round-trip. `getSession()` alone cannot detect a
+ * token issued by another project ref or invalidated by a key rotation.
+ */
+const builderTokenChecks = new Map<string, Promise<boolean>>();
+
+async function isTokenAcceptedByAuth(token: string): Promise<boolean> {
+  const cached = builderTokenChecks.get(token);
+  if (cached) return cached;
+  const check = supabase.auth
+    .getUser(token)
+    .then(({ data, error }) => !error && !!data.user)
+    .catch(() => true); // network hiccup: don't block the build on a probe
+  builderTokenChecks.set(token, check);
+  const ok = await check;
+  if (!ok) builderTokenChecks.delete(token);
+  return ok;
+}
+
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
+
 const MAX_RATE_LIMIT_RETRY_MS = 2_500;
 const MIN_BUILDER_GATEWAY_TIMEOUT_MS = 5_000;
 // Wizard seed generation gives Gemini's long structured response a 125 second
@@ -270,11 +291,26 @@ export async function runBuilderTurn<TResponse = any>(
     const session = sessionData.session;
     const expiresAt = (session?.expires_at ?? 0) * 1000;
     if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
-      return session.access_token;
+      // `getSession()` is a local read: a token minted by a different project
+      // ref, or invalidated by a signing-key rotation, still looks "valid" here
+      // and produces a hard 401 on every edge call. Validate once against Auth
+      // and only then trust it.
+      if (await isTokenAcceptedByAuth(session.access_token)) {
+        return session.access_token;
+      }
     }
     const refreshedSession = await refreshBuilderSession();
-    return refreshedSession?.access_token ?? null;
+    if (!refreshedSession) return null;
+    if (await isTokenAcceptedByAuth(refreshedSession.access_token)) {
+      return refreshedSession.access_token;
+    }
+    // Irrecoverable local session (wrong project / rotated keys): evict it so
+    // the app can prompt for a fresh sign-in instead of replaying 401s.
+    recentBuilderRefresh = null;
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    return null;
   };
+
 
   const invokeWithSignal = async (
     payload: Record<string, unknown>,

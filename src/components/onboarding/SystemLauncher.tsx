@@ -1508,6 +1508,9 @@ const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData
 // Component
 // ============================================================================
 
+/** Identity-stable empty node list so the review preview never recompiles. */
+const EMPTY_PREVIEW_NODES: never[] = [];
+
 export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherProps) => {
   const navigate = useNavigate();
   const { setLaunch } = useLaunch();
@@ -4972,7 +4975,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           <div className="h-[62vh] min-h-[420px] overflow-hidden border border-white/10 bg-black">
             {launchPreviewConfirmation && (
               <VFSPreview
-                nodes={[]}
+                nodes={EMPTY_PREVIEW_NODES}
+
                 files={launchPreviewConfirmation.files}
                 businessId={launchPreviewConfirmation.businessId}
                 siteId={launchPreviewConfirmation.siteId}

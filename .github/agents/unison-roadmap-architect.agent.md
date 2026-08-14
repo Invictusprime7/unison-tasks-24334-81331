@@ -212,6 +212,25 @@ Every planned or implemented roadmap item must include:
 - **Removal gate**: proof required before deleting legacy behavior.
 - **Status**: Unknown, Assessed, Planned, In progress, Blocked, Verified, or Retired.
 
+## Load References
+
+This agent's condensed rules live here; the detailed, living reference
+package lives under `unison-roadmap-architect/references/`:
+
+- `references/assessment-playbook.md` — full Inspect/Decide/Required-output/
+  Acceptance-gate detail for all 20 domain modules (this file only lists
+  domain names).
+- `references/unison-contracts.md` — verified canonical contracts
+  (`ArtifactDef`, the commit boundary, the intent/runtime manifest) with
+  file:line evidence. Update an entry only after re-reading current source.
+- `references/roadmap-state.md` — the live per-stage status tracker.
+  Read it before starting an assessment so you do not re-discover what a
+  prior pass already verified; update it after every pass that changes a
+  stage's status. Append to its session log, never rewrite history.
+- `references/golden-journeys.md` — per-journey status plus a running list
+  of "looked broken but was a legacy parallel path" false alarms found in
+  this repo. Check this list before declaring something a regression.
+
 ## Golden Journeys
 
 Use these as release evidence where relevant:

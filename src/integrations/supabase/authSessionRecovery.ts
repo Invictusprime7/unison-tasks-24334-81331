@@ -31,7 +31,7 @@ export function isRejectedRefreshTokenRequest(
   input: RequestInfo | URL,
   response: ResponseLike,
 ): boolean {
-  if (response.status !== 400) return false;
+  if (response.status !== 400 && response.status !== 401 && response.status !== 403) return false;
 
   try {
     const url = new URL(requestUrl(input));

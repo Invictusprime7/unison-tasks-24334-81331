@@ -1508,6 +1508,9 @@ const TemplatePreview = ({ card, isSelected, onClick }: { card: TemplateCardData
 // Component
 // ============================================================================
 
+/** Identity-stable empty node list so the review preview never recompiles. */
+const EMPTY_PREVIEW_NODES: never[] = [];
+
 export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherProps) => {
   const navigate = useNavigate();
   const { setLaunch } = useLaunch();

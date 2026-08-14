@@ -159,6 +159,15 @@ export function isProviderTimeoutError(err: unknown): boolean {
   return /provider attempt timed out|provider (?:attempt )?timed out|provider slice timeout|builder turn deadline exceeded|ai generation exceeded the wizard generation deadline/i.test(detail);
 }
 
+function isRejectedRefreshError(err: unknown): boolean {
+  const candidate = err as { status?: number; code?: string; message?: string } | null;
+  return candidate?.status === 400
+    || candidate?.status === 401
+    || candidate?.status === 403
+    || candidate?.code === 'refresh_token_not_found'
+    || /invalid refresh token|refresh token.*(?:invalid|expired|not found)/i.test(candidate?.message || '');
+}
+
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -219,6 +228,13 @@ export async function runBuilderTurn<TResponse = any>(
     if (refreshError || !refreshed.session) {
       // Never replay the rejected/expired token. The caller will surface the
       // sign-in-required state rather than issuing another guaranteed 401.
+      // A future `expires_at` is not proof that a persisted JWT is usable: a
+      // signing-key rotation can invalidate both tokens immediately. Remove
+      // that irrecoverable local session so later Wizard attempts do not keep
+      // replaying it and blanking the shell.
+      if (isRejectedRefreshError(refreshError)) {
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      }
       return null;
     }
     return refreshed.session.access_token;

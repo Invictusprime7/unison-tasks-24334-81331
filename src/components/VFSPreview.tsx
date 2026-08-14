@@ -385,11 +385,20 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const localViteConfigured = false;
   
   // Convert nodes to files - ALWAYS recompute to ensure we have latest
-  const files = useMemo(() => {
+  const rawFiles = useMemo(() => {
     const nodeFiles = nodesToFileMap(nodes);
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
-  const filesSignature = useMemo(() => createVfsHandoffSignature(files) || 'empty-vfs', [files]);
+  const filesSignature = useMemo(() => createVfsHandoffSignature(rawFiles) || 'empty-vfs', [rawFiles]);
+  // Identity-stable file map: callers frequently pass inline `nodes={[]}` or a
+  // freshly spread object, which would otherwise re-trigger the (expensive)
+  // preview compile on every parent render and lock up the main thread.
+  const stableFilesRef = useRef<{ signature: string; files: Record<string, string> } | null>(null);
+  if (!stableFilesRef.current || stableFilesRef.current.signature !== filesSignature) {
+    stableFilesRef.current = { signature: filesSignature, files: rawFiles };
+  }
+  const files = stableFilesRef.current.files;
+
 
   useEffect(() => {
     timeoutRecoveryCountRef.current = 0;
@@ -408,8 +417,27 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     compiling: true,
   });
 
+  // Coarse launch signature — LaunchContext re-publishes a new object on every
+  // status tick. Only the values the preview compiler actually reads may
+  // invalidate compiled artifacts.
+  const launchSignature = useMemo(() => [
+    launch?.themePresetId ?? '',
+    launch?.siteBundleSnapshot?.meta?.themePresetId ?? '',
+    launch?.siteBundleSnapshot?.industry ?? '',
+    launch?.businessName ?? '',
+    launch?.runtimeManifest?.appContext?.themePresetId ?? '',
+    Object.keys(launch?.siteBundleSnapshot?.vfsFiles || {}).length,
+  ].join('|'), [launch]);
+  const launchRef = useRef(launch);
+  launchRef.current = launch;
+  const compiledKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
+    const compileKey = `${filesSignature}::${launchSignature}`;
+    if (compiledKeyRef.current === compileKey) return;
+
     let cancelled = false;
+
 
     setPreviewCompile((current) => ({
       ...current,
@@ -418,11 +446,13 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     }));
 
     const timer = window.setTimeout(() => {
+      const launchState = launchRef.current;
       try {
-        const isWizardPreview = resolveSnapshot(files, launch).isWizardDraft;
+        const isWizardPreview = resolveSnapshot(files, launchState).isWizardDraft;
 
         if (!isWizardPreview && !hasRenderablePreviewSource(files)) {
           if (!cancelled) {
+            compiledKeyRef.current = compileKey;
             setPreviewCompile({
               sandpackFiles: {},
               dependencies: {},
@@ -436,10 +466,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
         const result = buildPreviewArtifacts({
           sourceFiles: files,
-          launchState: launch,
+          launchState,
         });
 
         if (!cancelled) {
+          compiledKeyRef.current = compileKey;
           setPreviewCompile({
             sandpackFiles: result.sandpackFiles,
             dependencies: result.dependencies,
@@ -458,6 +489,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
         console.error('[VFSPreview] Pipeline error:', pipelineError);
         if (!cancelled) {
+          compiledKeyRef.current = compileKey;
           setPreviewCompile({
             sandpackFiles: {},
             dependencies: {},
@@ -473,7 +505,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [filesSignature, launch]);
+  }, [files, filesSignature, launchSignature]);
+
 
   const {
     sandpackFiles,

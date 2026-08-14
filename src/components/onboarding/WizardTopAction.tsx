@@ -1,23 +1,26 @@
 /**
  * WizardTopAction — top-right action button for the SystemLauncher wizard.
  *
- * While generation is active, the real shared launch clock drives a circular
- * progress surface. It remains mounted through the explicit 100% completion
- * frame immediately before navigation to Web Builder.
+ * Renders the primary Continue / Generate button in the header (top-right)
+ * and, while generating, expands into a live pipeline stepper that walks
+ * through the wizard → Lane B → snapshot → intent-wiring → preview stages.
+ *
+ * The button is fully driven by props; all pipeline state derivation lives
+ * here so the launcher shell stays lean.
  */
 
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { WizardLaunchProgress } from "@/services/wizardLaunchRuntime";
 
 export type WizardStepKey = "industry" | "questions" | "templates" | "aesthetic";
 
 interface WizardTopActionProps {
   step: WizardStepKey;
   isLaunching: boolean;
-  launchProgress: WizardLaunchProgress | null;
+  launchStatus: string;
   canContinueQuestions: boolean;
   canGenerate: boolean;
   onQuestionsNext: () => void;
@@ -25,14 +28,30 @@ interface WizardTopActionProps {
   onLaunch: () => void;
 }
 
-const PROGRESS_RADIUS = 42;
-const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
+// Canonical pipeline stages surfaced to the user during generation.
+const PIPELINE_STAGES: { id: string; label: string; keywords: string[] }[] = [
+  { id: "plan", label: "Planning topology", keywords: ["plan", "topology"] },
+  { id: "generate", label: "Generating pages", keywords: ["generat"] },
+  { id: "repair", label: "Backfilling missing pages", keywords: ["remaining", "repair", "missing"] },
+  { id: "snapshot", label: "Merging snapshot & theme", keywords: ["snapshot", "theme", "merge"] },
+  { id: "intents", label: "Wiring intents & routes", keywords: ["intent", "wiring", "route"] },
+  { id: "preview", label: "Finalizing preview", keywords: ["preview", "finaliz", "commit"] },
+];
+
+function deriveStageFromStatus(status: string): number {
+  if (!status) return 0;
+  const lower = status.toLowerCase();
+  for (let i = PIPELINE_STAGES.length - 1; i >= 0; i--) {
+    if (PIPELINE_STAGES[i].keywords.some((k) => lower.includes(k))) return i;
+  }
+  return 0;
+}
 
 export function WizardTopAction(props: WizardTopActionProps) {
   const {
     step,
     isLaunching,
-    launchProgress,
+    launchStatus,
     canContinueQuestions,
     canGenerate,
     onQuestionsNext,
@@ -40,12 +59,29 @@ export function WizardTopAction(props: WizardTopActionProps) {
     onLaunch,
   } = props;
 
-  const completionPercent = Math.min(
-    100,
-    Math.max(0, launchProgress?.completionPercent ?? 0),
-  );
-  const progressOffset = PROGRESS_CIRCUMFERENCE * (1 - completionPercent / 100);
+  // Auto-advance a soft "expected stage" so users see motion even when the
+  // backend doesn't emit granular status updates. Real status keywords still
+  // win — see mergedStage below.
+  const [tickStage, setTickStage] = useState(0);
+  useEffect(() => {
+    if (!isLaunching) {
+      setTickStage(0);
+      return;
+    }
+    setTickStage(0);
+    const interval = window.setInterval(() => {
+      setTickStage((prev) => Math.min(prev + 1, PIPELINE_STAGES.length - 2));
+    }, 2200);
+    return () => window.clearInterval(interval);
+  }, [isLaunching]);
 
+  const mergedStage = useMemo(() => {
+    if (!isLaunching) return -1;
+    const derived = deriveStageFromStatus(launchStatus);
+    return Math.max(derived, tickStage);
+  }, [isLaunching, launchStatus, tickStage]);
+
+  // Which button variant to render based on wizard step.
   const buttonNode = (() => {
     if (step === "industry") return null;
 
@@ -58,7 +94,7 @@ export function WizardTopAction(props: WizardTopActionProps) {
             "h-8 px-4 text-xs font-semibold",
             "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
             "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
-            "transition-all disabled:opacity-30",
+            "transition-all disabled:opacity-30"
           )}
         >
           Continue
@@ -75,7 +111,7 @@ export function WizardTopAction(props: WizardTopActionProps) {
             "h-8 px-4 text-xs font-semibold",
             "bg-cyan-500/12 text-cyan-400 border border-cyan-500/25",
             "hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(0,200,255,0.12)]",
-            "transition-all",
+            "transition-all"
           )}
         >
           Continue
@@ -84,6 +120,7 @@ export function WizardTopAction(props: WizardTopActionProps) {
       );
     }
 
+    // aesthetic (generate)
     return (
       <Button
         onClick={onLaunch}
@@ -94,13 +131,13 @@ export function WizardTopAction(props: WizardTopActionProps) {
           "border border-cyan-500/30",
           "hover:from-cyan-500/30 hover:to-fuchsia-500/20",
           "hover:shadow-[0_0_24px_rgba(0,200,255,0.15)]",
-          "transition-all duration-300 disabled:opacity-30",
+          "transition-all duration-300 disabled:opacity-30"
         )}
       >
         {isLaunching ? (
           <>
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            {launchProgress?.label ?? "Generating…"}
+            {PIPELINE_STAGES[Math.min(mergedStage, PIPELINE_STAGES.length - 1)]?.label ?? "Generating…"}
           </>
         ) : (
           <>
@@ -117,72 +154,59 @@ export function WizardTopAction(props: WizardTopActionProps) {
     <div className="flex flex-col items-end gap-2">
       {buttonNode}
 
+      {/* Pipeline stepper — only while generating */}
       <AnimatePresence>
         {isLaunching && (
           <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            initial={{ opacity: 0, y: -4, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: "auto" }}
+            exit={{ opacity: 0, y: -4, height: 0 }}
             transition={{ duration: 0.2 }}
-            role="progressbar"
-            aria-label={launchProgress?.label ?? "Generating website"}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(completionPercent)}
-            className="w-[260px] rounded-xl border border-cyan-500/15 bg-[#0b0d18]/95 px-4 py-4 shadow-[0_10px_30px_rgba(0,0,0,0.4)] backdrop-blur-md sm:w-[280px]"
+            className="w-[280px] rounded-xl border border-cyan-500/15 bg-[#0b0d18]/95 shadow-[0_10px_30px_rgba(0,0,0,0.4)] backdrop-blur-md overflow-hidden"
           >
-            <div className="flex items-center gap-4">
-              <div className="relative h-24 w-24 flex-none">
-                <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r={PROGRESS_RADIUS}
-                    fill="none"
-                    stroke="rgba(255,255,255,0.07)"
-                    strokeWidth="7"
-                  />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r={PROGRESS_RADIUS}
-                    fill="none"
-                    stroke="rgb(34 211 238)"
-                    strokeWidth="7"
-                    strokeLinecap="round"
-                    strokeDasharray={PROGRESS_CIRCUMFERENCE}
-                    style={{
-                      strokeDashoffset: progressOffset,
-                      transition: "stroke-dashoffset 450ms ease-out",
-                    }}
-                    className="drop-shadow-[0_0_7px_rgba(34,211,238,0.65)]"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  {launchProgress?.complete ? (
-                    <Check className="h-7 w-7 text-cyan-300" />
-                  ) : (
-                    <span className="text-lg font-semibold tabular-nums text-white">
-                      {Math.round(completionPercent)}%
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-400/70">
-                  {launchProgress?.complete ? "Complete" : "Building website"}
-                </p>
-                <p className="mt-1 text-sm font-medium leading-snug text-white">
-                  {launchProgress?.label ?? "Preparing your site…"}
-                </p>
-                <p className="mt-1.5 text-[10px] font-mono text-white/40">
-                  {launchProgress?.complete
-                    ? "Opening Web Builder"
-                    : `${Math.max(1, Math.floor((launchProgress?.elapsedMs ?? 0) / 1_000))}s elapsed`}
-                </p>
-              </div>
+            <div className="px-3 py-2 border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-cyan-400/70 font-semibold">
+              Pipeline
             </div>
+            <ul className="p-2 space-y-1">
+              {PIPELINE_STAGES.map((stage, idx) => {
+                const done = idx < mergedStage;
+                const active = idx === mergedStage;
+                return (
+                  <li
+                    key={stage.id}
+                    className={cn(
+                      "flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] transition-colors",
+                      active && "bg-cyan-500/[0.08] text-cyan-300",
+                      done && "text-cyan-500/60",
+                      !active && !done && "text-white/25"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0",
+                        done && "bg-cyan-500/25 text-cyan-300",
+                        active && "bg-cyan-500 text-[#07080F]",
+                        !active && !done && "bg-white/[0.05] text-white/30"
+                      )}
+                    >
+                      {done ? (
+                        <Check className="h-2.5 w-2.5" />
+                      ) : active ? (
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      ) : (
+                        <span className="text-[9px]">{idx + 1}</span>
+                      )}
+                    </span>
+                    <span className="truncate">{stage.label}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            {launchStatus && (
+              <div className="px-3 py-2 border-t border-white/[0.06] text-[10px] text-white/40 font-mono truncate">
+                {launchStatus}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

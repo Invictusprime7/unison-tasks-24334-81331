@@ -47,10 +47,10 @@ describe('wizard pipeline ownership invariants', () => {
     );
 
     expect(launcherSource).toContain('function yieldToBrowser(): Promise<void>');
-    expect(launcherSource).toContain("launchRuntime.update('prepare', 'Preparing your site");
+    expect(launcherSource).toContain("setLaunchStatus('Preparing your site…');");
     expect(launcherSource).toContain('await yieldToBrowser();');
-    expect(launcherSource).toContain("launchRuntime.update('finalize', 'Finalizing your Builder workspace");
-    expect(launcherSource).toContain('await buildCanonicalLaunchArtifactsAsync({');
+    expect(launcherSource).toContain("setLaunchStatus('Finalizing preview…');");
+    expect(launcherSource).toContain('buildCanonicalLaunchArtifactsAsync({');
     expect(launcherSource).toContain('yieldToHost: yieldToBrowser');
     expect(canonicalLaunchSource).toContain('export async function buildCanonicalLaunchArtifactsAsync(');
     expect(canonicalLaunchSource).toContain('function* buildCanonicalLaunchArtifactSteps(');
@@ -306,81 +306,83 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(completionStructured.files))');
   });
 
-  it('runs every Lane B turn inside one bounded, visibly progressing launch runtime', () => {
+  it('prevents broad Lane B turns from starving isolated page completion', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
       'utf8',
     );
-    const runtimeSource = readFileSync(
-      resolve(process.cwd(), 'src/services/wizardLaunchRuntime.ts'),
-      'utf8',
-    );
-    const progressUiSource = readFileSync(
-      resolve(process.cwd(), 'src/components/onboarding/WizardTopAction.tsx'),
-      'utf8',
-    );
 
-    expect(runtimeSource).toContain('totalMs: 240_000');
-    expect(runtimeSource).toContain('initialGenerationMs: 90_000');
-    expect(runtimeSource).toContain('isolatedPageMs: 55_000');
-    expect(runtimeSource).toContain('gatewayMs: 85_000');
-    expect(runtimeSource).toContain('progressPulseMs: 1_000');
+    const constantValue = (name: string) => {
+      const match = launcherSource.match(new RegExp(`const ${name} = ([\\d_]+);`));
+      expect(match, `${name} should be declared as a numeric constant`).not.toBeNull();
+      return Number(match?.[1].replace(/_/g, ''));
+    };
 
     // Every isolated page gets the same generous, non-starved budget — no
     // more per-round FIRST/RETRY split that shrank as more pages went missing.
     // Total worst-case wall-clock time is bounded by takeWizardGenerationBudget
     // (the shared deadline), not by pre-shrinking each page's nominal cap.
-    expect(launcherSource).toContain('const launchRuntime = createWizardLaunchRuntime({');
-    expect(launcherSource).toContain("launchRuntime.complete('Website ready')");
-    expect(launcherSource).toContain('launchRuntime.run({');
-    expect(launcherSource).not.toContain('takeWizardGenerationBudget');
-    expect(launcherSource).not.toContain('WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES');
+    expect(constantValue('WIZARD_ISOLATED_PAGE_COMPLETION_MS')).toBeGreaterThanOrEqual(105_000);
+    expect(constantValue('WIZARD_ISOLATED_PAGE_COMPLETION_MS')).toBeLessThanOrEqual(120_000 + 12_000);
+    expect(constantValue('WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS')).toBeLessThanOrEqual(2);
+    expect(constantValue('WIZARD_INITIAL_AI_TURN_MS')).toBeGreaterThanOrEqual(140_000);
+    expect(launcherSource).toContain(
+      'takeWizardGenerationBudget(WIZARD_INITIAL_AI_TURN_MS)',
+    );
+    expect(launcherSource).toContain(
+      'takeWizardGenerationBudget(WIZARD_UI_REPAIR_MAX_MS)',
+    );
     expect(launcherSource).toContain(
       'unresolvedWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES',
     );
     expect(launcherSource).toContain('compileStructuredWizardFaqPage({');
     expect(launcherSource).toContain("if (pageRole !== 'faq') continue;");
     expect(launcherSource).toContain('const unresolvedWizardPageFiles = missingWizardPageFiles.filter(');
-    expect(launcherSource).toContain("mode: 'wizard-content'");
-    expect(launcherSource).toContain('parseStructuredWizardFaqContent(enrichment.data');
-    expect(launcherSource).toContain('content: enrichedContent || undefined');
-    expect(launcherSource).toContain('using deterministic industry content');
-    expect(launcherSource).toContain('for (const attempt of [2, 3] as const)');
+    expect(launcherSource).toContain(
+      'takeWizardGenerationBudget(WIZARD_BATCH_REPAIR_MAX_MS)',
+    );
+    expect(launcherSource).toContain(
+      'for (const attempt of [2, 3, 4] as const)',
+    );
     expect(launcherSource).toContain('completeMissingWizardPage(path, attempt)');
     expect(launcherSource).toContain("reasoningEffort: 'low'");
     expect(launcherSource).toContain("selectedModelId: 'google/gemini-2.5-flash-lite'");
     expect(launcherSource).toContain('maxTokens: 20_000');
-    expect(launcherSource).toContain('capMs: WIZARD_LAUNCH_LIMITS.isolatedPageMs');
+    expect(launcherSource).toContain('const completionBudgetMs = takeWizardGenerationBudget(');
+    expect(launcherSource).toContain('WIZARD_ISOLATED_PAGE_COMPLETION_MS,');
     expect(launcherSource).toContain(
-      'Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, budgetMs - 5_000)',
+      'Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, completionBudgetMs - 5_000)',
     );
-    expect(progressUiSource).toContain('role="progressbar"');
-    expect(progressUiSource).toContain('launchProgress?.completionPercent');
-    expect(progressUiSource).toContain('strokeDashoffset: progressOffset');
-    expect(progressUiSource).not.toContain('PIPELINE_STAGES');
+
+    // A timeout/transport failure must not consume a content-repair attempt.
+    expect(launcherSource).toContain('WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES = 1');
+    expect(launcherSource).toContain('function isRecoverableWizardCompletionTimeout(');
+    expect(launcherSource).toContain('transportRetry < WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES');
+    expect(launcherSource).toContain('isRecoverableWizardCompletionTimeout(completion.error)');
+    expect(launcherSource).toContain('isRecoverableWizardCompletionTimeout(completionError)');
   });
 
-  it('moves directly from generation through persistence into Web Builder', () => {
+  it('requires generated-preview confirmation before provisioning the durable site root', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
       'utf8',
     );
+    const confirmationIndex = launcherSource.indexOf('const confirmed = await requestLaunchConfirmation');
     const provisionIndex = launcherSource.indexOf('const confirmedLaunch = await provisionConfirmedLaunchSite');
-    const commitIndex = launcherSource.indexOf('const result = await commitMutation');
-    const navigationIndex = launcherSource.indexOf('navigate("/web-builder"');
 
-    expect(provisionIndex).toBeGreaterThan(-1);
-    expect(commitIndex).toBeGreaterThan(provisionIndex);
-    expect(navigationIndex).toBeGreaterThan(commitIndex);
-    expect(launcherSource).not.toContain('requestLaunchConfirmation');
-    expect(launcherSource).not.toContain('<AlertDialog');
+    expect(confirmationIndex).toBeGreaterThan(-1);
+    expect(provisionIndex).toBeGreaterThan(confirmationIndex);
+    // Confirmation must stay compile-free. Sandpack starts after handoff in
+    // the Web Builder; mounting it here can freeze the launch decision modal.
     expect(launcherSource).not.toContain('<VFSPreview');
-    expect(launcherSource).not.toContain('toast.error');
-    expect(launcherSource).not.toContain('toast.success');
+    expect(launcherSource).toContain('Live runtime compilation starts once in the Web Builder');
+    expect(launcherSource).toContain('No site data was created.');
     expect(launcherSource).not.toContain('const installPromise =');
+    expect(launcherSource.indexOf('setIsLaunching(false);', confirmationIndex - 250)).toBeGreaterThan(-1);
+    expect(launcherSource.indexOf('setIsLaunching(true);', confirmationIndex)).toBeGreaterThan(provisionIndex - 250);
   });
 
-  it('requires a persisted canonical revision before navigating to the builder', () => {
+  it('always reaches the builder, degrading commit gaps instead of blocking handoff', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
       'utf8',
@@ -391,8 +393,11 @@ describe('wizard pipeline ownership invariants', () => {
     expect(commitIndex).toBeGreaterThan(-1);
     expect(navigateIndex).toBeGreaterThan(commitIndex);
     expect(launcherSource).toContain('if (!result.persistedRevisionId)');
-    expect(launcherSource).toContain('Canonical launch commit did not persist a revision.');
-    expect(launcherSource).toContain('const canonicalVfsFiles = result.vfsFiles;');
+    // Handoff is guaranteed: a missing revision is recorded as a degradation
+    // and the builder opens on the local draft while saving completes.
+    expect(launcherSource).toContain("'commit.revision_pending'");
+    expect(launcherSource).toContain('publishLaunchDegradations(run.snapshot().degradations)');
+    expect(launcherSource).toContain('const canonicalVfsFiles = Object.keys(result.vfsFiles || {}).length > 0');
     expect(launcherSource).toContain('const canonicalSiteBundleSnapshot = result.siteBundleSnapshot;');
     expect(launcherSource).toContain('const canonicalRuntimeManifest = result.runtimeManifest;');
     expect(launcherSource).toContain('vfsFiles: canonicalVfsFiles');

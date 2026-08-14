@@ -135,7 +135,7 @@ describe("app route config", () => {
     const migration = getShellMigrationSummary();
 
     expect(migration.totalRoutes).toBe(appRoutes.length);
-    expect(migration.legacyRouteIds).toContain("dashboard");
+    expect(migration.legacyRouteIds).toContain("project");
     expect(migration.fullscreenRouteIds).toContain("web-builder");
     expect(migration.canonicalCount).toBe(getRoutesByChrome("canonical").length);
     expect(migration.legacyCount).toBe(getRoutesByChrome("legacy").length);

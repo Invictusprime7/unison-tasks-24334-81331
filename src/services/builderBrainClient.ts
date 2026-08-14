@@ -64,7 +64,76 @@ export interface BuilderTurnOptions {
   timeoutMs?: number;
 }
 
+type BuilderSession = Awaited<ReturnType<typeof supabase.auth.refreshSession>>['data']['session'];
+
+// Wizard page batches invoke Lane B concurrently. A rejected access token can
+// therefore make several requests call refreshSession at once; refresh-token
+// rotation lets the first call succeed and makes the rest look invalid. Share
+// one refresh and briefly reuse its result so every batch retries with the same
+// newly-issued access token.
+let builderRefreshInFlight: Promise<BuilderSession | null> | null = null;
+let recentBuilderRefresh: { session: BuilderSession; refreshedAt: number } | null = null;
+const BUILDER_REFRESH_REUSE_MS = 10_000;
+
+async function refreshBuilderSession(): Promise<BuilderSession | null> {
+  if (
+    recentBuilderRefresh?.session
+    && Date.now() - recentBuilderRefresh.refreshedAt < BUILDER_REFRESH_REUSE_MS
+  ) {
+    return recentBuilderRefresh.session;
+  }
+  if (builderRefreshInFlight) return builderRefreshInFlight;
+
+  builderRefreshInFlight = (async () => {
+    const beforeRefresh = (await supabase.auth.getSession()).data.session;
+    const { data, error } = await supabase.auth.refreshSession();
+    if (!error && data.session) {
+      recentBuilderRefresh = { session: data.session, refreshedAt: Date.now() };
+      return data.session;
+    }
+
+    // Another auth consumer may have completed a rotation while this request
+    // was in flight. Keep that newer session instead of clearing it because an
+    // older refresh token was rejected.
+    const currentSession = (await supabase.auth.getSession()).data.session;
+    if (currentSession && currentSession.access_token !== beforeRefresh?.access_token) {
+      recentBuilderRefresh = { session: currentSession, refreshedAt: Date.now() };
+      return currentSession;
+    }
+
+    if (isRejectedRefreshError(error)) {
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    }
+    return null;
+  })().finally(() => {
+    builderRefreshInFlight = null;
+  });
+
+  return builderRefreshInFlight;
+}
+
+/**
+ * Server-verified token check, memoized per access token so a batched Lane B
+ * run performs at most one round-trip. `getSession()` alone cannot detect a
+ * token issued by another project ref or invalidated by a key rotation.
+ */
+const builderTokenChecks = new Map<string, Promise<boolean>>();
+
+async function isTokenAcceptedByAuth(token: string): Promise<boolean> {
+  const cached = builderTokenChecks.get(token);
+  if (cached) return cached;
+  const check = supabase.auth
+    .getUser(token)
+    .then(({ data, error }) => !error && !!data.user)
+    .catch(() => true); // network hiccup: don't block the build on a probe
+  builderTokenChecks.set(token, check);
+  const ok = await check;
+  if (!ok) builderTokenChecks.delete(token);
+  return ok;
+}
+
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
+
 const MAX_RATE_LIMIT_RETRY_MS = 2_500;
 const MIN_BUILDER_GATEWAY_TIMEOUT_MS = 5_000;
 // Wizard seed generation gives Gemini's long structured response a 125 second
@@ -159,6 +228,15 @@ export function isProviderTimeoutError(err: unknown): boolean {
   return /provider attempt timed out|provider (?:attempt )?timed out|provider slice timeout|builder turn deadline exceeded|ai generation exceeded the wizard generation deadline/i.test(detail);
 }
 
+function isRejectedRefreshError(err: unknown): boolean {
+  const candidate = err as { status?: number; code?: string; message?: string } | null;
+  return candidate?.status === 400
+    || candidate?.status === 401
+    || candidate?.status === 403
+    || candidate?.code === 'refresh_token_not_found'
+    || /invalid refresh token|refresh token.*(?:invalid|expired|not found)/i.test(candidate?.message || '');
+}
+
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -213,16 +291,26 @@ export async function runBuilderTurn<TResponse = any>(
     const session = sessionData.session;
     const expiresAt = (session?.expires_at ?? 0) * 1000;
     if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
-      return session.access_token;
+      // `getSession()` is a local read: a token minted by a different project
+      // ref, or invalidated by a signing-key rotation, still looks "valid" here
+      // and produces a hard 401 on every edge call. Validate once against Auth
+      // and only then trust it.
+      if (await isTokenAcceptedByAuth(session.access_token)) {
+        return session.access_token;
+      }
     }
-    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-    if (refreshError || !refreshed.session) {
-      // Never replay the rejected/expired token. The caller will surface the
-      // sign-in-required state rather than issuing another guaranteed 401.
-      return null;
+    const refreshedSession = await refreshBuilderSession();
+    if (!refreshedSession) return null;
+    if (await isTokenAcceptedByAuth(refreshedSession.access_token)) {
+      return refreshedSession.access_token;
     }
-    return refreshed.session.access_token;
+    // Irrecoverable local session (wrong project / rotated keys): evict it so
+    // the app can prompt for a fresh sign-in instead of replaying 401s.
+    recentBuilderRefresh = null;
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    return null;
   };
+
 
   const invokeWithSignal = async (
     payload: Record<string, unknown>,

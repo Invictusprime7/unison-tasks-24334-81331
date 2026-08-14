@@ -1,81 +1,52 @@
-## Where Unison already matches your architecture
+# Wizard → Web Builder: One Continuous, Failure-Free Journey
 
-A lot of the model you described is already in the codebase — it just isn't finished or surfaced:
+## Goal
+The user picks their 4 wizard selections, presses Generate, watches honest progress, and lands in the Web Builder with a fully painted site. No UI freeze, no error toasts, no dead ends — ever.
 
-- `src/platform/core/capabilityRegistry.ts` already defines the exact `BusinessCapability` union you listed, plus `CapabilityDefinition` with `database`, `requiredTables`, intents, and dependencies.
-- `src/services/businessCapabilityPlanner.ts` already produces a `CapabilityPlan` → `CapabilityProposal` with `requiresApproval: true`, `dataAffected`, `intentBindings`, `readinessAssertions`, and a `BuilderScope = 'website' | 'business-system' | 'developer'`.
-- `src/types/builderRequestEnvelope.ts` + `builder-request-interpreter` already give multi-label classification, domains, capabilities, and confidence (Phase 1 intelligence foundation).
-- `src/services/backendOpExecutor.ts` + `vfsCommitService.ts` + `site_revisions` already give a transactional commit path with rollback.
-- `ai_builder_proposals` table + `ai-builder-propose` already draft reviewable backend changes.
+## Problems today
+- The launcher (~4,900 lines) mixes UI, AI orchestration, preflight repair, persistence and navigation in one component, so any slow step blocks the shell.
+- Long synchronous work (syntax repair, artifact build, snapshot projection) still lands on the main thread in bursts.
+- Failures surface as toasts ("Lane B failed", "providers busy", "invalid token", "preflight blocked") instead of being absorbed by the pipeline.
+- Handoff to `/web-builder` happens after persistence completes, so any late failure strands the user in the wizard.
 
-So this is not a rewrite. It is closing five specific gaps.
+## Target design
 
-## The five gaps
-
-1. **The planner is regex-driven, not interpreter-driven.** `businessCapabilityPlanner` matches `/\b(book|booking|appointment)\b/i` instead of reading the envelope. Abstract prompts ("make this operate like a real salon") fall through.
-2. **No approval gate surface.** `MigrationProposalPanel.tsx` exists but is mounted nowhere.
-3. **No executor for schema.** `ai-builder-apply` flips status to `approved` and hands SQL back. Nothing runs it. No GRANT/RLS lint enforcement.
-4. **No unified `BusinessSystemSnapshot`.** Site truth lives in `SiteBundleSnapshot`; capability truth lives in `BusinessSystemState`; data truth lives in catalog tables. Three readers, three shapes.
-5. **Verification is frontend-only.** `envelopeVerifier` checks files and intents, never asserts a table/policy actually landed.
-
-## Plan
-
-### Step 1 — Interpreter → capability planner (replace regex)
-
-Rewrite `businessCapabilityPlanner` to consume the `BuilderRequestEnvelope` instead of raw prompt text. Map `envelope.domains` + `envelope.requestedCapabilities` + `envelope.goals` onto `BusinessCapability[]` via a declarative table, and expand through `CapabilityDefinition.dependencies` so `booking.appointments` automatically pulls `catalog.services`, `crm.contacts`, `notifications.email`. Keep the regexes only as hints when the interpreter is unavailable.
-
-Add `resolveBuilderScope(envelope)` so one assistant routes internally to website / business-system / developer scope, and surface that scope as a chip in the AI panel (read-only badge — the user still types one prompt).
-
-### Step 2 — Complete the CapabilityDefinition contract
-
-Extend the existing definitions to carry the full contract from your spec: `backend.functions/events/permissions`, `frontend.components/dataSources/supportedSlots`, `settings.accountFields/projectFields`, `readiness.assertions/fixtures`. Populate the Phase-2 four first: `business_profile`, `catalog.services`, `crm.leads`, `booking.appointments`.
-
-### Step 3 — Approval gate (mount the proposal surface)
-
-Mount `MigrationProposalPanel` in the WebBuilder right rail as a "Backend changes" tab, and emit a compact inline approval card in `AIBuilderPanel` when a `CapabilityProposal` is produced — showing the plain-English summary, the affected data, and the intent bindings, exactly as in your example. Approving triggers the transaction; rejecting logs and stops.
-
-### Step 4 — Gated executor with mandatory SQL linting
-
-- New `src/services/migrationSqlLint.ts` + a Deno twin under `supabase/functions/_shared/`: every `CREATE TABLE public.*` must be followed by GRANT, `ENABLE ROW LEVEL SECURITY`, and at least one policy. Missing any of those is a **blocker**, not a warning (today it's a warning). Deny-list stays for managed schemas, roles, and `ALTER DATABASE`.
-- New database function `public.apply_capability_migration(...)` (SECURITY DEFINER, authorization-checked, logged) that executes approved SQL inside a transaction, plus a `capability_migration_runs` audit table.
-- `ai-builder-apply` calls it only when: proposal is `approved`, lint is clean, and the caller is an owner/business admin. Any failure rolls back and marks the proposal `failed`.
-
-Note: edge-function authoring stays proposal-only. Unison cannot deploy new Deno functions into its own hosted runtime from inside the app — proposals will write the source into the project VFS under `/supabase/functions/<name>/index.ts` for export, and say so honestly instead of pretending to deploy.
-
-### Step 5 — Transaction orchestrator
-
-New `src/services/capabilityProvisioner.ts` running your exact sequence, each step reversible:
+### 1. A single Launch Run state machine
+Extract a `launchRun` module owning ordered, resumable stages:
 
 ```text
-approve → apply migrations → verify RLS/GRANT → install functions
-  → register intents → update snapshot → generate UI bindings
-  → seed preview fixtures → compile → readiness checks → commit | rollback
+selections → plan (topology/pages) → seed (deterministic scaffold)
+→ enrich (AI Lane B, optional) → preflight → commit (VFS + draft)
+→ handoff (navigate to builder)
 ```
 
-It reuses `backendOpExecutor` for install/seed and `vfsCommitService` for the VFS half, so one approval commits both halves or neither.
+Each stage: pure input → output, its own timeout, its own recovery. The UI only renders stage status.
 
-### Step 6 — BusinessSystemSnapshot
+### 2. Never-block rule
+- Every stage runs in async chunks with a frame-budget yield between units (already partially done for repair; applied to projection, sandpack prep and commit too).
+- One watchdog per stage instead of one global watchdog, so a stall degrades that stage only.
 
-New `src/platform/core/businessSystemSnapshot.ts` defining the contract you specified, built as a **projection** over existing sources (`SiteBundleSnapshot` → `site`, `BusinessSystemState` → `capabilities`, catalog registry → `data`, readiness evaluator → `readiness`). Nothing is duplicated; readers migrate to the projection one at a time (AI Builder first, then dashboard, then deployment).
+### 3. Never-fail rule (degrade, don't toast)
+- AI enrichment is *optional by contract*: if Lane B times out, rate-limits, or 401s, the run continues with the deterministic industry+theme seed already produced in the `seed` stage. The site still matches the wizard selections (pages, theme tokens, industry template) — only AI copy polish is missing.
+- Preflight repair failures drop the offending file back to its seed version instead of blocking the run.
+- Commit failures fall back to a local draft that the builder hydrates.
+- Result: the run always reaches `handoff`. Non-fatal degradations are recorded on the run and shown as a quiet inline note in the builder ("AI polish unavailable — regenerate any section anytime"), not a toast.
 
-### Step 7 — Backend-aware verification
+### 4. Guaranteed handoff
+- Navigation to `/web-builder` is driven by the run reaching `handoff` with a snapshot in hand; persistence completes in the background and reconciles.
+- The builder hydrates from the run's snapshot immediately, so the canvas paints on arrival rather than re-deriving.
 
-Extend `envelopeVerifier` with schema assertions: after a capability provision, query `information_schema` / `pg_policies` through a read-only RPC and assert the declared `requiredTables`, `requiredColumns`, and `rlsPolicies` exist. A failed assertion feeds the same single targeted-repair turn already used for file misses.
+### 5. Progress UI honesty
+- The launcher progress panel binds to real stage transitions (with per-stage substeps for multi-batch Lane B), not fake timers, so "Finalizing preview" can never sit forever.
+- A visible Cancel that safely aborts in-flight AI and returns to selections with state preserved.
 
-### Step 8 — Component capability declarations (Phase 3)
+## Technical notes
+- New: `src/services/launch/launchRun.ts` (state machine + stage contracts), `stages/*.ts` (plan, seed, enrich, preflight, commit, handoff), `useLaunchRun.ts` binding for the UI.
+- `SystemLauncher.tsx` shrinks to selections UI + progress rendering; all orchestration moves into the run.
+- Reuse existing pieces unchanged where they already work: `siteTopologyPlanner`, `canonicalLaunchVfs` artifact builder, `runPreflightRepairSteps`, `vfsCommitService`, `launcherHandoffPersistence`, theme injection stage 4b.
+- Composition Authority preserved: SiteBundleSnapshot stays the single source of truth; seed stage produces a valid snapshot before AI runs, so AI is strictly an enhancement pass.
+- Error taxonomy: `fatal` (only unrecoverable auth/session loss) vs `degraded` (everything else). Only `fatal` shows a blocking message with a retry that preserves selections.
+- Tests: stage-level unit tests plus a run-level test asserting handoff succeeds when the AI stage throws 429/401/timeout.
 
-Extend the component intelligence registry so each generated section declares `requiredData`, `requiredCapabilities`, `supportedIntents`, `emptyState`, `loadingState`. `ServiceGrid → catalog.services`, `BookingButton → booking.create`, `ContactForm → crm.leads`, etc. This is what lets "turn these static cards into real services" resolve deterministically.
-
-## Technical details
-
-- Migrations needed: `capability_migration_runs` (audit log), `public.apply_capability_migration(sql text, proposal_id uuid)`, and a read-only `public.describe_public_objects(names text[])` for verification.
-- The SQL executor is the only genuinely risky addition. Mitigations: lint-as-blocker, owner/admin-only authorization inside the SECURITY DEFINER function, statement deny-list re-checked server-side, full audit row per run, and no execution path that isn't preceded by an explicit user approval on a persisted proposal.
-- No changes to the wizard Lane A → Lane B → Stage 4b sequence, `SiteBundleSnapshot` authority, or theme injection.
-
-## Positioning
-
-Agreed on repositioning away from "AI full-stack app builder." I'll update the in-product copy (wizard headers, builder empty states) toward "Build your site, CRM, catalog, bookings, and workflows as one connected business system" as part of Step 3, since that's when the business-system surface first becomes visible.
-
-## Suggested order
-
-Steps 1–2 first (no infrastructure mutation, matches your Phase 1 constraint), then 3–5 as one shippable unit, then 6–8.
+## Out of scope
+Wizard visual redesign, new industries/templates, builder UI changes beyond hydration and the degradation note.

@@ -385,11 +385,20 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const localViteConfigured = false;
   
   // Convert nodes to files - ALWAYS recompute to ensure we have latest
-  const files = useMemo(() => {
+  const rawFiles = useMemo(() => {
     const nodeFiles = nodesToFileMap(nodes);
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
-  const filesSignature = useMemo(() => createVfsHandoffSignature(files) || 'empty-vfs', [files]);
+  const filesSignature = useMemo(() => createVfsHandoffSignature(rawFiles) || 'empty-vfs', [rawFiles]);
+  // Identity-stable file map: callers frequently pass inline `nodes={[]}` or a
+  // freshly spread object, which would otherwise re-trigger the (expensive)
+  // preview compile on every parent render and lock up the main thread.
+  const stableFilesRef = useRef<{ signature: string; files: Record<string, string> } | null>(null);
+  if (!stableFilesRef.current || stableFilesRef.current.signature !== filesSignature) {
+    stableFilesRef.current = { signature: filesSignature, files: rawFiles };
+  }
+  const files = stableFilesRef.current.files;
+
 
   useEffect(() => {
     timeoutRecoveryCountRef.current = 0;

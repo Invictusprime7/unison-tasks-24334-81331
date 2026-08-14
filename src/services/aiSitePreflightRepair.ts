@@ -45,6 +45,12 @@ export interface PreflightOptions {
   maxPasses?: number;
   /** Industry + brand context used to build on-brand quarantine fallbacks. */
   context?: QuarantineContext;
+  /**
+   * Soft CPU budget (ms) for the whole run. Once exceeded, remaining files are
+   * still parsed (cached, cheap) but repair work is reduced to a single pass
+   * with no trailing-suffix search, so the pipeline can never spin.
+   */
+  budgetMs?: number;
 }
 
 const PARSE_OPTS = {
@@ -53,11 +59,51 @@ const PARSE_OPTS = {
   errorRecovery: false,
 };
 
+// ─────────────────────────────────────────────────────── parse memoization
+//
+// The launch pipeline parses the same VFS several times (early repair, post
+// mutation repair, preview artifacts, launcher gate). Parsing is by far the
+// most expensive step, and the inputs are usually byte-identical between
+// passes. Memoizing on content makes every repeat pass essentially free and
+// removes the "pipeline appears stuck re-parsing" behaviour.
+
+const PARSE_CACHE_LIMIT = 4000;
+const parseCache = new Map<string, string | null>();
+
+function cacheKey(source: string): string {
+  // FNV-1a over the source + length guard. Cheap and collision-safe enough
+  // for an in-memory, same-session memo.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < source.length; i++) {
+    h ^= source.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${source.length}:${(h >>> 0).toString(36)}`;
+}
+
+let cachedParser: { parse: (s: string, o: unknown) => unknown } | null | undefined;
+
+function resolveParser() {
+  if (cachedParser === undefined) {
+    cachedParser =
+      (Babel as unknown as { packages?: { parser?: { parse: (s: string, o: unknown) => unknown } } })
+        .packages?.parser ?? null;
+  }
+  return cachedParser;
+}
+
 function tryParse(source: string): { ok: true } | { ok: false; error: string } {
+  const key = cacheKey(source);
+  const cached = parseCache.get(key);
+  if (cached !== undefined) {
+    return cached === null ? { ok: true } : { ok: false, error: cached };
+  }
+
+  let result: { ok: true } | { ok: false; error: string };
   try {
     // @babel/standalone exposes `packages.parser` via `Babel.packages` in newer
     // versions; fall back to `Babel.transform` parse-only otherwise.
-    const parser = (Babel as unknown as { packages?: { parser?: { parse: (s: string, o: unknown) => unknown } } }).packages?.parser;
+    const parser = resolveParser();
     if (parser?.parse) {
       parser.parse(source, PARSE_OPTS);
     } else {
@@ -71,11 +117,21 @@ function tryParse(source: string): { ok: true } | { ok: false; error: string } {
         code: false,
       });
     }
-    return { ok: true };
+    result = { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    result = { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+
+  if (parseCache.size >= PARSE_CACHE_LIMIT) parseCache.clear();
+  parseCache.set(key, result.ok ? null : result.error);
+  return result;
 }
+
+/** Exposed for tests / long-lived sessions that want to drop the memo. */
+export function clearPreflightParseCache(): void {
+  parseCache.clear();
+}
+
 
 // ──────────────────────────────────────────────────────────── repair passes
 

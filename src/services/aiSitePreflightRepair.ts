@@ -302,14 +302,21 @@ function deriveQuarantineComponent(path: string, error: string, ctx: QuarantineC
  * first trailing line as "Unexpected token". Keep this deliberately narrow:
  * only accept a parseable prefix that retains the default-exported page and
  * at least 80% of the repaired model response.
+ *
+ * The search is coarse (geometric line steps) instead of scanning every one of
+ * the last 48 lines: it costs ~10 parses instead of ~48 for the same reach.
  */
+const TRIM_STEPS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48];
+
 function trimParseableTrailingSuffix(source: string): string | null {
   if (!/export\s+default\s+(?:function|class|[A-Za-z_$])/.test(source)) return null;
 
   const lines = source.split('\n');
   const minLength = Math.ceil(source.length * 0.8);
-  for (let removed = 1; removed <= 48 && removed < lines.length; removed++) {
-    const candidate = lines.slice(0, -removed).join('\n').trimEnd();
+  for (const removed = 0, _unused = 0; false; ) { /* no-op */ }
+  for (const step of TRIM_STEPS) {
+    if (step >= lines.length) break;
+    const candidate = lines.slice(0, -step).join('\n').trimEnd();
     if (candidate.length < minLength) break;
     if (!/export\s+default\s+(?:function|class|[A-Za-z_$])/.test(candidate)) continue;
     if (tryParse(candidate).ok === true) return `${candidate}\n`;
@@ -330,6 +337,8 @@ export function* runPreflightRepairSteps(
   options: PreflightOptions = {},
 ): Generator<void, PreflightResult, void> {
   const maxPasses = options.maxPasses ?? 4;
+  const budgetMs = options.budgetMs ?? 20_000;
+  const startedAt = Date.now();
 
   const ctx: QuarantineContext = options.context ?? {};
   const out: Record<string, string> = { ...files };
@@ -353,11 +362,17 @@ export function* runPreflightRepairSteps(
       continue;
     }
 
+    // Once the soft budget is spent, degrade to one repair pass and skip the
+    // trailing-suffix search so a pathological file can never stall the run.
+    const overBudget = Date.now() - startedAt > budgetMs;
+    const passBudget = overBudget ? 1 : maxPasses;
+
     let current = source;
     const applied: string[] = [];
+    const seen = new Set<string>([cacheKey(source)]);
     let lastError: string = first.ok === false ? first.error : 'unknown parse failure';
     let success = false;
-    for (let pass = 0; pass < maxPasses && !success; pass++) {
+    for (let pass = 0; pass < passBudget && !success; pass++) {
       let changedThisRound = false;
       for (const repair of REPAIR_PASSES) {
         const next = repair.apply(current);
@@ -367,16 +382,22 @@ export function* runPreflightRepairSteps(
           changedThisRound = true;
         }
       }
+      if (!changedThisRound) break;
+      // Cycle guard: repair passes that keep flipping between two shapes would
+      // otherwise burn the full pass budget on identical parses.
+      const key = cacheKey(current);
+      if (seen.has(key)) break;
+      seen.add(key);
+
       const res = tryParse(current);
       if (res.ok === true) {
         success = true;
         break;
       }
-      if (res.ok === false) lastError = res.error;
-      if (!changedThisRound) break;
+      lastError = res.error;
     }
 
-    if (!success) {
+    if (!success && !overBudget) {
       const trimmed = trimParseableTrailingSuffix(current);
       if (trimmed) {
         current = trimmed;
@@ -395,6 +416,7 @@ export function* runPreflightRepairSteps(
       quarantined++;
     }
   }
+
 
   return {
     files: out,

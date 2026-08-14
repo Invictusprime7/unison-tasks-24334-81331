@@ -35,6 +35,7 @@ import {
   isActionIntent,
   isAutomationIntent,
 } from "@/platform/core/coreIntents";
+import { getIntentDef } from '@/platform/core/intentSurfaceRegistry';
 
 
 export interface IntentPayload {
@@ -220,6 +221,22 @@ function adaptIntentExecResult(result: CanonicalIntentExecResponse): IntentResul
 async function invokeCanonicalIntent(intent: ActionIntent, payload: IntentPayload): Promise<IntentResult | null> {
   if (!CANONICAL_ACTION_INTENTS.has(intent)) {
     return null;
+  }
+
+  // The canonical intent registry (intentSurfaceRegistry.ts) is the one
+  // definition of which transport an action intent uses. `booking.create`
+  // declares `handler: 'site-runtime'` — its only real writer is each
+  // generated site's own embedded site-runtime adapter
+  // (publishedActionRuntimeModule.ts), never intent-exec. intent-exec
+  // deliberately 409s every `booking.*` intent (see
+  // supabase/functions/intent-exec/index.ts), so forwarding it there from
+  // this internal test/preview-overlay caller only produces a confusing
+  // technical error. Surface the same honest, established message instead.
+  if (getIntentDef(intent)?.handler === 'site-runtime') {
+    return {
+      success: false,
+      error: 'Booking writes require the generated site-runtime adapter. Test this on the compiled preview or published site to create a real appointment.',
+    };
   }
 
   try {

@@ -313,7 +313,6 @@ function trimParseableTrailingSuffix(source: string): string | null {
 
   const lines = source.split('\n');
   const minLength = Math.ceil(source.length * 0.8);
-  for (const removed = 0, _unused = 0; false; ) { /* no-op */ }
   for (const step of TRIM_STEPS) {
     if (step >= lines.length) break;
     const candidate = lines.slice(0, -step).join('\n').trimEnd();

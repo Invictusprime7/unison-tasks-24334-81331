@@ -446,11 +446,13 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     }));
 
     const timer = window.setTimeout(() => {
+      const launchState = launchRef.current;
       try {
-        const isWizardPreview = resolveSnapshot(files, launch).isWizardDraft;
+        const isWizardPreview = resolveSnapshot(files, launchState).isWizardDraft;
 
         if (!isWizardPreview && !hasRenderablePreviewSource(files)) {
           if (!cancelled) {
+            compiledKeyRef.current = compileKey;
             setPreviewCompile({
               sandpackFiles: {},
               dependencies: {},
@@ -464,10 +466,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
         const result = buildPreviewArtifacts({
           sourceFiles: files,
-          launchState: launch,
+          launchState,
         });
 
         if (!cancelled) {
+          compiledKeyRef.current = compileKey;
           setPreviewCompile({
             sandpackFiles: result.sandpackFiles,
             dependencies: result.dependencies,
@@ -486,6 +489,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
         console.error('[VFSPreview] Pipeline error:', pipelineError);
         if (!cancelled) {
+          compiledKeyRef.current = compileKey;
           setPreviewCompile({
             sandpackFiles: {},
             dependencies: {},
@@ -501,7 +505,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [filesSignature, launch]);
+  }, [files, filesSignature, launchSignature]);
+
 
   const {
     sandpackFiles,

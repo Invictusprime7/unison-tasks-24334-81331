@@ -80,7 +80,7 @@ rows and reconcile every affected UI surface.
 | Builder-internal preview overlay booking path | Fixed this cycle | Was silently 409'ing through `intent-exec`; `intentRouter.ts` now respects the canonical `handler:'site-runtime'` declaration and returns an honest message instead (commit `79cf0c06`) |
 | RLS on bookings/services/availability_slots | Reported Real, not independently re-verified | Subagent quoted policy predicates from migrations `20260804213425_generated_site_booking_runtime.sql` and `20260117232447_...sql` — re-read directly before trusting |
 | CRM contact/activity creation on booking | **Fixed this cycle (Real)** | Independently confirmed absent (grepped `_shared/canonicalBooking.ts` and the `private.create_atomic_booking` SQL function — neither touched `crm_contacts`/`crm_activities`). Fixed by adding `linkBookingToCrm()` to `canonicalBooking.ts`: best-effort, non-throwing, upserts a business-scoped `crm_contacts` row and inserts a `crm_activities` row after a non-duplicate booking commits. Mirrors the existing `intent-exec` `handleQuoteRequest`/`handleLeadCapture` pattern of business-scoped CRM writes, but uses only columns confirmed present on `crm_contacts` (`first_name`/`last_name`, not a `name` column — see finding below). Test: `src/test/canonicalBookingCrmLinkage.test.ts` (3 tests). |
-| Staff / business_hours tables + Business Center UI | **Unknown** | Subagent reported no `CREATE TABLE` for either; independently confirmed no match via direct migration grep this cycle. Business Center UI for staff/hours not checked. |
+| Staff / business_hours tables + Business Center UI | **Partial (schema landed, wiring/UI still missing)** | Confirmed absent, then root-caused: the *only* writer of `availability_slots` was `src/services/backendOpExecutor.ts`'s `seedBooking()` — a one-time seed creating a single generic "Default Service" and a fixed 7-day, 9am–5pm window with no staff or hours concept, and no way to regenerate once consumed. This is a **Mock/demo state silently masquerading as real availability** (violates "Real versus demo" principle). Added migration `20260813230000_add_staff_and_business_hours.sql`: tenant-scoped `business_hours` (public-readable, business-member-writable) and `staff` (business-member-only) tables, RLS via `is_business_member`, plus a nullable `staff_id` FK on `availability_slots`. Schema-only — **not yet wired** into availability generation or any Business Center UI; `seedBooking()`'s fixed-window seed is still the only slot source. Test: `src/test/staffBusinessHoursSchema.test.ts` (5 tests). Migration not applied to any remote/hosted project. |
 | Cross-tenant isolation test (RLS-level, not just contract-level) | **Unknown** | Confirmed again this cycle: only application-layer contract tests reference a second business (`businessArtifactRuntime.test.ts`, `businessRuntimeContract.test.ts`), no RLS-level cross-tenant integration test found. |
 
 **New finding this cycle — separate, pre-existing, unrelated bug (not fixed,
@@ -95,10 +95,11 @@ Not fixed here — different call path, needs its own verification pass
 (confirm the actual PostgREST error behavior, decide whether to add the
 column or fix the call site) before touching it.
 
-**Next action to close this stage:** verify the two remaining Unknown rows
-(staff/hours schema + Business Center UI, RLS-level cross-tenant test), and
-decide whether to fix the newly-found `crm_contacts.name` bug in
-intent-exec.
+**Next action to close this stage:** wire real availability generation from
+`business_hours` (+ optionally `staff`) to replace `seedBooking()`'s fixed
+7-day demo window, and add a Business Center UI to manage both; then verify
+the RLS-level cross-tenant test. Decide whether to fix the newly-found
+`crm_contacts.name` bug in intent-exec.
 
 ---
 
@@ -148,3 +149,16 @@ evidence) before this table is updated.
   (edge-function deletions, doc edits, a "Rewire Wizard launch" commit
   `c0e40731` landed on top of this session's commits, a `.tmp/wizard-rewire-*`
   worktree appeared) — none of it touched or committed by this session.
+- **2026-08-13 (continued 2)**: Traced `availability_slots`' only writer
+  (`backendOpExecutor.ts`'s `seedBooking()`) and confirmed it's a one-time
+  fixed 7-day/9-5 demo seed with a single generic service — no staff or
+  hours concept exists anywhere, and there is no mechanism to regenerate
+  availability once the seeded window passes. Landed the schema half of
+  the fix (migration `20260813230000_add_staff_and_business_hours.sql`:
+  `business_hours` + `staff` tables, RLS, nullable `availability_slots.staff_id`)
+  as its own additive, non-behavior-changing slice — deliberately did not
+  attempt availability-generation logic or a Business Center UI in the same
+  slice given the size/product-decision surface of that follow-up work.
+  `lint:pipeline-bypass`, `lint:single-source-of-truth`, and
+  `lint:catalog-contracts` all pass; local Supabase Docker not running, so
+  no live `supabase db lint` — reviewed the SQL manually instead.

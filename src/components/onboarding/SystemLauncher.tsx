@@ -3878,7 +3878,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       setLaunchStatus('Finalizing preview…');
       await yieldToBrowser();
-      const launchArtifacts = await run.stage('preflight', () => buildCanonicalLaunchArtifactsAsync({
+      const launchArtifactInput = {
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
         siteBundleSnapshot,
@@ -3904,9 +3904,22 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
         strictPreflight: true,
-      }, {
+      };
+      const launchArtifacts = await run.stage('preflight', () => buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
         yieldToHost: yieldToBrowser,
-      }), { timeoutMs: 180_000 });
+      }), {
+        timeoutMs: 90_000,
+        degradeCode: 'preflight.seed_recovery',
+        degradeMessage: 'Final checks took too long, so the builder opened your complete wizard-generated seed.',
+        fallback: async () => {
+          await yieldToBrowser();
+          return buildCanonicalLaunchArtifactsAsync({
+            ...launchArtifactInput,
+            generatedFiles: siteBundleSnapshot.vfsFiles,
+            strictPreflight: false,
+          }, { yieldToHost: yieldToBrowser });
+        },
+      });
       const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
       const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
         runtime: JSON.parse(launchArtifacts.files['/.unison/published-runtime.json']) as import('@/services/canonicalLaunchVfs').PublishedRuntimeConfig,

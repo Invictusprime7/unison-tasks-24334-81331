@@ -644,52 +644,12 @@ function* buildCanonicalLaunchArtifactSteps(
     injectCssIfMissing: false,
   });
 
-  // ── Early syntax repair ────────────────────────────────────────────────
-  // Run a pre-binding syntax repair pass so wizard binding / nav wiring
-  // mutations never operate on broken JSX (which would amplify errors and
-  // surface a "syntax error" screen in the preview iframe).
-  yield;
-  let earlyRepair: ReturnType<typeof runPreflightRepair> | null = null;
-  try {
-    earlyRepair = yield* runPreflightRepairSteps(normalizedFiles, {
-      context: {
-        industry: input.industry,
-        brand: input.businessName,
-      },
-    });
-  } catch (error) {
-    console.warn('[canonicalLaunchVfs] Early preflight syntax repair failed; continuing', error);
-    earlyRepair = null;
-  }
-  const repairedFiles = earlyRepair?.files || normalizedFiles;
-  if (earlyRepair && (earlyRepair.repairedCount > 0 || earlyRepair.quarantinedCount > 0)) {
-    console.warn('[canonicalLaunchVfs] Early syntax repair:', {
-      clean: earlyRepair.cleanCount,
-      repaired: earlyRepair.repairedCount,
-      quarantined: earlyRepair.quarantinedCount,
-      details: earlyRepair.reports.filter((r) => r.status !== 'clean').map((r) => ({
-        path: r.path, status: r.status, passes: r.passes, error: r.finalError?.slice(0, 200),
-      })),
-    });
-    if (input.strictPreflight && earlyRepair.quarantinedCount > 0) {
-      const blockedReports = earlyRepair.reports
-        .filter((report) => report.status === 'quarantined');
-      const blockedFiles = blockedReports.map((report) => report.path);
-      const diagnostics = blockedReports.map((report) => ({
-        path: report.path,
-        error: report.finalError || 'Unknown syntax error',
-        repairPasses: report.passes || [],
-      }));
-      const diagnosticSummary = diagnostics
-        .map(({ path, error }) => `${path}: ${error}`)
-        .join(' | ');
-      throw new PreviewPipelineError(
-        'vfs',
-        `Wizard source failed syntax preflight for ${blockedFiles.join(', ')}; refusing to persist quarantine scaffolds. ${diagnosticSummary}`,
-        { blockedFiles, diagnostics, recoverableByRelaunch: true },
-      );
-    }
-  }
+  // Validate once after binding/nav mutations instead of parsing the complete
+  // VFS here, after mutations, and again after metadata injection. The former
+  // triple pass held the browser main thread during "Finalizing preview" on
+  // larger generated sites. Binding and nav transforms operate on source text
+  // and the post-mutation pass below remains the authoritative syntax gate.
+  const repairedFiles = normalizedFiles;
 
   yield;
   const bindingApplication = input.siteBundleSnapshot
@@ -856,23 +816,11 @@ function* buildCanonicalLaunchArtifactSteps(
     extraDependencies: runtimeManifest.dependencies,
     themePresetId: appContext.themePresetId || (input.aesthetic as string | undefined) || null,
   });
-  yield;
-  const snapshotRepair = yield* runPreflightRepairSteps(viteReadyFiles, {
-    context: { industry: input.industry, brand: input.businessName },
-  });
-  if (input.strictPreflight && snapshotRepair.quarantinedCount > 0) {
-    const blockedReports = snapshotRepair.reports.filter((report) => report.status === 'quarantined');
-    const blockedFiles = blockedReports.map((report) => report.path);
-    const diagnosticSummary = blockedReports
-      .map((report) => `${report.path}: ${report.finalError || 'Unknown syntax error'}`)
-      .join(' | ');
-    throw new PreviewPipelineError(
-      'vfs',
-      `Canonical SiteBundleSnapshot failed final syntax preflight for ${blockedFiles.join(', ')}; refusing to persist quarantine scaffolds. ${diagnosticSummary}`,
-      { blockedFiles, recoverableByRelaunch: true },
-    );
-  }
-  const verifiedViteFiles = snapshotRepair.files;
+  // `safeFiles` already passed the full post-mutation syntax gate. Everything
+  // added between that gate and `viteReadyFiles` is deterministic platform
+  // runtime code, so reparsing every generated page here only duplicates CPU
+  // work and can freeze the launcher shell.
+  const verifiedViteFiles = viteReadyFiles;
   const siteBundleSnapshot = runtimeSnapshotSeed
     ? cloneSnapshotWithRuntimeVfs(
         runtimeSnapshotSeed,
@@ -903,39 +851,11 @@ function* buildCanonicalLaunchArtifactSteps(
       }).files
     : files;
 
-  // Run the exact strict VFS compiler that Preview uses before this Wizard
-  // artifact is persisted or opened in Playground. Syntax repair protects
-  // source shape above; this final pass catches unresolved JSX named/default
-  // imports after every canonical merge and generated-runtime transformation.
-  if (input.strictPreflight) {
-    yield;
-    try {
-      prepareSandpackFiles(hydratedFiles, {
-        entryPoint,
-        themePresetId: appContext.themePresetId || resolvedThemePresetId,
-        strict: true,
-      });
-    } catch (error) {
-      if (error instanceof PreviewPipelineError) {
-        throw new PreviewPipelineError(
-          'vfs',
-          `Wizard runtime preflight failed before persistence: ${error.summary}`,
-          {
-            ...error.details,
-            cause: error,
-            recoverableByRelaunch: true,
-          },
-        );
-      }
-      throw new PreviewPipelineError(
-        'vfs',
-        `Wizard runtime preflight failed before persistence: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        { cause: error, recoverableByRelaunch: true },
-      );
-    }
-  }
+  // Preview performs import-contract preparation when it mounts. Running that
+  // complete compiler here as well discarded its output and synchronously
+  // traversed the VFS a second time, so launch now hands off the already
+  // syntax-verified artifact and lets the canonical preview compiler own that
+  // single preparation pass.
 
   return {
     files: hydratedFiles,

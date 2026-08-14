@@ -30,6 +30,10 @@ describe('Supabase rejected-session recovery', () => {
       'https://project.supabase.co/auth/v1/token?grant_type=refresh_token',
       new Response(null, { status: 500 }),
     )).toBe(false);
+    expect(isRejectedRefreshTokenRequest(
+      'https://project.supabase.co/auth/v1/token?grant_type=refresh_token',
+      new Response(null, { status: 401 }),
+    )).toBe(true);
   });
 
   it('clears an invalid local session once while concurrent requests fail', async () => {

@@ -112,7 +112,28 @@ async function refreshBuilderSession(): Promise<BuilderSession | null> {
   return builderRefreshInFlight;
 }
 
+/**
+ * Server-verified token check, memoized per access token so a batched Lane B
+ * run performs at most one round-trip. `getSession()` alone cannot detect a
+ * token issued by another project ref or invalidated by a key rotation.
+ */
+const builderTokenChecks = new Map<string, Promise<boolean>>();
+
+async function isTokenAcceptedByAuth(token: string): Promise<boolean> {
+  const cached = builderTokenChecks.get(token);
+  if (cached) return cached;
+  const check = supabase.auth
+    .getUser(token)
+    .then(({ data, error }) => !error && !!data.user)
+    .catch(() => true); // network hiccup: don't block the build on a probe
+  builderTokenChecks.set(token, check);
+  const ok = await check;
+  if (!ok) builderTokenChecks.delete(token);
+  return ok;
+}
+
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
+
 const MAX_RATE_LIMIT_RETRY_MS = 2_500;
 const MIN_BUILDER_GATEWAY_TIMEOUT_MS = 5_000;
 // Wizard seed generation gives Gemini's long structured response a 125 second

@@ -379,7 +379,7 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource.indexOf('setIsLaunching(true);', confirmationIndex)).toBeGreaterThan(provisionIndex - 250);
   });
 
-  it('requires a persisted canonical revision before navigating to the builder', () => {
+  it('always reaches the builder, degrading commit gaps instead of blocking handoff', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
       'utf8',
@@ -390,8 +390,11 @@ describe('wizard pipeline ownership invariants', () => {
     expect(commitIndex).toBeGreaterThan(-1);
     expect(navigateIndex).toBeGreaterThan(commitIndex);
     expect(launcherSource).toContain('if (!result.persistedRevisionId)');
-    expect(launcherSource).toContain('Canonical launch commit did not persist a revision.');
-    expect(launcherSource).toContain('const canonicalVfsFiles = result.vfsFiles;');
+    // Handoff is guaranteed: a missing revision is recorded as a degradation
+    // and the builder opens on the local draft while saving completes.
+    expect(launcherSource).toContain("'commit.revision_pending'");
+    expect(launcherSource).toContain('publishLaunchDegradations(run.snapshot().degradations)');
+    expect(launcherSource).toContain('const canonicalVfsFiles = Object.keys(result.vfsFiles || {}).length > 0');
     expect(launcherSource).toContain('const canonicalSiteBundleSnapshot = result.siteBundleSnapshot;');
     expect(launcherSource).toContain('const canonicalRuntimeManifest = result.runtimeManifest;');
     expect(launcherSource).toContain('vfsFiles: canonicalVfsFiles');

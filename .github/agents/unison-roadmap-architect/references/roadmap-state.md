@@ -80,11 +80,7 @@ rows and reconcile every affected UI surface.
 | Builder-internal preview overlay booking path | Fixed this cycle | Was silently 409'ing through `intent-exec`; `intentRouter.ts` now respects the canonical `handler:'site-runtime'` declaration and returns an honest message instead (commit `79cf0c06`) |
 | RLS on bookings/services/availability_slots | Reported Real, not independently re-verified | Subagent quoted policy predicates from migrations `20260804213425_generated_site_booking_runtime.sql` and `20260117232447_...sql` — re-read directly before trusting |
 | CRM contact/activity creation on booking | **Fixed this cycle (Real)** | Independently confirmed absent (grepped `_shared/canonicalBooking.ts` and the `private.create_atomic_booking` SQL function — neither touched `crm_contacts`/`crm_activities`). Fixed by adding `linkBookingToCrm()` to `canonicalBooking.ts`: best-effort, non-throwing, upserts a business-scoped `crm_contacts` row and inserts a `crm_activities` row after a non-duplicate booking commits. Mirrors the existing `intent-exec` `handleQuoteRequest`/`handleLeadCapture` pattern of business-scoped CRM writes, but uses only columns confirmed present on `crm_contacts` (`first_name`/`last_name`, not a `name` column — see finding below). Test: `src/test/canonicalBookingCrmLinkage.test.ts` (3 tests). |
-| Staff / business_hours tables + Business Center UI | **Partial (schema + availability generation landed; UI still missing)** | Confirmed absent, then root-caused: the *only* writer of `availability_slots` was `src/services/backendOpExecutor.ts`'s `seedBooking()` — a one-time seed creating a single generic "Default Service" and a fixed 7-day, 9am–5pm window with no staff or hours concept, and no way to regenerate once consumed. This is a **Mock/demo state silently masquerading as real availability** (violates "Real versus demo" principle). Closed in two slices:
-  1. Migration `20260813230000_add_staff_and_business_hours.sql`: tenant-scoped `business_hours` (public-readable, business-member-writable) and `staff` (business-member-only) tables, RLS via `is_business_member`, plus a nullable `staff_id` FK on `availability_slots`.
-  2. `src/services/availabilityGeneration.ts`: pure, unit-tested `generateAvailabilitySlots()` that turns `business_hours` rows into real per-day-of-week slot windows (falls back to the legacy 9am-5pm default only when a business has configured no hours at all — a business with *any* configured day owns its full week, so an unconfigured day among configured ones is closed, not silently 9-5). Wired into `seedBooking()`, which now queries `business_hours` and the service's real `duration_minutes` instead of hardcoding both. Tests: `src/test/staffBusinessHoursSchema.test.ts` (5), `src/test/availabilityGeneration.test.ts` (6).
-
-  **Still missing:** a Business Center UI to actually set `business_hours`/`staff` (the generation logic is real, but nothing yet lets a business owner populate the table it reads from — until then, every business still gets the 9-5 fallback in practice), and an ongoing/re-generation mechanism beyond the one-time seed (no cron/on-demand "extend availability" action exists). |
+| Staff / business_hours tables + Business Center UI | **Real (closed this cycle)** | Confirmed absent, then root-caused: the *only* writer of `availability_slots` was `src/services/backendOpExecutor.ts`'s `seedBooking()` — a one-time seed creating a single generic "Default Service" and a fixed 7-day, 9am–5pm window with no staff or hours concept, and no way to regenerate once consumed (a **Mock/demo state silently masquerading as real availability**). Closed in three slices: (1) migration `20260813230000_add_staff_and_business_hours.sql` — tenant-scoped `business_hours`/`staff` tables, RLS via `is_business_member`, nullable `availability_slots.staff_id`; (2) `src/services/availabilityGeneration.ts` — pure, unit-tested `generateAvailabilitySlots()` turning `business_hours` into real per-day-of-week windows (a business with any configured day owns its full week; zero configured hours still gets the legacy 9-5 fallback), wired into `seedBooking()`; (3) `src/pages/BusinessSettings.tsx` (`/business-settings`) — a real Business Hours editor (7-day open/closed + time range, upserted on `business_id,day_of_week`) and Staff list (add/toggle-active/remove). This is the first real writer for both tables — until it landed, `seedBooking()`'s `business_hours` query always came back empty, so every business fell through to the 9-5 fallback regardless of the generation logic being correct. Tests: `staffBusinessHoursSchema.test.ts` (5), `availabilityGeneration.test.ts` (6); `tsc --noEmit`/`eslint` clean on `BusinessSettings.tsx`, no dedicated RTL test yet (deferred — simple CRUD mirroring this file's existing patterns). Still missing: an ongoing/on-demand regeneration mechanism beyond the one-time seed. |
 | Cross-tenant isolation test (RLS-level, not just contract-level) | **Unknown** | Confirmed again this cycle: only application-layer contract tests reference a second business (`businessArtifactRuntime.test.ts`, `businessRuntimeContract.test.ts`), no RLS-level cross-tenant integration test found. |
 
 **New finding this cycle — separate, pre-existing, unrelated bug (not fixed,
@@ -99,11 +95,11 @@ Not fixed here — different call path, needs its own verification pass
 (confirm the actual PostgREST error behavior, decide whether to add the
 column or fix the call site) before touching it.
 
-**Next action to close this stage:** add a Business Center UI so a business
-owner can actually set `business_hours`/`staff` (the generation logic
-already reads them correctly — it just has no writer yet besides direct
-SQL), then verify the RLS-level cross-tenant test. Decide whether to fix
-the newly-found `crm_contacts.name` bug in intent-exec.
+**Next action to close this stage:** verify the RLS-level cross-tenant
+test (still the one open Unknown for Stage 2's exit gate). Decide whether
+to fix the newly-found `crm_contacts.name` bug in intent-exec, and whether
+an on-demand/scheduled availability-regeneration mechanism is worth adding
+now or deferred.
 
 ---
 
@@ -178,3 +174,16 @@ evidence) before this table is updated.
   session). Business Center UI to actually populate `business_hours`/`staff`
   is still the open gap — the generation logic is real but nothing writes
   to the table it reads from yet outside direct SQL.
+- **2026-08-13 (continued 4)**: Closed the Business Center UI gap —
+  added a Business Hours editor and Staff list to
+  `src/pages/BusinessSettings.tsx`. Mid-edit, a concurrent process
+  silently reverted this exact file back to its committed HEAD state,
+  losing the entire in-progress (uncommitted) change before it could be
+  verified — caught it via a grep sanity-check that came back empty after
+  the edit tool reported success. Reapplied the same edit and committed
+  immediately (before running the slower tsc/lint checks) to minimize the
+  window for another overwrite; commit `232f92d5` is confirmed intact via
+  `git show HEAD:<path>`. Recorded this as a repo-memory risk pattern —
+  verify-then-commit-fast, not commit-after-full-validation, for this
+  workspace. Stage 2's remaining exit-gate gap is now only the RLS-level
+  cross-tenant test.

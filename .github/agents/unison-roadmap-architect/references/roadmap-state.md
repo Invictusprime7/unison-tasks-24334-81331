@@ -79,14 +79,26 @@ rows and reconcile every affected UI surface.
 | Availability/conflict checking | Real | `pg_advisory_xact_lock` + `is_booked` check in migration `20260808025525_create_private_atomic_booking.sql` |
 | Builder-internal preview overlay booking path | Fixed this cycle | Was silently 409'ing through `intent-exec`; `intentRouter.ts` now respects the canonical `handler:'site-runtime'` declaration and returns an honest message instead (commit `79cf0c06`) |
 | RLS on bookings/services/availability_slots | Reported Real, not independently re-verified | Subagent quoted policy predicates from migrations `20260804213425_generated_site_booking_runtime.sql` and `20260117232447_...sql` — re-read directly before trusting |
-| CRM contact/activity creation on booking | **Unknown** | Subagent reported absent (no `crm_contacts`/`crm_activities` insert triggered by `booking.create`). Not independently re-verified — re-check `supabase/functions/site-runtime/index.ts` and `_shared/canonicalBooking.ts` directly before treating as fact. |
-| Staff / business_hours tables + Business Center UI | **Unknown** | Subagent reported no `CREATE TABLE` for either. Not independently re-verified. |
-| Cross-tenant isolation test (RLS-level, not just contract-level) | **Unknown** | Subagent found only an application-layer contract test (`businessRuntimeContract.test.ts`), no RLS-level cross-tenant integration test. Not independently re-verified. |
+| CRM contact/activity creation on booking | **Fixed this cycle (Real)** | Independently confirmed absent (grepped `_shared/canonicalBooking.ts` and the `private.create_atomic_booking` SQL function — neither touched `crm_contacts`/`crm_activities`). Fixed by adding `linkBookingToCrm()` to `canonicalBooking.ts`: best-effort, non-throwing, upserts a business-scoped `crm_contacts` row and inserts a `crm_activities` row after a non-duplicate booking commits. Mirrors the existing `intent-exec` `handleQuoteRequest`/`handleLeadCapture` pattern of business-scoped CRM writes, but uses only columns confirmed present on `crm_contacts` (`first_name`/`last_name`, not a `name` column — see finding below). Test: `src/test/canonicalBookingCrmLinkage.test.ts` (3 tests). |
+| Staff / business_hours tables + Business Center UI | **Unknown** | Subagent reported no `CREATE TABLE` for either; independently confirmed no match via direct migration grep this cycle. Business Center UI for staff/hours not checked. |
+| Cross-tenant isolation test (RLS-level, not just contract-level) | **Unknown** | Confirmed again this cycle: only application-layer contract tests reference a second business (`businessArtifactRuntime.test.ts`, `businessRuntimeContract.test.ts`), no RLS-level cross-tenant integration test found. |
 
-**Next action to close this stage:** independently re-verify the three
-Unknown rows above (CRM linkage, staff/hours schema, RLS isolation test)
-directly against current source before planning further work — don't
-carry the subagent's claims forward as fact a second time.
+**New finding this cycle — separate, pre-existing, unrelated bug (not fixed,
+flagged only):** `supabase/functions/intent-exec/index.ts`'s
+`handleLeadCapture` and `handleQuoteRequest` insert/upsert a `name` column
+into `crm_contacts`. `crm_contacts` was never given a `name` column (only
+`crm_leads` was, in migration `20260723183703_canonical_form_submission_runtime.sql`
+line ~64) — only `first_name`/`last_name` exist on `crm_contacts`. This
+likely means `contact.submit`/`quote.request`'s contact-creation write has
+been silently failing (PostgREST rejects unknown columns) in production.
+Not fixed here — different call path, needs its own verification pass
+(confirm the actual PostgREST error behavior, decide whether to add the
+column or fix the call site) before touching it.
+
+**Next action to close this stage:** verify the two remaining Unknown rows
+(staff/hours schema + Business Center UI, RLS-level cross-tenant test), and
+decide whether to fix the newly-found `crm_contacts.name` bug in
+intent-exec.
 
 ---
 
@@ -122,4 +134,17 @@ evidence) before this table is updated.
   nothing pushed. Created this reference package
   (`assessment-playbook.md`, `unison-contracts.md`, `roadmap-state.md`,
   `golden-journeys.md`) per the source playbook's Section 10 recommended
-  skill package structure.
+  skill package structure — commit `b3c6216c`.
+- **2026-08-13 (continued)**: Independently re-verified the three Stage 2
+  Unknowns directly against source (not subagent-only). CRM linkage and
+  staff/hours-table absence both confirmed true. Implemented the CRM
+  linkage fix (`linkBookingToCrm` in `canonicalBooking.ts`), confirmed
+  `deno check` clean on `canonicalBooking.ts` and `site-runtime/index.ts`
+  (an unrelated pre-existing `agent-runner`/`_shared/auth.ts` type error
+  was confirmed via `git stash` to predate this change). Found a separate,
+  unrelated, pre-existing bug in `intent-exec`'s CRM contact writes
+  (`crm_contacts.name` column doesn't exist) — flagged, not fixed. Repo
+  continues to have heavy concurrent activity from another process
+  (edge-function deletions, doc edits, a "Rewire Wizard launch" commit
+  `c0e40731` landed on top of this session's commits, a `.tmp/wizard-rewire-*`
+  worktree appeared) — none of it touched or committed by this session.

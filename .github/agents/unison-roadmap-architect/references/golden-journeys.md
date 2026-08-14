@@ -20,11 +20,17 @@ determinism has not been independently traced.
 
 ## 3. Booking visitor -> availability -> conflict-safe booking -> customer/activity creation -> confirmation -> reschedule/cancel
 
-**Status:** Partial — 2026-08-13.
+**Status:** Partial, one gap closed — 2026-08-13.
 - Availability + conflict-safe create: Real (`publishedActionRuntimeModule.ts`
   -> `site-runtime` -> `private.create_atomic_booking`).
-- Customer/activity (CRM) creation on booking: Unknown, reported absent by
-  a subagent pass, not independently re-verified.
+- Customer/activity (CRM) creation on booking: **Fixed this cycle.**
+  Independently confirmed absent (not a subagent-only claim this time), then
+  implemented in `supabase/functions/_shared/canonicalBooking.ts`
+  (`linkBookingToCrm`) — business-scoped `crm_contacts` upsert +
+  `crm_activities` insert, best-effort/non-throwing, skipped on duplicate
+  (idempotent-retry) bookings. Not yet verified against a live database
+  (deno check + source-string tests only — still Moderate evidence tier,
+  not Strongest).
 - Confirmation delivery: not checked.
 - Reschedule/cancel: not checked.
 

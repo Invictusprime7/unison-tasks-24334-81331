@@ -8,16 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight,
@@ -52,7 +42,6 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { runBuilderTurn, isProviderTimeoutError, isRateLimitError, isTransportError } from "@/services/builderBrainClient";
 import { planLaneBBatches, measurePayloadBytes } from "@/services/laneBBatchPlanner";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   getIndustryForCategory,
@@ -82,7 +71,11 @@ import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wi
 import { preflightNavWiring } from "@/services/preflightNavWiring";
 import { runPreflightRepair } from "@/services/aiSitePreflightRepair";
 import { buildCanonicalLaunchArtifactsAsync } from "@/services/canonicalLaunchVfs";
-import { VFSPreview } from "@/components/VFSPreview";
+import {
+  createWizardLaunchRuntime,
+  WIZARD_LAUNCH_LIMITS,
+  type WizardLaunchRuntime,
+} from "@/services/wizardLaunchRuntime";
 import {
   createConfirmedLaunchIds,
   provisionConfirmedLaunchSite,
@@ -95,8 +88,7 @@ import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/p
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
 import {
-  buildLauncherNavigationState,
-  persistLauncherHandoff,
+  persistAndBuildLauncherHandoff,
 } from "@/services/launcherHandoffPersistence";
 import { ImportProjectZipButton } from "@/components/onboarding/ImportProjectZipButton";
 import { ImportUnisonSiteZipButton } from "@/components/onboarding/ImportUnisonSiteZipButton";
@@ -173,14 +165,6 @@ interface SystemLauncherProps {
    * owners don't retype the identity they just entered post-signup.
    */
   prefill?: SystemLauncherPrefill | null;
-}
-
-interface LaunchPreviewConfirmation {
-  businessName: string;
-  siteName: string;
-  files: Record<string, string>;
-  businessId: string;
-  siteId: string;
 }
 
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
@@ -552,32 +536,24 @@ const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
 // The overall Wizard lifecycle can span several Edge requests, but each request
 // stays below Supabase's 150s request-idle ceiling. Capping the broad turns keeps
 // them from consuming the page-specific completion window.
-const WIZARD_AI_TIMEOUT_MS = 600_000;
-const WIZARD_MIN_AI_TURN_MS = 15_000;
 // The funded Gemini Wizard lead can take up to 125 seconds for a complete
 // multi-page JSON payload. Leave browser and post-processing headroom beyond it.
-const WIZARD_INITIAL_AI_TURN_MS = 142_000;
-const WIZARD_UI_REPAIR_MAX_MS = 65_000;
-const WIZARD_BATCH_REPAIR_MAX_MS = 65_000;
-const WIZARD_FAQ_CONTENT_ENRICHMENT_MS = 45_000;
 const WIZARD_BATCH_REPAIR_MAX_PAGES = 2;
 // Every isolated page — regardless of how many pages are missing in a given
 // round — gets this full allowance. Pages in the same round already run
 // concurrently (bounded by WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS), so a
 // shorter per-page cap for multi-page rounds only starved the provider loop
 // without shortening the round's actual wall-clock time.
-const WIZARD_ISOLATED_PAGE_COMPLETION_MS = 132_000;
 // Kept low while only Gemini is funded: 4-way parallel isolated completions
 // contend for the same per-minute quota and starve every request's timeout.
-const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 2;
+const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = WIZARD_LAUNCH_LIMITS.parallelPages;
 const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 // A pure timeout/transport failure never produced content to judge, so it
 // must not consume the 2-attempt content/syntax-repair budget an isolated
 // page gets. One extra same-round retry absorbs transport noise for free.
-const WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES = 1;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
-  timeoutMs: 120_000,
+  timeoutMs: WIZARD_LAUNCH_LIMITS.gatewayMs,
   reasoningEffort: 'medium',
   autoModelSelection: true,
   maxTokens: 64_000,
@@ -797,39 +773,12 @@ function getGenerationCategory(
   return (templateCategory || system.templateCategories[0]) as LayoutCategory;
 }
 
-async function withTimeout<T>(
-  operation: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number,
-  timeoutMessage: string,
-): Promise<T> {
-  const controller = new AbortController();
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => {
-      controller.abort(new DOMException(timeoutMessage, 'TimeoutError'));
-      reject(new Error(timeoutMessage));
-    }, timeoutMs);
-  });
-
-  try {
-    return await Promise.race([operation(controller.signal), timeoutPromise]);
-  } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle);
-  }
-}
-
 /**
  * A timeout/transport failure means no content was ever judged — it should
  * not consume the one syntax/contract-repair retry an isolated page gets.
  * Covers both `runBuilderTurn`'s own deadline abort and this file's
- * `withTimeout` wrapper's message, in addition to the shared transport check.
+ * The bounded launch runtime now owns cancellation and visible progress.
  */
-function isRecoverableWizardCompletionTimeout(err: unknown): boolean {
-  if (isProviderTimeoutError(err) || isTransportError(err)) return true;
-  const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
-  return /exceeded the remaining wizard generation deadline/i.test(message);
-}
-
 function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => {
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
@@ -1508,8 +1457,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchStatus, setLaunchStatus] = useState("");
-  const [launchPreviewConfirmation, setLaunchPreviewConfirmation] = useState<LaunchPreviewConfirmation | null>(null);
-  const launchConfirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const [launchFailure, setLaunchFailure] = useState("");
+  const launchRuntimeRef = useRef<WizardLaunchRuntime | null>(null);
   // Business Profile selected in the wizard header. When set, the project
   // is stamped into this business; when null we fall back to
   // install-system provisioning (creates a fresh business).
@@ -1544,20 +1493,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     youtube: "",
   });
 
-  const requestLaunchConfirmation = useCallback((preview: LaunchPreviewConfirmation) => (
-    new Promise<boolean>((resolve) => {
-      launchConfirmationResolverRef.current = resolve;
-      setLaunchPreviewConfirmation(preview);
-    })
-  ), []);
-
-  const resolveLaunchConfirmation = useCallback((confirmed: boolean) => {
-    const resolve = launchConfirmationResolverRef.current;
-    launchConfirmationResolverRef.current = null;
-    setLaunchPreviewConfirmation(null);
-    resolve?.(confirmed);
-  }, []);
-
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
 
   useEffect(() => {
@@ -1565,6 +1500,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       fetchDesignProfile();
     }
   }, [open, fetchDesignProfile]);
+
+  useEffect(() => () => {
+    launchRuntimeRef.current?.dispose();
+    launchRuntimeRef.current = null;
+  }, []);
 
   // Milestone 1 — prefill wizard identity from BusinessProfileGate handoff.
   // Only seeds empty fields so a returning user editing the wizard is never overwritten.
@@ -1621,6 +1561,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     setCustomPrompt("");
     setIsLaunching(false);
     setLaunchStatus("");
+    setLaunchFailure("");
     setValidationAttempts([]);
     setDiagnosticsExpanded(false);
     setPrimaryGoal(null);
@@ -1687,26 +1628,34 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   };
 
   const handleLaunch = async () => {
-    if (isLaunching || launchPreviewConfirmation) return;
+    if (isLaunching) return;
     if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
     if (!system) return;
     const effectiveTemplate = selectedTemplate || getDefaultTemplateCardFor(selectedSystem);
     if (!businessName.trim()) {
-      toast.error("Please enter your business name");
+      setLaunchFailure("Enter your business name to continue.");
       return;
     }
     const selectedStyle = selectedTheme;
     if (!selectedStyle?.id) {
-      toast.error('Please select a visual style before launching.');
+      setLaunchFailure('Select a visual style to continue.');
       return;
     }
 
+    setLaunchFailure("");
     setIsLaunching(true);
-  setLaunchStatus('Preparing your site…');
+    launchRuntimeRef.current?.dispose();
+    const launchRuntime = createWizardLaunchRuntime({
+      onProgress: ({ label, elapsedMs }) => {
+        setLaunchStatus(`${label} · ${Math.max(1, Math.floor(elapsedMs / 1_000))}s`);
+      },
+    });
+    launchRuntimeRef.current = launchRuntime;
+    launchRuntime.update('prepare', 'Preparing your site…');
     setValidationAttempts([]);
-  // Let the generating state paint before composing the sizeable canonical VFS.
-  await yieldToBrowser();
+    // Let the generating state paint before composing the sizeable canonical VFS.
+    await yieldToBrowser();
     
     try {
       console.log('[SystemLauncher] Launching with:', {
@@ -1719,7 +1668,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       
       // User must be authenticated to generate a site
       if (!sessionData.session) {
-        toast.error("Please sign in to continue");
+      setLaunchFailure("Sign in to generate your site.");
         navigate("/auth");
         return;
       }
@@ -1822,7 +1771,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           '[SystemLauncher] WizardSelections assertion failed: themePresetId is missing on the payload sent to commitToPipeline. ' +
           'This indicates a regression in the wizard → pipeline contract.';
         console.error(msg, wizardSelections);
-        toast.error('Build aborted: wizard payload missing theme preset.');
         throw new Error(msg);
       }
 
@@ -1918,19 +1866,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           hasCompiledCss: !!compiledPlayground?.vfsFiles?.['/src/index.css'],
           hasSnapshotCss: !!siteBundleSnapshot?.vfsFiles?.['/src/index.css'],
         });
-        toast.error('Build aborted: themed stylesheet was not applied to the scaffold.');
         throw new Error(msg);
       }
 
       // ── Resolve composition from selected Template card only ──
       // Template selection is a hard structural contract for AI generation.
       if (!effectiveTemplate?.id) {
-        toast.error("Please select a template before launching.");
+        setLaunchFailure("Select a template to continue.");
         return;
       }
       let composition = getCompositionById(effectiveTemplate.id);
       if (!composition) {
-        toast.error(
+        setLaunchFailure(
           `Selected template "${effectiveTemplate.label}" has no registered composition. Please choose another template.`,
         );
         return;
@@ -2065,10 +2012,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         template_layout: templateLayoutContract,
         industry_context: industryTemplateGuidance,
       };
-
-      toast("Generating your site with AI…", {
-        description: `${resolvedIndustry} • ${effectiveTemplate?.label || system.name} • ${resolvedPreset.label}`,
-      });
 
       // ── Compose the AI seed prompt from ALL SIX wizard inputs ──
       const baseAiUserPrompt = buildWizardAiSeedPrompt({
@@ -2279,19 +2222,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         structured: LauncherPayload;
         sanitized: SanitizedGeneratedFiles;
       } | null = null;
-      // One deadline governs the entire AI generation lifecycle: initial turn,
-      // batches, contract repair, missing-page repair and page completion.
-      // No downstream step may reset the clock and extend the user journey.
-      const wizardGenerationDeadlineAt = Date.now() + WIZARD_AI_TIMEOUT_MS;
-      const takeWizardGenerationBudget = (stepCapMs = WIZARD_AI_TIMEOUT_MS): number => {
-        const remaining = wizardGenerationDeadlineAt - Date.now();
-        if (remaining < WIZARD_MIN_AI_TURN_MS) {
-          throw new Error(
-            `Wizard AI generation stopped before starting a doomed repair turn (${Math.max(0, remaining)}ms remained).`,
-          );
-        }
-        return Math.min(stepCapMs, remaining);
-      };
+      // Every generation and repair call is governed by the one bounded
+      // launch runtime created at the start of this user action. Later stages
+      // cannot reset the clock or silently extend the journey.
       let aiError: unknown = null;
       const deferredPageCompletions = new Set<string>();
       let lastPayloadIssue: {
@@ -2368,14 +2301,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               const batchNumber = batchOffset + waveIndex + 1;
               const batchPrompt = buildFirstAttemptPrompt(batch);
               try {
-                const batchBudgetMs = takeWizardGenerationBudget(
-                  Math.min(
-                    WIZARD_INITIAL_AI_TURN_MS,
+                const batchResult = await launchRuntime.run({
+                  stage: 'generate',
+                  label: `Generating page group ${batchNumber}/${firstAttemptBatchPlan.batches.length}â€¦`,
+                  capMs: Math.min(
+                    WIZARD_LAUNCH_LIMITS.initialGenerationMs,
                     Math.max(45_000, Math.round(firstAttemptBatchPlan.estimatedMsPerBatch * 1.5)),
                   ),
-                );
-                const batchResult = await withTimeout(
-                  (signal) => runBuilderTurn<any>({
+                  operation: ({ signal, budgetMs }) => runBuilderTurn<any>({
                     messages: [{ role: 'user', content: batchPrompt }],
                     mode: 'wizard-seed',
                     currentCode: wizardCurrentCode,
@@ -2392,10 +2325,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     recentChangedFiles: batch,
                     gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
                     wizardSeed: scopeWizardSeedToPageFiles(wizardSeed, batch),
-                  }, { signal, timeoutMs: batchBudgetMs - 2_000 }),
-                  batchBudgetMs,
-                  `Lane B first-pass batch ${batchNumber} exceeded the Wizard generation deadline.`,
-                );
+                  }, { signal, timeoutMs: budgetMs - 2_000 }),
+                });
                 if (batchResult.error) return { error: batchResult.error };
                 const { structured: batchStructured } = extractLaneBLauncherPayload(
                   batchResult.data as Record<string, unknown> | null,
@@ -2442,9 +2373,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             ? { data: { files: mergedFirstAttemptFiles }, error: null }
             : { data: null, error: firstAttemptFailure || new Error('Lane B first-pass authoring returned no files.') };
         } else {
-          const initialGenerationBudgetMs = takeWizardGenerationBudget(WIZARD_INITIAL_AI_TURN_MS);
-          result = await withTimeout(
-            (signal) => runBuilderTurn<any>({
+          result = await launchRuntime.run({
+            stage: 'generate',
+            label: 'Generating your industry-aware pagesâ€¦',
+            capMs: WIZARD_LAUNCH_LIMITS.initialGenerationMs,
+            operation: ({ signal, budgetMs }) => runBuilderTurn<any>({
               messages: [{ role: 'user', content: firstAttemptAiUserPrompt }],
               mode: 'wizard-seed',
               currentCode: wizardCurrentCode,
@@ -2461,10 +2394,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               recentChangedFiles: initialTargetPaths,
               gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
               wizardSeed,
-            }, { signal, timeoutMs: initialGenerationBudgetMs - 2_000 }),
-            initialGenerationBudgetMs,
-            `AI generation exceeded the Wizard generation deadline.`,
-          );
+            }, { signal, timeoutMs: budgetMs - 2_000 }),
+          });
         }
         aiError = result.error;
 
@@ -2528,11 +2459,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 'Do not emit /src/App.tsx, /src/index.css, SiteNavbar, SiteFooter, or any page outside the list.',
               ].join('\n');
               try {
-                const batchBudgetMs = takeWizardGenerationBudget(
-                  Math.max(30_000, Math.round(batchPlan.estimatedMsPerBatch * 1.5)),
-                );
-                const batchResult = await withTimeout(
-                  (signal) => runBuilderTurn<any>({
+                const batchResult = await launchRuntime.run({
+                  stage: 'repair',
+                  label: `Recovering page group ${i + 1}/${batches.length}â€¦`,
+                  capMs: Math.min(
+                    WIZARD_LAUNCH_LIMITS.initialGenerationMs,
+                    Math.max(30_000, Math.round(batchPlan.estimatedMsPerBatch * 1.5)),
+                  ),
+                  operation: ({ signal, budgetMs }) => runBuilderTurn<any>({
                     messages: [{ role: 'user', content: batchPrompt }],
                     mode: 'wizard-seed',
                     currentCode: wizardCurrentCode,
@@ -2549,10 +2483,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     recentChangedFiles: batch,
                     gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
                     wizardSeed: scopeWizardSeedToPageFiles(wizardSeed, batch),
-                  }, { signal, timeoutMs: batchBudgetMs - 2_000 }),
-                  batchBudgetMs,
-                  `Lane B batch ${i + 1} exceeded the remaining Wizard generation deadline.`,
-                );
+                  }, { signal, timeoutMs: budgetMs - 2_000 }),
+                });
                 completedBatches += 1;
                 setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
                 if (batchResult.error) {
@@ -2681,9 +2613,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   'Keep all existing wizard sections, semantic Stage 4b token classes, accessible image alt text, and data-ut-intent attributes.',
                 ].join('\n');
                 try {
-                  const uiRepairBudgetMs = takeWizardGenerationBudget(WIZARD_UI_REPAIR_MAX_MS);
-                  const uiRepair = await withTimeout(
-                    (signal) => runBuilderTurn<any>({
+                  const uiRepair = await launchRuntime.run({
+                    stage: 'repair',
+                    label: 'Aligning generated components with the Builderâ€¦',
+                    capMs: WIZARD_LAUNCH_LIMITS.uiRepairMs,
+                    operation: ({ signal, budgetMs }) => runBuilderTurn<any>({
                       messages: [{ role: 'user', content: uiRepairPrompt }],
                       mode: 'wizard-seed',
                       currentCode: wizardCurrentCode,
@@ -2702,10 +2636,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                         .filter((path): path is string => Boolean(path)),
                       gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
                       wizardSeed,
-                    }, { signal, timeoutMs: uiRepairBudgetMs - 2_000 }),
-                    uiRepairBudgetMs,
-                    `Lane B UI foundation repair exceeded the remaining Wizard generation deadline.`,
-                  );
+                    }, { signal, timeoutMs: budgetMs - 2_000 }),
+                  });
                   if (uiRepair.error) {
                     throw uiRepair.error;
                   }
@@ -3050,7 +2982,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const details = await getFunctionErrorMessage(aiError);
         if (isRateLimitError(aiError)) {
           console.warn('[SystemLauncher] All AI providers are temporarily rate limited; preserving Wizard state for retry');
-          toast.error('AI providers are temporarily busy. Your Wizard selections are preserved—please try Generate again shortly.');
+          setLaunchFailure('Generation capacity is busy. Your Wizard selections are preserved; Generate will resume from this setup.');
           return;
         }
         const transportHint = isTransportError(aiError)
@@ -3325,8 +3257,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const industryRequirements = getIndustryQualityRequirements(resolvedIndustry);
         let enrichedContent: ReturnType<typeof parseStructuredWizardFaqContent> = null;
         try {
-          setLaunchStatus('Writing industry-specific FAQ content…');
-          const enrichmentBudgetMs = takeWizardGenerationBudget(WIZARD_FAQ_CONTENT_ENRICHMENT_MS);
           const contentPrompt = [
             'Create rich content data for one FAQ page. Do not write source code.',
             `Business: ${brand}`,
@@ -3343,8 +3273,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             'Write concrete business- and industry-specific copy with useful policies, process details, preparation guidance, and decision criteria.',
             'Do not return files, TSX, JSX, imports, markdown fences, placeholders, or generic filler.',
           ].join('\n');
-          const enrichment = await withTimeout(
-            (signal) => runBuilderTurn<Record<string, unknown>>({
+          const enrichment = await launchRuntime.run({
+            stage: 'generate',
+            label: 'Writing industry-specific FAQ content…',
+            capMs: WIZARD_LAUNCH_LIMITS.faqContentMs,
+            operation: ({ signal, budgetMs }) => runBuilderTurn<Record<string, unknown>>({
               messages: [{ role: 'user', content: contentPrompt }],
               mode: 'wizard-content',
               editMode: false,
@@ -3368,14 +3301,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 reasoningEffort: 'low',
                 autoModelSelection: false,
                 selectedModelId: 'google/gemini-2.5-flash-lite',
-                timeoutMs: Math.min(40_000, enrichmentBudgetMs - 3_000),
+                timeoutMs: Math.min(WIZARD_LAUNCH_LIMITS.faqContentMs - 3_000, budgetMs - 3_000),
                 maxTokens: 6_000,
               },
               wizardSeed,
-            }, { signal, timeoutMs: enrichmentBudgetMs - 1_000 }),
-            enrichmentBudgetMs,
-            'FAQ content enrichment exceeded its Wizard generation budget.',
-          );
+            }, { signal, timeoutMs: budgetMs - 1_000 }),
+          });
           if (!enrichment.error) {
             enrichedContent = parseStructuredWizardFaqContent(enrichment.data, {
               vocabulary: industryRequirements?.vocabulary || [],
@@ -3447,9 +3378,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           missingPageDetails,
         ].join('\n');
         try {
-          const repairBudgetMs = takeWizardGenerationBudget(WIZARD_BATCH_REPAIR_MAX_MS);
-          const retry = await withTimeout(
-            (signal) => runBuilderTurn<any>({
+          const retry = await launchRuntime.run({
+            stage: 'repair',
+            label: `Completing ${normalizedMissing.length} remaining page(s)â€¦`,
+            capMs: WIZARD_LAUNCH_LIMITS.batchRepairMs,
+            operation: ({ signal, budgetMs }) => runBuilderTurn<any>({
               messages: [{ role: 'user', content: retryPrompt }],
               mode: 'wizard-seed',
               currentCode: wizardCurrentCode,
@@ -3476,10 +3409,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               recentChangedFiles: normalizedMissing,
               gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
               wizardSeed,
-            }, { signal, timeoutMs: repairBudgetMs - 2_000 }),
-            repairBudgetMs,
-            `Lane B repair turn exceeded the remaining Wizard generation deadline.`,
-          );
+            }, { signal, timeoutMs: budgetMs - 2_000 }),
+          });
           if (!retry.error) {
             const { structured: retryStructured } = extractLaneBLauncherPayload(
               retry.data as Record<string, unknown> | null,
@@ -3520,7 +3451,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // page being returned correctly in one model response. Complete each
       // unresolved registry page independently, carrying the exact wizard
       // template/theme identity and the full industry behavior contract.
-      const completeMissingWizardPage = async (missingPath: string, attempt: 2 | 3 | 4): Promise<void> => {
+      const completeMissingWizardPage = async (missingPath: string, attempt: 2 | 3): Promise<void> => {
         const page = Object.values(siteBundleSnapshot.pageRegistry.pages).find((candidatePage) => {
           const filePath = (candidatePage as { filePath?: string }).filePath;
           if (!filePath) return false;
@@ -3618,17 +3549,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             rejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
           ].join('\n');
 
-          for (
-            let transportRetry = 0;
-            transportRetry <= WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES;
-            transportRetry++
-          ) {
-            try {
-              const completionBudgetMs = takeWizardGenerationBudget(
-                WIZARD_ISOLATED_PAGE_COMPLETION_MS,
-              );
-              const completion = await withTimeout(
-                (signal) => runBuilderTurn<any>({
+          try {
+            const completion = await launchRuntime.run({
+              stage: 'repair',
+              label: `Completing ${page?.title || missingPath} (${attempt - 1}/${WIZARD_LAUNCH_LIMITS.isolatedRepairRounds})â€¦`,
+              capMs: WIZARD_LAUNCH_LIMITS.isolatedPageMs,
+              operation: ({ signal, budgetMs }) => runBuilderTurn<any>({
                   messages: [{ role: 'user', content: pageCompletionPrompt }],
                   mode: 'wizard-seed',
                   currentCode: rejectedCandidate && !isSyntaxCompletionFailure(previousFailure)
@@ -3660,7 +3586,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     reasoningEffort: 'low',
                     autoModelSelection: false,
                     selectedModelId: 'google/gemini-2.5-flash-lite',
-                    timeoutMs: Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, completionBudgetMs - 5_000),
+                    timeoutMs: Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, budgetMs - 5_000),
                     // Content requirements (4+ body regions, role evidence,
                     // 1200+ chars) can exceed 12k tokens for card-heavy pages
                     // like Services/Pricing; a tight cap here was truncating
@@ -3668,71 +3594,46 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                     maxTokens: 20_000,
                   },
                   wizardSeed: isolatedWizardSeed,
-                }, { signal, timeoutMs: completionBudgetMs - 2_000 }),
-                completionBudgetMs,
-                `Lane B page completion exceeded the remaining Wizard generation deadline.`,
-              );
-              if (completion.error) {
-                if (
-                  transportRetry < WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES
-                  && isRecoverableWizardCompletionTimeout(completion.error)
-                ) {
-                  console.warn('[SystemLauncher] Isolated page completion transport/timeout; retrying before spending a content-repair attempt', {
-                    path: missingPath,
-                    attempt,
-                  });
-                  continue;
-                }
-                laneBCompletionDiagnostics.push({
-                  path: missingPath,
-                  attempt,
-                  accepted: false,
-                  reason: await getFunctionErrorMessage(completion.error),
-                });
-                return;
-              }
-              const { structured: completionStructured } = extractLaneBLauncherPayload(
-                completion.data as Record<string, unknown> | null,
-                `${brand} ${page?.title || 'Page'}`,
-              );
-              if (!completionStructured?.files) {
-                laneBCompletionDiagnostics.push({
-                  path: missingPath,
-                  attempt,
-                  accepted: false,
-                  reason: 'Lane B page completion returned no structured files',
-                });
-                return;
-              }
-              const completionSanitized = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(completionStructured.files));
-              acceptCompletedWizardPage(missingPath, completionSanitized.files, attempt);
-              return;
-            } catch (completionError) {
-              if (
-                transportRetry < WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES
-                && isRecoverableWizardCompletionTimeout(completionError)
-              ) {
-                console.warn('[SystemLauncher] Isolated page completion transport/timeout threw; retrying before spending a content-repair attempt', {
-                  path: missingPath,
-                  attempt,
-                });
-                continue;
-              }
+              }, { signal, timeoutMs: budgetMs - 2_000 }),
+            });
+            if (completion.error) {
               laneBCompletionDiagnostics.push({
                 path: missingPath,
                 attempt,
                 accepted: false,
-                reason: completionError instanceof Error ? completionError.message : String(completionError),
+                reason: await getFunctionErrorMessage(completion.error),
               });
               return;
             }
+            const { structured: completionStructured } = extractLaneBLauncherPayload(
+              completion.data as Record<string, unknown> | null,
+              `${brand} ${page?.title || 'Page'}`,
+            );
+            if (!completionStructured?.files) {
+              laneBCompletionDiagnostics.push({
+                path: missingPath,
+                attempt,
+                accepted: false,
+                reason: 'Lane B page completion returned no structured files',
+              });
+              return;
+            }
+            const completionSanitized = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(completionStructured.files));
+            acceptCompletedWizardPage(missingPath, completionSanitized.files, attempt);
+          } catch (completionError) {
+            laneBCompletionDiagnostics.push({
+              path: missingPath,
+              attempt,
+              accepted: false,
+              reason: completionError instanceof Error ? completionError.message : String(completionError),
+            });
           }
         }
       };
       if (stillMissing.length > 0) {
         setLaunchStatus(`Completing ${stillMissing.length} remaining page(s) in parallel`);
       }
-      for (const attempt of [2, 3, 4] as const) {
+      for (const attempt of [2, 3] as const) {
         const roundTargets = stillMissing.filter(
           (path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')],
         );
@@ -3871,7 +3772,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const intentBindingsFile = buildIntentBindingsFile(materializedPlayground);
       const intentSurfacesFile = buildIntentSurfacesFile(materializedPlayground);
 
-      setLaunchStatus('Finalizing preview…');
+      launchRuntime.update('finalize', 'Finalizing your Builder workspace…');
       await yieldToBrowser();
       const launchArtifacts = await buildCanonicalLaunchArtifactsAsync({
         generatedFiles,
@@ -3944,25 +3845,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         );
       }
 
-      setLaunchStatus('Review the generated site before creating its live data workspace.');
-      // Generation is complete. The confirmation dialog is an intentional
-      // user decision, not an active loading state.
-      setIsLaunching(false);
-      setLaunchStatus('');
-      const confirmed = await requestLaunchConfirmation({
-        businessName: brand,
-        siteName: `${brand} Site`,
-        files: wiredVfsFiles,
-        businessId: provisionedBusinessId,
-        siteId: launchIds.siteId,
-      });
-      if (!confirmed) {
-        toast.info('Launch cancelled. No site data was created.');
-        return;
-      }
-
-      setIsLaunching(true);
-      setLaunchStatus('Creating the site workspace and live data contracts…');
+      // Generation, persistence, and Builder navigation are one uninterrupted
+      // transaction. There is no confirmation pause or second launch phase.
+      launchRuntime.update('persist', 'Saving your generated site…');
       const confirmedLaunch = await provisionConfirmedLaunchSite({
         ids: launchIds,
         existingBusinessId: selectedBusinessId,
@@ -4096,10 +3981,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         fromLauncher: true,
         ...navState,
       };
-      const webBuilderNavigationState = buildLauncherNavigationState(webBuilderRouteState);
-
       setLaunch(launchState);
-      persistLauncherHandoff({
+      const webBuilderNavigationState = persistAndBuildLauncherHandoff({
         routeState: webBuilderRouteState,
         launchState,
       });
@@ -4130,6 +4013,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // Strict post-launch destination: always the WebBuilder, wired to the
       // generated site (preview + VFS/playground). Never bounce through the
       // dashboard. `replace: true` so back-nav doesn't re-enter the wizard.
+      launchRuntime.update('handoff', 'Opening Web Builder…');
+      await yieldToBrowser();
       navigate("/web-builder", {
         replace: true,
         state: webBuilderNavigationState,
@@ -4137,13 +4022,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       onOpenChange(false);
       resetState();
-      toast.success("Site ready! Opening builder…");
 
     } catch (e) {
       const msg = await getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);
-      toast.error(msg);
+      setLaunchFailure(msg);
     } finally {
+      launchRuntime.dispose();
+      if (launchRuntimeRef.current === launchRuntime) {
+        launchRuntimeRef.current = null;
+      }
       setIsLaunching(false);
       setLaunchStatus("");
     }
@@ -4156,7 +4044,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       <Dialog
         open={open}
         onOpenChange={(isOpen) => {
-          if (!isOpen) resolveLaunchConfirmation(false);
+          if (!isOpen) launchRuntimeRef.current?.dispose();
           onOpenChange(isOpen);
           if (!isOpen) resetState();
         }}
@@ -4852,6 +4740,15 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
               </div>
 
+              {launchFailure && !isLaunching && (
+                <div
+                  role="status"
+                  className="mt-4 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-xs leading-relaxed text-cyan-50/85"
+                >
+                  {launchFailure}
+                </div>
+              )}
+
               {validationAttempts.length > 0 && (
                 <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] overflow-hidden">
                   <button
@@ -4894,49 +4791,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         </DialogContent>
       </Dialog>
 
-      <AlertDialog
-        open={Boolean(launchPreviewConfirmation)}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) resolveLaunchConfirmation(false);
-        }}
-      >
-        <AlertDialogContent className="max-w-6xl border-white/10 bg-[#07080F] text-white shadow-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Review Generated Site</AlertDialogTitle>
-            <AlertDialogDescription className="text-white/55">
-              {launchPreviewConfirmation?.siteName} will create its Unison workspace, live data contracts, and initial revision only after confirmation.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="h-[62vh] min-h-[420px] overflow-hidden border border-white/10 bg-black">
-            {launchPreviewConfirmation && (
-              <VFSPreview
-                nodes={[]}
-                files={launchPreviewConfirmation.files}
-                businessId={launchPreviewConfirmation.businessId}
-                siteId={launchPreviewConfirmation.siteId}
-                forceBackend="sandpack"
-                showConsole={false}
-                showToolbar={false}
-                className="h-full"
-              />
-            )}
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              className="border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
-              onClick={() => resolveLaunchConfirmation(false)}
-            >
-              Keep Editing
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
-              onClick={() => resolveLaunchConfirmation(true)}
-            >
-              Confirm Site Launch
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 };

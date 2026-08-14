@@ -151,19 +151,9 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   } satisfies Record<string, unknown>;
 }
 
-export function persistLauncherHandoff(args: {
-  routeState: Record<string, unknown>;
-  launchState?: LaunchState;
-}) {
+function persistCompactLauncherHandoff(compactRouteState: Record<string, unknown>) {
   if (!storageAvailable()) return;
-
   const createdAt = new Date().toISOString();
-  // A handoff used to stringify routeState plus launchState, while each one
-  // held VFS, snapshot VFS, and compiled VFS copies. Large Lane B sites then
-  // blocked the main thread immediately after navigate('/web-builder'). Keep
-  // exactly one compact VFS copy for refresh recovery; LaunchContext owns the
-  // live in-memory copy during the same SPA navigation.
-  const compactRouteState = buildFallbackRouteState(args.routeState);
   const baseSnapshot: LauncherHandoffSnapshot = {
     targetPath: '/web-builder',
     createdAt,
@@ -180,6 +170,32 @@ export function persistLauncherHandoff(args: {
       // Non-fatal: normal in-memory route state still carries the handoff.
     }
   }
+}
+
+export function persistLauncherHandoff(args: {
+  routeState: Record<string, unknown>;
+  launchState?: LaunchState;
+}) {
+  // A handoff used to stringify routeState plus launchState, while each one
+  // held VFS, snapshot VFS, and compiled VFS copies. Large Lane B sites then
+  // blocked the main thread immediately after navigate('/web-builder'). Keep
+  // exactly one compact VFS copy for refresh recovery; LaunchContext owns the
+  // live in-memory copy during the same SPA navigation.
+  persistCompactLauncherHandoff(buildFallbackRouteState(args.routeState));
+}
+
+/**
+ * Build the history and recovery payload once. The Wizard previously walked
+ * and serialized the same full VFS twice immediately before Builder mount,
+ * which could block the main thread during the route transition.
+ */
+export function persistAndBuildLauncherHandoff(args: {
+  routeState: Record<string, unknown>;
+  launchState?: LaunchState;
+}): Record<string, unknown> {
+  const compactRouteState = buildFallbackRouteState(args.routeState);
+  persistCompactLauncherHandoff(compactRouteState);
+  return compactRouteState;
 }
 
 /**

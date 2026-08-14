@@ -40,7 +40,7 @@ const bothProviders = (name: string): string | undefined => ({
   AI_PROVIDER_MODE: "hybrid",
 }[name]);
 
-// AI_PROVIDER_MODE now defaults to "hybrid"; exclusivity is opt-in.
+// Alternate funded providers are opt-in; an omitted mode remains Gemini-only.
 const geminiOnlyMode = (name: string): string | undefined => ({
   GEMINI_API_KEY: "gemini-test-key",
   OPENAI_API_KEY: "openai-test-key",
@@ -131,6 +131,24 @@ Deno.test("uses Gemini exclusively when AI_PROVIDER_MODE opts out of the OpenAI 
     "google/gemini-2.5-flash",
     "google/gemini-2.5-flash-lite",
   ]);
+});
+
+Deno.test("defaults to Gemini-only when AI_PROVIDER_MODE is omitted", () => {
+  const plan = buildProviderPlan(
+    wizardTask,
+    true,
+    { timeoutMs: 85_000 },
+    "advanced",
+    "wizard-route",
+    (name) => ({
+      GEMINI_API_KEY: "gemini-test-key",
+      OPENAI_API_KEY: "configured-but-not-funded",
+    }[name]),
+  );
+
+  assertEquals(plan.primaryProvider, "gemini");
+  assertEquals(plan.perModelTimeoutMs, 85_000);
+  assertEquals(plan.gatewayModels.every((model) => model.id.startsWith("google/")), true);
 });
 
 Deno.test("keeps a funded Gemini Wizard leading, with OpenAI retained as a fallback", () => {

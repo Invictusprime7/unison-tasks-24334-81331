@@ -46,11 +46,11 @@ export interface ProviderDistribution {
 export function isGeminiExclusiveProviderMode(
   readEnv: EnvReader = (name) => Deno.env.get(name),
 ): boolean {
-  const mode = (readEnv('AI_PROVIDER_MODE') || 'hybrid').trim().toLowerCase();
+  const mode = (readEnv('AI_PROVIDER_MODE') || 'gemini-only').trim().toLowerCase();
   if (mode === 'hybrid') return false;
   // Never lock to Gemini when it has no key but OpenAI does.
   if (!readEnv('GEMINI_API_KEY') && !readEnv('GOOGLE_API_KEY')) return false;
-  return mode === 'gemini-only';
+  return true;
 }
 
 // Gemini is the default direct provider. OpenAI is retained as a fallback

@@ -3,6 +3,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
   buildLauncherNavigationState,
   clearLauncherHandoff,
+  persistAndBuildLauncherHandoff,
   persistLauncherHandoff,
   readLauncherHandoff,
 } from "@/services/launcherHandoffPersistence";
@@ -91,5 +92,26 @@ describe("launcher handoff persistence", () => {
 
     expect((navigationState.vfsFiles as Record<string, string>)['/src/App.tsx']).toContain('Deterministic manifest');
     expect(navigationState.snapshotVfsCompacted).toBe(true);
+  });
+
+  it('builds one compact payload for both navigation and recovery', () => {
+    const routeState = {
+      fromLauncher: true,
+      vfsFiles: {
+        '/src/App.tsx': 'export default function App(){ return <main>Generated</main>; }',
+      },
+      siteBundleSnapshot: {
+        snapshotId: 'snap_atomic',
+        vfsFiles: {
+          '/src/App.tsx': 'export default function App(){ return <main>Canonical</main>; }',
+        },
+      },
+    };
+
+    const navigationState = persistAndBuildLauncherHandoff({ routeState });
+    const recoveryState = readLauncherHandoff()?.routeState;
+
+    expect(navigationState).toEqual(recoveryState);
+    expect((navigationState.vfsFiles as Record<string, string>)['/src/App.tsx']).toContain('Canonical');
   });
 });

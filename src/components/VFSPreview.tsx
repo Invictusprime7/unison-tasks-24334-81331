@@ -417,8 +417,27 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     compiling: true,
   });
 
+  // Coarse launch signature — LaunchContext re-publishes a new object on every
+  // status tick. Only the values the preview compiler actually reads may
+  // invalidate compiled artifacts.
+  const launchSignature = useMemo(() => [
+    launch?.themePresetId ?? '',
+    launch?.siteBundleSnapshot?.meta?.themePresetId ?? '',
+    launch?.siteBundleSnapshot?.industry ?? '',
+    launch?.businessName ?? '',
+    launch?.runtimeManifest?.appContext?.themePresetId ?? '',
+    Object.keys(launch?.siteBundleSnapshot?.vfsFiles || {}).length,
+  ].join('|'), [launch]);
+  const launchRef = useRef(launch);
+  launchRef.current = launch;
+  const compiledKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
+    const compileKey = `${filesSignature}::${launchSignature}`;
+    if (compiledKeyRef.current === compileKey) return;
+
     let cancelled = false;
+
 
     setPreviewCompile((current) => ({
       ...current,

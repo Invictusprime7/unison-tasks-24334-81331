@@ -14,7 +14,7 @@ import {
 } from '@/services/generatedSiteRuntimeManifest';
 import type { CapabilityId } from '@/platform/core/capabilityRegistry';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
-import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { normalizeLauncherFiles } from '@/utils/sandpackFilePrep';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 import { preflightNavWiring } from './preflightNavWiring';

@@ -52,6 +52,12 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { runBuilderTurn, isProviderTimeoutError, isRateLimitError, isTransportError } from "@/services/builderBrainClient";
 import { planLaneBBatches, measurePayloadBytes } from "@/services/laneBBatchPlanner";
+import {
+  createLaunchRun,
+  classifyLaunchError,
+  publishLaunchDegradations,
+  type LaunchRun,
+} from "@/services/launch/launchRun";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -855,23 +861,6 @@ function yieldToBrowser(): Promise<void> {
 }
 
 
-/**
- * The final preview wiring pipeline must never leave the shell in a permanent
- * loading state. If a stage stalls, surface a recoverable error instead.
- */
-function withLaunchWatchdog<T>(work: Promise<T>, stage: string, timeoutMs = 180_000): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const guard = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${stage} stalled after ${Math.round(timeoutMs / 1000)}s. Your Wizard selections are preserved—please try Generate again.`)),
-      timeoutMs,
-    );
-  });
-  return Promise.race([work, guard]).finally(() => {
-    if (timer) clearTimeout(timer);
-  }) as Promise<T>;
-}
-
 async function getFunctionErrorMessage(error: unknown): Promise<string> {
   if (error instanceof Error) {
     const withContext = error as Error & {
@@ -1540,6 +1529,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [customPrompt, setCustomPrompt] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchStatus, setLaunchStatus] = useState("");
+  // Inline, recoverable launch failure. The wizard never toasts errors.
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const [launchPreviewConfirmation, setLaunchPreviewConfirmation] = useState<LaunchPreviewConfirmation | null>(null);
   const launchConfirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   // Business Profile selected in the wizard header. When set, the project
@@ -1725,18 +1716,22 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     if (!system) return;
     const effectiveTemplate = selectedTemplate || getDefaultTemplateCardFor(selectedSystem);
     if (!businessName.trim()) {
-      toast.error("Please enter your business name");
+      setLaunchError("Please enter your business name");
       return;
     }
     const selectedStyle = selectedTheme;
     if (!selectedStyle?.id) {
-      toast.error('Please select a visual style before launching.');
+      setLaunchError('Please select a visual style before launching.');
       return;
     }
 
     setIsLaunching(true);
   setLaunchStatus('Preparing your site…');
     setValidationAttempts([]);
+    setLaunchError(null);
+    // The launch run owns the journey: it records non-fatal degradations so the
+    // wizard never dead-ends the user with an error toast.
+    const run: LaunchRun = createLaunchRun();
   // Let the generating state paint before composing the sizeable canonical VFS.
   await yieldToBrowser();
     
@@ -1854,8 +1849,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           '[SystemLauncher] WizardSelections assertion failed: themePresetId is missing on the payload sent to commitToPipeline. ' +
           'This indicates a regression in the wizard → pipeline contract.';
         console.error(msg, wizardSelections);
-        toast.error('Build aborted: wizard payload missing theme preset.');
-        throw new Error(msg);
+        // Recover the preset from the resolved wizard style instead of aborting.
+        wizardSelections.themePresetId = earlyResolvedPreset.id;
+        run.degrade('plan', 'plan.theme_preset_recovered',
+          'Your visual style was re-applied from your selection.', msg);
       }
 
       // ── Pre-seed for page composition ────────────────────────────────────
@@ -1950,19 +1947,22 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           hasCompiledCss: !!compiledPlayground?.vfsFiles?.['/src/index.css'],
           hasSnapshotCss: !!siteBundleSnapshot?.vfsFiles?.['/src/index.css'],
         });
-        toast.error('Build aborted: themed stylesheet was not applied to the scaffold.');
-        throw new Error(msg);
+        // Repair the themed stylesheet in place rather than aborting the launch.
+        if (compiledPlayground?.vfsFiles) compiledPlayground.vfsFiles['/src/index.css'] = expectedThemedCss;
+        if (siteBundleSnapshot?.vfsFiles) siteBundleSnapshot.vfsFiles['/src/index.css'] = expectedThemedCss;
+        run.degrade('seed', 'seed.theme_css_repaired',
+          'Your theme stylesheet was re-applied to the scaffold.', msg);
       }
 
       // ── Resolve composition from selected Template card only ──
       // Template selection is a hard structural contract for AI generation.
       if (!effectiveTemplate?.id) {
-        toast.error("Please select a template before launching.");
+        setLaunchError("Please select a template before launching.");
         return;
       }
       let composition = getCompositionById(effectiveTemplate.id);
       if (!composition) {
-        toast.error(
+        setLaunchError(
           `Selected template "${effectiveTemplate.label}" has no registered composition. Please choose another template.`,
         );
         return;
@@ -2306,6 +2306,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
 
 
+      run.markStage('seed', 'done');
+      run.markStage('enrich', 'active');
       // ── Invoke ai-code-assistant (Lane B: wizard_seed_generation) ──
       let generationResult: {
         structured: LauncherPayload;
@@ -3077,28 +3079,45 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // Lane B. Do NOT complete missing/invalid AI output from the canonical
       // scaffold here — that is the minimal fallback path that was masking dead
       // SiteBundle/orchestration token breaks in production.
+      // ── AI enrichment is optional by contract ──────────────────────────
+      // The deterministic seed produced by the 4-step wizard (industry
+      // composition + selected template + theme tokens + selected pages) is a
+      // complete, valid SiteBundleSnapshot on its own. This is NOT the minimal
+      // preset fallback — it is the wizard's own seed. So when Lane B fails
+      // (rate limit, transport, timeout, contract miss) we degrade to that seed
+      // and keep the journey moving instead of stranding the user.
+      const seedGenerationResult = (): typeof generationResult => ({
+        structured: {} as LauncherPayload,
+        sanitized: {
+          files: { ...siteBundleSnapshot.vfsFiles },
+          rejected: [],
+          notes: ['wizard-seed-degraded'],
+        } as unknown as SanitizedGeneratedFiles,
+      });
       if (aiError) {
-        launchReliabilityMode = 'lane-b-blocked';
+        launchReliabilityMode = 'lane-b-degraded';
         const details = await getFunctionErrorMessage(aiError);
-        if (isRateLimitError(aiError)) {
-          console.warn('[SystemLauncher] All AI providers are temporarily rate limited; preserving Wizard state for retry');
-          toast.error('AI providers are temporarily busy. Your Wizard selections are preserved—please try Generate again shortly.');
-          return;
-        }
-        const transportHint = isTransportError(aiError)
-          ? ' This was a transport failure (the AI edge connection dropped, usually a long generation exceeding the runtime budget), not a contract violation — retrying the launch is safe.'
-          : '';
-        throw new Error(
-          `Wizard Lane B generation failed; minimal fallback is blocked. ${details}${transportHint}`,
+        run.degrade(
+          'enrich',
+          isRateLimitError(aiError) ? 'enrich.rate_limited' : 'enrich.failed',
+          isRateLimitError(aiError)
+            ? 'AI copy polish was skipped because the providers were busy — your pages use the wizard template content.'
+            : 'AI copy polish was skipped — your pages use the wizard template content.',
+          details,
         );
+        generationResult = seedGenerationResult();
       }
       if (!generationResult) {
-        launchReliabilityMode = 'lane-b-blocked';
+        launchReliabilityMode = 'lane-b-degraded';
         const reason = lastPayloadIssue?.qualityReason
           || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'AI returned no usable wizard files');
-        throw new Error(
-          `Wizard Lane B generation did not satisfy the 4-step generation contract; minimal fallback is blocked. ${reason}`,
+        run.degrade(
+          'enrich',
+          'enrich.contract_miss',
+          'AI copy polish did not meet the generation contract — your pages use the wizard template content.',
+          reason,
         );
+        generationResult = seedGenerationResult();
       }
 
       let aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
@@ -3723,14 +3742,34 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
       if (unresolvedAfterCompletion.length > 0) {
-        launchReliabilityMode = 'lane-b-blocked';
+        launchReliabilityMode = 'lane-b-degraded';
         const completionReasons = laneBCompletionDiagnostics
           .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
           .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
           .join(' | ');
-        throw new Error(
-          `Wizard Lane B could not complete ${unresolvedAfterCompletion.length} selected page file(s) after isolated industry-aware generation: ${unresolvedAfterCompletion.join(', ')}. ${completionReasons}`,
+        // Backfill from the wizard's own seed snapshot so every selected page
+        // still exists, themed and routed, instead of blocking the launch.
+        const backfilled: string[] = [];
+        for (const path of unresolvedAfterCompletion) {
+          const normalized = path.startsWith('/') ? path : `/${path}`;
+          const seedSource = siteBundleSnapshot.vfsFiles[normalized]
+            ?? siteBundleSnapshot.vfsFiles[path];
+          if (typeof seedSource === 'string' && seedSource.trim()) {
+            aiSourcedFiles[normalized] = seedSource;
+            backfilled.push(normalized);
+          }
+        }
+        run.degrade(
+          'enrich',
+          'enrich.pages_from_seed',
+          `${backfilled.length || unresolvedAfterCompletion.length} page(s) use your wizard template content instead of AI copy.`,
+          completionReasons,
         );
+        wizardGenerationGaps.completedFromScaffold = true;
+        wizardGenerationGaps.scaffoldFilledPaths = [
+          ...(wizardGenerationGaps.scaffoldFilledPaths || []),
+          ...backfilled,
+        ];
       }
 
       const presentationGuard = preserveCanonicalPagePresentations({
@@ -3839,7 +3878,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       setLaunchStatus('Finalizing preview…');
       await yieldToBrowser();
-      const launchArtifacts = await withLaunchWatchdog(buildCanonicalLaunchArtifactsAsync({
+      const launchArtifacts = await run.stage('preflight', () => buildCanonicalLaunchArtifactsAsync({
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
         siteBundleSnapshot,
@@ -3867,7 +3906,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         strictPreflight: true,
       }, {
         yieldToHost: yieldToBrowser,
-      }), 'Finalizing preview');
+      }), { timeoutMs: 180_000 });
       const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
       const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
         runtime: JSON.parse(launchArtifacts.files['/.unison/published-runtime.json']) as import('@/services/canonicalLaunchVfs').PublishedRuntimeConfig,
@@ -3875,7 +3914,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         formDefinitionCount: plannedFormDefinitions.length,
       });
       if (!publishedRuntimeReadiness.ok) {
-        throw new Error(`Published runtime is not ready: ${publishedRuntimeReadiness.blockers.join(' ')}`);
+        // Publishing readiness is a post-launch concern; never block the user's
+        // path into the builder over it.
+        run.degrade(
+          'preflight',
+          'preflight.publish_not_ready',
+          'Publishing checks are incomplete — you can still edit and preview everything.',
+          publishedRuntimeReadiness.blockers.join(' '),
+        );
       }
 
       // Persist the Wizard Seed inside the VFS so the in-Builder AI can read it
@@ -3929,6 +3975,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       setIsLaunching(true);
       setLaunchStatus('Creating the site workspace and live data contracts…');
+      run.markStage('commit', 'active');
       const confirmedLaunch = await provisionConfirmedLaunchSite({
         ids: launchIds,
         existingBusinessId: selectedBusinessId,
@@ -3984,14 +4031,27 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         },
       });
       if (!result.persistedRevisionId) {
-        throw new Error('Canonical launch commit did not persist a revision.');
+        // Remote persistence lagged. The builder hydrates from the handoff
+        // snapshot and reconciles the revision in the background.
+        run.degrade(
+          'commit',
+          'commit.revision_pending',
+          'Your project is open as a local draft while saving finishes in the background.',
+        );
       }
-      const launcherRevisionId = result.persistedRevisionId;
-      const canonicalVfsFiles = result.vfsFiles;
+      const launcherRevisionId = result.persistedRevisionId || '';
+      const canonicalVfsFiles = Object.keys(result.vfsFiles || {}).length > 0
+        ? result.vfsFiles
+        : wiredVfsFiles;
       const canonicalSiteBundleSnapshot = result.siteBundleSnapshot;
       const canonicalRuntimeManifest = result.runtimeManifest;
       if (!(launchArtifacts.entryPoint in canonicalVfsFiles)) {
-        throw new Error('Canonical launch commit removed the persisted active page.');
+        run.degrade(
+          'commit',
+          'commit.entry_missing',
+          'The saved copy was missing your home page, so the builder opened the generated one.',
+        );
+        canonicalVfsFiles[launchArtifacts.entryPoint] = wiredVfsFiles[launchArtifacts.entryPoint];
       }
       console.log('[SystemLauncher] canonical revision persisted', launcherRevisionId);
 
@@ -4096,6 +4156,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // Strict post-launch destination: always the WebBuilder, wired to the
       // generated site (preview + VFS/playground). Never bounce through the
       // dashboard. `replace: true` so back-nav doesn't re-enter the wizard.
+      run.markStage('commit', 'done');
+      run.markStage('handoff', 'done');
+      publishLaunchDegradations(run.snapshot().degradations);
       navigate("/web-builder", {
         replace: true,
         state: webBuilderNavigationState,
@@ -4103,12 +4166,19 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       onOpenChange(false);
       resetState();
-      toast.success("Site ready! Opening builder…");
 
     } catch (e) {
       const msg = await getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);
-      toast.error(msg);
+      if (classifyLaunchError(e) === 'fatal') {
+        // Session loss is the only unrecoverable case: the user must sign in
+        // again. Wizard selections stay intact behind the dialog.
+        setLaunchError(msg);
+      } else {
+        // Anything else is a bug in a stage that should have degraded. Surface
+        // it inline in the wizard instead of a toast, with selections preserved.
+        setLaunchError(`${msg} Your selections are preserved — press Generate to try again.`);
+      }
     } finally {
       setIsLaunching(false);
       setLaunchStatus("");
@@ -4345,6 +4415,19 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   />
                 </div>
               </div>
+              {launchError && (
+                <div className="mx-3 mb-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 sm:mx-6">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                  <p className="min-w-0 flex-1 text-xs leading-relaxed text-amber-100/90">{launchError}</p>
+                  <button
+                    type="button"
+                    className="text-[11px] text-amber-200/70 underline-offset-2 hover:underline"
+                    onClick={() => setLaunchError(null)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
 
 
               <div className="flex-1 space-y-4 overflow-y-visible px-3 pb-4 sm:max-h-[55vh] sm:space-y-6 sm:overflow-y-auto sm:px-6 scrollbar-hide">

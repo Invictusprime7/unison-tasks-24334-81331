@@ -84,6 +84,7 @@ import {
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { runWizardStage4b } from "@/services/wizardStage4bRuntime";
+import { runStrictImportContractCheck } from "@/services/strictImportContractRuntime";
 import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { preflightNavWiring } from "@/services/preflightNavWiring";
@@ -3915,12 +3916,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         businessRuntime,
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
-        strictPreflight: true,
+        // The strict JSX-import-contract check runs separately, off the
+        // main thread (see runStrictImportContractCheck below) — the
+        // generator's own inline check has no yield points and can freeze
+        // the tab for as long as it takes on drifted/oversized AI content.
+        strictPreflight: false,
       };
-      const launchArtifacts = await run.stage('preflight', (signal) => buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
-        yieldToHost: yieldToBrowser,
-        signal,
-      }), {
+      const launchArtifacts = await run.stage('preflight', async (signal) => {
+        const artifacts = await buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
+          yieldToHost: yieldToBrowser,
+          signal,
+        });
+        await runStrictImportContractCheck({
+          files: artifacts.files,
+          entryPoint: artifacts.entryPoint,
+          themePresetId: resolvedPreset.id,
+          signal,
+        });
+        return artifacts;
+      }, {
         timeoutMs: 90_000,
         degradeCode: 'preflight.seed_recovery',
         degradeMessage: 'Final checks took too long, so the builder opened your complete wizard-generated seed.',

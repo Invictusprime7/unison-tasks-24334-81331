@@ -433,7 +433,12 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   launchRef.current = launch;
   const compiledKeyRef = useRef<string | null>(null);
   const inFlightKeyRef = useRef<string | null>(null);
-  const latestKeyRef = useRef<string | null>(null);
+  const pendingCompileRef = useRef<{
+    key: string;
+    files: Record<string, string>;
+    launchState: typeof launch;
+  } | null>(null);
+  const [compileDrainVersion, setCompileDrainVersion] = useState(0);
   const unmountedRef = useRef(false);
   const compileAttemptRef = useRef(0);
   useEffect(() => {
@@ -449,14 +454,25 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, []);
 
   useEffect(() => {
-    const compileKey = `${filesSignature}::${launchSignature}`;
-    latestKeyRef.current = compileKey;
-    if (compiledKeyRef.current === compileKey) return;
-    // A compile for this exact key is already running. Re-running the effect
-    // (parent re-render, identity churn) must NOT abort and restart it —
-    // that loop is what left the preview stuck on "Preparing preview".
-    if (inFlightKeyRef.current === compileKey) return;
+    const key = `${filesSignature}::${launchSignature}`;
+    if (compiledKeyRef.current === key || inFlightKeyRef.current === key) return;
 
+    // Builder hydration publishes the route handoff, committed revision, and
+    // canonical router in quick succession. Queue the newest snapshot instead
+    // of invalidating the compile already in flight. Invalidating every result
+    // before first paint caused the permanent "Preparing preview" loop even
+    // though every individual VFS snapshot was renderable.
+    pendingCompileRef.current = { key, files, launchState: launchRef.current };
+    setCompileDrainVersion((version) => version + 1);
+  }, [files, filesSignature, launchSignature]);
+
+  useEffect(() => {
+    if (inFlightKeyRef.current) return;
+    const request = pendingCompileRef.current;
+    if (!request || compiledKeyRef.current === request.key) return;
+
+    pendingCompileRef.current = null;
+    const compileKey = request.key;
     inFlightKeyRef.current = compileKey;
     const compileAttempt = ++compileAttemptRef.current;
 
@@ -468,20 +484,17 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     }));
 
     const isStale = () =>
-      unmountedRef.current ||
-      latestKeyRef.current !== compileKey ||
-      compileAttemptRef.current !== compileAttempt;
+      unmountedRef.current || compileAttemptRef.current !== compileAttempt;
 
     window.setTimeout(async () => {
-      const launchState = launchRef.current;
       const compileController = new AbortController();
       const compileTimeout = window.setTimeout(() => {
         compileController.abort(new Error('Preview artifact compilation timed out after 45 seconds.'));
       }, PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS);
       try {
-        const isWizardPreview = resolveSnapshot(files, launchState).isWizardDraft;
+        const isWizardPreview = resolveSnapshot(request.files, request.launchState).isWizardDraft;
 
-        if (!isWizardPreview && !hasRenderablePreviewSource(files)) {
+        if (!isWizardPreview && !hasRenderablePreviewSource(request.files)) {
           if (!isStale()) {
             compiledKeyRef.current = compileKey;
             setPreviewCompile({
@@ -499,8 +512,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         // has no yield points and previously froze the tab (unresponsive
         // mouse, no repaint) on large or drifted generated sites.
         const result = await buildPreviewArtifactsAsync({
-          sourceFiles: files,
-          launchState,
+          sourceFiles: request.files,
+          launchState: request.launchState,
         }, { signal: compileController.signal });
 
         if (!isStale()) {
@@ -537,6 +550,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         if (inFlightKeyRef.current === compileKey) {
           inFlightKeyRef.current = null;
         }
+        if (!unmountedRef.current && pendingCompileRef.current) {
+          setCompileDrainVersion((version) => version + 1);
+        }
       }
     }, 80);
 
@@ -547,7 +563,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       // via latestKeyRef/unmountedRef instead.
     };
 
-  }, [files, filesSignature, launchSignature]);
+  }, [compileDrainVersion]);
 
 
 

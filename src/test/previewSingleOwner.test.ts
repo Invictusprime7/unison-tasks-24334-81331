@@ -54,6 +54,15 @@ describe('Web Builder preview ownership', () => {
     expect(sharedPreview).toMatch(/pipelineError: null,\s+emptyDraft: false,\s+compiling: true/);
   });
 
+  it('queues hydration updates without invalidating the first paint', () => {
+    const sharedPreview = readSource('src/components/VFSPreview.tsx');
+
+    expect(sharedPreview).toContain('pendingCompileRef');
+    expect(sharedPreview).toContain('if (inFlightKeyRef.current) return;');
+    expect(sharedPreview).toContain('pendingCompileRef.current = { key, files, launchState: launchRef.current };');
+    expect(sharedPreview).not.toContain('latestKeyRef.current !== compileKey');
+  });
+
   it('runs the controlled index mount module instead of the unmounted App export', () => {
     const sharedPreview = readSource('src/components/VFSPreview.tsx');
 

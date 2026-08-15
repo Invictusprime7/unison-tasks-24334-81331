@@ -37,6 +37,10 @@ const BUILDER_DRAFT_MUTATION_ALLOWLIST = new Map([
   ['src/components/onboarding/ImportUnisonSiteZipButton.tsx', new Set(['insert'])],
   // Deletes only orphaned legacy drafts as part of project lifecycle cleanup.
   ['src/components/cloud/CloudProjects.tsx', new Set(['delete'])],
+  // Identity-only relink (business_id/updated_at) for drafts orphaned from
+  // their owning business; content commits still go through
+  // commit_canonical_site_revision (the canonical RPC), not this writer.
+  ['src/services/draftBusinessLinkRepair.ts', new Set(['update'])],
 ]);
 const BUILDER_DRAFT_MUTATION_METHODS = new Set(['insert', 'update', 'upsert', 'delete']);
 

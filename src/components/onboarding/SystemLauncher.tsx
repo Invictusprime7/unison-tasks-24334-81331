@@ -3821,7 +3821,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       const provisionedBusinessId = plannedBusinessId;
       const loadedBusinessProfile = selectedBusinessId
-        ? await loadBusinessProfile(selectedBusinessId)
+        ? await withTimeout(
+            () => loadBusinessProfile(selectedBusinessId),
+            15_000,
+            'Loading the selected Business Profile took too long.',
+          )
         : null;
       if (selectedBusinessId && !loadedBusinessProfile) {
         throw new Error('Unable to load the selected Business Profile for this launch.');

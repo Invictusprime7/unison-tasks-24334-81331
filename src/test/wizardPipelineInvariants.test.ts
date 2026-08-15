@@ -539,6 +539,24 @@ describe('wizard pipeline ownership invariants', () => {
     expect(betweenThemeAndClosure).toContain('await yieldToBrowser();');
   });
 
+  it('bounds the Business Profile load with a timeout instead of an unrecoverable hang before Finalizing preview', () => {
+    const launcherSource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
+      'utf8',
+    );
+
+    // loadBusinessProfile() was a bare `await` with no timeout — a stalled
+    // Supabase request here hung the whole launch forever (no CPU spin, but
+    // the modal never progresses and the user reports it as a frozen tab).
+    // Every other network-dependent step in this stretch goes through
+    // withTimeout()/run.stage(); this one must too.
+    const loadCallIdx = launcherSource.indexOf('const loadedBusinessProfile = selectedBusinessId');
+    expect(loadCallIdx).toBeGreaterThan(-1);
+    const loadCallSlice = launcherSource.slice(loadCallIdx, loadCallIdx + 220);
+    expect(loadCallSlice).toContain('await withTimeout(');
+    expect(loadCallSlice).toContain('() => loadBusinessProfile(selectedBusinessId)');
+  });
+
   it('does not run the interaction planner network round-trip (enrichment layer removed)', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),

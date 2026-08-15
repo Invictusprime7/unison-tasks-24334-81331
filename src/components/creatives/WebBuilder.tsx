@@ -2491,6 +2491,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [hydratedRevision, setHydratedRevision] = useState<LoadedRevision | null>(null);
   const [runtimeProjectionRevisionId, setRuntimeProjectionRevisionId] = useState<string | null>(null);
   const [canonicalHydrationError, setCanonicalHydrationError] = useState<string | null>(null);
+  // Automatic owning-business repair: a draft whose business link is missing can
+  // never receive a committed revision, so hydration fails forever. We recreate
+  // the relationship once, then reload the canonical hydration pass.
+  const [hydrationNonce, setHydrationNonce] = useState(0);
+  const [repairState, setRepairState] = useState<'idle' | 'running' | 'failed' | 'repaired'>('idle');
+  const [repairNote, setRepairNote] = useState<string | null>(null);
+  const repairAttemptedRef = useRef(false);
   const [activePublishedRevisionId, setActivePublishedRevisionId] = useState<string | null>(null);
   const [currentRevisionId, setCurrentRevisionId] = useState<string>(
     effectiveRouteState?.revisionId || ''

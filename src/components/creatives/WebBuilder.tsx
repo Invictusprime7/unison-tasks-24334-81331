@@ -94,6 +94,7 @@ import {
   type CommitMutationResult,
   type LoadedRevision,
 } from "@/services/vfsCommitService";
+import { repairDraftBusinessLink } from "@/services/draftBusinessLinkRepair";
 import {
   buildProjectRuntimeEnvelope,
   loadProjectRuntimeProjection,

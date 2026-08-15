@@ -455,7 +455,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     const isStale = () => unmountedRef.current || latestKeyRef.current !== compileKey;
 
-    const timer = window.setTimeout(async () => {
+    window.setTimeout(async () => {
       const launchState = launchRef.current;
       try {
         const isWizardPreview = resolveSnapshot(files, launchState).isWizardDraft;

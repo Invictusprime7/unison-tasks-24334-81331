@@ -23,6 +23,8 @@ export interface DraftBusinessRepairResult {
   revisionId: string | null;
   createdBusiness: boolean;
   committedRevision: boolean;
+  /** True when the draft simply has no site content yet (never generated). */
+  emptyDraft: boolean;
   notes: string[];
 }
 

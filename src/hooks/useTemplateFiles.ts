@@ -62,6 +62,11 @@ export interface SaveProjectPayload {
    * project doesn't silently overwrite the currently-open draft.
    */
   forceNew?: boolean;
+  /**
+   * Background/auto-saves set this so a failure never spams the user with
+   * toasts. Errors are still logged and surfaced through the return value.
+   */
+  silent?: boolean;
 }
 
 const LOCAL_STORAGE_KEY = "webbuilder_templates";
@@ -570,10 +575,13 @@ export function useTemplateFiles() {
         projectId: resolvedProjectId,
         businessId: resolvedBusinessId,
       });
-      toast.success("Project updated!");
+      if (!payload?.silent) toast.success("Project updated!");
       return true;
     } catch (error) {
       console.error("Error updating project:", error);
+      if (payload?.silent) {
+        return false;
+      }
       if (error instanceof Error && error.message === "SESSION_EXPIRED") {
         toast.error("Your session has expired", {
           description: "Please sign in again, then click Update to save your changes.",

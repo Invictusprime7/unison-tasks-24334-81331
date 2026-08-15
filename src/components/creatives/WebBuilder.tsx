@@ -628,6 +628,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // Business Setup Suggestions - shown after AI generates a site/template
   const [showBusinessSetup, setShowBusinessSetup] = useState(false);
   const launcherDraftBootstrapRef = useRef<string | null>(null);
+  const launcherDraftBootstrapAttemptsRef = useRef(0);
+
   const draftPersistencePromiseRef = useRef<Promise<string | null> | null>(null);
 
   const importedRouteStateRef = useRef<string | null>(null);
@@ -3756,6 +3758,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       finalCode,
       {
         ...payload,
+        silent: true,
         metadata: {
           ...(payload.metadata || {}),
           autoSaved: true,
@@ -5038,9 +5041,16 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     launcherDraftBootstrapRef.current = launcherDraftBootstrapKey;
     void ensureLauncherDraftSaved('launcher_import').then((draftId) => {
       if (!draftId) {
-        launcherDraftBootstrapRef.current = null;
+        // Do NOT clear the key here: a failed autosave used to re-arm this
+        // effect on every render, which produced an endless "Failed to update
+        // project" toast loop. One retry, then the user drives saving.
+        launcherDraftBootstrapAttemptsRef.current += 1;
+        if (launcherDraftBootstrapAttemptsRef.current < 2) {
+          launcherDraftBootstrapRef.current = null;
+        }
       }
     });
+
   }, [
     launcherDraftBootstrapKey,
     templateFiles.currentDraftId,

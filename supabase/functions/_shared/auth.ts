@@ -110,8 +110,29 @@ export async function verifyAuth(req: Request): Promise<AuthResult> {
     const { data: userData, error: userError } = await authClient.auth.getUser(token);
     const user = userData.user;
     if (userError || !user) {
+      // Final fallback: verify the token with the service-role client. This
+      // survives anon/publishable key drift or rotation, which otherwise makes
+      // a perfectly valid user session look like an expired token.
+      try {
+        const admin = getAdminClient();
+        const { data: adminData, error: adminError } = await admin.auth.getUser(token);
+        if (!adminError && adminData?.user) {
+          return {
+            user: {
+              id: adminData.user.id,
+              email: adminData.user.email || "",
+              role: adminData.user.role || "authenticated",
+            },
+            error: null,
+            status: 200,
+          };
+        }
+      } catch (adminErr) {
+        console.error("[auth] Service-role token verification failed:", adminErr);
+      }
       return { user: null, error: "Invalid or expired token", status: 401 };
     }
+
 
     return {
       user: {

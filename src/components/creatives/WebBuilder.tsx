@@ -2569,7 +2569,53 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         hydratedRevisionRef.current = null;
       }
     };
-  }, [currentDraftId, currentRevisionId, effectiveRouteState?.revisionId, importBuilderFiles, launchEntryPoint, projectId, resolvedProjectId]);
+  }, [currentDraftId, currentRevisionId, effectiveRouteState?.revisionId, hydrationNonce, importBuilderFiles, launchEntryPoint, projectId, resolvedProjectId]);
+
+  // ── Automatic owning-business repair ──────────────────────────────────────
+  // When canonical hydration fails because the draft lost its business link (or
+  // therefore never received a committed revision projection), recreate the
+  // relationship and reload the builder's canonical pass exactly once. Manual
+  // retry stays available from the error shell below.
+  const runCanonicalDraftRepair = useCallback(async () => {
+    const durableProjectId = resolvedProjectId || projectId;
+    if (!currentDraftId) {
+      setRepairState('failed');
+      setRepairNote('This session has no draft identity to repair.');
+      return;
+    }
+    setRepairState('running');
+    setRepairNote(null);
+    try {
+      const outcome = await repairDraftBusinessLink({
+        draftId: currentDraftId,
+        projectId: durableProjectId || null,
+      });
+      const note = outcome.notes.join(' ') || null;
+      setRepairNote(note);
+      if (outcome.repaired || outcome.revisionId) {
+        setRepairState('repaired');
+        setCanonicalHydrationError(null);
+        setHydratedRevision(null);
+        setRuntimeProjectionRevisionId(null);
+        hydratedRevisionRef.current = null;
+        setHydrationNonce((n) => n + 1);
+        toast.success('Project relinked to its workspace', {
+          description: 'Reloading committed project state…',
+        });
+      } else {
+        setRepairState('failed');
+      }
+    } catch (error) {
+      setRepairState('failed');
+      setRepairNote(error instanceof Error ? error.message : String(error));
+    }
+  }, [currentDraftId, projectId, resolvedProjectId]);
+
+  useEffect(() => {
+    if (!canonicalHydrationError || repairAttemptedRef.current || !currentDraftId) return;
+    repairAttemptedRef.current = true;
+    void runCanonicalDraftRepair();
+  }, [canonicalHydrationError, currentDraftId, runCanonicalDraftRepair]);
 
   useEffect(() => {
     if (!hydratedRevision) return;

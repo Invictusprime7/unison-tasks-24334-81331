@@ -2507,6 +2507,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     hydratedRevisionRef.current = hydrationKey;
 
     let cancelled = false;
+    let settled = false;
     void (async () => {
       try {
         if (hasCanonicalDraft) {
@@ -2519,27 +2520,46 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           : revId
             ? await loadRevision(revId)
             : await loadLatestRevisionForProject(durableProjectId!);
-        if (cancelled || !revision) return;
+        if (cancelled) return;
+        if (!revision) {
+          // Never leave the canonical shell spinning: surface a recoverable error.
+          if (hasCanonicalDraft) {
+            throw new Error('No committed revision was found for this project draft.');
+          }
+          settled = true;
+          return;
+        }
         const files = revision.vfsFiles || {};
         if (Object.keys(files).length === 0) {
           if (hasCanonicalDraft) {
             throw new Error(`Canonical revision ${revision.id} contains no VFS files`);
           }
           console.warn('[WebBuilder] revision', revId, 'returned empty vfsFiles');
+          settled = true;
           return;
         }
         console.log('[WebBuilder] hydrated from site_revisions:', revision.id, Object.keys(files).length, 'files');
         importBuilderFiles(files, { entryPoint: launchEntryPoint });
         setHydratedRevision(revision);
         setCurrentRevisionId(revision.id);
+        settled = true;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (hasCanonicalDraft && !cancelled) setCanonicalHydrationError(message);
         console.warn('[WebBuilder] revision hydration failed:', err);
+        settled = true;
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // If the effect tore down before hydration settled (StrictMode double
+      // mount, fast identity change), release the key so the next run retries
+      // instead of short-circuiting into a permanent loading state.
+      if (!settled && hydratedRevisionRef.current === hydrationKey) {
+        hydratedRevisionRef.current = null;
+      }
+    };
   }, [currentDraftId, currentRevisionId, effectiveRouteState?.revisionId, importBuilderFiles, launchEntryPoint, projectId, resolvedProjectId]);
 
   useEffect(() => {

@@ -2034,7 +2034,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       // the preview after refresh.
       const mergedForRouter = currentFiles;
       const result = syncRouterAndValidate(registry, mergedForRouter);
-      if (result.routerCode) {
+      // Registry versions may bump while hydration republishes equivalent
+      // topology. Avoid importing byte-identical router source: even a no-op
+      // VFS write can publish another nodes snapshot and delay first paint.
+      if (result.routerCode && currentFiles[launchEntryPoint] !== result.routerCode) {
         filesToImport[launchEntryPoint] = result.routerCode;
       }
       if (Object.keys(filesToImport).length > 0) {

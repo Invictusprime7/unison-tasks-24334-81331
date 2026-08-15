@@ -64,6 +64,13 @@ describe('Web Builder preview ownership', () => {
     expect(sharedPreview).not.toContain("Object.keys(launch?.siteBundleSnapshot?.vfsFiles || {}).length");
   });
 
+  it('does not republish byte-identical canonical router source during hydration', () => {
+    const builder = readSource('src/components/creatives/WebBuilder.tsx');
+
+    expect(builder).toContain('currentFiles[launchEntryPoint] !== result.routerCode');
+    expect(builder).toContain('virtualFS.importFiles(filesToImport)');
+  });
+
   it('runs the controlled index mount module instead of the unmounted App export', () => {
     const sharedPreview = readSource('src/components/VFSPreview.tsx');
 

@@ -23,6 +23,8 @@ export interface DraftBusinessRepairResult {
   revisionId: string | null;
   createdBusiness: boolean;
   committedRevision: boolean;
+  /** True when the draft simply has no site content yet (never generated). */
+  emptyDraft: boolean;
   notes: string[];
 }
 
@@ -118,7 +120,7 @@ async function backfillCommittedRevision(
   businessId: string,
   projectId: string,
   notes: string[],
-): Promise<string | null> {
+): Promise<{ revisionId: string | null; empty: boolean }> {
   const vfsFiles = asRecord(draft.vfs_files) as Record<string, string>;
   const metadata = asRecord(draft.metadata);
   const snapshot = asRecord(metadata.siteBundleSnapshot);
@@ -130,8 +132,8 @@ async function backfillCommittedRevision(
         || '';
 
   if (Object.keys(vfsFiles).length === 0 || !activePagePath || !vfsFiles[activePagePath]) {
-    notes.push('Draft has no canonical page content to commit — relink only.');
-    return null;
+    notes.push('This project has no generated site content yet.');
+    return { revisionId: null, empty: true };
   }
 
   // The commit routine requires snapshot.vfsFiles to equal the canonical VFS.
@@ -173,10 +175,10 @@ async function backfillCommittedRevision(
 
   if (error || typeof data !== 'string') {
     notes.push(`Could not backfill a committed revision: ${error?.message ?? 'unknown error'}`);
-    return null;
+    return { revisionId: null, empty: false };
   }
   notes.push('Backfilled a committed canonical revision from the draft content.');
-  return data;
+  return { revisionId: data, empty: false };
 }
 
 export async function repairDraftBusinessLink(args: {
@@ -190,6 +192,7 @@ export async function repairDraftBusinessLink(args: {
     revisionId: null,
     createdBusiness: false,
     committedRevision: false,
+    emptyDraft: false,
     notes,
   };
 
@@ -269,14 +272,15 @@ export async function repairDraftBusinessLink(args: {
   if (projectId) {
     await ensureProjectMembership(projectId, userId);
     if (!draftRow.last_revision_id) {
-      const revisionId = await backfillCommittedRevision(
+      const backfill = await backfillCommittedRevision(
         { ...draftRow, business_id: businessId },
         businessId,
         projectId,
         notes,
       );
-      if (revisionId) {
-        result.revisionId = revisionId;
+      result.emptyDraft = backfill.empty;
+      if (backfill.revisionId) {
+        result.revisionId = backfill.revisionId;
         result.committedRevision = true;
         result.repaired = true;
       }

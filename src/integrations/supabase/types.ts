@@ -3506,6 +3506,7 @@ export type Database = {
       }
       projects: {
         Row: {
+          active_published_revision_id: string | null
           business_id: string | null
           created_at: string | null
           custom_domain: string | null
@@ -3523,6 +3524,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          active_published_revision_id?: string | null
           business_id?: string | null
           created_at?: string | null
           custom_domain?: string | null
@@ -3540,6 +3542,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          active_published_revision_id?: string | null
           business_id?: string | null
           created_at?: string | null
           custom_domain?: string | null
@@ -3557,6 +3560,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "projects_active_published_revision_id_fkey"
+            columns: ["active_published_revision_id"]
+            isOneToOne: false
+            referencedRelation: "site_revisions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "projects_business_id_fkey"
             columns: ["business_id"]

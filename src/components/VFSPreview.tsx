@@ -431,13 +431,21 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const launchRef = useRef(launch);
   launchRef.current = launch;
   const compiledKeyRef = useRef<string | null>(null);
+  const inFlightKeyRef = useRef<string | null>(null);
+  const latestKeyRef = useRef<string | null>(null);
+  const unmountedRef = useRef(false);
+  useEffect(() => () => { unmountedRef.current = true; }, []);
 
   useEffect(() => {
     const compileKey = `${filesSignature}::${launchSignature}`;
+    latestKeyRef.current = compileKey;
     if (compiledKeyRef.current === compileKey) return;
+    // A compile for this exact key is already running. Re-running the effect
+    // (parent re-render, identity churn) must NOT abort and restart it —
+    // that loop is what left the preview stuck on "Preparing preview".
+    if (inFlightKeyRef.current === compileKey) return;
 
-    let cancelled = false;
-
+    inFlightKeyRef.current = compileKey;
 
     setPreviewCompile((current) => ({
       ...current,
@@ -445,7 +453,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       compiling: true,
     }));
 
-    const abortController = new AbortController();
+    const isStale = () => unmountedRef.current || latestKeyRef.current !== compileKey;
 
     const timer = window.setTimeout(async () => {
       const launchState = launchRef.current;
@@ -453,7 +461,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         const isWizardPreview = resolveSnapshot(files, launchState).isWizardDraft;
 
         if (!isWizardPreview && !hasRenderablePreviewSource(files)) {
-          if (!cancelled) {
+          if (!isStale()) {
             compiledKeyRef.current = compileKey;
             setPreviewCompile({
               sandpackFiles: {},
@@ -472,9 +480,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         const result = await buildPreviewArtifactsAsync({
           sourceFiles: files,
           launchState,
-        }, { signal: abortController.signal });
+        });
 
-        if (!cancelled) {
+        if (!isStale()) {
           compiledKeyRef.current = compileKey;
           setPreviewCompile({
             sandpackFiles: result.sandpackFiles,
@@ -485,12 +493,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           });
         }
       } catch (err) {
-        // A superseded/aborted compile is expected (files or launch state
-        // changed again before this compile finished) — not a real failure.
-        // Only cancelled runs abort with this reason, so it's safe to treat
-        // any abort here as silent instead of logging/surfacing it as a
-        // pipeline error.
-        if (cancelled) return;
+        if (isStale()) return;
 
         const pipelineError = isPreviewPipelineError(err)
           ? err
@@ -500,25 +503,30 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
             });
 
         console.error('[VFSPreview] Pipeline error:', pipelineError);
-        if (!cancelled) {
-          compiledKeyRef.current = compileKey;
-          setPreviewCompile({
-            sandpackFiles: {},
-            dependencies: {},
-            pipelineError,
-            emptyDraft: false,
-            compiling: false,
-          });
+        compiledKeyRef.current = compileKey;
+        setPreviewCompile({
+          sandpackFiles: {},
+          dependencies: {},
+          pipelineError,
+          emptyDraft: false,
+          compiling: false,
+        });
+      } finally {
+        if (inFlightKeyRef.current === compileKey) {
+          inFlightKeyRef.current = null;
         }
       }
     }, 80);
 
     return () => {
-      cancelled = true;
-      abortController.abort(new Error('Preview compile superseded by newer files/launch state.'));
-      window.clearTimeout(timer);
+      // Intentionally no abort/clearTimeout here: this effect re-runs on
+      // harmless identity churn, and tearing down the pending compile each
+      // time is what stalled the preview forever. Stale results are ignored
+      // via latestKeyRef/unmountedRef instead.
     };
+
   }, [files, filesSignature, launchSignature]);
+
 
 
   const {

@@ -4068,6 +4068,37 @@ function inspectModuleExports(content: string): {
   primaryName: string | null;
   hasStarReExport: boolean;
 } {
+  const key = moduleExportsCacheKey(content);
+  const cached = moduleExportsCache.get(key);
+  if (cached) return cached;
+  const result = computeModuleExports(content);
+  if (moduleExportsCache.size >= MODULE_EXPORTS_CACHE_LIMIT) moduleExportsCache.clear();
+  moduleExportsCache.set(key, result);
+  return result;
+}
+
+// Import-contract validation re-scans the same shared modules (a components
+// barrel imported by every page) on every importer and on every
+// prepareSandpackFiles() call in the launch → preview pipeline. Memoizing on
+// content makes repeat scans of unchanged files free.
+const MODULE_EXPORTS_CACHE_LIMIT = 4000;
+const moduleExportsCache = new Map<string, ReturnType<typeof computeModuleExports>>();
+
+function moduleExportsCacheKey(content: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < content.length; i++) {
+    h ^= content.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${content.length}:${(h >>> 0).toString(36)}`;
+}
+
+function computeModuleExports(content: string): {
+  hasDefault: boolean;
+  named: Set<string>;
+  primaryName: string | null;
+  hasStarReExport: boolean;
+} {
   const named = new Set<string>();
   const exportPatterns = [
     /export\s+function\s+([A-Z]\w*)/g,

@@ -3758,6 +3758,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       finalCode,
       {
         ...payload,
+        silent: true,
         metadata: {
           ...(payload.metadata || {}),
           autoSaved: true,

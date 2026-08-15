@@ -3781,6 +3781,7 @@ export type Database = {
           bundle: Json
           created_at: string
           id: string
+          revision_id: string | null
           schema_version: number
           site_id: string
           version: string
@@ -3790,6 +3791,7 @@ export type Database = {
           bundle?: Json
           created_at?: string
           id?: string
+          revision_id?: string | null
           schema_version?: number
           site_id: string
           version?: string
@@ -3799,6 +3801,7 @@ export type Database = {
           bundle?: Json
           created_at?: string
           id?: string
+          revision_id?: string | null
           schema_version?: number
           site_id?: string
           version?: string
@@ -3809,6 +3812,13 @@ export type Database = {
             columns: ["build_id"]
             isOneToOne: false
             referencedRelation: "site_builds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_bundles_revision_id_fkey"
+            columns: ["revision_id"]
+            isOneToOne: false
+            referencedRelation: "site_revisions"
             referencedColumns: ["id"]
           },
           {
@@ -4590,6 +4600,29 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      commit_canonical_site_revision: {
+        Args: {
+          p_active_page_path: string
+          p_backend_ops_applied: Json
+          p_business_id: string
+          p_diagnostics: Json
+          p_draft_id: string
+          p_parent_revision_id: string
+          p_patch_json: Json
+          p_playground_state: Json
+          p_project_id: string
+          p_publish_blockers: Json
+          p_publish_ready: boolean
+          p_readiness_report: Json
+          p_runtime_manifest: Json
+          p_site_bundle_snapshot: Json
+          p_source: string
+          p_status: string
+          p_vfs_files: Json
+          p_vfs_hash: string
+        }
+        Returns: string
+      }
       current_session_id: { Args: never; Returns: string }
       has_role: {
         Args: {

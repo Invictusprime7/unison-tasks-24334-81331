@@ -434,7 +434,17 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const inFlightKeyRef = useRef<string | null>(null);
   const latestKeyRef = useRef<string | null>(null);
   const unmountedRef = useRef(false);
-  useEffect(() => () => { unmountedRef.current = true; }, []);
+  useEffect(() => {
+    // React StrictMode intentionally runs mount → cleanup → mount in
+    // development. Reset this flag on every setup; otherwise the first cleanup
+    // permanently marks the live component as unmounted and every completed
+    // preview compile is discarded as stale, leaving "Preparing preview"
+    // visible forever despite a fully populated VFS.
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
 
   useEffect(() => {
     const compileKey = `${filesSignature}::${launchSignature}`;
@@ -457,6 +467,10 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     window.setTimeout(async () => {
       const launchState = launchRef.current;
+      const compileController = new AbortController();
+      const compileTimeout = window.setTimeout(() => {
+        compileController.abort(new Error('Preview artifact compilation timed out after 120 seconds.'));
+      }, 120_000);
       try {
         const isWizardPreview = resolveSnapshot(files, launchState).isWizardDraft;
 
@@ -480,7 +494,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         const result = await buildPreviewArtifactsAsync({
           sourceFiles: files,
           launchState,
-        });
+        }, { signal: compileController.signal });
 
         if (!isStale()) {
           compiledKeyRef.current = compileKey;
@@ -512,6 +526,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           compiling: false,
         });
       } finally {
+        window.clearTimeout(compileTimeout);
         if (inFlightKeyRef.current === compileKey) {
           inFlightKeyRef.current = null;
         }

@@ -51,6 +51,7 @@ describe('Web Builder preview ownership', () => {
     expect(sharedPreview).toContain("compileController.abort(new Error('Preview artifact compilation timed out after 45 seconds.'))");
     expect(sharedPreview).toContain('signal: compileController.signal');
     expect(sharedPreview).toContain('compileAttemptRef.current !== compileAttempt');
+    expect(sharedPreview).toMatch(/pipelineError: null,\s+emptyDraft: false,\s+compiling: true/);
   });
 
   it('runs the controlled index mount module instead of the unmounted App export', () => {

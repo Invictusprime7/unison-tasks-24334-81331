@@ -463,6 +463,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     setPreviewCompile((current) => ({
       ...current,
       pipelineError: null,
+      emptyDraft: false,
       compiling: true,
     }));
 

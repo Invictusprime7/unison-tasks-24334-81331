@@ -5,6 +5,7 @@
  * generated files to the existing external-preview route instead.
  */
 import { Check, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 import { createExternalPreviewSession } from "@/services/externalPreviewSession";
 
 export interface LaunchReviewSummaryProps {
@@ -27,8 +28,12 @@ export function LaunchReviewSummary({ siteName, brandName, fileCount, pagePaths,
   const brandingApplied = isBrandingApplied(brandName, files);
 
   const openFullPreview = () => {
-    const previewKey = createExternalPreviewSession(files, siteName);
-    window.open(new URL(`/preview/${previewKey}`, window.location.origin), '_blank', 'noopener,noreferrer');
+    try {
+      const previewKey = createExternalPreviewSession(files, siteName);
+      window.open(new URL(`/preview/${previewKey}`, window.location.origin), '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not open the full preview.');
+    }
   };
 
   return (

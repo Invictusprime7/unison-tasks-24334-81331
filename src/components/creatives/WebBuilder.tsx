@@ -3878,7 +3878,18 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         setTimeout(() => setAutoSaveStatus('idle'), 2000);
         return true;
       } catch (error) {
-        console.error('[AutoSave] Error saving draft:', error);
+        // Expected, transient: right after a Wizard launch handoff, the
+        // canonical draft/business/project identity can take a beat to
+        // hydrate. The autosave interval fires every few seconds regardless,
+        // so this is not a real failure — only escalate to console.error
+        // once identity should already be resolved.
+        const isIdentityNotReadyYet = error instanceof Error
+          && /Canonical project identity is required before cloud autosave\./.test(error.message);
+        if (isIdentityNotReadyYet) {
+          console.warn('[AutoSave] Skipped — canonical project identity not hydrated yet:', error.message);
+        } else {
+          console.error('[AutoSave] Error saving draft:', error);
+        }
         setAutoSaveStatus('idle');
         return false;
       }
@@ -5149,7 +5160,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     const effectiveSystemType = (selectedSystemType || (systemType as BusinessSystemType) || null) as BusinessSystemType | null;
     setActiveSystemType(effectiveSystemType);
     setCurrentTemplateName(name);
-    setCurrentDraftId(templateId || null);
+    // `templateId` here is the layout/demo template's own id (e.g.
+    // "salon-premium"), never a persisted builder_drafts row id — loading a
+    // saved draft goes through handleLoadTemplate/handleLoadSavedTemplate
+    // instead. Carrying it into currentDraftId corrupted every downstream
+    // canonical-draft read/write (e.g. loadProjectedRevisionForDraft) with an
+    // id that isn't a valid draft UUID, producing repeated 400s and blocking
+    // autosave. Starting a demo template has no persisted draft yet.
+    setCurrentDraftId(null);
     if (manifestIdFromState) setCurrentManifestId(manifestIdFromState);
 
     // Normalize + auto-migrate CTAs into the slot/intent contract

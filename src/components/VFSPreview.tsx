@@ -485,6 +485,13 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           });
         }
       } catch (err) {
+        // A superseded/aborted compile is expected (files or launch state
+        // changed again before this compile finished) — not a real failure.
+        // Only cancelled runs abort with this reason, so it's safe to treat
+        // any abort here as silent instead of logging/surfacing it as a
+        // pipeline error.
+        if (cancelled) return;
+
         const pipelineError = isPreviewPipelineError(err)
           ? err
           : new PreviewPipelineError('sandpack', `Preview artifact compile failed: ${err instanceof Error ? err.message : String(err)}`, {

@@ -4234,6 +4234,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     } catch (e) {
       const msg = await getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);
+      // The user already confirmed the generated site. Never bounce them back
+      // into the wizard: hand off with whatever was persisted for the builder.
+      const pendingHandoff = readLauncherHandoff();
+      if (pendingHandoff?.routeState) {
+        if (pendingHandoff.launchState) setLaunch(pendingHandoff.launchState);
+        navigate("/web-builder", { replace: true, state: pendingHandoff.routeState });
+        onOpenChange(false);
+        resetState();
+        return;
+      }
       if (classifyLaunchError(e) === 'fatal') {
         // Session loss is the only unrecoverable case: the user must sign in
         // again. Wizard selections stay intact behind the dialog.

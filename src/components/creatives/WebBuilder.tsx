@@ -5038,9 +5038,16 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     launcherDraftBootstrapRef.current = launcherDraftBootstrapKey;
     void ensureLauncherDraftSaved('launcher_import').then((draftId) => {
       if (!draftId) {
-        launcherDraftBootstrapRef.current = null;
+        // Do NOT clear the key here: a failed autosave used to re-arm this
+        // effect on every render, which produced an endless "Failed to update
+        // project" toast loop. One retry, then the user drives saving.
+        launcherDraftBootstrapAttemptsRef.current += 1;
+        if (launcherDraftBootstrapAttemptsRef.current < 2) {
+          launcherDraftBootstrapRef.current = null;
+        }
       }
     });
+
   }, [
     launcherDraftBootstrapKey,
     templateFiles.currentDraftId,

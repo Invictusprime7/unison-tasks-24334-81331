@@ -519,12 +519,12 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     }, 80);
 
     return () => {
-      window.clearTimeout(timer);
-      // Only release the in-flight slot if the compile never started running.
-      if (inFlightKeyRef.current === compileKey && latestKeyRef.current !== compileKey) {
-        inFlightKeyRef.current = null;
-      }
+      // Intentionally no abort/clearTimeout here: this effect re-runs on
+      // harmless identity churn, and tearing down the pending compile each
+      // time is what stalled the preview forever. Stale results are ignored
+      // via latestKeyRef/unmountedRef instead.
     };
+
   }, [files, filesSignature, launchSignature]);
 
 

@@ -5879,10 +5879,37 @@ function repairConciseArrowChildren(content: string): string {
   return out;
 }
 
+// The launcher's strict pre-persist validation call and Preview's mount-time
+// call run this same full VFS pipeline back-to-back on essentially identical
+// files (validate-then-render). `strict` only changes behaviour inside the
+// `!hasApp` branch below, so once a run resolves `hasApp === true` its result
+// is valid for either strict value — cache on that basis to cut the second,
+// otherwise-redundant full pass instead of the coverage it produces.
+const PREPARED_FILES_CACHE_LIMIT = 20;
+const preparedFilesCache = new Map<string, Record<string, string>>();
+
+function hashFilesRecord(files: Record<string, string>): string {
+  let h = 0x811c9dc5;
+  for (const path of Object.keys(files).sort()) {
+    const entry = `${path}\u0000${files[path]}\u0000`;
+    for (let i = 0; i < entry.length; i++) {
+      h ^= entry.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+  }
+  return (h >>> 0).toString(36);
+}
+
 export function prepareSandpackFiles(
   files: Record<string, string>,
   options?: { strict?: boolean; entryPoint?: string; aesthetic?: string; themePresetId?: string | null }
 ): Record<string, string> {
+  const effectiveAesthetic = options?.themePresetId ? null : (options?.aesthetic || null);
+  const preparedCacheKey =
+    `${hashFilesRecord(files)}::${options?.entryPoint || ''}::${options?.themePresetId || ''}::${effectiveAesthetic || ''}`;
+  const cachedPrepared = preparedFilesCache.get(preparedCacheKey);
+  if (cachedPrepared) return { ...cachedPrepared };
+
   // ═══════════════════════════════════════════════════════════════════════════
   // GUARD: Unwrap JSON-wrapped file maps that leaked through as raw content.
   // If ANY file's content is a JSON object with a "files" key, extract the
@@ -6406,7 +6433,15 @@ export function prepareSandpackFiles(
   }
 
   console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles));
-  return applySandpackRuntimeShims(sandpackFiles);
+  const prepared = applySandpackRuntimeShims(sandpackFiles);
+  if (hasApp) {
+    if (preparedFilesCache.size >= PREPARED_FILES_CACHE_LIMIT) preparedFilesCache.clear();
+    // Store a copy — `prepared` escapes to the caller, who may mutate it
+    // in place (e.g. Preview's debug metadata injection), which would
+    // otherwise leak into every later cache hit for this content.
+    preparedFilesCache.set(preparedCacheKey, { ...prepared });
+  }
+  return prepared;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

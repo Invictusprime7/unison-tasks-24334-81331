@@ -910,12 +910,21 @@ export function buildCanonicalLaunchArtifacts(
 
 export async function buildCanonicalLaunchArtifactsAsync(
   input: BuildCanonicalLaunchArtifactsInput,
-  options: { yieldToHost: () => Promise<void> },
+  options: { yieldToHost: () => Promise<void>; signal?: AbortSignal },
 ): Promise<CanonicalLaunchArtifacts> {
   const steps = buildCanonicalLaunchArtifactSteps(input);
   let result = steps.next();
   while (!result.done) {
     await options.yieldToHost();
+    // A caller-side watchdog (e.g. LaunchRun's stage timeout) may have given
+    // up on this attempt already. Stop advancing the generator instead of
+    // letting an abandoned attempt keep consuming the main thread alongside
+    // whatever fallback the caller starts next.
+    if (options.signal?.aborted) {
+      throw options.signal.reason instanceof Error
+        ? options.signal.reason
+        : new Error('Canonical launch artifact generation was cancelled.');
+    }
     result = steps.next();
   }
   return result.value;

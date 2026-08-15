@@ -232,6 +232,36 @@ describe("buildCanonicalLaunchArtifacts", () => {
     vi.useRealTimers();
   });
 
+  it('stops advancing once the caller aborts, instead of letting an abandoned attempt keep running alongside a fallback', async () => {
+    const snapshot = createSnapshot();
+    const input = {
+      generatedFiles: {
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      themePresetId: 'modern',
+      strictPreflight: true,
+    };
+    const controller = new AbortController();
+    let yieldCount = 0;
+
+    const pending = buildCanonicalLaunchArtifactsAsync(input, {
+      yieldToHost: async () => {
+        yieldCount += 1;
+        // Simulate a stage watchdog giving up partway through the run.
+        if (yieldCount === 3) controller.abort(new Error('preflight stalled'));
+      },
+      signal: controller.signal,
+    });
+
+    await expect(pending).rejects.toThrow('preflight stalled');
+    // The generator must stop being driven at the first yield after abort,
+    // not continue consuming the remaining finalization stages.
+    expect(yieldCount).toBe(3);
+  });
+
   it("uses SiteBundleSnapshot VFS instead of a stale compile result at launch", () => {
     const snapshot = createSnapshot();
     snapshot.meta = { ...snapshot.meta, themePresetId: 'modern' };

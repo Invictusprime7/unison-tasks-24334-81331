@@ -3911,8 +3911,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         allowCanonicalPageFallback: false,
         strictPreflight: true,
       };
-      const launchArtifacts = await run.stage('preflight', () => buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
+      const launchArtifacts = await run.stage('preflight', (signal) => buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
         yieldToHost: yieldToBrowser,
+        signal,
       }), {
         timeoutMs: 90_000,
         degradeCode: 'preflight.seed_recovery',

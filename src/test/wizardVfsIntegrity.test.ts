@@ -102,4 +102,29 @@ describe('wizard VFS integrity', () => {
     expect(valid['/index.tsx']).toContain('React runtime patch disabled');
     expect(valid['/index.tsx']).not.toContain('⚠ missing component');
   });
+
+  it('reuses a prepared result across the launcher strict gate and Preview mount without cross-call mutation leaking', () => {
+    const files = {
+      '/src/App.tsx': "export default function App() { return <main>Cache reuse check</main>; }",
+      '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
+      '/.unison/site-bundle-snapshot.json': JSON.stringify({
+        snapshotId: 'snap_cache_reuse',
+        pageRegistry: { pages: {} },
+        vfsFiles: {},
+        meta: { source: 'wizard' },
+      }),
+    };
+
+    // Launcher strict gate: validates and discards its own output.
+    const strictResult = prepareSandpackFiles(files, { strict: true, entryPoint: '/src/App.tsx' });
+    strictResult['/launch-metadata.json'] = 'mutated by the discarding caller';
+
+    // Preview mount: same files, no strict flag — must share the cached
+    // computation (same content) and must NOT see the strict caller's mutation.
+    const previewResult = prepareSandpackFiles(files, { entryPoint: '/src/App.tsx' });
+
+    expect(previewResult['/App.tsx']).toContain('Cache reuse check');
+    expect(previewResult['/launch-metadata.json']).toBeUndefined();
+  });
 });

@@ -3935,7 +3935,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         });
         return artifacts;
       }, {
-        timeoutMs: 90_000,
+        timeoutMs: 180_000,
         degradeCode: 'preflight.seed_recovery',
         degradeMessage: 'Final checks took too long, so the builder opened your complete wizard-generated seed.',
         fallback: async () => {

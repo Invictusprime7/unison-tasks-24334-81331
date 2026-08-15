@@ -367,6 +367,10 @@ describe('wizard pipeline ownership invariants', () => {
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
       'utf8',
     );
+    const reviewSummarySource = readFileSync(
+      resolve(process.cwd(), 'src/components/onboarding/LaunchReviewSummary.tsx'),
+      'utf8',
+    );
     const confirmationIndex = launcherSource.indexOf('const confirmed = await requestLaunchConfirmation');
     const provisionIndex = launcherSource.indexOf('const confirmedLaunch = await provisionConfirmedLaunchSite');
 
@@ -374,8 +378,13 @@ describe('wizard pipeline ownership invariants', () => {
     expect(provisionIndex).toBeGreaterThan(confirmationIndex);
     // Confirmation must stay compile-free. Sandpack starts after handoff in
     // the Web Builder; mounting it here can freeze the launch decision modal.
+    // "Open Full Preview" hands off to the existing external-preview route
+    // instead of compiling Sandpack inline.
     expect(launcherSource).not.toContain('<VFSPreview');
-    expect(launcherSource).toContain('Live runtime compilation starts once in the Web Builder');
+    expect(reviewSummarySource).not.toContain('<VFSPreview');
+    expect(reviewSummarySource).toContain('createExternalPreviewSession');
+    expect(reviewSummarySource).toContain('Open Full Preview');
+    expect(reviewSummarySource).toContain('Live runtime compilation starts once in the Web Builder');
     expect(launcherSource).toContain('No site data was created.');
     expect(launcherSource).not.toContain('const installPromise =');
     expect(launcherSource.indexOf('setIsLaunching(false);', confirmationIndex - 250)).toBeGreaterThan(-1);

@@ -39,6 +39,7 @@ import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { ThemeLivePreview } from "./ThemeLivePreview";
 import { TemplateLivePreview } from "./TemplateLivePreview";
 import { WizardTopAction } from "./WizardTopAction";
+import { LaunchReviewSummary } from "./LaunchReviewSummary";
 import { BusinessSelector } from "@/components/business/BusinessSelector";
 
 import { themePresetToThemeTokens } from "./themePresetToTokens";
@@ -186,6 +187,7 @@ interface LaunchPreviewConfirmation {
   pagePaths: string[];
   businessId: string;
   siteId: string;
+  files: Record<string, string>;
 }
 
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
@@ -3990,6 +3992,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           .sort(),
         businessId: provisionedBusinessId,
         siteId: launchIds.siteId,
+        files: wiredVfsFiles,
       });
       if (!confirmed) {
         toast.info('Launch cancelled. No site data was created.');
@@ -4980,41 +4983,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             </AlertDialogDescription>
           </AlertDialogHeader>
           {launchPreviewConfirmation && (
-            <div className="grid min-h-[320px] gap-6 border border-white/10 bg-black/35 p-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
-              <div className="flex min-h-[240px] flex-col justify-between border border-white/10 bg-white/[0.025] p-6">
-                <div>
-                  <div className="mb-5 flex h-10 w-10 items-center justify-center border border-cyan-400/30 bg-cyan-400/10 text-cyan-300">
-                    <Check className="h-5 w-5" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-white">Generation complete</h3>
-                  <p className="mt-2 max-w-xl text-sm leading-6 text-white/55">
-                    The canonical site bundle, theme tokens, page routes, and intent bindings are ready. Live runtime compilation starts once in the Web Builder after confirmation, keeping this decision step responsive.
-                  </p>
-                </div>
-                <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden border border-white/10 bg-white/10">
-                  <div className="bg-[#07080F] p-4">
-                    <p className="text-2xl font-semibold text-white">{launchPreviewConfirmation.pagePaths.length}</p>
-                    <p className="mt-1 text-xs text-white/45">Generated pages</p>
-                  </div>
-                  <div className="bg-[#07080F] p-4">
-                    <p className="text-2xl font-semibold text-white">{launchPreviewConfirmation.fileCount}</p>
-                    <p className="mt-1 text-xs text-white/45">Canonical files</p>
-                  </div>
-                </div>
-              </div>
-              <div className="min-h-0 border border-white/10 bg-white/[0.025] p-4">
-                <p className="mb-3 text-xs font-semibold uppercase text-white/45">Page routes</p>
-                <div className="max-h-[250px] space-y-1 overflow-y-auto pr-1">
-                  {launchPreviewConfirmation.pagePaths.length > 0 ? launchPreviewConfirmation.pagePaths.map((path) => (
-                    <div key={path} className="truncate border border-white/[0.06] bg-black/25 px-3 py-2 font-mono text-xs text-white/65">
-                      {path.replace(/^\/?src\/pages\//i, '').replace(/\.tsx$/i, '')}
-                    </div>
-                  )) : (
-                    <p className="text-sm text-white/45">The home route is embedded in the canonical bundle.</p>
-                  )}
-                </div>
-              </div>
-            </div>
+            <LaunchReviewSummary
+              siteName={launchPreviewConfirmation.siteName}
+              brandName={launchPreviewConfirmation.businessName}
+              fileCount={launchPreviewConfirmation.fileCount}
+              pagePaths={launchPreviewConfirmation.pagePaths}
+              files={launchPreviewConfirmation.files}
+            />
           )}
           <AlertDialogFooter>
             <AlertDialogCancel

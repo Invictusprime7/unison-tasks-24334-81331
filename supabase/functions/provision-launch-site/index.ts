@@ -347,6 +347,17 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
         JSON.stringify({ siteId: body.ids.siteId, source: "system-launcher" }),
       ],
     );
+    // Canonical revision commits authorize through is_project_member(). The
+    // project owner must therefore be materialized in project_members inside
+    // the same transaction as the project shell; otherwise the immediately
+    // following wizard commit is guaranteed to fail authorization.
+    await query(
+      pg,
+      `INSERT INTO public.project_members (project_id, user_id, role)
+       VALUES ($1, $2, 'owner')
+       ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+      [body.ids.projectId, userId],
+    );
     await query(
       pg,
       `INSERT INTO public.site_builds (id, site_id, mode, version, status, current_stage, started_at, context)

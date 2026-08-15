@@ -77,6 +77,7 @@ interface PreviewCompileState {
 }
 
 const MAX_SANDPACK_TIMEOUT_RECOVERIES = 3;
+const PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS = 45_000;
 
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
@@ -434,6 +435,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const inFlightKeyRef = useRef<string | null>(null);
   const latestKeyRef = useRef<string | null>(null);
   const unmountedRef = useRef(false);
+  const compileAttemptRef = useRef(0);
   useEffect(() => {
     // React StrictMode intentionally runs mount → cleanup → mount in
     // development. Reset this flag on every setup; otherwise the first cleanup
@@ -456,21 +458,26 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     if (inFlightKeyRef.current === compileKey) return;
 
     inFlightKeyRef.current = compileKey;
+    const compileAttempt = ++compileAttemptRef.current;
 
     setPreviewCompile((current) => ({
       ...current,
       pipelineError: null,
+      emptyDraft: false,
       compiling: true,
     }));
 
-    const isStale = () => unmountedRef.current || latestKeyRef.current !== compileKey;
+    const isStale = () =>
+      unmountedRef.current ||
+      latestKeyRef.current !== compileKey ||
+      compileAttemptRef.current !== compileAttempt;
 
     window.setTimeout(async () => {
       const launchState = launchRef.current;
       const compileController = new AbortController();
       const compileTimeout = window.setTimeout(() => {
-        compileController.abort(new Error('Preview artifact compilation timed out after 120 seconds.'));
-      }, 120_000);
+        compileController.abort(new Error('Preview artifact compilation timed out after 45 seconds.'));
+      }, PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS);
       try {
         const isWizardPreview = resolveSnapshot(files, launchState).isWizardDraft;
 

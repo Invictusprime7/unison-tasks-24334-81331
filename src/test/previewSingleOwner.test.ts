@@ -42,6 +42,15 @@ describe('Web Builder preview ownership', () => {
     expect(sharedPreview).not.toContain('customSetup={{');
   });
 
+  it('accepts async compile results after the StrictMode remount cycle', () => {
+    const sharedPreview = readSource('src/components/VFSPreview.tsx');
+
+    expect(sharedPreview).toContain('unmountedRef.current = false;');
+    expect(sharedPreview).toContain('unmountedRef.current = true;');
+    expect(sharedPreview).toContain("compileController.abort(new Error('Preview artifact compilation timed out after 120 seconds.'))");
+    expect(sharedPreview).toContain('signal: compileController.signal');
+  });
+
   it('runs the controlled index mount module instead of the unmounted App export', () => {
     const sharedPreview = readSource('src/components/VFSPreview.tsx');
 

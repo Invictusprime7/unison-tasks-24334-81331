@@ -1,7 +1,8 @@
 import type { LaunchState } from '@/types/launchState';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
-import { launchStateToSandpackFiles } from '@/utils/launchToSandpack';
+import { launchStateToSandpackFiles, launchStateToSandpackFilesAsync } from '@/utils/launchToSandpack';
 import { applySandpackRuntimeShims, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import { runPrepareSandpackFilesOffThread } from '@/services/strictImportContractRuntime';
 import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
@@ -61,6 +62,51 @@ export function buildPreviewArtifacts(
     baseDependencies = SANDPACK_PREVIEW_CORE_DEPENDENCIES,
   } = options;
 
+  const pre = prepareForCompile(rawSourceFiles, launchState);
+  const rawSandpackFiles = pre.launchStateWithRecoveredTheme
+    ? launchStateToSandpackFiles({
+        launchState: pre.launchStateWithRecoveredTheme,
+        vfsFiles: pre.sourceFiles,
+      })
+    : prepareSandpackFiles(pre.sourceFiles, { themePresetId: pre.themePresetId });
+
+  return finishPreviewArtifacts(rawSandpackFiles, pre, baseDependencies);
+}
+
+/**
+ * Same output as buildPreviewArtifacts(), but runs the heavy
+ * launchStateToSandpackFiles()/prepareSandpackFiles() compile off the main
+ * thread. This is the path Preview mounting after a Wizard launch must use:
+ * that compile has no internal yield points and can freeze the tab for as
+ * long as it takes on a large/drifted generated site.
+ */
+export async function buildPreviewArtifactsAsync(
+  options: PreviewArtifactsOptions,
+  runtimeOptions: { signal?: AbortSignal } = {},
+): Promise<PreviewArtifactsResult> {
+  const {
+    sourceFiles: rawSourceFiles,
+    launchState = null,
+    baseDependencies = SANDPACK_PREVIEW_CORE_DEPENDENCIES,
+  } = options;
+
+  const pre = prepareForCompile(rawSourceFiles, launchState);
+  const rawSandpackFiles = pre.launchStateWithRecoveredTheme
+    ? await launchStateToSandpackFilesAsync({
+        launchState: pre.launchStateWithRecoveredTheme,
+        vfsFiles: pre.sourceFiles,
+      }, runtimeOptions)
+    : await runPrepareSandpackFilesOffThread({
+        files: pre.sourceFiles,
+        themePresetId: pre.themePresetId,
+        signal: runtimeOptions.signal,
+        fallbackCompute: (files, entryPoint, themePresetId) => prepareSandpackFiles(files, { entryPoint, themePresetId }),
+      });
+
+  return finishPreviewArtifacts(rawSandpackFiles, pre, baseDependencies);
+}
+
+function prepareForCompile(rawSourceFiles: Record<string, string>, launchState: LaunchState | null) {
   const initialResolution = resolveSnapshot(rawSourceFiles, launchState);
   const sourceFiles = projectSnapshotVfsFiles(rawSourceFiles, initialResolution);
 
@@ -73,12 +119,16 @@ export function buildPreviewArtifacts(
   const launchStateWithRecoveredTheme = launchState && themePresetId && !launchState.themePresetId
     ? { ...launchState, themePresetId }
     : launchState;
-  const rawSandpackFiles = launchStateWithRecoveredTheme
-    ? launchStateToSandpackFiles({
-        launchState: launchStateWithRecoveredTheme,
-        vfsFiles: sourceFiles,
-      })
-    : prepareSandpackFiles(sourceFiles, { themePresetId });
+
+  return { initialResolution, sourceFiles, themePresetId, launchStateWithRecoveredTheme };
+}
+
+function finishPreviewArtifacts(
+  rawSandpackFiles: Record<string, string>,
+  pre: ReturnType<typeof prepareForCompile>,
+  baseDependencies: Record<string, string>,
+): PreviewArtifactsResult {
+  const { initialResolution, sourceFiles, launchStateWithRecoveredTheme } = pre;
 
   // Re-stamp AUTO-GENERATED canonical Unison files (data + product widgets)
   // on every compile so AI / editor mutations cannot break the preview.
@@ -158,3 +208,4 @@ export function buildPreviewArtifacts(
     dependencies,
   };
 }
+

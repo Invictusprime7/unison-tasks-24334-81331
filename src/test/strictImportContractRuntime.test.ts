@@ -1,7 +1,47 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runStrictImportContractCheck } from '@/services/strictImportContractRuntime';
+import { runStrictImportContractCheck, runPrepareSandpackFilesOffThread } from '@/services/strictImportContractRuntime';
 
 describe('strict import-contract runtime', () => {
+  it('reuses a prior call\'s result for a matching (files, entryPoint, themePresetId) key without touching the worker again', async () => {
+    const files = { '/App.tsx': 'export default function App(){ return null; }' };
+    const preparedFiles = { '/App.tsx': 'export default function App(){ return null; }', '/index.tsx': 'shim' };
+    const postMessage = vi.fn((request: { requestId: string }) => {
+      queueMicrotask(() => worker.onmessage?.({
+        data: { requestId: request.requestId, ok: true, files: preparedFiles },
+      } as MessageEvent));
+    });
+    const worker = {
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      onerror: null as ((event: ErrorEvent) => void) | null,
+      postMessage,
+      terminate: vi.fn(),
+    };
+
+    // First call: the launcher's strict check (worker computes and the
+    // result gets cached even though this wrapper discards its own copy).
+    await runStrictImportContractCheck({
+      files,
+      entryPoint: '/App.tsx',
+      themePresetId: 'modern-cache-test',
+      workerFactory: () => worker,
+    });
+    expect(postMessage).toHaveBeenCalledOnce();
+
+    // Second call: Preview's compile, same content/entryPoint/themePresetId.
+    // Must hit the cache — no second worker created/used.
+    const secondWorkerFactory = vi.fn(() => worker);
+    const result = await runPrepareSandpackFilesOffThread({
+      files,
+      entryPoint: '/App.tsx',
+      themePresetId: 'modern-cache-test',
+      workerFactory: secondWorkerFactory,
+    });
+
+    expect(secondWorkerFactory).not.toHaveBeenCalled();
+    expect(postMessage).toHaveBeenCalledOnce();
+    expect(result).toEqual(preparedFiles);
+  });
+
   it('resolves when the worker reports no violations', async () => {
     const terminate = vi.fn();
     const worker = {

@@ -14,14 +14,16 @@ const workerScope = self as unknown as StrictImportContractWorkerScope;
 workerScope.onmessage = (event) => {
   const request = event.data;
   try {
-    // Result is discarded — this call exists purely for its throw-on-violation
-    // side effect (unresolved JSX imports, missing strict entry point).
-    prepareSandpackFiles(request.files, {
+    // Always computed in strict mode: strict only changes behavior when the
+    // VFS has no App.tsx, which canonical wizard sites always have — so the
+    // result here is valid for both strict and non-strict callers, letting
+    // the launcher's check and Preview's compile share one worker + cache.
+    const files = prepareSandpackFiles(request.files, {
       entryPoint: request.entryPoint,
       themePresetId: request.themePresetId,
       strict: true,
     });
-    workerScope.postMessage({ requestId: request.requestId, ok: true });
+    workerScope.postMessage({ requestId: request.requestId, ok: true, files });
   } catch (error) {
     const normalized = error instanceof Error ? error : new Error(String(error));
     workerScope.postMessage({

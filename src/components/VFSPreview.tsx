@@ -34,7 +34,7 @@ import { usePreviewService } from '@/hooks/usePreviewService';
 import { createExternalPreviewSession } from '@/services/externalPreviewSession';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
-import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
+import { buildPreviewArtifactsAsync } from '@/utils/previewArtifacts';
 import { PreviewPipelineError, isPreviewPipelineError } from '@/services/previewPipelineError';
 import { createVfsHandoffSignature } from '@/services/vfsHandoffSignature';
 import { PreviewRuntimeError } from '@/components/PreviewRuntimeError';
@@ -445,7 +445,9 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       compiling: true,
     }));
 
-    const timer = window.setTimeout(() => {
+    const abortController = new AbortController();
+
+    const timer = window.setTimeout(async () => {
       const launchState = launchRef.current;
       try {
         const isWizardPreview = resolveSnapshot(files, launchState).isWizardDraft;
@@ -464,10 +466,13 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           return;
         }
 
-        const result = buildPreviewArtifacts({
+        // Async/Worker-offloaded: the underlying prepareSandpackFiles() call
+        // has no yield points and previously froze the tab (unresponsive
+        // mouse, no repaint) on large or drifted generated sites.
+        const result = await buildPreviewArtifactsAsync({
           sourceFiles: files,
           launchState,
-        });
+        }, { signal: abortController.signal });
 
         if (!cancelled) {
           compiledKeyRef.current = compileKey;
@@ -503,6 +508,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     return () => {
       cancelled = true;
+      abortController.abort(new Error('Preview compile superseded by newer files/launch state.'));
       window.clearTimeout(timer);
     };
   }, [files, filesSignature, launchSignature]);

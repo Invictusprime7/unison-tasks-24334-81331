@@ -1,10 +1,16 @@
 /**
- * The launcher's strict pre-persist JSX-import-contract check
- * (prepareSandpackFiles(strict:true)) has no internal yield points. For
- * pathological/AI-drifted content this can run long enough to hard-freeze
- * the tab — a 90s stage timeout can't preempt a single unbroken synchronous
- * call. Running it in a Worker keeps the coverage without risking the main
- * thread, mirroring wizardStage4bRuntime's worker-with-fallback pattern.
+ * The launcher's strict pre-persist JSX-import-contract check and the Web
+ * Builder's Preview-mount compile both ultimately call
+ * prepareSandpackFiles(), which has no internal yield points. For
+ * pathological/AI-drifted or simply large multi-page sites this can run
+ * long enough to hard-freeze the tab — a stage timeout can't preempt a
+ * single unbroken synchronous call, and the browser can't repaint or
+ * process input until it returns. Running it in a Worker keeps the same
+ * coverage/output without risking the main thread, mirroring
+ * wizardStage4bRuntime's worker-with-fallback pattern. A small main-thread
+ * cache (keyed like prepareSandpackFiles' own internal one) lets the second
+ * caller in the same launch — Preview mounting moments after the launcher's
+ * own check — reuse the first caller's result instead of recomputing.
  */
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 
@@ -16,7 +22,7 @@ export interface StrictImportContractWorkerRequest {
 }
 
 export type StrictImportContractWorkerResponse =
-  | { requestId: string; ok: true }
+  | { requestId: string; ok: true; files: Record<string, string> }
   | {
       requestId: string;
       ok: false;
@@ -41,6 +47,19 @@ export interface RunStrictImportContractCheckOptions {
     entryPoint?: string,
     themePresetId?: string | null,
   ) => void;
+}
+
+export interface RunPrepareSandpackFilesOffThreadOptions {
+  files: Record<string, string>;
+  entryPoint?: string;
+  themePresetId?: string | null;
+  signal?: AbortSignal;
+  workerFactory?: () => StrictImportContractWorkerLike;
+  fallbackCompute?: (
+    files: Record<string, string>,
+    entryPoint?: string,
+    themePresetId?: string | null,
+  ) => Record<string, string>;
 }
 
 class StrictImportContractWorkerBootstrapError extends Error {
@@ -78,11 +97,44 @@ function createRequestId(): string {
   return `strict_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// ─────────────────────────────────────────────────── cross-call result cache
+//
+// prepareSandpackFiles() has its own content-hash cache, but that only helps
+// callers on the SAME thread — offloading one caller to a Worker (a separate
+// JS realm) means the launcher's check and the Web Builder's Preview-mount
+// compile can no longer warm each other's cache. Re-implement the same
+// hashing scheme here, at the call boundary shared by every caller of this
+// module, so that benefit survives regardless of which side (worker or
+// main-thread fallback) actually computed a given result.
+const PREPARED_FILES_CACHE_LIMIT = 20;
+const preparedFilesCache = new Map<string, Record<string, string>>();
+
+function hashFilesRecord(files: Record<string, string>): string {
+  let h = 0x811c9dc5;
+  for (const path of Object.keys(files).sort()) {
+    const entry = `${path}\u0000${files[path]}\u0000`;
+    for (let i = 0; i < entry.length; i++) {
+      h ^= entry.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+  }
+  return (h >>> 0).toString(36);
+}
+
+function cacheKeyFor(files: Record<string, string>, entryPoint: string | undefined, themePresetId: string | null | undefined): string {
+  return `${hashFilesRecord(files)}::${entryPoint || ''}::${themePresetId || ''}`;
+}
+
+function storeInCache(key: string, files: Record<string, string>): void {
+  if (preparedFilesCache.size >= PREPARED_FILES_CACHE_LIMIT) preparedFilesCache.clear();
+  preparedFilesCache.set(key, files);
+}
+
 function runInWorker(
   worker: StrictImportContractWorkerLike,
   request: StrictImportContractWorkerRequest,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const cleanup = () => {
@@ -103,7 +155,7 @@ function runInWorker(
       const response = event.data;
       if (!response || response.requestId !== request.requestId) return;
       if (response.ok) {
-        settle(resolve);
+        settle(() => resolve(response.files));
         return;
       }
       if (!('error' in response)) {
@@ -139,18 +191,17 @@ function runInWorker(
 }
 
 /**
- * Runs the same strict prepareSandpackFiles(strict:true) validation off the
- * main thread. Throws (does not resolve) on a contract violation, matching
- * the synchronous check's throw-based contract. Falls back to running on the
- * main thread only if the worker itself fails to bootstrap (e.g. a
- * restrictive CSP) — never silently skips the check.
+ * Runs prepareSandpackFiles(strict:true) off the main thread purely for its
+ * throw-on-violation side effect, discarding the computed files. Falls back
+ * to running on the main thread only if the worker itself fails to
+ * bootstrap (e.g. a restrictive CSP) — never silently skips the check.
  */
 export async function runStrictImportContractCheck({
   files,
   entryPoint,
   themePresetId,
   signal,
-  workerFactory = defaultWorkerFactory,
+  workerFactory,
   fallbackCheck = (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => {
     prepareSandpackFiles(fallbackFiles, {
       entryPoint: fallbackEntryPoint,
@@ -159,15 +210,51 @@ export async function runStrictImportContractCheck({
     });
   },
 }: RunStrictImportContractCheckOptions): Promise<void> {
+  await runPrepareSandpackFilesOffThread({
+    files,
+    entryPoint,
+    themePresetId,
+    signal,
+    workerFactory,
+    fallbackCompute: (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => {
+      fallbackCheck(fallbackFiles, fallbackEntryPoint, fallbackThemePresetId);
+      return fallbackFiles;
+    },
+  });
+}
+
+/**
+ * Runs the full prepareSandpackFiles() compile off the main thread and
+ * returns the resulting Sandpack-ready files — for callers (Preview mount)
+ * that need the actual output, not just the validation side effect. Shares
+ * a cache with runStrictImportContractCheck so a Preview compile moments
+ * after the launcher's own check is typically instant.
+ */
+export async function runPrepareSandpackFilesOffThread({
+  files,
+  entryPoint,
+  themePresetId,
+  signal,
+  workerFactory = defaultWorkerFactory,
+  fallbackCompute = (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => prepareSandpackFiles(fallbackFiles, {
+    entryPoint: fallbackEntryPoint,
+    themePresetId: fallbackThemePresetId,
+  }),
+}: RunPrepareSandpackFilesOffThreadOptions): Promise<Record<string, string>> {
+  const cacheKey = cacheKeyFor(files, entryPoint, themePresetId);
+  const cached = preparedFilesCache.get(cacheKey);
+  if (cached) return { ...cached };
+
   try {
     const worker = workerFactory();
-    await runInWorker(worker, {
+    const result = await runInWorker(worker, {
       requestId: createRequestId(),
       files,
       entryPoint,
       themePresetId,
     }, signal);
-    return;
+    storeInCache(cacheKey, result);
+    return { ...result };
   } catch (error) {
     if (!(error instanceof StrictImportContractWorkerBootstrapError)) throw error;
     console.warn('[strictImportContractRuntime] worker unavailable; using compatibility fallback', {
@@ -176,5 +263,8 @@ export async function runStrictImportContractCheck({
   }
 
   if (signal?.aborted) throw toAbortError(signal);
-  fallbackCheck(files, entryPoint, themePresetId);
+  const result = fallbackCompute(files, entryPoint, themePresetId);
+  storeInCache(cacheKey, result);
+  return result;
 }
+

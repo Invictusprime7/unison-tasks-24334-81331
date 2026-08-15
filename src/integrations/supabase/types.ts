@@ -786,6 +786,7 @@ export type Database = {
           created_at: string
           editor_code: string | null
           id: string
+          last_revision_id: string | null
           metadata: Json | null
           name: string | null
           project_id: string | null
@@ -801,6 +802,7 @@ export type Database = {
           created_at?: string
           editor_code?: string | null
           id?: string
+          last_revision_id?: string | null
           metadata?: Json | null
           name?: string | null
           project_id?: string | null
@@ -816,6 +818,7 @@ export type Database = {
           created_at?: string
           editor_code?: string | null
           id?: string
+          last_revision_id?: string | null
           metadata?: Json | null
           name?: string | null
           project_id?: string | null
@@ -831,6 +834,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "builder_drafts_last_revision_id_fkey"
+            columns: ["last_revision_id"]
+            isOneToOne: false
+            referencedRelation: "site_revisions"
             referencedColumns: ["id"]
           },
           {

@@ -71,5 +71,15 @@ export async function provisionConfirmedLaunchSite(
     || persistedMetadata.runtimeManifest !== undefined) {
     throw new Error('Confirmed launch shell contains content outside the canonical commit pipeline.');
   }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from('project_members')
+    .select('id')
+    .eq('project_id', result.projectId)
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle();
+  if (membershipError || !membership) {
+    throw new Error('Confirmed launch project ownership could not be verified.');
+  }
   return result as ConfirmedLaunchIds;
 }

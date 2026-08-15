@@ -104,7 +104,6 @@ import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile 
 import {
   buildLauncherNavigationState,
   persistLauncherHandoff,
-  readLauncherHandoff,
 } from "@/services/launcherHandoffPersistence";
 import { ImportProjectZipButton } from "@/components/onboarding/ImportProjectZipButton";
 import { ImportUnisonSiteZipButton } from "@/components/onboarding/ImportUnisonSiteZipButton";
@@ -4021,34 +4020,23 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       setIsLaunching(true);
       setLaunchStatus('Creating the site workspace and live data contracts…');
       run.markStage('commit', 'active');
-      // Post-confirmation the user has committed to opening the builder.
-      // Nothing below may bounce them back to the wizard: identity and
-      // persistence failures degrade into a local-draft handoff instead.
-      let confirmedLaunch: ConfirmedLaunchIds;
-      try {
-        confirmedLaunch = await provisionConfirmedLaunchSite({
-          ids: launchIds,
-          existingBusinessId: selectedBusinessId,
-          businessName: brand,
-          industry: resolvedIndustry,
-          siteName: `${brand} Site`,
-          siteSlug: `${brand}-${launchIds.siteId.slice(0, 8)}`
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, ''),
-          systemType: selectedSystem,
-          templateId: effectiveTemplate?.id,
-          themePresetId: resolvedPreset.id,
-        });
-      } catch (provisionError) {
-        console.warn('[SystemLauncher] confirmed launch provisioning failed', provisionError);
-        confirmedLaunch = { ...launchIds, businessId: selectedBusinessId || launchIds.businessId };
-        run.degrade(
-          'commit',
-          'commit.provision_deferred',
-          'Your workspace could not be created just yet, so the builder opened your generated site as a local draft.',
-        );
-      }
+      // A builder handoff is only valid after the complete canonical identity
+      // exists remotely. Fabricating a local identity here creates a project
+      // that can render but can never commit, causing the preview/autosave loop.
+      const confirmedLaunch: ConfirmedLaunchIds = await provisionConfirmedLaunchSite({
+        ids: launchIds,
+        existingBusinessId: selectedBusinessId,
+        businessName: brand,
+        industry: resolvedIndustry,
+        siteName: `${brand} Site`,
+        siteSlug: `${brand}-${launchIds.siteId.slice(0, 8)}`
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, ''),
+        systemType: selectedSystem,
+        templateId: effectiveTemplate?.id,
+        themePresetId: resolvedPreset.id,
+      });
       const launchProjectId = confirmedLaunch.projectId;
       const launcherDraftId = confirmedLaunch.draftId;
 
@@ -4070,46 +4058,34 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           : `sess_${Date.now().toString(36)}`,
       };
       const patch = legacyFilesToPatchPlan(wiredVfsFiles);
-      let result: Awaited<ReturnType<typeof commitMutation>> | null = null;
-      try {
-        result = await commitMutation({
-          source: 'wizard-launch',
-          identity,
-          current: {
-            vfsFiles: {},
-            playground: materializedPlayground ?? undefined,
-            activePagePath: launchArtifacts.entryPoint,
-          },
-          patch,
-          options: {
-            requirePreviewPass: false,
-            requireReadinessPass: false,
-            businessName: brand,
-            industry: String(generationCategory),
-            selectedTemplateId: effectiveTemplate?.id,
-            themePresetId: resolvedPreset.id,
-            selections: wizardSelections,
-          },
-        });
-      } catch (commitError) {
-        console.warn('[SystemLauncher] canonical commit failed after confirmation', commitError);
-        result = null;
+      const result = await commitMutation({
+        source: 'wizard-launch',
+        identity,
+        current: {
+          vfsFiles: {},
+          playground: materializedPlayground ?? undefined,
+          activePagePath: launchArtifacts.entryPoint,
+        },
+        patch,
+        options: {
+          requirePreviewPass: false,
+          requireReadinessPass: false,
+          businessName: brand,
+          industry: String(generationCategory),
+          selectedTemplateId: effectiveTemplate?.id,
+          themePresetId: resolvedPreset.id,
+          selections: wizardSelections,
+        },
+      });
+      if (!result.persistedRevisionId) {
+        throw new Error('The generated site could not be committed to its project. Please confirm again.');
       }
-      if (!result?.persistedRevisionId) {
-        // Remote persistence lagged. The builder hydrates from the handoff
-        // snapshot and reconciles the revision in the background.
-        run.degrade(
-          'commit',
-          'commit.revision_pending',
-          'Your project is open as a local draft while saving finishes in the background.',
-        );
-      }
-      const launcherRevisionId = result?.persistedRevisionId || '';
-      const canonicalVfsFiles = Object.keys(result?.vfsFiles || {}).length > 0
-        ? result!.vfsFiles
+      const launcherRevisionId = result.persistedRevisionId;
+      const canonicalVfsFiles = Object.keys(result.vfsFiles).length > 0
+        ? result.vfsFiles
         : wiredVfsFiles;
-      const canonicalSiteBundleSnapshot = result?.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;
-      const canonicalRuntimeManifest = result?.runtimeManifest ?? pipelineManifest;
+      const canonicalSiteBundleSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;
+      const canonicalRuntimeManifest = result.runtimeManifest ?? pipelineManifest;
       if (!(launchArtifacts.entryPoint in canonicalVfsFiles)) {
         run.degrade(
           'commit',
@@ -4235,16 +4211,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     } catch (e) {
       const msg = await getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);
-      // The user already confirmed the generated site. Never bounce them back
-      // into the wizard: hand off with whatever was persisted for the builder.
-      const pendingHandoff = readLauncherHandoff();
-      if (pendingHandoff?.routeState) {
-        if (pendingHandoff.launchState) setLaunch(pendingHandoff.launchState);
-        navigate("/web-builder", { replace: true, state: pendingHandoff.routeState });
-        onOpenChange(false);
-        resetState();
-        return;
-      }
       if (classifyLaunchError(e) === 'fatal') {
         // Session loss is the only unrecoverable case: the user must sign in
         // again. Wizard selections stay intact behind the dialog.

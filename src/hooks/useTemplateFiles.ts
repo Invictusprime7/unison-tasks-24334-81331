@@ -62,6 +62,11 @@ export interface SaveProjectPayload {
    * project doesn't silently overwrite the currently-open draft.
    */
   forceNew?: boolean;
+  /**
+   * Background/auto-saves set this so a failure never spams the user with
+   * toasts. Errors are still logged and surfaced through the return value.
+   */
+  silent?: boolean;
 }
 
 const LOCAL_STORAGE_KEY = "webbuilder_templates";

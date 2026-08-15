@@ -94,6 +94,7 @@ import {
   type CommitMutationResult,
   type LoadedRevision,
 } from "@/services/vfsCommitService";
+import { repairDraftBusinessLink } from "@/services/draftBusinessLinkRepair";
 import {
   buildProjectRuntimeEnvelope,
   loadProjectRuntimeProjection,
@@ -2490,6 +2491,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [hydratedRevision, setHydratedRevision] = useState<LoadedRevision | null>(null);
   const [runtimeProjectionRevisionId, setRuntimeProjectionRevisionId] = useState<string | null>(null);
   const [canonicalHydrationError, setCanonicalHydrationError] = useState<string | null>(null);
+  // Automatic owning-business repair: a draft whose business link is missing can
+  // never receive a committed revision, so hydration fails forever. We recreate
+  // the relationship once, then reload the canonical hydration pass.
+  const [hydrationNonce, setHydrationNonce] = useState(0);
+  const [repairState, setRepairState] = useState<'idle' | 'running' | 'failed' | 'repaired'>('idle');
+  const [repairNote, setRepairNote] = useState<string | null>(null);
+  const repairAttemptedRef = useRef(false);
   const [activePublishedRevisionId, setActivePublishedRevisionId] = useState<string | null>(null);
   const [currentRevisionId, setCurrentRevisionId] = useState<string>(
     effectiveRouteState?.revisionId || ''
@@ -2500,9 +2508,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     const revId = currentRevisionId || effectiveRouteState?.revisionId;
     const durableProjectId = resolvedProjectId || projectId;
     const hasCanonicalDraft = Boolean(durableProjectId && currentDraftId);
-    const hydrationKey = hasCanonicalDraft
+    const baseKey = hasCanonicalDraft
       ? `draft:${durableProjectId}:${currentDraftId}`
       : revId || (durableProjectId ? `latest:${durableProjectId}` : '');
+    const hydrationKey = baseKey ? `${baseKey}#${hydrationNonce}` : '';
     if (!hydrationKey || hydratedRevisionRef.current === hydrationKey) return;
     hydratedRevisionRef.current = hydrationKey;
 
@@ -2560,7 +2569,53 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         hydratedRevisionRef.current = null;
       }
     };
-  }, [currentDraftId, currentRevisionId, effectiveRouteState?.revisionId, importBuilderFiles, launchEntryPoint, projectId, resolvedProjectId]);
+  }, [currentDraftId, currentRevisionId, effectiveRouteState?.revisionId, hydrationNonce, importBuilderFiles, launchEntryPoint, projectId, resolvedProjectId]);
+
+  // ── Automatic owning-business repair ──────────────────────────────────────
+  // When canonical hydration fails because the draft lost its business link (or
+  // therefore never received a committed revision projection), recreate the
+  // relationship and reload the builder's canonical pass exactly once. Manual
+  // retry stays available from the error shell below.
+  const runCanonicalDraftRepair = useCallback(async () => {
+    const durableProjectId = resolvedProjectId || projectId;
+    if (!currentDraftId) {
+      setRepairState('failed');
+      setRepairNote('This session has no draft identity to repair.');
+      return;
+    }
+    setRepairState('running');
+    setRepairNote(null);
+    try {
+      const outcome = await repairDraftBusinessLink({
+        draftId: currentDraftId,
+        projectId: durableProjectId || null,
+      });
+      const note = outcome.notes.join(' ') || null;
+      setRepairNote(note);
+      if (outcome.repaired || outcome.revisionId) {
+        setRepairState('repaired');
+        setCanonicalHydrationError(null);
+        setHydratedRevision(null);
+        setRuntimeProjectionRevisionId(null);
+        hydratedRevisionRef.current = null;
+        setHydrationNonce((n) => n + 1);
+        toast.success('Project relinked to its workspace', {
+          description: 'Reloading committed project state…',
+        });
+      } else {
+        setRepairState('failed');
+      }
+    } catch (error) {
+      setRepairState('failed');
+      setRepairNote(error instanceof Error ? error.message : String(error));
+    }
+  }, [currentDraftId, projectId, resolvedProjectId]);
+
+  useEffect(() => {
+    if (!canonicalHydrationError || repairAttemptedRef.current || !currentDraftId) return;
+    repairAttemptedRef.current = true;
+    void runCanonicalDraftRepair();
+  }, [canonicalHydrationError, currentDraftId, runCanonicalDraftRepair]);
 
   useEffect(() => {
     if (!hydratedRevision) return;
@@ -6005,10 +6060,27 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           <Shield className="mb-4 h-7 w-7 text-red-400" aria-hidden="true" />
           <h1 className="text-lg font-semibold">Canonical project state unavailable</h1>
           <p className="mt-2 text-sm leading-6 text-zinc-400">{canonicalRuntimeError}</p>
-          <Button className="mt-5" onClick={() => window.location.reload()}>
-            <RefreshCcw className="mr-2 h-4 w-4" aria-hidden="true" />
-            Retry project load
-          </Button>
+          {repairState === 'running' && (
+            <p className="mt-3 flex items-center gap-2 text-sm text-zinc-400">
+              <RefreshCcw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              Repairing this project&apos;s workspace link…
+            </p>
+          )}
+          {repairNote && repairState !== 'running' && (
+            <p className="mt-3 text-xs leading-5 text-zinc-500">{repairNote}</p>
+          )}
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Button
+              onClick={() => { void runCanonicalDraftRepair(); }}
+              disabled={repairState === 'running'}
+            >
+              <RefreshCcw className={cn('mr-2 h-4 w-4', repairState === 'running' && 'animate-spin')} aria-hidden="true" />
+              Repair project link
+            </Button>
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Retry project load
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -6019,7 +6091,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] text-zinc-100">
         <div className="flex items-center gap-3 text-sm text-zinc-400">
           <RefreshCcw className="h-4 w-4 animate-spin" aria-hidden="true" />
-          Loading committed project state
+          {repairState === 'running'
+            ? 'Repairing project workspace link'
+            : repairState === 'repaired'
+              ? 'Reloading committed project state'
+              : 'Loading committed project state'}
         </div>
       </div>
     );

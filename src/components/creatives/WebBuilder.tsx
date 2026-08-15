@@ -2508,9 +2508,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     const revId = currentRevisionId || effectiveRouteState?.revisionId;
     const durableProjectId = resolvedProjectId || projectId;
     const hasCanonicalDraft = Boolean(durableProjectId && currentDraftId);
-    const hydrationKey = hasCanonicalDraft
+    const baseKey = hasCanonicalDraft
       ? `draft:${durableProjectId}:${currentDraftId}`
       : revId || (durableProjectId ? `latest:${durableProjectId}` : '');
+    const hydrationKey = baseKey ? `${baseKey}#${hydrationNonce}` : '';
     if (!hydrationKey || hydratedRevisionRef.current === hydrationKey) return;
     hydratedRevisionRef.current = hydrationKey;
 

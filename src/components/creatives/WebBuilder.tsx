@@ -2499,6 +2499,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const [hydrationNonce, setHydrationNonce] = useState(0);
   const [repairState, setRepairState] = useState<'idle' | 'running' | 'failed' | 'repaired'>('idle');
   const [repairNote, setRepairNote] = useState<string | null>(null);
+  const [emptyProjectDraft, setEmptyProjectDraft] = useState(false);
   const repairAttemptedRef = useRef(false);
   const [activePublishedRevisionId, setActivePublishedRevisionId] = useState<string | null>(null);
   const [currentRevisionId, setCurrentRevisionId] = useState<string>(
@@ -2594,6 +2595,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       });
       const note = outcome.notes.join(' ') || null;
       setRepairNote(note);
+      setEmptyProjectDraft(outcome.emptyDraft);
       if (outcome.repaired || outcome.revisionId) {
         setRepairState('repaired');
         setCanonicalHydrationError(null);
@@ -6080,6 +6082,30 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const canonicalHydrationPending = hasCanonicalIdentity
     && !canonicalRuntimeError
     && (!hydratedRevision || runtimeProjectionRevisionId !== hydratedRevision.id);
+
+  if (canonicalRuntimeError && emptyProjectDraft) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] px-6 text-zinc-100">
+        <div className="w-full max-w-md border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
+          <Sparkles className="mb-4 h-7 w-7 text-indigo-400" aria-hidden="true" />
+          <h1 className="text-lg font-semibold">This project has no site yet</h1>
+          <p className="mt-2 text-sm leading-6 text-zinc-400">
+            The project record is healthy, but no site content was ever generated for it.
+            Run the launcher wizard to generate your pages, then this builder will open with
+            the committed project state.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Button onClick={() => { window.location.href = '/'; }}>
+              Open the launcher
+            </Button>
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Retry project load
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (canonicalRuntimeError) {
     return (

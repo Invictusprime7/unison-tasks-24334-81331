@@ -61,6 +61,7 @@ describe('Web Builder preview ownership', () => {
     expect(sharedPreview).toContain('if (inFlightKeyRef.current) return;');
     expect(sharedPreview).toContain('pendingCompileRef.current = { key, files, launchState: launchRef.current };');
     expect(sharedPreview).not.toContain('latestKeyRef.current !== compileKey');
+    expect(sharedPreview).not.toContain("Object.keys(launch?.siteBundleSnapshot?.vfsFiles || {}).length");
   });
 
   it('runs the controlled index mount module instead of the unmounted App export', () => {

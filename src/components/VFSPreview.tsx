@@ -427,7 +427,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     launch?.siteBundleSnapshot?.industry ?? '',
     launch?.businessName ?? '',
     launch?.runtimeManifest?.appContext?.themePresetId ?? '',
-    Object.keys(launch?.siteBundleSnapshot?.vfsFiles || {}).length,
   ].join('|'), [launch]);
   const launchRef = useRef(launch);
   launchRef.current = launch;

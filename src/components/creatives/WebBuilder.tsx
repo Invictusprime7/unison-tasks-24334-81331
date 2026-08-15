@@ -6060,10 +6060,27 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           <Shield className="mb-4 h-7 w-7 text-red-400" aria-hidden="true" />
           <h1 className="text-lg font-semibold">Canonical project state unavailable</h1>
           <p className="mt-2 text-sm leading-6 text-zinc-400">{canonicalRuntimeError}</p>
-          <Button className="mt-5" onClick={() => window.location.reload()}>
-            <RefreshCcw className="mr-2 h-4 w-4" aria-hidden="true" />
-            Retry project load
-          </Button>
+          {repairState === 'running' && (
+            <p className="mt-3 flex items-center gap-2 text-sm text-zinc-400">
+              <RefreshCcw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              Repairing this project&apos;s workspace link…
+            </p>
+          )}
+          {repairNote && repairState !== 'running' && (
+            <p className="mt-3 text-xs leading-5 text-zinc-500">{repairNote}</p>
+          )}
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Button
+              onClick={() => { void runCanonicalDraftRepair(); }}
+              disabled={repairState === 'running'}
+            >
+              <RefreshCcw className={cn('mr-2 h-4 w-4', repairState === 'running' && 'animate-spin')} aria-hidden="true" />
+              Repair project link
+            </Button>
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Retry project load
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -6074,7 +6091,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] text-zinc-100">
         <div className="flex items-center gap-3 text-sm text-zinc-400">
           <RefreshCcw className="h-4 w-4 animate-spin" aria-hidden="true" />
-          Loading committed project state
+          {repairState === 'running'
+            ? 'Repairing project workspace link'
+            : repairState === 'repaired'
+              ? 'Reloading committed project state'
+              : 'Loading committed project state'}
         </div>
       </div>
     );

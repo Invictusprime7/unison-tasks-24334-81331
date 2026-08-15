@@ -628,6 +628,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   // Business Setup Suggestions - shown after AI generates a site/template
   const [showBusinessSetup, setShowBusinessSetup] = useState(false);
   const launcherDraftBootstrapRef = useRef<string | null>(null);
+  const launcherDraftBootstrapAttemptsRef = useRef(0);
+
   const draftPersistencePromiseRef = useRef<Promise<string | null> | null>(null);
 
   const importedRouteStateRef = useRef<string | null>(null);

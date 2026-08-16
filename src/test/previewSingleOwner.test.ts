@@ -53,6 +53,8 @@ describe('Web Builder preview ownership', () => {
     expect(sharedPreview).toContain('compileAttemptRef.current !== compileAttempt');
     expect(sharedPreview).toContain('pendingCompileRef.current = request;');
     expect(sharedPreview).toContain('attemptWasInvalidated');
+    expect(sharedPreview).toContain("pipelineError?.message.includes('did not respond within 30 seconds')");
+    expect(sharedPreview).toContain('onRetry={retryArtifactCompile}');
     expect(sharedPreview).toMatch(/pipelineError: null,\s+emptyDraft: false,\s+compiling: true/);
   });
 

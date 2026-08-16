@@ -616,6 +616,31 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     compiling: previewCompiling,
   } = previewCompile;
   const hasCompiledPreview = Object.keys(sandpackFiles).length > 0;
+  const legacyTimeoutRecoveryKeyRef = useRef<string | null>(null);
+  const retryArtifactCompile = useCallback(() => {
+    const key = `${filesSignature}::${launchSignature}`;
+    compiledKeyRef.current = null;
+    pendingCompileRef.current = {
+      key,
+      files,
+      launchState: launchRef.current,
+    };
+    setPreviewCompile((current) => ({
+      ...current,
+      pipelineError: null,
+      emptyDraft: false,
+      compiling: true,
+    }));
+    setCompileDrainVersion((version) => version + 1);
+  }, [files, filesSignature, launchSignature]);
+
+  useEffect(() => {
+    if (!pipelineError?.message.includes('did not respond within 30 seconds')) return;
+    const key = `${filesSignature}::${launchSignature}`;
+    if (legacyTimeoutRecoveryKeyRef.current === key) return;
+    legacyTimeoutRecoveryKeyRef.current = key;
+    retryArtifactCompile();
+  }, [filesSignature, launchSignature, pipelineError, retryArtifactCompile]);
 
   // Sandpack HMR handles source-file updates without destroying iframe state.
   // Dependency graph changes are different: customSetup is read at provider
@@ -1226,7 +1251,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
         <PreviewRuntimeError
           error={pipelineError}
-          onRetry={() => window.location.reload()}
+          onRetry={retryArtifactCompile}
           onRelaunch={goLauncher}
         />
       </div>

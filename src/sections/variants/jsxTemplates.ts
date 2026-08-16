@@ -445,3 +445,83 @@ ${navLinks.map(link => `                <a href="${link.href}" style={{ fontFami
         </div>
       </footer>`;
 }
+
+// ============================================================================
+// Gallery Variants (Recovery Phase 4 — premium proof family)
+// ============================================================================
+
+function galleryTiles(c: ExtractedSectionContent, count: number): Array<{ src: string; caption: string }> {
+  const captions = c.listItems?.length ? c.listItems : [];
+  const base = c.imageSrc || '/placeholder.svg';
+  return Array.from({ length: Math.max(count, captions.length || count) }, (_, i) => ({
+    src: base,
+    caption: captions[i] || '',
+  }));
+}
+
+function galleryIntro(c: ExtractedSectionContent): string {
+  if (!c.heading && !c.subheading) return '';
+  return `          <div className="mb-12 text-center">
+${c.heading ? `            <h2 className="mb-3 text-3xl font-semibold text-foreground">${esc(c.heading)}</h2>\n` : ''}\
+${c.subheading ? `            <p className="mx-auto max-w-xl text-base text-muted-foreground">${esc(c.subheading)}</p>\n` : ''}\
+          </div>\n`;
+}
+
+function galleryFigure(tile: { src: string; caption: string }, cls: string, aspect: string): string {
+  return `            <figure className="group relative m-0 overflow-hidden rounded-[var(--radius)] border border-border bg-muted ${cls}" style={{ aspectRatio: '${aspect}' }}>
+              <img src="${tile.src}" alt="${esc(tile.caption)}" loading="lazy" className="h-full w-full object-cover transition-transform duration-500 motion-reduce:transition-none group-hover:scale-105" />
+${tile.caption ? `              <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-foreground/80 to-transparent p-4 text-sm text-background opacity-0 transition-opacity group-hover:opacity-100">${esc(tile.caption)}</figcaption>\n` : ''}\
+            </figure>`;
+}
+
+function galleryShell(variant: string, c: ExtractedSectionContent, grid: string): string {
+  return `      <section className="bg-background py-20 md:py-24" data-variant="${variant}">
+        <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+${galleryIntro(c)}\
+${grid}
+        </div>
+      </section>`;
+}
+
+export function galleryEditorialMosaicJSX(c: ExtractedSectionContent): string {
+  const tiles = galleryTiles(c, 6);
+  const grid = `          <div className="grid auto-rows-[200px] grid-cols-2 gap-4 lg:grid-cols-4">
+${tiles.map((t, i) => galleryFigure(t, i % 5 === 0 ? 'col-span-2 row-span-2' : i % 7 === 3 ? 'col-span-2' : '', 'auto')).join('\n')}
+          </div>`;
+  return galleryShell('gallery:editorial-mosaic', c, grid);
+}
+
+export function galleryMasonryJSX(c: ExtractedSectionContent): string {
+  const tiles = galleryTiles(c, 6);
+  const grid = `          <div style={{ columnCount: 3, columnGap: '1rem' }}>
+${tiles.map((t, i) => `            <div className="mb-4 break-inside-avoid">\n${galleryFigure(t, '', i % 3 === 0 ? '3 / 4' : i % 3 === 1 ? '1 / 1' : '4 / 5')}\n            </div>`).join('\n')}
+          </div>`;
+  return galleryShell('gallery:masonry', c, grid);
+}
+
+export function galleryCinematicGridJSX(c: ExtractedSectionContent): string {
+  const tiles = galleryTiles(c, 6);
+  const grid = `          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+${tiles.map((t) => galleryFigure(t, '', '16 / 9')).join('\n')}
+          </div>`;
+  return galleryShell('gallery:cinematic-grid', c, grid);
+}
+
+export function galleryLightboxGridJSX(c: ExtractedSectionContent): string {
+  const tiles = galleryTiles(c, 6);
+  const grid = `          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+${tiles.map((t) => galleryFigure(t, 'cursor-zoom-in', '1 / 1')).join('\n')}
+          </div>`;
+  return galleryShell('gallery:lightbox-grid', c, grid);
+}
+
+export function galleryFeatureSplitJSX(c: ExtractedSectionContent): string {
+  const [feature, ...rest] = galleryTiles(c, 5);
+  const grid = `          <div className="grid gap-4 lg:grid-cols-2">
+${galleryFigure(feature, '', '4 / 5')}
+            <div className="grid grid-cols-2 gap-4 self-start">
+${rest.map((t) => galleryFigure(t, '', '1 / 1')).join('\n')}
+            </div>
+          </div>`;
+  return galleryShell('gallery:feature-split', c, grid);
+}

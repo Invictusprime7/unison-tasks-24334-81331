@@ -32,6 +32,15 @@ import type { TemplateComposition } from './types';
 import type { WizardDesignIntervention, WizardMotionRecipe } from '@/services/wizardDesignIntervention';
 import { getLayoutForVariantId, getVariantById } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';
+import { clampVariantToPack, resolveArtDirectionPack } from '@/sections/artDirection/packs';
+
+/**
+ * The slice of the wizard design brief the section compiler consumes.
+ * `industry` + `themePresetId` resolve the ArtDirectionPack (Recovery Phase 6).
+ */
+export type DesignInterventionSlice =
+  Pick<WizardDesignIntervention, 'sectionVariants'>
+  & Partial<Pick<WizardDesignIntervention, 'activeVariants' | 'motionRecipes' | 'industry' | 'themePresetId'>>;
 import {
   CATALOG_HYDRATION_MODULE,
   CATALOG_HYDRATION_PATH,
@@ -1397,8 +1406,7 @@ export function compositionToReactFileSet(
   template: TemplateComposition,
   pageFilePath: string,
   options?: {
-    designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants'>
-      & Partial<Pick<WizardDesignIntervention, 'activeVariants'>>;
+    designIntervention?: DesignInterventionSlice;
   },
 ): Record<string, string> {
   const projectedTemplate = applyDesignVariants(template, options?.designIntervention);

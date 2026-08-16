@@ -459,9 +459,19 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
           { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
         );
       }
-      merged[normalizedPath] = content;
+      // R5 — Lane B is a CONTENT author, not a design author. When the canonical
+      // compiler already produced a composed page (variants, art direction,
+      // layout/interaction recipes executed), keep that design and merge only
+      // Lane B's copy into its SECTIONS data block. Lane B keeps full ownership
+      // whenever the canonical page is a stub / non-composed module.
+      const canonicalPageSource = readCanonical(normalizedPath);
+      const contentMerge = mergeLaneBIntoCanonicalPage(canonicalPageSource, content);
+      merged[normalizedPath] = contentMerge?.applied ? contentMerge.source : (
+        isCanonicalComposedPage(canonicalPageSource) ? (canonicalPageSource as string) : content
+      );
       continue;
     }
+
 
     // App.tsx is always a deterministic registry router and index.css must stay
     // on the launcher-resolved theme token chain (Stage 4b writes themed

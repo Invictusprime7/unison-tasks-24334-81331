@@ -4692,7 +4692,7 @@ function generateMissingComponents(sandpackFiles: Record<string, string>): void 
   for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
 
-    const importRegex = /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"](\.\.?\/[^'"]+)['"]/g;
+    const importRegex = /import\s+[^'";\n]*from\s*['"](\.\.?\/[^'"\n]+)['"]/g;
     let im;
     while ((im = importRegex.exec(content)) !== null) {
       const rawImportPath = im[1];
@@ -5316,7 +5316,7 @@ export function processCode(code: string, filePath: string): string {
 
   // Handle @/ path alias imports — convert to correct relative paths for flattened Sandpack files
   processed = processed.replace(
-    /^(import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
+    /^(import\s+[^'";\n]*from\s*['"])@\/([^'"\n]+)(['"];?[ \t]*)$/gm,
     (match, importPrefix, modulePath, importSuffix) => {
       // Shim @/lib/utils → real cn() function
       if (modulePath === 'lib/utils') {
@@ -5378,7 +5378,7 @@ export function processCode(code: string, filePath: string): string {
     `export * from '${radixShimImport}';`,
   );
   processed = processed.replace(
-    /^import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"]([^'"]+)['"];?\s*$/gm,
+    /^import\s+[^'";\n]*from\s*['"]([^'"\n]+)['"];?[ \t]*$/gm,
     (match, modulePath) => {
       if (isSandpackAllowedImport(modulePath)) return match;
       if (modulePath.startsWith('@/')) {

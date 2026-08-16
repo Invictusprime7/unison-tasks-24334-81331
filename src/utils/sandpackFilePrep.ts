@@ -4934,7 +4934,6 @@ function collectTopLevelBindingNames(code: string): Set<string> {
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
  */
 export function processCode(code: string, filePath: string): string {
-  let __pt = Date.now(); const __pmark = (l:string)=>{ const n=Date.now(); if(n-__pt>200) console.log('[P]', l, n-__pt, filePath); __pt=n; };
   if (!/\.(tsx?|jsx?|mjs)$/.test(filePath)) {
     return code;
   }
@@ -4948,7 +4947,6 @@ export function processCode(code: string, filePath: string): string {
   // producing "Unexpected keyword" parse errors. Since there is nothing
   // usable to recover (no specifiers, no module source), remove the opener
   // line outright when it never resolves to a closing `} from '...'`.
-  __pmark('L4950');
   {
     const lines = code.split('\n');
     for (let i = 0; i < lines.length; i++) {
@@ -4980,7 +4978,6 @@ export function processCode(code: string, filePath: string): string {
   // Transform all `import { Icon } from 'lucide-react'` into safe namespace
   // lookups with fallback aliases for commonly-missing social-media icons.
   // Handles multiple import statements without duplicate declarations.
-  __pmark('L4981');
   const __LUCIDE_ALIAS_MAP: Record<string, string> = {
     // Canonical brand icon spellings → exact lucide-react export names
     facebook: 'Facebook',
@@ -5052,7 +5049,6 @@ export function processCode(code: string, filePath: string): string {
   };
 
   // Collect all lucide-react imports
-  __pmark('L5052');
   const lucideImportRe = /import\s+\{([^}]+)\}\s+from\s+['"]lucide-react['"];?/g;
   let lucideMatch: RegExpExecArray | null;
   while ((lucideMatch = lucideImportRe.exec(code)) !== null) {
@@ -5074,7 +5070,6 @@ export function processCode(code: string, filePath: string): string {
     }
   }
 
-  __pmark('L5073');
   if (__allLucideIcons.length > 0) {
     // ── Idempotency guard ──────────────────────────────────────────────
     // A Live Business Data operation (catalog binding, AI patch, Playground
@@ -5124,7 +5119,6 @@ export function processCode(code: string, filePath: string): string {
   // and the replacement inserts __LucideFallback *below* those existing lookups,
   // causing a TDZ ReferenceError.  Remove duplicate namespace imports and ensure
   // the fallback declaration always sits right after the first namespace import.
-  __pmark('L5122');
   {
     const nsLine = `import * as __LucideIcons from 'lucide-react';`;
     const fbDecl = `const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`;
@@ -5158,7 +5152,6 @@ export function processCode(code: string, filePath: string): string {
   // AI sometimes uses lucide icon names (e.g. `icon: Database`) without
   // importing them. Detect PascalCase identifiers that look like lucide
   // icons but have no declaration, and inject safe proxy declarations.
-  __pmark('L5155');
   const COMMON_LUCIDE_ICONS = new Set([
     'Activity','AlertCircle','AlertTriangle','Archive','ArrowDown','ArrowLeft',
     'ArrowRight','ArrowUp','Award','BarChart','Bell','Bookmark','Box','Briefcase',
@@ -5186,7 +5179,6 @@ export function processCode(code: string, filePath: string): string {
   ]);
 
   // Find all PascalCase identifiers used in the body (outside imports/declarations)
-  __pmark('L5182');
   const bodyWithoutDecls = code.replace(/^(?:import\s+.*|const\s+\w+\s*=).*$/gm, '');
   const usedIdentifiers = new Set<string>();
   const identRe = /\b([A-Z][a-zA-Z0-9]+)\b/g;
@@ -5196,7 +5188,6 @@ export function processCode(code: string, filePath: string): string {
   }
 
   // Check which are missing declarations
-  __pmark('L5191');
   const missingIcons: string[] = [];
   for (const name of usedIdentifiers) {
     if (!COMMON_LUCIDE_ICONS.has(name)) continue;
@@ -5207,7 +5198,6 @@ export function processCode(code: string, filePath: string): string {
     }
   }
 
-  __pmark('L5201');
   if (missingIcons.length > 0) {
     // Inject lucide proxy declarations for missing icons
     const hasLucideNamespace = code.includes("import * as __LucideIcons from 'lucide-react'");
@@ -5242,7 +5232,6 @@ export function processCode(code: string, filePath: string): string {
   // ── Safe framer-motion imports ─────────────────────────────────────────
   // The AI frequently imports { motion, AnimatePresence } from 'framer-motion'.
   // If framer-motion fails to load or specific exports are missing, provide safe fallbacks.
-  __pmark('L5235');
   code = code.replace(
     /import\s+\{([^}]+)\}\s+from\s+['"]framer-motion['"];?/g,
     (_match, names: string) => {
@@ -5274,16 +5263,13 @@ export function processCode(code: string, filePath: string): string {
     }
   );
 
-  __pmark('L5266');
   let processed = code;
   const hooksShimImport = toRelativeSandpackImport(filePath, '/hooks-shim');
   const radixShimImport = toRelativeSandpackImport(filePath, '/radix-shim');
 
-  __pmark('L5270');
   processed = repairMalformedDefaultExportClosures(processed);
 
   // Strip leaked markdown code-fence artifacts (```, </code></pre>)
-  __pmark('L5273');
   processed = processed.replace(/\s*```\s*$/g, '');
   processed = processed.replace(/\s*<\/code>\s*<\/pre>\s*$/g, '');
   processed = processed.replace(/^```(?:html|jsx|tsx|javascript|js|typescript|ts)?\s*\n/g, '');
@@ -5291,7 +5277,6 @@ export function processCode(code: string, filePath: string): string {
   // FIX: Repair broken template-literal image URLs generated by AI
   // e.g. src={`https://images.unsplash.com/photo-15${7003211169-...}`} → plain string URLs
   // These contain invalid JS expressions inside ${} that crash Babel
-  __pmark('L5280');
   processed = processed.replace(
     /\{`(https?:\/\/[^`]*?\$\{[^}]*\}[^`]*?)`\}/g,
     (_match, inner: string) => {
@@ -5317,7 +5302,6 @@ export function processCode(code: string, filePath: string): string {
 
   // FIX: Convert dangerouslySetInnerHTML={{ __html: `...CSS...` }} to use a string constant
   // Babel crashes when template literals contain CSS syntax like :root { --var: value }
-  __pmark('L5305');
   processed = processed.replace(
     /dangerouslySetInnerHTML=\{\{\s*__html:\s*`([\s\S]*?)`\s*\}\}/g,
     (_match, cssContent: string) => {
@@ -5331,7 +5315,6 @@ export function processCode(code: string, filePath: string): string {
   );
 
   // Handle @/ path alias imports — convert to correct relative paths for flattened Sandpack files
-  __pmark('L5318');
   processed = processed.replace(
     /^(import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
     (match, importPrefix, modulePath, importSuffix) => {
@@ -5378,7 +5361,6 @@ export function processCode(code: string, filePath: string): string {
     }
   );
 
-  __pmark('L5364');
   processed = processed.replace(
     /^(\s*import\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
     (_match, importPrefix, modulePath, importSuffix) => (
@@ -5391,12 +5373,10 @@ export function processCode(code: string, filePath: string): string {
   // Generated Unison Radix facades re-export the external primitive. Sandpack
   // cannot collect its CommonJS transform helpers reliably, so preserve the
   // facade API while resolving it against the local preview shim.
-  __pmark('L5376');
   processed = processed.replace(
     /export\s+\*\s+from\s+['"]@radix-ui\/react-[^'"]+['"];?/g,
     `export * from '${radixShimImport}';`,
   );
-  __pmark('L5380');
   processed = processed.replace(
     /^import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"]([^'"]+)['"];?\s*$/gm,
     (match, modulePath) => {
@@ -5457,11 +5437,9 @@ export function processCode(code: string, filePath: string): string {
   );
 
   // Remove unsupported hook calls
-  __pmark('L5440');
   const unsupportedHooks = [
     'useAssetRegistry', 'useTemplateState', 'useGoHighLevelCRM', 'useSupabaseClient',
   ];
-  __pmark('L5443');
   for (const hook of unsupportedHooks) {
     processed = processed.replace(
       new RegExp(`const\\s+\\{[^}]*\\}\\s*=\\s*${hook}\\([^)]*\\);?`, 'g'),
@@ -5479,7 +5457,6 @@ export function processCode(code: string, filePath: string): string {
 
   processed = processed.replace(/\n{3,}/g, '\n\n');
   return processed;
-  __pmark('L5460');
 }
 
 /**

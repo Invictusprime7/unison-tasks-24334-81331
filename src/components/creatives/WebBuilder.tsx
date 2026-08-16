@@ -552,6 +552,16 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       || (effectiveRouteState?.runtimeManifest?.appContext as { templateId?: string } | undefined)?.templateId
       || null
   );
+  // Launcher context, persisted handoff, and navigation state can settle on
+  // adjacent renders. Keep canonical identity synchronized after mount rather
+  // than pinning commits to whichever source won the first render.
+  useEffect(() => {
+    if (effectiveRouteState?.draftId) {
+      setCurrentDraftId((current) => current === effectiveRouteState.draftId
+        ? current
+        : effectiveRouteState.draftId || null);
+    }
+  }, [effectiveRouteState?.draftId]);
   // Live-edit protection is scoped to one project identity; drop it on switch.
   useEffect(() => {
     clearLiveEditedVfsPaths();
@@ -2509,6 +2519,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     effectiveRouteState?.revisionId || ''
   );
   currentRevisionIdRef.current = currentRevisionId;
+  useEffect(() => {
+    const routeRevisionId = effectiveRouteState?.revisionId;
+    if (!routeRevisionId) return;
+    setCurrentRevisionId((current) => current === routeRevisionId ? current : routeRevisionId);
+  }, [effectiveRouteState?.revisionId]);
 
   useEffect(() => {
     const revId = currentRevisionId || effectiveRouteState?.revisionId;
@@ -2554,13 +2569,22 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           return;
         }
         console.log('[WebBuilder] hydrated from site_revisions:', revision.id, Object.keys(files).length, 'files');
-        importBuilderFiles(files, { entryPoint: launchEntryPoint });
+        const currentFiles = virtualFSRef.current.getSandpackFiles();
+        if (computeVfsSignature(currentFiles) !== computeVfsSignature(files)) {
+          importBuilderFiles(files, { entryPoint: launchEntryPoint });
+        }
         setHydratedRevision(revision);
         setCurrentRevisionId(revision.id);
         settled = true;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (hasCanonicalDraft && !cancelled) setCanonicalHydrationError(message);
+        const hasCommittedRouteArtifact = Boolean(
+          effectiveRouteState?.revisionId
+          && Object.keys(effectiveRouteState?.vfsFiles || {}).length > 0,
+        );
+        if (hasCanonicalDraft && !cancelled && !hasCommittedRouteArtifact) {
+          setCanonicalHydrationError(message);
+        }
         console.warn('[WebBuilder] revision hydration failed:', err);
         settled = true;
       }
@@ -2575,7 +2599,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         hydratedRevisionRef.current = null;
       }
     };
-  }, [currentDraftId, currentRevisionId, effectiveRouteState?.revisionId, hydrationNonce, importBuilderFiles, launchEntryPoint, projectId, resolvedProjectId]);
+  }, [currentDraftId, currentRevisionId, effectiveRouteState?.revisionId, effectiveRouteState?.vfsFiles, hydrationNonce, importBuilderFiles, launchEntryPoint, projectId, resolvedProjectId]);
 
   // ── Automatic owning-business repair ──────────────────────────────────────
   // When canonical hydration fails because the draft lost its business link (or

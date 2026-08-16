@@ -198,6 +198,19 @@ const SandpackErrorListener: React.FC<{
   const lastReportedRef = useRef<string>('');
 
   useEffect(() => {
+    if (sandpack.status === 'running' || sandpack.status === 'timeout' || sandpack.error) return;
+    const watchdog = window.setTimeout(() => {
+      const message = 'Preview runner did not connect in time. Retrying automatically.';
+      if (lastReportedRef.current !== message) {
+        lastReportedRef.current = message;
+        onError?.(message);
+        onTimeout?.();
+      }
+    }, 30_000);
+    return () => window.clearTimeout(watchdog);
+  }, [sandpack.status, sandpack.error, onError, onTimeout]);
+
+  useEffect(() => {
     const status = sandpack.status;
     const error = sandpack.error;
 
@@ -442,6 +455,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const [compileDrainVersion, setCompileDrainVersion] = useState(0);
   const unmountedRef = useRef(false);
   const compileAttemptRef = useRef(0);
+  const activeCompileControllerRef = useRef<AbortController | null>(null);
+  const activeCompileTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
     // React StrictMode intentionally runs mount → cleanup → mount in
     // development. Reset this flag on every setup; otherwise the first cleanup
@@ -451,6 +466,13 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     unmountedRef.current = false;
     return () => {
       unmountedRef.current = true;
+      compileAttemptRef.current += 1;
+      activeCompileControllerRef.current?.abort(new Error('Preview component unmounted.'));
+      activeCompileControllerRef.current = null;
+      if (activeCompileTimeoutRef.current !== null) {
+        window.clearTimeout(activeCompileTimeoutRef.current);
+        activeCompileTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -489,9 +511,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     window.setTimeout(async () => {
       const compileController = new AbortController();
+      activeCompileControllerRef.current = compileController;
       const compileTimeout = window.setTimeout(() => {
         compileController.abort(new Error('Preview artifact compilation timed out after 120 seconds.'));
       }, PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS);
+      activeCompileTimeoutRef.current = compileTimeout;
       try {
         const isWizardPreview = resolveSnapshot(request.files, request.launchState).isWizardDraft;
 
@@ -548,6 +572,10 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         });
       } finally {
         window.clearTimeout(compileTimeout);
+        if (activeCompileControllerRef.current === compileController) {
+          activeCompileControllerRef.current = null;
+          activeCompileTimeoutRef.current = null;
+        }
         if (inFlightKeyRef.current === compileKey) {
           inFlightKeyRef.current = null;
         }

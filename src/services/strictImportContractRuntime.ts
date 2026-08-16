@@ -108,6 +108,7 @@ function createRequestId(): string {
 // main-thread fallback) actually computed a given result.
 const PREPARED_FILES_CACHE_LIMIT = 20;
 const preparedFilesCache = new Map<string, Record<string, string>>();
+const preparedFilesInFlight = new Map<string, Promise<Record<string, string>>>();
 
 function hashFilesRecord(files: Record<string, string>): string {
   let h = 0x811c9dc5;
@@ -128,6 +129,25 @@ function cacheKeyFor(files: Record<string, string>, entryPoint: string | undefin
 function storeInCache(key: string, files: Record<string, string>): void {
   if (preparedFilesCache.size >= PREPARED_FILES_CACHE_LIMIT) preparedFilesCache.clear();
   preparedFilesCache.set(key, files);
+}
+
+function awaitWithSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(toAbortError(signal));
+  return new Promise<T>((resolve, reject) => {
+    const handleAbort = () => reject(toAbortError(signal));
+    signal.addEventListener('abort', handleAbort, { once: true });
+    void promise.then(
+      (value) => {
+        signal.removeEventListener('abort', handleAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener('abort', handleAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 function runInWorker(
@@ -244,27 +264,35 @@ export async function runPrepareSandpackFilesOffThread({
   const cacheKey = cacheKeyFor(files, entryPoint, themePresetId);
   const cached = preparedFilesCache.get(cacheKey);
   if (cached) return { ...cached };
+  let computation = preparedFilesInFlight.get(cacheKey);
+  if (!computation) {
+    computation = (async () => {
+      try {
+        const worker = workerFactory();
+        const result = await runInWorker(worker, {
+          requestId: createRequestId(),
+          files,
+          entryPoint,
+          themePresetId,
+        });
+        storeInCache(cacheKey, result);
+        return result;
+      } catch (error) {
+        if (!(error instanceof StrictImportContractWorkerBootstrapError)) throw error;
+        console.warn('[strictImportContractRuntime] worker unavailable; using compatibility fallback', {
+          error: error.message,
+        });
+      }
 
-  try {
-    const worker = workerFactory();
-    const result = await runInWorker(worker, {
-      requestId: createRequestId(),
-      files,
-      entryPoint,
-      themePresetId,
-    }, signal);
-    storeInCache(cacheKey, result);
-    return { ...result };
-  } catch (error) {
-    if (!(error instanceof StrictImportContractWorkerBootstrapError)) throw error;
-    console.warn('[strictImportContractRuntime] worker unavailable; using compatibility fallback', {
-      error: error.message,
+      const result = fallbackCompute(files, entryPoint, themePresetId);
+      storeInCache(cacheKey, result);
+      return result;
+    })().finally(() => {
+      preparedFilesInFlight.delete(cacheKey);
     });
+    preparedFilesInFlight.set(cacheKey, computation);
   }
-
-  if (signal?.aborted) throw toAbortError(signal);
-  const result = fallbackCompute(files, entryPoint, themePresetId);
-  storeInCache(cacheKey, result);
-  return result;
+  const result = await awaitWithSignal(computation, signal);
+  return { ...result };
 }
 

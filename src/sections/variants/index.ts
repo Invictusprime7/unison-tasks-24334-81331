@@ -1,4 +1,10 @@
 export { getVariantsForSection, getVariantById, getVariantIdForLayout, getLayoutForVariantId, getDefaultVariant, hasVariants, getSectionTypesWithVariants, resolveVariantComponent, VARIANT_REGISTRY } from './registry';
 export type { SectionVariant, VariantId, VariantRegistry, ActiveVariantMap, ExtractedSectionContent } from './types';
 export { extractSectionContentFromJSX, findSectionBounds } from './contentExtractor';
-export { heroCenteredJSX, heroSplitImageJSX, heroFullBleedJSX, ctaCenteredJSX, ctaGradientBannerJSX, ctaSplitCardJSX, navbarStandardJSX, navbarCenteredLogoJSX, navbarMinimalDarkJSX, featuresGridJSX, featuresIconLeftJSX, featuresMinimalCenteredJSX, servicesCardGridJSX, servicesAlternatingJSX, servicesCompactListJSX, contactCenteredJSX, contactSplitCardJSX, contactMinimalInlineJSX, footerColumnsJSX, footerCenteredMinimalJSX, footerDarkBandJSX } from './jsxTemplates';
+export { heroCenteredJSX, heroSplitImageJSX, heroFullBleedJSX, ctaCenteredJSX, ctaGradientBannerJSX, ctaSplitCardJSX, navbarStandardJSX, navbarCenteredLogoJSX, navbarMinimalDarkJSX, featuresGridJSX, featuresIconLeftJSX, featuresMinimalCenteredJSX, servicesCardGridJSX, servicesAlternatingJSX, servicesCompactListJSX, contactCenteredJSX, contactSplitCardJSX, contactMinimalInlineJSX, footerColumnsJSX, footerCenteredMinimalJSX, footerDarkBandJSX, galleryEditorialMosaicJSX, galleryMasonryJSX, galleryCinematicGridJSX, galleryLightboxGridJSX, galleryFeatureSplitJSX } from './jsxTemplates';
+export { GalleryEditorialMosaic } from './gallery/GalleryEditorialMosaic';
+export { GalleryMasonry } from './gallery/GalleryMasonry';
+export { GalleryCinematicGrid } from './gallery/GalleryCinematicGrid';
+export { GalleryLightboxGrid } from './gallery/GalleryLightboxGrid';
+export { GalleryFeatureSplit } from './gallery/GalleryFeatureSplit';
+export { GalleryLightbox } from './gallery/GalleryLightbox';

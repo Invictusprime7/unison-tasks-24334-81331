@@ -40,7 +40,10 @@ import { clampVariantToPack, resolveArtDirectionPack } from '@/sections/variants
  */
 export type DesignInterventionSlice =
   Pick<WizardDesignIntervention, 'sectionVariants'>
-  & Partial<Pick<WizardDesignIntervention, 'activeVariants' | 'motionRecipes' | 'industry' | 'themePresetId'>>;
+  & Partial<Pick<
+    WizardDesignIntervention,
+    'activeVariants' | 'motionRecipes' | 'industry' | 'themePresetId' | 'layoutRecipe' | 'interactionRecipes'
+  >>;
 import {
   CATALOG_HYDRATION_MODULE,
   CATALOG_HYDRATION_PATH,
@@ -1212,6 +1215,83 @@ function applyRecipe(
   return undefined;
 }
 
+/**
+ * Recovery Phase 3 (R3) — the rest of the wizard vocabulary is executable too.
+ *
+ * `layoutRecipe` (page-level structural bias) and `interactionRecipes`
+ * (what the visitor can actually do) used to be computed by the wizard, written
+ * into the brief, and then dropped on the floor by the compiler. They now
+ * resolve to registered variant ids exactly like `sectionVariants` does, so a
+ * "floating navbar / image lightbox" brief compiles to a floating navbar and a
+ * lightbox gallery instead of registry defaults.
+ */
+const LAYOUT_RECIPE_VARIANTS: Partial<Record<
+  NonNullable<WizardDesignIntervention['layoutRecipe']>,
+  Partial<Record<string, VariantId>>
+>> = {
+  'floating-navbar': { navbar: 'navbar:minimal-dark' },
+  'collage-hero': { hero: 'hero:full-bleed', gallery: 'gallery:editorial-mosaic' },
+  'bento-features': { features: 'features:grid', services: 'services:card-grid' },
+  'media-card-grid': { gallery: 'gallery:masonry', features: 'features:grid', services: 'services:card-grid' },
+  'conversion-form': { contact: 'contact:split-card', cta: 'cta:split-card' },
+  'rich-footer': { footer: 'footer:columns' },
+};
+
+const INTERACTION_RECIPE_VARIANTS: Partial<Record<
+  WizardDesignIntervention['interactionRecipes'][number],
+  Partial<Record<string, VariantId>>
+>> = {
+  'image-lightbox': { gallery: 'gallery:lightbox-grid' },
+  accordion: { pricing: 'pricing:accordion' },
+};
+
+/** Interaction tokens for families that have no first-class variants yet. */
+const INTERACTION_RECIPE_LAYOUTS: Partial<Record<
+  WizardDesignIntervention['interactionRecipes'][number],
+  Partial<Record<string, string>>
+>> = {
+  accordion: { faq: 'accordion' },
+  tabs: { faq: 'tabs' },
+};
+
+function resolveVariantForSectionType(
+  sectionType: string,
+  candidate: VariantId | undefined,
+): VariantId | undefined {
+  if (!candidate) return undefined;
+  if (candidate.split(':')[0] !== sectionType) return undefined;
+  return getVariantById(candidate) ? candidate : undefined;
+}
+
+/**
+ * Interactions win over the page-level layout bias: a brief that asks for a
+ * lightbox must produce a lightbox even when the layout recipe prefers a mosaic.
+ */
+function applyVocabularyRecipes(
+  section: TemplateComposition['sections'][number],
+  designIntervention?: DesignInterventionSlice,
+): { variantId?: VariantId; layout?: string } | undefined {
+  for (const interaction of designIntervention?.interactionRecipes || []) {
+    const variantId = resolveVariantForSectionType(
+      section.type,
+      INTERACTION_RECIPE_VARIANTS[interaction]?.[section.type],
+    );
+    if (variantId) return { variantId, layout: getLayoutForVariantId(variantId) };
+    const layout = INTERACTION_RECIPE_LAYOUTS[interaction]?.[section.type];
+    if (layout) return { layout };
+  }
+
+  const layoutRecipe = designIntervention?.layoutRecipe;
+  const variantId = layoutRecipe
+    ? resolveVariantForSectionType(section.type, LAYOUT_RECIPE_VARIANTS[layoutRecipe]?.[section.type])
+    : undefined;
+  if (variantId) return { variantId, layout: getLayoutForVariantId(variantId) };
+
+  return undefined;
+}
+
+
+
 function applyDesignVariants(
   template: TemplateComposition,
   designIntervention?: DesignInterventionSlice,
@@ -1233,7 +1313,10 @@ function applyDesignVariants(
       })
     : undefined;
 
-  if (!variants?.length && !Object.keys(activeVariants || {}).length && !pack) return template;
+  const hasVocabulary = Boolean(
+    designIntervention?.layoutRecipe || designIntervention?.interactionRecipes?.length,
+  );
+  if (!variants?.length && !Object.keys(activeVariants || {}).length && !pack && !hasVocabulary) return template;
 
   return {
     ...template,
@@ -1250,7 +1333,8 @@ function applyDesignVariants(
           props: layout ? { ...section.props, layout } as typeof section.props : section.props,
         };
       }
-      const resolved = applyRecipe(section, variants || []);
+      const resolved = applyRecipe(section, variants || [])
+        ?? applyVocabularyRecipes(section, designIntervention);
 
       const packVariantId = pack
         ? clampVariantToPack(pack, section.type, resolved?.variantId ?? section.variantId)

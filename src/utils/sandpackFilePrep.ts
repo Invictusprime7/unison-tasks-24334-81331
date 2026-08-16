@@ -4934,6 +4934,7 @@ function collectTopLevelBindingNames(code: string): Set<string> {
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
  */
 export function processCode(code: string, filePath: string): string {
+  let __pt = Date.now(); const __pmark = (l:string)=>{ const n=Date.now(); if(n-__pt>200) console.log('[P]', l, n-__pt); __pt=n; };
   if (!/\.(tsx?|jsx?|mjs)$/.test(filePath)) {
     return code;
   }
@@ -5147,6 +5148,7 @@ export function processCode(code: string, filePath: string): string {
       code = code.replace(nsLine, nsLine + '\n' + fbDecl);
     }
   }
+  __pmark('L5150');
 
   // ── Auto-inject missing lucide icon references ────────────────────────
   // AI sometimes uses lucide icon names (e.g. `icon: Database`) without
@@ -5197,6 +5199,7 @@ export function processCode(code: string, filePath: string): string {
       missingIcons.push(name);
     }
   }
+  __pmark('L5200');
 
   if (missingIcons.length > 0) {
     // Inject lucide proxy declarations for missing icons
@@ -5229,6 +5232,7 @@ export function processCode(code: string, filePath: string): string {
     }
   }
 
+  __pmark('L5232');
   // ── Safe framer-motion imports ─────────────────────────────────────────
   // The AI frequently imports { motion, AnimatePresence } from 'framer-motion'.
   // If framer-motion fails to load or specific exports are missing, provide safe fallbacks.
@@ -5297,6 +5301,7 @@ export function processCode(code: string, filePath: string): string {
         return `"${firstUrl ? firstUrl[1] : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80'}"`;
       }
       return _match;
+  __pmark('L5300');
     }
   );
 
@@ -5397,6 +5402,7 @@ export function processCode(code: string, filePath: string): string {
           if (importMatch) {
             const namedImports = importMatch[1];
             const defaultImport = importMatch[2];
+  __pmark('L5400');
             if (namedImports) return `import { ${namedImports} } from '${uiShimImport}';`;
             if (defaultImport) {
               const exportName = resolveUiShimDefaultImportName(modulePath, defaultImport);
@@ -5447,6 +5453,7 @@ export function processCode(code: string, filePath: string): string {
     );
     processed = processed.replace(
       new RegExp(`const\\s+\\w+\\s*=\\s*${hook}\\([^)]*\\);?`, 'g'),
+  __pmark('L5450');
       `// [Preview] Stripped ${hook} call`
     );
     processed = processed.replace(
@@ -5514,6 +5521,7 @@ export function normalizeLauncherFiles(
     injectCssIfMissing?: boolean;
   }
 ): Record<string, string> {
+  __pmark('L5517');
   // ── Unwrap JSON envelope leaked into file content ──────────────────────
   // The AI sometimes wraps output in {"files":{...}} — if ANY file's content
   // is such a wrapper, extract the inner files and replace the input map.
@@ -5557,6 +5565,7 @@ export function normalizeLauncherFiles(
             }
           } catch {
             // Not JSON either
+  __pmark('L5560');
           }
         }
       }
@@ -5597,6 +5606,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 );`;
   }
+  __pmark('L5600');
 
   const normalizationResolution = resolveSnapshot(out, null);
 
@@ -5637,6 +5647,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   }
 
   if (
+  __pmark('L5640');
     /@import\s+(?:url\(\s*)?['"](?:\.\/)?unison\/ui\/tailwind\.css['"]/.test(out['/src/index.css'] || '') &&
     !out['/src/unison/ui/tailwind.css']
   ) {

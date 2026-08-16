@@ -723,7 +723,7 @@ describe('Move D — publish-ready ledger', () => {
     expect(ready?.publishReady).toBe(true);
   });
 
-  it('persists a rejected revision when generated runtime reconciliation fails', async () => {
+  it('preserves the committed revision but blocks publish when generated runtime reconciliation fails', async () => {
     const files = { '/src/App.tsx': 'x', '/src/pages/Home.tsx': '<Hero/>' };
     mockPipeline(files);
     mockPreflight(files);
@@ -733,27 +733,21 @@ describe('Move D — publish-ready ledger', () => {
       error: { message: 'runtime control plane unavailable' },
     });
 
-    let result: CommitRejectedError['result'] | null = null;
-    try {
-      await commitMutation({
-        source: 'ai-builder',
-        identity: IDENTITY,
-        current: { vfsFiles: files, playground: { pages: [] } as never },
-        patch: legacyFilesToPatchPlan(files, 'runtime reconciliation failure'),
-      });
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitRejectedError);
-      result = (error as CommitRejectedError).result;
-    }
+    const result = await commitMutation({
+      source: 'ai-builder',
+      identity: IDENTITY,
+      current: { vfsFiles: files, playground: { pages: [] } as never },
+      patch: legacyFilesToPatchPlan(files, 'runtime reconciliation failure'),
+    });
 
-    expect(result?.status).toBe('rejected');
-    expect(result?.publishReady).toBe(false);
-    expect(result?.publishBlockers).toContainEqual(expect.objectContaining({
+    expect(result.status).toBe('committed');
+    expect(result.publishReady).toBe(false);
+    expect(result.publishBlockers).toContainEqual(expect.objectContaining({
       code: 'generated-runtime-reconciliation-failed',
       message: 'runtime control plane unavailable',
     }));
     expect(revisionStore).toHaveLength(1);
-    expect(revisionStore[0].status).toBe('rejected');
-    expect(draftProjectionUpdates).toEqual([]);
+    expect(revisionStore[0].status).toBe('committed');
+    expect(draftProjectionUpdates).toHaveLength(1);
   });
 });

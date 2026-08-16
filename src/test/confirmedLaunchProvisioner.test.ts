@@ -114,6 +114,7 @@ describe('provisionConfirmedLaunchSite', () => {
       },
       error: null,
     });
+    mockOwnership();
 
     await expect(provisionConfirmedLaunchSite(shellInput)).resolves.toEqual(ids);
   });

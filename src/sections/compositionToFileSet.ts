@@ -612,7 +612,7 @@ export default function FAQ({ props }: { props: any }) {
 }
 `;
 
-const GALLERY_MODULE = `import React, { useMemo, useState } from 'react';
+const GALLERY_MODULE = `import React, { useEffect, useMemo, useState } from 'react';
 
 const shellClass = 'mx-auto w-full max-w-7xl px-5 sm:px-8';
 
@@ -633,24 +633,48 @@ export default function Gallery({ props }: { props: any }) {
   const media = useMemo(() => (items || []).map(normalize).filter(Boolean) as any[], [items]);
   const categories = useMemo(() => Array.from(new Set(media.map((m) => m.category).filter(Boolean))), [media]);
   const [active, setActive] = useState<string>('all');
+  const [lightbox, setLightbox] = useState<number | null>(null);
   const visible = active === 'all' ? media : media.filter((m) => m.category === active);
   const colClass = columns === 2 ? 'sm:grid-cols-2' : columns === 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-3';
+
+  useEffect(() => {
+    if (lightbox === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLightbox(null);
+      if (event.key === 'ArrowRight') setLightbox((lightbox + 1) % visible.length);
+      if (event.key === 'ArrowLeft') setLightbox((lightbox - 1 + visible.length) % visible.length);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightbox, visible.length]);
 
   const intro = <>{headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}</>;
   const filters = (filterable !== false && categories.length > 1) ? (
     <div className="mb-10 flex flex-wrap justify-center gap-2">
       {['all', ...categories].map((category) => (
-        <button key={category} type="button" onClick={() => setActive(category)} className={(active === category ? 'border-primary bg-primary text-primary-foreground ' : 'border-border bg-transparent text-muted-foreground ') + 'cursor-pointer rounded-full border px-4 py-1.5 font-body text-xs font-semibold capitalize transition-colors'}>{category}</button>
+        <button key={category} type="button" aria-pressed={active === category} onClick={() => setActive(category)} className={(active === category ? 'border-primary bg-primary text-primary-foreground ' : 'border-border bg-transparent text-muted-foreground ') + 'cursor-pointer rounded-full border px-4 py-1.5 font-body text-xs font-semibold capitalize transition-colors'}>{category}</button>
       ))}
     </div>
   ) : null;
 
   const figure = (item: any, index: number, extra: string) => (
     <figure key={index} className={'group relative m-0 overflow-hidden rounded-[var(--radius)] border border-border bg-muted ' + extra}>
-      <img src={item.src} alt={item.alt} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
-      {item.caption && <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-foreground/80 to-transparent p-4 font-body text-sm text-background opacity-0 transition-opacity group-hover:opacity-100">{item.caption}</figcaption>}
+      <button type="button" onClick={() => setLightbox(index)} aria-label={item.alt || item.caption || 'Open image'} className="block h-full w-full cursor-zoom-in border-0 bg-transparent p-0">
+        <img src={item.src} alt={item.alt} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 motion-reduce:transition-none group-hover:scale-105" />
+      </button>
+      {item.caption && <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-foreground/80 to-transparent p-4 font-body text-sm text-background opacity-0 transition-opacity motion-reduce:transition-none group-hover:opacity-100">{item.caption}{item.category && <span className="ml-2 text-xs uppercase tracking-widest opacity-80">{item.category}</span>}</figcaption>}
     </figure>
   );
+
+  const overlay = (lightbox !== null && visible[lightbox]) ? (
+    <div role="dialog" aria-modal="true" aria-label={visible[lightbox].alt || 'Gallery image'} onClick={() => setLightbox(null)} className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/90 p-6">
+      <button type="button" aria-label="Close gallery" onClick={() => setLightbox(null)} className="absolute right-5 top-5 h-10 w-10 rounded-full bg-background/20 text-lg text-background">×</button>
+      <figure className="m-0 max-h-full max-w-5xl" onClick={(event) => event.stopPropagation()}>
+        <img src={visible[lightbox].src} alt={visible[lightbox].alt} className="max-h-[78vh] w-auto rounded-[var(--radius)] object-contain" />
+        {visible[lightbox].caption && <figcaption className="mt-3 text-center font-body text-sm text-background">{visible[lightbox].caption}</figcaption>}
+      </figure>
+    </div>
+  ) : null;
 
   if (layout === 'mosaic' || layout === 'editorial-mosaic') {
     return (
@@ -658,9 +682,57 @@ export default function Gallery({ props }: { props: any }) {
         <div className={shellClass}>
           {intro}{filters}
           <div className="grid auto-rows-[220px] grid-cols-2 gap-4 lg:grid-cols-4">
-            {visible.map((item, index) => figure(item, index, index % 5 === 0 ? 'col-span-2 row-span-2' : ''))}
+            {visible.map((item, index) => figure(item, index, index % 5 === 0 ? 'col-span-2 row-span-2' : index % 7 === 3 ? 'col-span-2' : ''))}
           </div>
         </div>
+        {overlay}
+      </section>
+    );
+  }
+
+  if (layout === 'masonry') {
+    return (
+      <section data-ut-variant="gallery:masonry" className="bg-background py-24">
+        <div className={shellClass}>
+          {intro}{filters}
+          <div style={{ columnCount: Math.min(columns, 4), columnGap: '1rem' }}>
+            {visible.map((item, index) => (
+              <div key={index} className="mb-4 break-inside-avoid">{figure(item, index, index % 3 === 0 ? 'aspect-[3/4]' : index % 3 === 1 ? 'aspect-square' : 'aspect-[4/5]')}</div>
+            ))}
+          </div>
+        </div>
+        {overlay}
+      </section>
+    );
+  }
+
+  if (layout === 'lightbox' || layout === 'lightbox-grid') {
+    return (
+      <section data-ut-variant="gallery:lightbox-grid" className="bg-background py-24">
+        <div className={shellClass}>
+          {intro}{filters}
+          <div className={'grid gap-3 ' + colClass}>
+            {visible.map((item, index) => figure(item, index, 'aspect-square'))}
+          </div>
+        </div>
+        {overlay}
+      </section>
+    );
+  }
+
+  if (layout === 'feature-split') {
+    return (
+      <section data-ut-variant="gallery:feature-split" className="bg-background py-24">
+        <div className={shellClass}>
+          {intro}{filters}
+          <div className="grid gap-4 lg:grid-cols-2">
+            {visible[0] && figure(visible[0], 0, 'aspect-[4/5]')}
+            <div className="grid grid-cols-2 gap-4 self-start">
+              {visible.slice(1).map((item, index) => figure(item, index + 1, 'aspect-square'))}
+            </div>
+          </div>
+        </div>
+        {overlay}
       </section>
     );
   }
@@ -674,6 +746,7 @@ export default function Gallery({ props }: { props: any }) {
             <div key={index} className="w-[min(420px,80vw)] shrink-0 snap-start">{figure(item, index, 'aspect-[4/5]')}</div>
           ))}
         </div>
+        {overlay}
       </section>
     );
   }
@@ -682,10 +755,11 @@ export default function Gallery({ props }: { props: any }) {
     <section data-ut-variant="gallery:cinematic-grid" className="bg-background py-24">
       <div className={shellClass}>
         {intro}{filters}
-        <div className={'grid gap-4 ' + colClass}>
-          {visible.map((item, index) => figure(item, index, 'aspect-[4/3]'))}
+        <div className={'grid gap-5 ' + colClass}>
+          {visible.map((item, index) => figure(item, index, 'aspect-video'))}
         </div>
       </div>
+      {overlay}
     </section>
   );
 }

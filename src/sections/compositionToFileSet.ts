@@ -606,18 +606,272 @@ export default function FAQ({ props }: { props: any }) {
 }
 `;
 
+const GALLERY_MODULE = `import React, { useMemo, useState } from 'react';
+
+const shellClass = 'mx-auto w-full max-w-7xl px-5 sm:px-8';
+
+function normalize(item: any) {
+  if (!item) return null;
+  const src = item.src || item.image || item.url || item.photo;
+  if (!src) return null;
+  return {
+    src,
+    alt: item.alt || item.title || item.caption || '',
+    caption: item.caption || item.title || '',
+    category: item.category || item.tag || '',
+  };
+}
+
+export default function Gallery({ props }: { props: any }) {
+  const { headline, subheadline, items = [], columns = 3, filterable, layout = 'grid' } = props;
+  const media = useMemo(() => (items || []).map(normalize).filter(Boolean) as any[], [items]);
+  const categories = useMemo(() => Array.from(new Set(media.map((m) => m.category).filter(Boolean))), [media]);
+  const [active, setActive] = useState<string>('all');
+  const visible = active === 'all' ? media : media.filter((m) => m.category === active);
+  const colClass = columns === 2 ? 'sm:grid-cols-2' : columns === 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-3';
+
+  const intro = <>{headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}</>;
+  const filters = (filterable !== false && categories.length > 1) ? (
+    <div className="mb-10 flex flex-wrap justify-center gap-2">
+      {['all', ...categories].map((category) => (
+        <button key={category} type="button" onClick={() => setActive(category)} className={(active === category ? 'border-primary bg-primary text-primary-foreground ' : 'border-border bg-transparent text-muted-foreground ') + 'cursor-pointer rounded-full border px-4 py-1.5 font-body text-xs font-semibold capitalize transition-colors'}>{category}</button>
+      ))}
+    </div>
+  ) : null;
+
+  const figure = (item: any, index: number, extra: string) => (
+    <figure key={index} className={'group relative m-0 overflow-hidden rounded-[var(--radius)] border border-border bg-muted ' + extra}>
+      <img src={item.src} alt={item.alt} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+      {item.caption && <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-foreground/80 to-transparent p-4 font-body text-sm text-background opacity-0 transition-opacity group-hover:opacity-100">{item.caption}</figcaption>}
+    </figure>
+  );
+
+  if (layout === 'mosaic' || layout === 'editorial-mosaic') {
+    return (
+      <section data-ut-variant="gallery:editorial-mosaic" className="bg-background py-24">
+        <div className={shellClass}>
+          {intro}{filters}
+          <div className="grid auto-rows-[220px] grid-cols-2 gap-4 lg:grid-cols-4">
+            {visible.map((item, index) => figure(item, index, index % 5 === 0 ? 'col-span-2 row-span-2' : ''))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (layout === 'reel' || layout === 'horizontal-reel') {
+    return (
+      <section data-ut-variant="gallery:horizontal-reel" className="bg-background py-24">
+        <div className={shellClass}>{intro}{filters}</div>
+        <div className="flex snap-x gap-4 overflow-x-auto px-5 pb-4 sm:px-8">
+          {visible.map((item, index) => (
+            <div key={index} className="w-[min(420px,80vw)] shrink-0 snap-start">{figure(item, index, 'aspect-[4/5]')}</div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section data-ut-variant="gallery:cinematic-grid" className="bg-background py-24">
+      <div className={shellClass}>
+        {intro}{filters}
+        <div className={'grid gap-4 ' + colClass}>
+          {visible.map((item, index) => figure(item, index, 'aspect-[4/3]'))}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
+const PRICING_MODULE = `import React from 'react';
+
+const shellClass = 'mx-auto w-full max-w-7xl px-5 sm:px-8';
+const primaryButtonClass = 'mt-6 inline-flex w-full items-center justify-center rounded-[var(--radius)] bg-primary px-5 py-3 font-body text-sm font-semibold text-primary-foreground no-underline transition-opacity hover:opacity-90';
+const outlineButtonClass = 'mt-6 inline-flex w-full items-center justify-center rounded-[var(--radius)] border border-border px-5 py-3 font-body text-sm font-semibold text-foreground no-underline transition-colors hover:bg-muted';
+
+function normalizeTier(tier: any) {
+  if (!tier) return null;
+  return {
+    name: tier.name || tier.title || '',
+    price: tier.price || '',
+    period: tier.period || tier.duration || '',
+    description: tier.description || '',
+    features: Array.isArray(tier.features) ? tier.features : [],
+    highlighted: Boolean(tier.highlighted || tier.featured),
+    badge: tier.badge || '',
+    cta: tier.cta,
+  };
+}
+
+export default function Pricing({ props }: { props: any }) {
+  const { headline, subheadline, tiers, items } = props;
+  const list = ((Array.isArray(tiers) && tiers.length ? tiers : items) || []).map(normalizeTier).filter(Boolean) as any[];
+  const columnClass = list.length >= 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : list.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3';
+
+  return (
+    <section data-ut-variant="pricing:tiers" className="bg-muted py-24">
+      <div className={shellClass}>
+        {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
+        <div className={'grid items-start gap-6 ' + columnClass}>
+          {list.map((tier, index) => (
+            <article key={index} className={(tier.highlighted ? 'border-primary shadow-lg lg:-translate-y-2 ' : 'border-border ') + 'relative flex h-full flex-col rounded-[var(--radius)] border bg-card p-8 text-card-foreground'}>
+              {(tier.badge || tier.highlighted) && <span className="absolute -top-3 left-8 rounded-full bg-primary px-3 py-1 font-body text-xs font-semibold text-primary-foreground">{tier.badge || 'Most popular'}</span>}
+              <h3 className="mb-2 font-heading text-lg font-semibold">{tier.name}</h3>
+              <div className="mb-3 flex items-baseline gap-1">
+                <span className="font-heading text-4xl font-semibold text-primary">{tier.price}</span>
+                {tier.period && <span className="font-body text-sm text-muted-foreground">/{tier.period}</span>}
+              </div>
+              {tier.description && <p className="mb-4 font-body text-sm leading-relaxed text-muted-foreground">{tier.description}</p>}
+              {tier.features.length > 0 && (
+                <ul className="flex list-none flex-col gap-3 p-0 font-body text-sm text-muted-foreground">
+                  {tier.features.map((feature: any, featureIndex: number) => (
+                    <li key={featureIndex} className="flex gap-2"><span aria-hidden="true" className="text-primary">✓</span><span>{typeof feature === 'string' ? feature : feature?.label}</span></li>
+                  ))}
+                </ul>
+              )}
+              {tier.cta && <a href={tier.cta.href || '#'} data-ut-intent={tier.cta.intent} className={tier.highlighted ? primaryButtonClass : outlineButtonClass}>{tier.cta.label}</a>}
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
+const ABOUT_MODULE = `import React from 'react';
+
+const shellClass = 'mx-auto w-full max-w-7xl px-5 sm:px-8';
+const buttonClass = 'mt-6 inline-flex items-center justify-center rounded-[var(--radius)] bg-primary px-6 py-3 font-body font-semibold text-primary-foreground no-underline transition-opacity hover:opacity-90';
+
+export default function About({ props }: { props: any }) {
+  const { headline, description, image, cta, layout = 'text-left', stats } = props;
+  const copy = (
+    <div>
+      {headline && <h2 className="mb-5 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>}
+      {description && <p className="whitespace-pre-line font-body text-lg leading-relaxed text-muted-foreground">{description}</p>}
+      {Array.isArray(stats) && stats.length > 0 && (
+        <div className="mt-8 flex flex-wrap gap-10">{stats.map((stat: any, index: number) => <div key={index}><div className="font-heading text-3xl font-semibold text-primary">{stat.value}</div><div className="font-body text-xs uppercase text-muted-foreground">{stat.label}</div></div>)}</div>
+      )}
+      {cta && <a href={cta.href || '#'} data-ut-intent={cta.intent} className={buttonClass}>{cta.label}</a>}
+    </div>
+  );
+
+  if (layout === 'centered' || !image) {
+    return (
+      <section data-ut-variant="about:centered" className="bg-background py-24">
+        <div className={shellClass + ' max-w-3xl text-center'}>{copy}</div>
+      </section>
+    );
+  }
+
+  return (
+    <section data-ut-variant={layout === 'text-right' ? 'about:media-left' : 'about:media-right'} className="bg-background py-24">
+      <div className={shellClass + ' grid items-center gap-10 md:grid-cols-2 lg:gap-16'}>
+        <div className={layout === 'text-right' ? 'md:order-2' : ''}>{copy}</div>
+        <div className={(layout === 'text-right' ? 'md:order-1 ' : '') + 'ut-media-frame overflow-hidden rounded-[var(--radius)] border border-border'}>
+          <img src={image} alt={headline || ''} loading="lazy" className="block h-full min-h-[320px] w-full object-cover" />
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
+const LOGO_CLOUD_MODULE = `import React from 'react';
+
+export default function LogoCloud({ props }: { props: any }) {
+  const { headline, logos = [], items = [] } = props;
+  const list = (Array.isArray(logos) && logos.length ? logos : items) || [];
+  return (
+    <section data-ut-variant="logo-cloud:row" className="border-y border-border/50 bg-muted py-16">
+      <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+        {headline && <p className="mb-10 text-center font-body text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{headline}</p>}
+        <div className="flex flex-wrap items-center justify-center gap-x-14 gap-y-8">
+          {list.map((logo: any, index: number) => (logo?.src
+            ? <img key={index} src={logo.src} alt={logo.name || ''} loading="lazy" className="h-8 w-auto opacity-60 transition-opacity hover:opacity-100" />
+            : <span key={index} className="font-heading text-lg font-semibold text-muted-foreground">{logo?.name || logo}</span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
+const BLOG_PREVIEW_MODULE = `import React from 'react';
+
+export default function BlogPreview({ props }: { props: any }) {
+  const { headline, subheadline, posts = [], items = [] } = props;
+  const list = (Array.isArray(posts) && posts.length ? posts : items) || [];
+  return (
+    <section data-ut-variant="blog-preview:grid" className="bg-background py-24">
+      <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+        {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((post: any, index: number) => (
+            <article key={index} className="flex flex-col overflow-hidden rounded-[var(--radius)] border border-border bg-card text-card-foreground">
+              {post.image && <img src={post.image} alt={post.title || ''} loading="lazy" className="aspect-[16/10] w-full object-cover" />}
+              <div className="flex flex-1 flex-col p-6">
+                {(post.date || post.author) && <p className="mb-2 font-body text-xs uppercase tracking-wide text-muted-foreground">{[post.date, post.author].filter(Boolean).join(' · ')}</p>}
+                <h3 className="mb-2 font-heading text-lg font-semibold">{post.title}</h3>
+                {post.excerpt && <p className="mb-4 font-body text-sm leading-relaxed text-muted-foreground">{post.excerpt}</p>}
+                <a href={post.href || '#'} className="mt-auto font-body text-sm font-semibold text-primary no-underline">Read more →</a>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
+const BEFORE_AFTER_MODULE = `import React from 'react';
+
+export default function BeforeAfter({ props }: { props: any }) {
+  const { headline, subheadline, items = [] } = props;
+  return (
+    <section data-ut-variant="before-after:pairs" className="bg-muted py-24">
+      <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+        {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
+        <div className="grid gap-8 sm:grid-cols-2">
+          {items.map((item: any, index: number) => (
+            <figure key={index} className="m-0 overflow-hidden rounded-[var(--radius)] border border-border bg-card">
+              <div className="grid grid-cols-2">
+                <div className="relative"><img src={item.before} alt={(item.label || 'Result') + ' before'} loading="lazy" className="aspect-square w-full object-cover" /><span className="absolute left-3 top-3 rounded-full bg-foreground/70 px-2.5 py-1 font-body text-[11px] font-semibold uppercase text-background">Before</span></div>
+                <div className="relative"><img src={item.after} alt={(item.label || 'Result') + ' after'} loading="lazy" className="aspect-square w-full object-cover" /><span className="absolute left-3 top-3 rounded-full bg-primary px-2.5 py-1 font-body text-[11px] font-semibold uppercase text-primary-foreground">After</span></div>
+              </div>
+              {item.label && <figcaption className="p-4 font-body text-sm text-muted-foreground">{item.label}</figcaption>}
+            </figure>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
 const SECTION_COMPONENT_BY_TYPE: Record<string, keyof typeof SECTION_FILES> = {
-  navbar: 'Navbar', hero: 'Hero', about: 'Hero',
-  services: 'Services', features: 'Services', pricing: 'Services', gallery: 'Services',
-  'blog-preview': 'Services', 'before-after': 'Services', testimonials: 'Testimonials',
+  navbar: 'Navbar', hero: 'Hero', about: 'About',
+  services: 'Services', features: 'Services', pricing: 'Pricing', gallery: 'Gallery',
+  'blog-preview': 'BlogPreview', 'before-after': 'BeforeAfter', testimonials: 'Testimonials',
   cta: 'CTA', contact: 'Contact', footer: 'Footer', stats: 'Stats',
-  'logo-cloud': 'Stats', team: 'Team', faq: 'FAQ',
+  'logo-cloud': 'LogoCloud', team: 'Team', faq: 'FAQ',
 };
 
 const SECTION_MODULE_SOURCE: Record<keyof typeof SECTION_FILES, string> = {
   Navbar: NAVBAR_MODULE,
   Hero: HERO_MODULE,
+  About: ABOUT_MODULE,
   Services: SERVICES_MODULE,
+  Gallery: GALLERY_MODULE,
+  Pricing: PRICING_MODULE,
+  LogoCloud: LOGO_CLOUD_MODULE,
+  BlogPreview: BLOG_PREVIEW_MODULE,
+  BeforeAfter: BEFORE_AFTER_MODULE,
   Testimonials: TESTIMONIALS_MODULE,
   CTA: CTA_MODULE,
   Contact: CONTACT_MODULE,
@@ -626,6 +880,7 @@ const SECTION_MODULE_SOURCE: Record<keyof typeof SECTION_FILES, string> = {
   Team: TEAM_MODULE,
   FAQ: FAQ_MODULE,
 };
+
 
 interface VariantSectionModule {
   path: string;

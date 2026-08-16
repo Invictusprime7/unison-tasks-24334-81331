@@ -267,6 +267,41 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
     ]);
   });
 
+  it('persists a reviewed wizard artifact without regenerating it', async () => {
+    const reviewedFiles = {
+      '/src/App.tsx': 'export default function Reviewed(){return <main>Reviewed</main>}',
+      '/src/pages/Home.tsx': 'export default function Home(){return <h1>Exact AI output</h1>}',
+    };
+    const snapshot = {
+      vfsFiles: reviewedFiles,
+      routerFile: { path: '/src/App.tsx', content: reviewedFiles['/src/App.tsx'] },
+      meta: {},
+    } as never;
+    mockPreflight(reviewedFiles);
+    mockIntents(0, 0);
+
+    const launch = await commitMutation({
+      source: 'wizard-launch',
+      identity: IDENTITY,
+      current: { vfsFiles: {} },
+      patch: legacyFilesToPatchPlan(reviewedFiles, 'reviewed launch'),
+      options: {
+        selections: { industry: 'salon' } as never,
+        reviewedArtifact: {
+          siteBundleSnapshot: snapshot,
+          runtimeManifest: { entryPoint: '/src/App.tsx' } as never,
+        },
+      },
+    });
+
+    expect(commitToPipeline).not.toHaveBeenCalled();
+    expect(launch.vfsFiles['/src/pages/Home.tsx']).toContain('Exact AI output');
+    expect(launch.diagnostics).toContainEqual(expect.objectContaining({
+      stage: 'canonical',
+      message: expect.stringContaining('regeneration skipped'),
+    }));
+  });
+
   it('hard-fails when the atomic canonical revision transaction fails', async () => {
     const files = { '/src/App.tsx': 'export default function App(){return null}' };
     mockPipeline(files);

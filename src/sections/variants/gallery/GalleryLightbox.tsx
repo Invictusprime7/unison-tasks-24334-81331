@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect } from 'react';
-import type { SectionTheme } from '../../types';
+import type { ThemeTokens } from '../../types';
 import { hsl, hsla } from '../../themeUtils';
 
 export interface LightboxItem {
@@ -20,7 +20,7 @@ export interface LightboxItem {
 interface GalleryLightboxProps {
   items: LightboxItem[];
   index: number | null;
-  theme: SectionTheme;
+  theme: ThemeTokens;
   onClose: () => void;
   onNavigate: (nextIndex: number) => void;
 }

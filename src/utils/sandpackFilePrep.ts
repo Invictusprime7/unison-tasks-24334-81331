@@ -6069,6 +6069,7 @@ export function prepareSandpackFiles(
       processedContent = forceClassicReactJsxRuntime(processedContent);
     }
 
+  __mark('e-react-pass');
     processedContent = processedContent
       .replace(/from\s+['"]\.\/src\//g, "from './")
       .replace(/from\s+['"]src\//g, "from './")
@@ -6091,9 +6092,13 @@ export function prepareSandpackFiles(
       );
     }
 
+  __mark('a-alias');
     processedContent = processCode(processedContent, normalizedPath);
+  __mark('b-processCode');
     processedContent = repairBrokenImageUrls(processedContent);
+  __mark('c-imageurls');
     processedContent = injectPreviewNavBridge(processedContent, normalizedPath);
+  __mark('d-navbridge');
     sandpackFiles[normalizedPath] = processedContent;
 
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && normalizedPath !== '/hooks-shim.ts' && !/(^|\/)unison\//i.test(normalizedPath)) {

@@ -18,6 +18,8 @@ import {
   servicesCardGridJSX, servicesAlternatingJSX, servicesCompactListJSX,
   contactCenteredJSX, contactSplitCardJSX, contactMinimalInlineJSX,
   footerColumnsJSX, footerCenteredMinimalJSX, footerDarkBandJSX,
+  galleryEditorialMosaicJSX, galleryMasonryJSX, galleryCinematicGridJSX,
+  galleryLightboxGridJSX, galleryFeatureSplitJSX,
 } from './jsxTemplates';
 
 // Hero variants
@@ -50,6 +52,13 @@ import { ContactCentered } from './contact/ContactCentered';
 import { ContactSplitCard } from './contact/ContactSplitCard';
 import { ContactMinimalInline } from './contact/ContactMinimalInline';
 
+// Gallery variants (premium proof family)
+import { GalleryEditorialMosaic } from './gallery/GalleryEditorialMosaic';
+import { GalleryMasonry } from './gallery/GalleryMasonry';
+import { GalleryCinematicGrid } from './gallery/GalleryCinematicGrid';
+import { GalleryLightboxGrid } from './gallery/GalleryLightboxGrid';
+import { GalleryFeatureSplit } from './gallery/GalleryFeatureSplit';
+
 // Footer variants
 import { FooterColumns } from './footer/FooterColumns';
 import { FooterCenteredMinimal } from './footer/FooterCenteredMinimal';
@@ -60,6 +69,64 @@ import { FooterDarkBand } from './footer/FooterDarkBand';
 // ============================================================================
 
 const VARIANT_REGISTRY: VariantRegistry = {
+  gallery: [
+    {
+      id: 'gallery:editorial-mosaic',
+      sectionType: 'gallery',
+      slug: 'editorial-mosaic',
+      name: 'Editorial Mosaic',
+      description: 'Asymmetric mosaic with dominant hero tiles and controlled gutters',
+      component: GalleryEditorialMosaic,
+      thumbnail: '/variants/gallery-editorial-mosaic.svg',
+      tags: ['editorial', 'asymmetric', 'premium'],
+      isDefault: true,
+      renderJSX: galleryEditorialMosaicJSX,
+    },
+    {
+      id: 'gallery:masonry',
+      sectionType: 'gallery',
+      slug: 'masonry',
+      name: 'Masonry',
+      description: 'Column-flow masonry with natural image proportions',
+      component: GalleryMasonry,
+      thumbnail: '/variants/gallery-masonry.svg',
+      tags: ['masonry', 'organic'],
+      renderJSX: galleryMasonryJSX,
+    },
+    {
+      id: 'gallery:cinematic-grid',
+      sectionType: 'gallery',
+      slug: 'cinematic-grid',
+      name: 'Cinematic Grid',
+      description: 'Wide 16:9 frames on a calm, even grid',
+      component: GalleryCinematicGrid,
+      thumbnail: '/variants/gallery-cinematic-grid.svg',
+      tags: ['cinematic', 'wide'],
+      renderJSX: galleryCinematicGridJSX,
+    },
+    {
+      id: 'gallery:lightbox-grid',
+      sectionType: 'gallery',
+      slug: 'lightbox-grid',
+      name: 'Lightbox Grid',
+      description: 'Square inspection grid with prominent zoom affordance',
+      component: GalleryLightboxGrid,
+      thumbnail: '/variants/gallery-lightbox-grid.svg',
+      tags: ['lightbox', 'inspection'],
+      renderJSX: galleryLightboxGridJSX,
+    },
+    {
+      id: 'gallery:feature-split',
+      sectionType: 'gallery',
+      slug: 'feature-split',
+      name: 'Feature Split',
+      description: 'One dominant feature image beside a stacked supporting grid',
+      component: GalleryFeatureSplit,
+      thumbnail: '/variants/gallery-feature-split.svg',
+      tags: ['split', 'feature'],
+      renderJSX: galleryFeatureSplitJSX,
+    },
+  ],
   hero: [
     {
       id: 'hero:centered',
@@ -355,6 +422,11 @@ const VARIANT_LAYOUT_ALIASES: Partial<Record<VariantId, readonly string[]>> = {
   'footer:columns': ['columns'],
   'footer:centered-minimal': ['centered-minimal'],
   'footer:dark-band': ['dark-band'],
+  'gallery:editorial-mosaic': ['mosaic', 'editorial-mosaic'],
+  'gallery:masonry': ['masonry'],
+  'gallery:cinematic-grid': ['grid', 'cinematic-grid'],
+  'gallery:lightbox-grid': ['lightbox', 'lightbox-grid'],
+  'gallery:feature-split': ['feature-split', 'split'],
 };
 
 export const getVariantIdForLayout = (

@@ -53,7 +53,13 @@ const SECTION_MAP_PATH = '/src/components/SectionMap.ts';
 const SECTION_FILES: Record<string, string> = {
   Navbar: '/src/components/Navbar.tsx',
   Hero: '/src/components/Hero.tsx',
+  About: '/src/components/About.tsx',
   Services: '/src/components/Services.tsx',
+  Gallery: '/src/components/Gallery.tsx',
+  Pricing: '/src/components/Pricing.tsx',
+  LogoCloud: '/src/components/LogoCloud.tsx',
+  BlogPreview: '/src/components/BlogPreview.tsx',
+  BeforeAfter: '/src/components/BeforeAfter.tsx',
   Testimonials: '/src/components/Testimonials.tsx',
   CTA: '/src/components/CTA.tsx',
   Contact: '/src/components/Contact.tsx',

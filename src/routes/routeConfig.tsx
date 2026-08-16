@@ -18,11 +18,6 @@ const Files = lazy(() => import("@/pages/Files"));
 const Creatives = lazy(() => import("@/pages/Creatives"));
 const TaskPlanning = lazy(() => import("@/pages/TaskPlanning"));
 const DesignStudioPage = lazy(() => import("@/pages/DesignStudioPage"));
-const AIPageGenerator = lazy(() =>
-  import("@/components/creatives/AIPageGenerator").then((module) => ({
-    default: module.AIPageGenerator,
-  })),
-);
 const BusinessSettings = lazy(() => import("@/pages/BusinessSettings"));
 const BusinessCatalog = lazy(() => import("@/pages/BusinessCatalog"));
 const BusinessContent = lazy(() => import("@/pages/BusinessContent"));

@@ -412,6 +412,8 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('vfsFiles: canonicalVfsFiles');
     expect(launcherSource).toContain('siteBundleSnapshot: canonicalSiteBundleSnapshot');
     expect(launcherSource).toContain('runtimeManifest: canonicalRuntimeManifest');
+    expect(launcherSource).toContain('reviewedArtifact: {');
+    expect(launcherSource).toContain('runtimeManifest: launchArtifacts.runtimeManifest');
     expect(launcherSource).not.toContain('commitMutation rejected (non-fatal at launch)');
     expect(launcherSource).not.toContain('revision history could not be recorded');
   });

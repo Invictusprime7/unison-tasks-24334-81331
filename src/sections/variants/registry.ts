@@ -571,3 +571,301 @@ export const resolveVariantComponent = (
 };
 
 export { VARIANT_REGISTRY };
+
+// ============================================================================
+// Art Direction Packs (collapsed from src/sections/artDirection/packs.ts)
+//
+// A pack is the cohesion contract above theme tokens: per section type it
+// declares the ordered family of variants it is allowed to use. It lives here
+// because variant families and the variant registry are the same concern.
+// The former typography/geometry/media "grammar" fields were removed — no
+// compiler read them.
+// ============================================================================
+
+export type ArtDirectionPackId =
+  | 'editorial-noir'
+  | 'cinematic-portfolio'
+  | 'luxury-minimal'
+  | 'soft-editorial'
+  | 'bold-commercial'
+  | 'glass-tech'
+  | 'organic-studio'
+  | 'commerce-editorial';
+
+export type MotionProfileId =
+  | 'editorial-reveal'
+  | 'gallery-inspection'
+  | 'product-focus'
+  | 'proof-led-stagger'
+  | 'service-progressive-disclosure'
+  | 'conversion-feedback';
+
+export type InteractionProfileId =
+  | 'image-lightbox'
+  | 'accordion'
+  | 'tabs'
+  | 'mobile-nav-dialog';
+
+export interface ArtDirectionPack {
+  id: ArtDirectionPackId;
+  name: string;
+  description: string;
+  navbarFamily: VariantId[];
+  footerFamily: VariantId[];
+  /** Compatible variants per section type, most-preferred first. */
+  sectionFamilies: Partial<Record<SectionType, VariantId[]>>;
+  motionProfile: MotionProfileId;
+  interactionProfile: InteractionProfileId;
+}
+
+export const ART_DIRECTION_PACKS: Record<ArtDirectionPackId, ArtDirectionPack> = {
+  'editorial-noir': {
+    id: 'editorial-noir',
+    name: 'Editorial Noir',
+    description: 'High-contrast editorial grid, dramatic display type, mosaic media.',
+    navbarFamily: ['navbar:minimal-dark', 'navbar:centered-logo'],
+    footerFamily: ['footer:dark-band', 'footer:columns'],
+    sectionFamilies: {
+      hero: ['hero:full-bleed', 'hero:centered'],
+      gallery: ['gallery:editorial-mosaic', 'gallery:cinematic-grid', 'gallery:masonry'],
+      services: ['services:alternating', 'services:card-grid'],
+      features: ['features:minimal-centered', 'features:grid'],
+      testimonials: ['testimonials:spotlight', 'testimonials:grid'],
+      pricing: ['pricing:tiers', 'pricing:comparison'],
+      cta: ['cta:split-card', 'cta:centered'],
+      contact: ['contact:split-card', 'contact:centered'],
+    },
+    motionProfile: 'editorial-reveal',
+    interactionProfile: 'image-lightbox',
+  },
+  'cinematic-portfolio': {
+    id: 'cinematic-portfolio',
+    name: 'Cinematic Portfolio',
+    description: 'Full-bleed imagery, inspection-led motion, portrait-weighted media.',
+    navbarFamily: ['navbar:minimal-dark', 'navbar:standard'],
+    footerFamily: ['footer:dark-band', 'footer:centered-minimal'],
+    sectionFamilies: {
+      hero: ['hero:full-bleed', 'hero:split-image'],
+      gallery: ['gallery:cinematic-grid', 'gallery:lightbox-grid', 'gallery:editorial-mosaic'],
+      services: ['services:alternating', 'services:compact-list'],
+      features: ['features:minimal-centered', 'features:icon-left'],
+      testimonials: ['testimonials:spotlight', 'testimonials:rail'],
+      pricing: ['pricing:tiers', 'pricing:accordion'],
+      cta: ['cta:centered', 'cta:split-card'],
+      contact: ['contact:split-card', 'contact:minimal-inline'],
+    },
+    motionProfile: 'gallery-inspection',
+    interactionProfile: 'image-lightbox',
+  },
+  'luxury-minimal': {
+    id: 'luxury-minimal',
+    name: 'Luxury Minimal',
+    description: 'Quiet layout, generous whitespace, restrained motion and framed media.',
+    navbarFamily: ['navbar:centered-logo', 'navbar:minimal-dark'],
+    footerFamily: ['footer:centered-minimal', 'footer:columns'],
+    sectionFamilies: {
+      hero: ['hero:centered', 'hero:split-image'],
+      gallery: ['gallery:feature-split', 'gallery:editorial-mosaic'],
+      services: ['services:compact-list', 'services:alternating'],
+      features: ['features:minimal-centered', 'features:grid'],
+      testimonials: ['testimonials:spotlight', 'testimonials:grid'],
+      pricing: ['pricing:tiers', 'pricing:comparison'],
+      cta: ['cta:centered', 'cta:split-card'],
+      contact: ['contact:minimal-inline', 'contact:centered'],
+    },
+    motionProfile: 'editorial-reveal',
+    interactionProfile: 'accordion',
+  },
+  'soft-editorial': {
+    id: 'soft-editorial',
+    name: 'Soft Editorial',
+    description: 'Warm rounded surfaces, human proof, medium media density.',
+    navbarFamily: ['navbar:standard', 'navbar:centered-logo'],
+    footerFamily: ['footer:columns', 'footer:centered-minimal'],
+    sectionFamilies: {
+      hero: ['hero:split-image', 'hero:centered'],
+      gallery: ['gallery:masonry', 'gallery:lightbox-grid'],
+      services: ['services:card-grid', 'services:alternating'],
+      features: ['features:grid', 'features:icon-left'],
+      testimonials: ['testimonials:grid', 'testimonials:rail'],
+      pricing: ['pricing:tiers', 'pricing:accordion'],
+      cta: ['cta:split-card', 'cta:centered'],
+      contact: ['contact:centered', 'contact:split-card'],
+    },
+    motionProfile: 'proof-led-stagger',
+    interactionProfile: 'accordion',
+  },
+  'bold-commercial': {
+    id: 'bold-commercial',
+    name: 'Bold Commercial',
+    description: 'Loud hierarchy, conversion-forward blocks, compact density.',
+    navbarFamily: ['navbar:standard', 'navbar:minimal-dark'],
+    footerFamily: ['footer:dark-band', 'footer:columns'],
+    sectionFamilies: {
+      hero: ['hero:split-image', 'hero:full-bleed'],
+      gallery: ['gallery:lightbox-grid', 'gallery:masonry'],
+      services: ['services:card-grid', 'services:compact-list'],
+      features: ['features:icon-left', 'features:grid'],
+      testimonials: ['testimonials:rail', 'testimonials:grid'],
+      pricing: ['pricing:comparison', 'pricing:tiers'],
+      cta: ['cta:gradient-banner', 'cta:split-card'],
+      contact: ['contact:split-card', 'contact:centered'],
+    },
+    motionProfile: 'conversion-feedback',
+    interactionProfile: 'tabs',
+  },
+  'glass-tech': {
+    id: 'glass-tech',
+    name: 'Glass Tech',
+    description: 'Product-led surfaces, systematic grids, precise progressive disclosure.',
+    navbarFamily: ['navbar:minimal-dark', 'navbar:standard'],
+    footerFamily: ['footer:columns', 'footer:dark-band'],
+    sectionFamilies: {
+      hero: ['hero:centered', 'hero:split-image'],
+      gallery: ['gallery:cinematic-grid', 'gallery:lightbox-grid'],
+      services: ['services:card-grid', 'services:alternating'],
+      features: ['features:grid', 'features:icon-left'],
+      testimonials: ['testimonials:grid', 'testimonials:spotlight'],
+      pricing: ['pricing:comparison', 'pricing:tiers'],
+      cta: ['cta:gradient-banner', 'cta:centered'],
+      contact: ['contact:split-card', 'contact:minimal-inline'],
+    },
+    motionProfile: 'product-focus',
+    interactionProfile: 'tabs',
+  },
+  'organic-studio': {
+    id: 'organic-studio',
+    name: 'Organic Studio',
+    description: 'Natural pacing, soft geometry, service storytelling over hard sell.',
+    navbarFamily: ['navbar:centered-logo', 'navbar:standard'],
+    footerFamily: ['footer:centered-minimal', 'footer:columns'],
+    sectionFamilies: {
+      hero: ['hero:split-image', 'hero:centered'],
+      gallery: ['gallery:masonry', 'gallery:feature-split'],
+      services: ['services:alternating', 'services:card-grid'],
+      features: ['features:minimal-centered', 'features:grid'],
+      testimonials: ['testimonials:rail', 'testimonials:spotlight'],
+      pricing: ['pricing:accordion', 'pricing:tiers'],
+      cta: ['cta:centered', 'cta:split-card'],
+      contact: ['contact:centered', 'contact:split-card'],
+    },
+    motionProfile: 'service-progressive-disclosure',
+    interactionProfile: 'accordion',
+  },
+  'commerce-editorial': {
+    id: 'commerce-editorial',
+    name: 'Commerce Editorial',
+    description: 'Catalog-led grids with editorial framing and product focus motion.',
+    navbarFamily: ['navbar:standard', 'navbar:centered-logo'],
+    footerFamily: ['footer:columns', 'footer:dark-band'],
+    sectionFamilies: {
+      hero: ['hero:full-bleed', 'hero:split-image'],
+      gallery: ['gallery:masonry', 'gallery:lightbox-grid'],
+      services: ['services:card-grid', 'services:compact-list'],
+      features: ['features:grid', 'features:minimal-centered'],
+      testimonials: ['testimonials:grid', 'testimonials:rail'],
+      pricing: ['pricing:tiers', 'pricing:comparison'],
+      cta: ['cta:gradient-banner', 'cta:split-card'],
+      contact: ['contact:split-card', 'contact:centered'],
+    },
+    motionProfile: 'product-focus',
+    interactionProfile: 'image-lightbox',
+  },
+};
+
+export const ART_DIRECTION_PACK_IDS = Object.keys(ART_DIRECTION_PACKS) as ArtDirectionPackId[];
+
+/** Industry (LayoutCategory) → pack. Industry encodes what the site must do. */
+const INDUSTRY_TO_PACK: Record<string, ArtDirectionPackId> = {
+  portfolio: 'cinematic-portfolio',
+  photography: 'cinematic-portfolio',
+  content: 'editorial-noir',
+  restaurant: 'editorial-noir',
+  realestate: 'luxury-minimal',
+  salon: 'organic-studio',
+  coaching: 'organic-studio',
+  nonprofit: 'organic-studio',
+  agency: 'soft-editorial',
+  contractor: 'bold-commercial',
+  landing: 'bold-commercial',
+  saas: 'glass-tech',
+  store: 'commerce-editorial',
+  saved: 'soft-editorial',
+};
+
+/** Theme preset → pack, used when industry is unknown or unmapped. */
+const THEME_PRESET_TO_PACK: Record<string, ArtDirectionPackId> = {
+  editorial: 'editorial-noir',
+  minimalist: 'luxury-minimal',
+  organic: 'organic-studio',
+  bold: 'bold-commercial',
+  futuristic: 'glass-tech',
+  modern: 'soft-editorial',
+};
+
+export interface ArtDirectionResolutionInput {
+  industry?: string | null;
+  themePresetId?: string | null;
+}
+
+/** Deterministic: industry first, then theme preset, then the neutral pack. */
+export function resolveArtDirectionPackId(input: ArtDirectionResolutionInput): ArtDirectionPackId {
+  const industry = (input.industry || '').trim().toLowerCase();
+  if (industry && INDUSTRY_TO_PACK[industry]) return INDUSTRY_TO_PACK[industry];
+
+  const preset = (input.themePresetId || '').trim().toLowerCase();
+  if (preset && THEME_PRESET_TO_PACK[preset]) return THEME_PRESET_TO_PACK[preset];
+
+  return 'soft-editorial';
+}
+
+export function resolveArtDirectionPack(input: ArtDirectionResolutionInput): ArtDirectionPack {
+  return ART_DIRECTION_PACKS[resolveArtDirectionPackId(input)];
+}
+
+export function getArtDirectionPack(id: string | null | undefined): ArtDirectionPack | undefined {
+  if (!id) return undefined;
+  return ART_DIRECTION_PACKS[id as ArtDirectionPackId];
+}
+
+/** Variants the pack allows for a section type, filtered to registered ids. */
+export function familyForSection(pack: ArtDirectionPack, sectionType: SectionType): VariantId[] {
+  const declared =
+    sectionType === 'navbar' ? pack.navbarFamily
+    : sectionType === 'footer' ? pack.footerFamily
+    : pack.sectionFamilies[sectionType];
+  if (!declared?.length) return [];
+  return declared.filter((id) => id.split(':')[0] === sectionType && Boolean(getVariantById(id)));
+}
+
+/** The pack's first-choice variant for a section type, if it owns that family. */
+export function preferredVariantForSection(
+  pack: ArtDirectionPack,
+  sectionType: SectionType,
+): VariantId | undefined {
+  return familyForSection(pack, sectionType)[0];
+}
+
+export function isVariantInFamily(
+  pack: ArtDirectionPack,
+  sectionType: SectionType,
+  variantId: VariantId | undefined,
+): boolean {
+  if (!variantId) return false;
+  return familyForSection(pack, sectionType).includes(variantId);
+}
+
+/**
+ * Clamp a derived variant into the pack's compatible family.
+ * Returns the original id when the pack declares no family for the section.
+ */
+export function clampVariantToPack(
+  pack: ArtDirectionPack,
+  sectionType: SectionType,
+  variantId: VariantId | undefined,
+): VariantId | undefined {
+  const family = familyForSection(pack, sectionType);
+  if (!family.length) return variantId;
+  if (variantId && family.includes(variantId)) return variantId;
+  return family[0];
+}

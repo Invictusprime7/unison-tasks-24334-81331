@@ -7,8 +7,8 @@ import {
   isVariantInFamily,
   preferredVariantForSection,
   resolveArtDirectionPackId,
-} from '@/sections/artDirection/packs';
-import { getVariantById } from '@/sections/variants';
+  getVariantById,
+} from '@/sections/variants';
 import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import type { TemplateComposition } from '@/sections/types';
 

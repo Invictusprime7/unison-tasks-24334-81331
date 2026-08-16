@@ -354,7 +354,8 @@ export default function Services({ props }: { props: any }) {
 const TESTIMONIALS_MODULE = `import React from 'react';
 
 export default function Testimonials({ props }: { props: any }) {
-  const { headline, subheadline, items = [], layout = 'grid' } = props;
+  const { headline, subheadline, items = [], layout: rawLayout = 'grid' } = props;
+  const layout = rawLayout === 'rail' ? 'carousel' : rawLayout === 'spotlight' ? 'single' : rawLayout;
   const intro = <>{headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}</>;
   const quote = (item: any) => <><blockquote className="mb-6 border-l-4 border-primary/30 pl-4 font-body italic leading-relaxed text-muted-foreground">"{item.quote}"</blockquote><div><div className="font-heading text-sm font-semibold text-card-foreground">{item.author}</div>{item.role && <div className="font-body text-xs text-muted-foreground">{item.role}</div>}</div></>;
   const cardClass = 'ut-foundation-card bg-card text-card-foreground';
@@ -787,9 +788,78 @@ function normalizeTier(tier: any) {
 }
 
 export default function Pricing({ props }: { props: any }) {
-  const { headline, subheadline, tiers, items } = props;
+  const { headline, subheadline, tiers, items, layout = 'tiers' } = props;
   const list = ((Array.isArray(tiers) && tiers.length ? tiers : items) || []).map(normalizeTier).filter(Boolean) as any[];
   const columnClass = list.length >= 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : list.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3';
+  const featureLabel = (feature: any) => (typeof feature === 'string' ? feature : feature?.label || '');
+  const intro = headline ? <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div> : null;
+
+  if (layout === 'accordion') {
+    return (
+      <section data-ut-variant="pricing:accordion" className="bg-muted py-24">
+        <div className={shellClass}>
+          {intro}
+          <div className="mx-auto max-w-3xl">
+            {list.map((tier, index) => (
+              <details key={index} open={Boolean(tier.highlighted) || index === 0} className="mb-3 rounded-[var(--radius)] border border-border bg-card p-5 text-card-foreground">
+                <summary className="flex cursor-pointer items-center justify-between gap-4 font-heading text-base font-semibold">
+                  <span>{tier.name}{tier.badge && <span className="ml-3 rounded-full bg-primary px-2 py-0.5 font-body text-xs text-primary-foreground">{tier.badge}</span>}</span>
+                  <span>{tier.price}{tier.period && <span className="font-body text-xs font-normal text-muted-foreground">/{tier.period}</span>}</span>
+                </summary>
+                {tier.description && <p className="mt-3 font-body text-sm text-muted-foreground">{tier.description}</p>}
+                <ul className="mt-4 flex list-none flex-col gap-2 p-0 font-body text-sm text-muted-foreground">
+                  {tier.features.map((feature: any, fi: number) => (
+                    <li key={fi} className="flex gap-2"><span aria-hidden="true" className="text-primary">✓</span><span>{featureLabel(feature)}</span></li>
+                  ))}
+                </ul>
+                {tier.cta && <a href={tier.cta.href || '#'} data-ut-intent={tier.cta.intent} className={primaryButtonClass}>{tier.cta.label}</a>}
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (layout === 'comparison' || layout === 'matrix') {
+    const rows = Array.from(new Set(list.flatMap((tier) => tier.features.map(featureLabel)).filter(Boolean)));
+    return (
+      <section data-ut-variant="pricing:comparison" className="bg-muted py-24">
+        <div className={shellClass}>
+          {intro}
+          <div className="overflow-x-auto rounded-[var(--radius)] border border-border bg-card">
+            <table className="w-full border-collapse text-left font-body text-sm text-card-foreground">
+              <caption className="sr-only">Plan comparison</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="p-4 font-heading">Features</th>
+                  {list.map((tier, index) => (
+                    <th key={index} scope="col" className="p-4 font-heading">{tier.name}<span className="block text-base font-semibold text-primary">{tier.price}</span></th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, ri) => (
+                  <tr key={ri} className="border-t border-border">
+                    <th scope="row" className="p-4 font-normal">{row}</th>
+                    {list.map((tier, ti) => (
+                      <td key={ti} className="p-4">{tier.features.map(featureLabel).includes(row) ? <span className="text-primary">✓</span> : <span className="text-muted-foreground">—</span>}</td>
+                    ))}
+                  </tr>
+                ))}
+                <tr className="border-t border-border">
+                  <td className="p-4" />
+                  {list.map((tier, index) => (
+                    <td key={index} className="p-4 align-top">{tier.cta && <a href={tier.cta.href || '#'} data-ut-intent={tier.cta.intent} className={tier.highlighted ? primaryButtonClass : outlineButtonClass}>{tier.cta.label}</a>}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section data-ut-variant="pricing:tiers" className="bg-muted py-24">
@@ -1102,8 +1172,8 @@ const RECIPE_VARIANTS: Partial<Record<WizardDesignIntervention['sectionVariants'
   'bento-services': { sectionTypes: ['services'], variantId: 'services:card-grid' },
   'comparison-services': { sectionTypes: ['services'], variantId: 'services:alternating' },
   'gallery-lightbox': { sectionTypes: ['gallery'], variantId: 'gallery:lightbox-grid' },
-  'testimonial-rail': { sectionTypes: ['testimonials'], layout: 'carousel' },
-  'pricing-accordion': { sectionTypes: ['faq'], layout: 'accordion' },
+  'testimonial-rail': { sectionTypes: ['testimonials'], variantId: 'testimonials:rail' },
+  'pricing-accordion': { sectionTypes: ['pricing', 'faq'], variantId: 'pricing:accordion', layout: 'accordion' },
   'conversion-form': { sectionTypes: ['contact'], variantId: 'contact:split-card' },
 };
 
@@ -1124,7 +1194,8 @@ function applyRecipe(
     }
     const candidate = RECIPE_VARIANTS[recipe];
     if (!candidate?.sectionTypes.includes(section.type)) continue;
-    if (candidate.variantId && getVariantById(candidate.variantId)) {
+    const variantOwnsSection = candidate.variantId?.split(':')[0] === section.type;
+    if (candidate.variantId && variantOwnsSection && getVariantById(candidate.variantId)) {
       return { variantId: candidate.variantId, layout: getLayoutForVariantId(candidate.variantId) };
     }
     if (candidate.layout) return { variantId: undefined, layout: candidate.layout };

@@ -176,12 +176,14 @@ describe('composition VFS variants', () => {
     })['/src/pages/Home.tsx'];
     const sectionsMatch = page.match(/const SECTIONS = ([\s\S]*?);\nconst HYDRATABLE/);
     if (!sectionsMatch) throw new Error('Compiled page did not serialize sections');
-    const sections = JSON.parse(sectionsMatch[1]) as Array<{ type: string; props: { layout?: string } }>;
+    const sections = JSON.parse(sectionsMatch[1]) as Array<{ type: string; variantId?: string; props: { layout?: string } }>;
 
+    // Recipes resolve to executable variant ids (Phase 5), not vague layout words.
+    expect(sections.find((section) => section.type === 'hero')?.variantId).toBe('hero:split-image');
+    expect(sections.find((section) => section.type === 'services')?.variantId).toBe('services:alternating');
+    expect(sections.find((section) => section.type === 'contact')?.variantId).toBe('contact:split-card');
     expect(sections.find((section) => section.type === 'hero')?.props.layout).toBe('split');
-    expect(sections.find((section) => section.type === 'services')?.props.layout).toBe('list');
     expect(sections.find((section) => section.type === 'testimonials')?.props.layout).toBe('carousel');
-    expect(sections.find((section) => section.type === 'contact')?.props.layout).toBe('split-card');
   });
 
   it('persists stable section variant identity in the compiled page VFS', () => {

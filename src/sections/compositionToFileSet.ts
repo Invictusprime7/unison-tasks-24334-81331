@@ -31,6 +31,7 @@ const cardClass = 'ut-foundation-card bg-card text-card-foreground';
 import type { TemplateComposition } from './types';
 import type { WizardDesignIntervention, WizardMotionRecipe } from '@/services/wizardDesignIntervention';
 import { getLayoutForVariantId, getVariantById } from '@/sections/variants';
+import type { VariantId } from '@/sections/variants';
 import {
   CATALOG_HYDRATION_MODULE,
   CATALOG_HYDRATION_PATH,

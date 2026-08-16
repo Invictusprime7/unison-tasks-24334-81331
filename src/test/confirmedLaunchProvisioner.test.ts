@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { invoke, maybeSingle, getUser } = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -39,6 +39,12 @@ const shellInput = {
 };
 
 describe('provisionConfirmedLaunchSite', () => {
+  beforeEach(() => {
+    invoke.mockReset();
+    maybeSingle.mockReset();
+    getUser.mockReset();
+  });
+
   const mockOwnership = () => {
     getUser.mockResolvedValueOnce({ data: { user: { id: 'owner-user' } }, error: null });
     maybeSingle.mockResolvedValueOnce({ data: { id: 'membership-id' }, error: null });

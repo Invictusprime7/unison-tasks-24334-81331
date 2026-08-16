@@ -77,6 +77,7 @@ import {
 } from "@/utils/compositionReference";
 import {
   INDUSTRY_CONTEXTS,
+  buildIndustryCopyDirective,
   type IndustryTag,
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";

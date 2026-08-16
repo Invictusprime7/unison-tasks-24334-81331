@@ -40,7 +40,10 @@ import { clampVariantToPack, resolveArtDirectionPack } from '@/sections/variants
  */
 export type DesignInterventionSlice =
   Pick<WizardDesignIntervention, 'sectionVariants'>
-  & Partial<Pick<WizardDesignIntervention, 'activeVariants' | 'motionRecipes' | 'industry' | 'themePresetId'>>;
+  & Partial<Pick<
+    WizardDesignIntervention,
+    'activeVariants' | 'motionRecipes' | 'industry' | 'themePresetId' | 'layoutRecipe' | 'interactionRecipes'
+  >>;
 import {
   CATALOG_HYDRATION_MODULE,
   CATALOG_HYDRATION_PATH,

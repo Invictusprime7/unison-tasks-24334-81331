@@ -152,6 +152,7 @@ import { loadBusinessProfile } from '@/services/businessProfileService';
 import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
 import { planLaunchFormDefinitions } from '@/services/launchFormDefinitions';
+import { persistLaunchFormDefinitions } from '@/services/launchFormDefinitionPersistence';
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";

@@ -107,9 +107,27 @@ function createRequestId(): string {
 // module, so that benefit survives regardless of which side (worker or
 // main-thread fallback) actually computed a given result.
 const PREPARED_FILES_CACHE_LIMIT = 20;
-const STRICT_IMPORT_WORKER_TIMEOUT_MS = 30_000;
+const STRICT_IMPORT_WORKER_MIN_TIMEOUT_MS = 60_000;
+const STRICT_IMPORT_WORKER_MAX_TIMEOUT_MS = 180_000;
 const preparedFilesCache = new Map<string, Record<string, string>>();
 const preparedFilesInFlight = new Map<string, Promise<Record<string, string>>>();
+
+/**
+ * The import-contract pass scales with both module count and source size.
+ * A fixed 30s watchdog killed healthy generated projects (the current
+ * 126-file Wizard artifact takes about 62s on a cold worker), then cached the
+ * rejection for every Preview caller sharing that job. Give larger artifacts
+ * a proportional budget while retaining a bounded watchdog for dead workers.
+ */
+function workerTimeoutFor(files: Record<string, string>): number {
+  const paths = Object.keys(files);
+  const sourceCharacters = paths.reduce((total, path) => total + (files[path]?.length ?? 0), 0);
+  const estimatedMs = 45_000 + paths.length * 500 + sourceCharacters * 0.05;
+  return Math.min(
+    STRICT_IMPORT_WORKER_MAX_TIMEOUT_MS,
+    Math.max(STRICT_IMPORT_WORKER_MIN_TIMEOUT_MS, Math.ceil(estimatedMs)),
+  );
+}
 
 function hashFilesRecord(files: Record<string, string>): string {
   let h = 0x811c9dc5;
@@ -158,9 +176,12 @@ function runInWorker(
 ): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    const responseTimeoutMs = workerTimeoutFor(request.files);
     const responseTimeout = setTimeout(() => {
-      settle(() => reject(new Error('Strict import-contract worker did not respond within 30 seconds.')));
-    }, STRICT_IMPORT_WORKER_TIMEOUT_MS);
+      settle(() => reject(new Error(
+        `Strict import-contract worker did not respond within ${Math.round(responseTimeoutMs / 1000)} seconds.`,
+      )));
+    }, responseTimeoutMs);
     const cleanup = () => {
       clearTimeout(responseTimeout);
       worker.onmessage = null;

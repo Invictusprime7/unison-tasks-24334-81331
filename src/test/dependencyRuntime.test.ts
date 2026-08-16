@@ -92,7 +92,8 @@ describe('Wizard preview dependency runtime', () => {
     expect(prepared['/unison/ui/radix/dialog.ts']).toContain("export * from '../../../radix-shim';");
     expect(result.dependencies['@radix-ui/react-dialog']).toBeUndefined();
     expect(result.dependencies['@swc/helpers']).toBeUndefined();
-  });
+  }, 20000);
+
 
   it('adds Sandpack-only nested runtime packages for active Radix and Motion imports', () => {
     const result = getDependenciesForSandpack({

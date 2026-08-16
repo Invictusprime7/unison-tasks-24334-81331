@@ -579,6 +579,18 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         if (inFlightKeyRef.current === compileKey) {
           inFlightKeyRef.current = null;
         }
+        // StrictMode's development mount → cleanup → mount cycle can cancel
+        // this attempt after its queue item was consumed. Once the live setup
+        // has restored unmountedRef, put that exact artifact back into the
+        // drain queue. Without this hand-back there is no dependency change to
+        // schedule another attempt and the UI remains on “Preparing preview”.
+        const attemptWasInvalidated = compileAttemptRef.current !== compileAttempt;
+        if (!unmountedRef.current && attemptWasInvalidated && compiledKeyRef.current !== compileKey) {
+          const pending = pendingCompileRef.current;
+          if (!pending || pending.key === compileKey) {
+            pendingCompileRef.current = request;
+          }
+        }
         if (!unmountedRef.current && pendingCompileRef.current) {
           setCompileDrainVersion((version) => version + 1);
         }

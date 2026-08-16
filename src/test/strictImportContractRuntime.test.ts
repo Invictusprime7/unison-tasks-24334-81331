@@ -129,6 +129,39 @@ describe('strict import-contract runtime', () => {
     controller.abort(new Error('stage timed out'));
 
     await expect(pending).rejects.toThrow('stage timed out');
-    expect(terminate).toHaveBeenCalledOnce();
+    // Caller cancellation no longer owns/terminates the shared keyed worker;
+    // another preview caller may still be awaiting the same computation.
+    expect(terminate).not.toHaveBeenCalled();
+  });
+
+  it('lets one caller cancel without rejecting another caller sharing the same computation', async () => {
+    const controller = new AbortController();
+    const preparedFiles = { '/App.tsx': 'prepared' };
+    let requestId = '';
+    const worker = {
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      onerror: null as ((event: ErrorEvent) => void) | null,
+      postMessage: vi.fn((request: { requestId: string }) => { requestId = request.requestId; }),
+      terminate: vi.fn(),
+    };
+    const files = { '/App.tsx': 'shared-abort-test' };
+
+    const cancelled = runPrepareSandpackFilesOffThread({
+      files,
+      signal: controller.signal,
+      workerFactory: () => worker,
+    });
+    const surviving = runPrepareSandpackFilesOffThread({
+      files,
+      workerFactory: () => worker,
+    });
+    controller.abort(new Error('launcher unmounted'));
+    worker.onmessage?.({
+      data: { requestId, ok: true, files: preparedFiles },
+    } as MessageEvent);
+
+    await expect(cancelled).rejects.toThrow('launcher unmounted');
+    await expect(surviving).resolves.toEqual(preparedFiles);
+    expect(worker.terminate).toHaveBeenCalledOnce();
   });
 });

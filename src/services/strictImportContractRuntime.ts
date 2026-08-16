@@ -107,6 +107,7 @@ function createRequestId(): string {
 // module, so that benefit survives regardless of which side (worker or
 // main-thread fallback) actually computed a given result.
 const PREPARED_FILES_CACHE_LIMIT = 20;
+const STRICT_IMPORT_WORKER_TIMEOUT_MS = 30_000;
 const preparedFilesCache = new Map<string, Record<string, string>>();
 const preparedFilesInFlight = new Map<string, Promise<Record<string, string>>>();
 
@@ -157,7 +158,11 @@ function runInWorker(
 ): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    const responseTimeout = setTimeout(() => {
+      settle(() => reject(new Error('Strict import-contract worker did not respond within 30 seconds.')));
+    }, STRICT_IMPORT_WORKER_TIMEOUT_MS);
     const cleanup = () => {
+      clearTimeout(responseTimeout);
       worker.onmessage = null;
       worker.onerror = null;
       signal?.removeEventListener('abort', handleAbort);
@@ -169,7 +174,10 @@ function runInWorker(
       cleanup();
       callback();
     };
-    const handleAbort = () => settle(() => reject(toAbortError(signal!)));
+    const handleAbort = () => {
+      if (!signal) return;
+      settle(() => reject(toAbortError(signal)));
+    };
 
     worker.onmessage = (event) => {
       const response = event.data;
@@ -269,12 +277,16 @@ export async function runPrepareSandpackFilesOffThread({
     computation = (async () => {
       try {
         const worker = workerFactory();
+        // The computation is shared by cache key, so it must not be owned by
+        // the first caller's AbortSignal. Each caller independently races the
+        // shared promise through awaitWithSignal below; a launcher unmount can
+        // no longer cancel the Builder preview that is reusing the same job.
         const result = await runInWorker(worker, {
           requestId: createRequestId(),
           files,
           entryPoint,
           themePresetId,
-        }, signal);
+        });
         storeInCache(cacheKey, result);
         return result;
       } catch (error) {

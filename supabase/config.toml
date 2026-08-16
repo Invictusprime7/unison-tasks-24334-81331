@@ -13,8 +13,6 @@ verify_jwt = true
 [functions.generate-template-image]
 verify_jwt = true
 
-[functions.generate-page]
-verify_jwt = true
 
 [functions.copy-rewrite]
 verify_jwt = true

@@ -18,11 +18,6 @@ const Files = lazy(() => import("@/pages/Files"));
 const Creatives = lazy(() => import("@/pages/Creatives"));
 const TaskPlanning = lazy(() => import("@/pages/TaskPlanning"));
 const DesignStudioPage = lazy(() => import("@/pages/DesignStudioPage"));
-const AIPageGenerator = lazy(() =>
-  import("@/components/creatives/AIPageGenerator").then((module) => ({
-    default: module.AIPageGenerator,
-  })),
-);
 const BusinessSettings = lazy(() => import("@/pages/BusinessSettings"));
 const BusinessCatalog = lazy(() => import("@/pages/BusinessCatalog"));
 const BusinessContent = lazy(() => import("@/pages/BusinessContent"));
@@ -257,14 +252,18 @@ export const appRoutes: AppRouteConfig[] = [
     },
   },
   {
+    // R6: the standalone AI page generator was a parallel visual pipeline
+    // (own PageRenderer, own noir/warm/minimal theme presets, no
+    // SiteBundleSnapshot). It is deleted; the path now redirects to the
+    // canonical builder so existing links keep working.
     path: "/ai-generator",
-    element: withAsyncBoundary(<AIPageGenerator />),
+    element: <Navigate to="/web-builder" replace />,
     meta: {
       id: "ai-generator",
       title: "AI generator",
       section: "builder",
       shell: "builder",
-      chrome: "legacy",
+      chrome: "none",
       requiresAuth: true,
       requiresWorkspace: true,
       deprecatedAliasFor: "/web-builder",

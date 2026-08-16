@@ -9,7 +9,9 @@ describe('Wizard industry chain of custody', () => {
       'utf8',
     );
 
-    expect(source).toContain('const industryTemplateGuidance = buildTemplateGuidance(effectiveTemplate)');
+    // R4: the industry argument makes the copy directive mandatory even when
+    // no template card resolved.
+    expect(source).toContain('const industryTemplateGuidance = buildTemplateGuidance(effectiveTemplate, resolvedIndustry)');
     expect(source).toContain('industry_context: industryTemplateGuidance');
     expect(source).toContain('industryTemplateGuidance,');
     expect(source).toContain('guidance: industryTemplateGuidance');

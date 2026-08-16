@@ -79,7 +79,7 @@ interface PreviewCompileState {
 const MAX_SANDPACK_TIMEOUT_RECOVERIES = 3;
 // Large generated multi-page sites can legitimately take longer than 45s on a
 // cold worker. Keep this aligned with Sandpack's own startup budget.
-const PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS = 120_000;
+const PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS = 180_000;
 
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
@@ -513,7 +513,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       const compileController = new AbortController();
       activeCompileControllerRef.current = compileController;
       const compileTimeout = window.setTimeout(() => {
-        compileController.abort(new Error('Preview artifact compilation timed out after 120 seconds.'));
+        compileController.abort(new Error('Preview artifact compilation timed out after 180 seconds.'));
       }, PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS);
       activeCompileTimeoutRef.current = compileTimeout;
       try {

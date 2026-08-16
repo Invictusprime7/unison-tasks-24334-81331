@@ -1772,7 +1772,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // playground, and AIBuilder continuity all read from the snapshot).
       const earlyResolvedPreset = selectedStyle;
       const earlyThemeTokens = themePresetToThemeTokens(earlyResolvedPreset);
-      const industryTemplateGuidance = buildTemplateGuidance(effectiveTemplate);
+      const industryTemplateGuidance = buildTemplateGuidance(effectiveTemplate, resolvedIndustry);
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};

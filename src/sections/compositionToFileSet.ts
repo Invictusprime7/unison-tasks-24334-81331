@@ -1102,8 +1102,8 @@ const RECIPE_VARIANTS: Partial<Record<WizardDesignIntervention['sectionVariants'
   'bento-services': { sectionTypes: ['services'], variantId: 'services:card-grid' },
   'comparison-services': { sectionTypes: ['services'], variantId: 'services:alternating' },
   'gallery-lightbox': { sectionTypes: ['gallery'], variantId: 'gallery:lightbox-grid' },
-  'testimonial-rail': { sectionTypes: ['testimonials'], layout: 'carousel' },
-  'pricing-accordion': { sectionTypes: ['faq'], layout: 'accordion' },
+  'testimonial-rail': { sectionTypes: ['testimonials'], variantId: 'testimonials:rail' },
+  'pricing-accordion': { sectionTypes: ['pricing', 'faq'], variantId: 'pricing:accordion', layout: 'accordion' },
   'conversion-form': { sectionTypes: ['contact'], variantId: 'contact:split-card' },
 };
 
@@ -1124,7 +1124,8 @@ function applyRecipe(
     }
     const candidate = RECIPE_VARIANTS[recipe];
     if (!candidate?.sectionTypes.includes(section.type)) continue;
-    if (candidate.variantId && getVariantById(candidate.variantId)) {
+    const variantOwnsSection = candidate.variantId?.split(':')[0] === section.type;
+    if (candidate.variantId && variantOwnsSection && getVariantById(candidate.variantId)) {
       return { variantId: candidate.variantId, layout: getLayoutForVariantId(candidate.variantId) };
     }
     if (candidate.layout) return { variantId: undefined, layout: candidate.layout };

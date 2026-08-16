@@ -262,7 +262,7 @@ export const appRoutes: AppRouteConfig[] = [
       id: "ai-generator",
       title: "AI generator",
       section: "builder",
-      shell: "none",
+      shell: "builder",
       chrome: "none",
       requiresAuth: true,
       requiresWorkspace: true,

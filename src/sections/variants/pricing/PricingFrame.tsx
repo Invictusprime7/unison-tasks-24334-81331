@@ -22,7 +22,9 @@ export const normalizePricingTiers = (tiers: unknown, fallback?: unknown): Prici
         period: tier.period ? String(tier.period) : tier.duration ? String(tier.duration) : undefined,
         description: tier.description ? String(tier.description) : undefined,
         features: Array.isArray(tier.features) ? tier.features.map((f: unknown) => String(f)) : [],
-        cta: tier.cta || { text: 'Get started', href: '#contact', isPrimary: true },
+        cta: tier.cta
+          ? { label: String(tier.cta.label ?? tier.cta.text ?? 'Get started'), href: tier.cta.href, intent: tier.cta.intent, variant: tier.cta.variant }
+          : { label: 'Get started', href: '#contact', variant: 'primary' as const },
         highlighted: Boolean(tier.highlighted || tier.featured),
         badge: tier.badge ? String(tier.badge) : undefined,
       } as PricingTier;

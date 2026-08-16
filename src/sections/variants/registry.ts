@@ -20,6 +20,8 @@ import {
   footerColumnsJSX, footerCenteredMinimalJSX, footerDarkBandJSX,
   galleryEditorialMosaicJSX, galleryMasonryJSX, galleryCinematicGridJSX,
   galleryLightboxGridJSX, galleryFeatureSplitJSX,
+  testimonialsGridJSX, testimonialsRailJSX, testimonialsSpotlightJSX,
+  pricingTiersJSX, pricingComparisonJSX, pricingAccordionJSX,
 } from './jsxTemplates';
 
 // Hero variants
@@ -59,6 +61,16 @@ import { GalleryCinematicGrid } from './gallery/GalleryCinematicGrid';
 import { GalleryLightboxGrid } from './gallery/GalleryLightboxGrid';
 import { GalleryFeatureSplit } from './gallery/GalleryFeatureSplit';
 
+// Testimonials variants (Phase 3 — first-class proof family)
+import { TestimonialsGrid } from './testimonials/TestimonialsGrid';
+import { TestimonialsRail } from './testimonials/TestimonialsRail';
+import { TestimonialsSpotlight } from './testimonials/TestimonialsSpotlight';
+
+// Pricing variants (Phase 3 — first-class offer family)
+import { PricingTiers } from './pricing/PricingTiers';
+import { PricingComparison } from './pricing/PricingComparison';
+import { PricingAccordion } from './pricing/PricingAccordion';
+
 // Footer variants
 import { FooterColumns } from './footer/FooterColumns';
 import { FooterCenteredMinimal } from './footer/FooterCenteredMinimal';
@@ -69,6 +81,78 @@ import { FooterDarkBand } from './footer/FooterDarkBand';
 // ============================================================================
 
 const VARIANT_REGISTRY: VariantRegistry = {
+  testimonials: [
+    {
+      id: 'testimonials:grid',
+      sectionType: 'testimonials',
+      slug: 'grid',
+      name: 'Proof Grid',
+      description: 'Balanced multi-column grid of client quotes',
+      component: TestimonialsGrid,
+      thumbnail: '/variants/testimonials-grid.svg',
+      tags: ['balanced', 'default'],
+      isDefault: true,
+      renderJSX: testimonialsGridJSX,
+    },
+    {
+      id: 'testimonials:rail',
+      sectionType: 'testimonials',
+      slug: 'rail',
+      name: 'Proof Rail',
+      description: 'Horizontal snap rail with scroll controls',
+      component: TestimonialsRail,
+      thumbnail: '/variants/testimonials-rail.svg',
+      tags: ['rail', 'carousel', 'premium'],
+      renderJSX: testimonialsRailJSX,
+    },
+    {
+      id: 'testimonials:spotlight',
+      sectionType: 'testimonials',
+      slug: 'spotlight',
+      name: 'Spotlight',
+      description: 'One dominant quote with supporting proof beneath',
+      component: TestimonialsSpotlight,
+      thumbnail: '/variants/testimonials-spotlight.svg',
+      tags: ['editorial', 'featured'],
+      renderJSX: testimonialsSpotlightJSX,
+    },
+  ],
+  pricing: [
+    {
+      id: 'pricing:tiers',
+      sectionType: 'pricing',
+      slug: 'tiers',
+      name: 'Plan Tiers',
+      description: 'Side-by-side plan cards with a highlighted recommendation',
+      component: PricingTiers,
+      thumbnail: '/variants/pricing-tiers.svg',
+      tags: ['classic', 'default'],
+      isDefault: true,
+      renderJSX: pricingTiersJSX,
+    },
+    {
+      id: 'pricing:comparison',
+      sectionType: 'pricing',
+      slug: 'comparison',
+      name: 'Comparison Matrix',
+      description: 'Feature matrix comparing every plan on one axis',
+      component: PricingComparison,
+      thumbnail: '/variants/pricing-comparison.svg',
+      tags: ['matrix', 'detailed'],
+      renderJSX: pricingComparisonJSX,
+    },
+    {
+      id: 'pricing:accordion',
+      sectionType: 'pricing',
+      slug: 'accordion',
+      name: 'Plan Accordion',
+      description: 'Stacked disclosure rows for dense plan detail',
+      component: PricingAccordion,
+      thumbnail: '/variants/pricing-accordion.svg',
+      tags: ['accordion', 'compact', 'premium'],
+      renderJSX: pricingAccordionJSX,
+    },
+  ],
   gallery: [
     {
       id: 'gallery:editorial-mosaic',
@@ -427,6 +511,12 @@ const VARIANT_LAYOUT_ALIASES: Partial<Record<VariantId, readonly string[]>> = {
   'gallery:cinematic-grid': ['grid', 'cinematic-grid'],
   'gallery:lightbox-grid': ['lightbox', 'lightbox-grid'],
   'gallery:feature-split': ['feature-split', 'split'],
+  'testimonials:grid': ['grid'],
+  'testimonials:rail': ['carousel', 'rail'],
+  'testimonials:spotlight': ['single', 'spotlight'],
+  'pricing:tiers': ['tiers', 'grid'],
+  'pricing:comparison': ['comparison', 'matrix'],
+  'pricing:accordion': ['accordion'],
 };
 
 export const getVariantIdForLayout = (

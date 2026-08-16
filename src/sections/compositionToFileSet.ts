@@ -32,7 +32,7 @@ import type { TemplateComposition } from './types';
 import type { WizardDesignIntervention, WizardMotionRecipe } from '@/services/wizardDesignIntervention';
 import { getLayoutForVariantId, getVariantById } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';
-import { clampVariantToPack, resolveArtDirectionPack } from '@/sections/artDirection/packs';
+import { clampVariantToPack, resolveArtDirectionPack } from '@/sections/variants';
 
 /**
  * The slice of the wizard design brief the section compiler consumes.

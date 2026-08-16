@@ -76,11 +76,8 @@ import {
   getCompositionMeta,
 } from "@/utils/compositionReference";
 import {
-  getAllReferences,
-  getReferencesForIndustry,
   INDUSTRY_CONTEXTS,
   type IndustryTag,
-  type PremiumSectionReference,
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { runWizardStage4b } from "@/services/wizardStage4bRuntime";
@@ -480,52 +477,9 @@ interface TemplateCardData {
   industry: string;  // covers both IndustryTag and composition industry values
   sectionTypes: string[];
   traits: string[];
-  heroRef?: PremiumSectionReference;
   themeColors?: { primary: string; secondary: string };  // actual HSL values from composition theme
 }
 
-function buildTemplateCards(industryTags: IndustryTag[]): TemplateCardData[] {
-  const cards: TemplateCardData[] = [];
-
-  for (const tag of industryTags) {
-    const refs = getReferencesForIndustry(tag);
-    const ctx = INDUSTRY_CONTEXTS.find((c) => c.industry === tag);
-    const heroRef = refs.find((r) => r.sectionType === "hero");
-    const servicesRef = refs.find((r) => r.sectionType === "services");
-    const ctaRef = refs.find((r) => r.sectionType === "cta");
-
-    // Build 1–2 template variants per industry
-    if (heroRef) {
-      cards.push({
-        id: `${tag}-premium`,
-        label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Premium`,
-        description: ctx?.toneDirective.split(".")[0] || heroRef.description,
-        industry: tag,
-        sectionTypes: ctx?.sectionFlow.slice(0, 6).map((s) => s) || ["hero", "services", "cta"],
-        traits: heroRef.traits.slice(0, 3),
-        heroRef,
-      });
-    }
-
-    // Second variant if we have enough refs
-    if (servicesRef && ctaRef && heroRef) {
-      const altHero = refs.find((r) => r.sectionType === "hero" && r.id !== heroRef.id);
-      if (altHero) {
-        cards.push({
-          id: `${tag}-alt`,
-          label: `${INDUSTRY_DISPLAY[tag]?.label || tag} Focused`,
-          description: "Clean, focused layout emphasizing clarity and conversions",
-          industry: tag,
-          sectionTypes: ["hero", "services", "testimonials", "cta", "contact", "footer"],
-          traits: altHero.traits.slice(0, 3),
-          heroRef: altHero,
-        });
-      }
-    }
-  }
-
-  return cards;
-}
 
 /**
  * Build template cards from real TemplateComposition objects.

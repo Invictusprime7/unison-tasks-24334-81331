@@ -77,7 +77,9 @@ interface PreviewCompileState {
 }
 
 const MAX_SANDPACK_TIMEOUT_RECOVERIES = 3;
-const PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS = 45_000;
+// Large generated multi-page sites can legitimately take longer than 45s on a
+// cold worker. Keep this aligned with Sandpack's own startup budget.
+const PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS = 120_000;
 
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
@@ -488,7 +490,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     window.setTimeout(async () => {
       const compileController = new AbortController();
       const compileTimeout = window.setTimeout(() => {
-        compileController.abort(new Error('Preview artifact compilation timed out after 45 seconds.'));
+        compileController.abort(new Error('Preview artifact compilation timed out after 120 seconds.'));
       }, PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS);
       try {
         const isWizardPreview = resolveSnapshot(request.files, request.launchState).isWizardDraft;
@@ -559,7 +561,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       // Intentionally no abort/clearTimeout here: this effect re-runs on
       // harmless identity churn, and tearing down the pending compile each
       // time is what stalled the preview forever. Stale results are ignored
-      // via latestKeyRef/unmountedRef instead.
+      // via compileAttemptRef/unmountedRef instead.
     };
 
   }, [compileDrainVersion]);

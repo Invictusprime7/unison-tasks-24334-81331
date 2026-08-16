@@ -47,8 +47,8 @@ describe('Web Builder preview ownership', () => {
 
     expect(sharedPreview).toContain('unmountedRef.current = false;');
     expect(sharedPreview).toContain('unmountedRef.current = true;');
-    expect(sharedPreview).toContain('PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS = 45_000');
-    expect(sharedPreview).toContain("compileController.abort(new Error('Preview artifact compilation timed out after 45 seconds.'))");
+    expect(sharedPreview).toContain('PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS = 120_000');
+    expect(sharedPreview).toContain("compileController.abort(new Error('Preview artifact compilation timed out after 120 seconds.'))");
     expect(sharedPreview).toContain('signal: compileController.signal');
     expect(sharedPreview).toContain('compileAttemptRef.current !== compileAttempt');
     expect(sharedPreview).toMatch(/pipelineError: null,\s+emptyDraft: false,\s+compiling: true/);

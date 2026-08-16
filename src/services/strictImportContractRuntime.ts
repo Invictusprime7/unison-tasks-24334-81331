@@ -274,7 +274,7 @@ export async function runPrepareSandpackFilesOffThread({
           files,
           entryPoint,
           themePresetId,
-        });
+        }, signal);
         storeInCache(cacheKey, result);
         return result;
       } catch (error) {

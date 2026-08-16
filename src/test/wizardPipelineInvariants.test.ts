@@ -388,7 +388,9 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('No site data was created.');
     expect(launcherSource).not.toContain('const installPromise =');
     expect(launcherSource.indexOf('setIsLaunching(false);', confirmationIndex - 250)).toBeGreaterThan(-1);
-    expect(launcherSource.indexOf('setIsLaunching(true);', confirmationIndex)).toBeGreaterThan(provisionIndex - 250);
+    const resumedLaunchIndex = launcherSource.indexOf('setIsLaunching(true);', confirmationIndex);
+    expect(resumedLaunchIndex).toBeGreaterThan(confirmationIndex);
+    expect(resumedLaunchIndex).toBeLessThan(provisionIndex);
   });
 
   it('reaches the builder only after the reviewed artifact has a durable committed revision', () => {
@@ -407,7 +409,7 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain("throw new Error('The generated site could not be committed to its project. Please confirm again.')");
     expect(launcherSource).not.toContain("'commit.revision_pending'");
     expect(launcherSource).toContain('publishLaunchDegradations(run.snapshot().degradations)');
-    expect(launcherSource).toContain('const canonicalVfsFiles = Object.keys(result.vfsFiles || {}).length > 0');
+    expect(launcherSource).toContain('const canonicalVfsFiles = Object.keys(result.vfsFiles).length > 0');
     expect(launcherSource).toContain('const canonicalSiteBundleSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;');
     expect(launcherSource).toContain('const canonicalRuntimeManifest = result.runtimeManifest ?? pipelineManifest;');
     expect(launcherSource).toContain('vfsFiles: canonicalVfsFiles');

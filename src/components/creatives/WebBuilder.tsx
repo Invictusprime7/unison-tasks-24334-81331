@@ -2570,7 +2570,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         }
         console.log('[WebBuilder] hydrated from site_revisions:', revision.id, Object.keys(files).length, 'files');
         const currentFiles = virtualFSRef.current.getSandpackFiles();
-        if (computeVfsSignature(currentFiles) !== computeVfsSignature(files)) {
+        if (computeBuilderVfsSignature(currentFiles) !== computeBuilderVfsSignature(files)) {
           importBuilderFiles(files, { entryPoint: launchEntryPoint });
         }
         setHydratedRevision(revision);

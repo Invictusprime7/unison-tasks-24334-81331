@@ -25,6 +25,8 @@ import type { WizardInteractionManifest } from './wizardInteractionEnrichment';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
+import { isCanonicalComposedPage, mergeLaneBIntoCanonicalPage } from './laneBContentPlan';
+
 import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {
   buildCanonicalWizardSharedChromeModules,

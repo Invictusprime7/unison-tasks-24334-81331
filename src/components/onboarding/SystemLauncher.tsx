@@ -4075,6 +4075,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           selectedTemplateId: effectiveTemplate?.id,
           themePresetId: resolvedPreset.id,
           selections: wizardSelections,
+           reviewedArtifact: {
+             siteBundleSnapshot: launchArtifacts.siteBundleSnapshot ?? siteBundleSnapshot,
+             runtimeManifest: launchArtifacts.runtimeManifest,
+             playground: materializedPlayground ?? undefined,
+           },
         },
       });
       if (!result.persistedRevisionId) {

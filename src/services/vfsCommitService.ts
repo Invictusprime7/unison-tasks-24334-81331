@@ -99,6 +99,12 @@ export interface CommitMutationInput {
     themeTokens?: ThemeTokens;
     /** For wizard-launch source. */
     selections?: CanonicalCommitInput['selections'];
+    /** Exact Wizard artifact already approved by the user. */
+    reviewedArtifact?: {
+      siteBundleSnapshot: SiteBundleSnapshot;
+      runtimeManifest: RuntimeManifest;
+      playground?: PlaygroundState;
+    };
   };
 }
 
@@ -260,41 +266,49 @@ export async function commitMutation(
     log,
   );
 
-  // 5. Canonical recompile via commitToPipeline -----------------------------
-  let canonicalResult: CanonicalCommitResult;
-  try {
-    canonicalResult = commitToPipeline(
-      buildCanonicalInput(input, workingFiles, presentationSnapshot),
-      toCanonicalSource(input.source),
-    );
-  } catch (err) {
-    log('canonical', 'error', 'canonical pipeline threw', String(err));
-    return finalize({
-      input,
-      status: 'rejected',
-      vfsFiles: workingFiles,
-      siteBundleSnapshot: null,
-      runtimeManifest: null,
-      playground: input.current.playground ?? null,
-      readinessReport: {},
-      publishReady: false,
-      publishBlockers: [
-        {
+  // 5. Resolve the canonical projection -------------------------------------
+  // Confirmation is a persistence boundary, not another generation stage.
+  // Re-running Stage 4b here can replace the exact files the user reviewed.
+  const reviewedArtifact = input.options?.reviewedArtifact;
+  if (reviewedArtifact && input.source !== 'wizard-launch') {
+    throw new Error('[VFSCommitService] reviewedArtifact is only valid for wizard-launch commits.');
+  }
+  let canonicalResult: CanonicalCommitResult | null = null;
+  if (reviewedArtifact) {
+    log('canonical', 'info', 'accepted exact user-reviewed wizard artifact; regeneration skipped');
+  } else {
+    try {
+      canonicalResult = commitToPipeline(
+        buildCanonicalInput(input, workingFiles, presentationSnapshot),
+        toCanonicalSource(input.source),
+      );
+    } catch (err) {
+      log('canonical', 'error', 'canonical pipeline threw', String(err));
+      return finalize({
+        input,
+        status: 'rejected',
+        vfsFiles: workingFiles,
+        siteBundleSnapshot: null,
+        runtimeManifest: null,
+        playground: input.current.playground ?? null,
+        readinessReport: {},
+        publishReady: false,
+        publishBlockers: [{
           source: 'preview',
           code: 'canonical-pipeline-threw',
           message: 'Canonical pipeline failed; nothing safe to publish',
-        },
-      ],
-      vfsHash: await hashVfsFiles(workingFiles),
-      backendOpsApplied: [],
-      diagnostics,
-      parentRevisionId: input.identity.revisionId || null,
-      rejectMessage: 'canonical pipeline threw — see diagnostics',
-    });
+        }],
+        vfsHash: await hashVfsFiles(workingFiles),
+        backendOpsApplied: [],
+        diagnostics,
+        parentRevisionId: input.identity.revisionId || null,
+        rejectMessage: 'canonical pipeline threw — see diagnostics',
+      });
+    }
   }
 
   // 6. Full preflight --------------------------------------------------------
-  const snapshot = canonicalResult.siteBundleSnapshot ?? null;
+  const snapshot = reviewedArtifact?.siteBundleSnapshot ?? canonicalResult?.siteBundleSnapshot ?? null;
   let files: Record<string, string> =
     input.source === 'wizard-launch'
       ? mergeWizardLaunchFiles(workingFiles, (snapshot as SiteBundleSnapshot | null) ?? null)
@@ -335,7 +349,7 @@ export async function commitMutation(
     preflight.stages.finalRepair !== 'failed';
   log('preflight', previewOk ? 'info' : 'warn', 'preflight stages', preflight.stages);
 
-  const gate = canonicalResult.gate ?? null;
+  const gate = canonicalResult?.gate ?? null;
 
   // Move 4: capability readiness adapter. When a CompiledContract is
   // supplied (or surfaced by the canonical pipeline), run PreviewGate +
@@ -343,7 +357,7 @@ export async function commitMutation(
   // donation / auth) block the commit instead of silently degrading.
   const compiled =
     input.options?.compiledContract ??
-    ((canonicalResult as { compiledContract?: CompiledContract }).compiledContract ?? null);
+    ((canonicalResult as (CanonicalCommitResult & { compiledContract?: CompiledContract }) | null)?.compiledContract ?? null);
   let previewVerdict: GateVerdict | null = null;
   let publishVerdict: GateVerdict | null = null;
   if (compiled) {
@@ -368,7 +382,7 @@ export async function commitMutation(
   let intentControlPlane: PlaygroundControlPlaneModel | null = null;
   let intentPreviewBlocked = 0;
   let intentPublishBlocked = 0;
-  const playgroundForIntents = canonicalResult.playground ?? input.current.playground ?? null;
+  const playgroundForIntents = reviewedArtifact?.playground ?? canonicalResult?.playground ?? input.current.playground ?? null;
   if (playgroundForIntents) {
     try {
       intentControlPlane = resolvePlaygroundControlPlane({
@@ -586,8 +600,8 @@ export async function commitMutation(
     status,
     vfsFiles: files,
     siteBundleSnapshot: snapshotForPersistence,
-    runtimeManifest: canonicalResult.runtimeManifest ?? null,
-    playground: canonicalResult.playground ?? input.current.playground ?? null,
+    runtimeManifest: reviewedArtifact?.runtimeManifest ?? canonicalResult?.runtimeManifest ?? null,
+    playground: reviewedArtifact?.playground ?? canonicalResult?.playground ?? input.current.playground ?? null,
     readinessReport: {
       ...(gate ? { gate } : {}),
       ...(previewVerdict ? { previewVerdict } : {}),

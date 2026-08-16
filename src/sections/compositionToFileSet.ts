@@ -1079,19 +1079,57 @@ function resolveSnapshotSectionLayouts(template: TemplateComposition): TemplateC
   });
 }
 
-const VARIANT_LAYOUTS: Partial<Record<WizardDesignIntervention['sectionVariants'][number], {
+/**
+ * Recovery Phase 5 — design recipes are executable layout contracts.
+ *
+ * A wizard recipe never degrades into a vague layout word ("grid", "carousel").
+ * It resolves to a registered, executable variant id whenever the variant
+ * registry owns that section family; the legacy layout token is only used for
+ * families that have no first-class variants yet (and is derived from the
+ * variant, not hand-written, when one exists).
+ */
+const RECIPE_VARIANTS: Partial<Record<WizardDesignIntervention['sectionVariants'][number], {
   sectionTypes: string[];
-  layout: string;
+  /** Executable variant id, preferred. */
+  variantId?: VariantId;
+  /** Only used when no first-class variant family exists yet. */
+  layout?: string;
 }>> = {
-  'collage-hero': { sectionTypes: ['hero'], layout: 'full-bleed' },
-  'split-media-hero': { sectionTypes: ['hero'], layout: 'split' },
-  'proof-hero': { sectionTypes: ['hero'], layout: 'centered' },
-  'bento-services': { sectionTypes: ['services', 'features'], layout: 'grid' },
-  'comparison-services': { sectionTypes: ['services'], layout: 'list' },
+  'collage-hero': { sectionTypes: ['hero'], variantId: 'hero:full-bleed' },
+  'split-media-hero': { sectionTypes: ['hero'], variantId: 'hero:split-image' },
+  'proof-hero': { sectionTypes: ['hero'], variantId: 'hero:centered' },
+  'bento-services': { sectionTypes: ['services'], variantId: 'services:card-grid' },
+  'comparison-services': { sectionTypes: ['services'], variantId: 'services:alternating' },
+  'gallery-lightbox': { sectionTypes: ['gallery'], variantId: 'gallery:lightbox-grid' },
   'testimonial-rail': { sectionTypes: ['testimonials'], layout: 'carousel' },
   'pricing-accordion': { sectionTypes: ['faq'], layout: 'accordion' },
-  'conversion-form': { sectionTypes: ['contact'], layout: 'split-card' },
+  'conversion-form': { sectionTypes: ['contact'], variantId: 'contact:split-card' },
 };
+
+/** Recipes targeting `features` reuse the services family intent. */
+const FEATURES_RECIPE_VARIANTS: Partial<Record<string, VariantId>> = {
+  'bento-services': 'features:grid',
+  'comparison-services': 'features:icon-left',
+};
+
+function applyRecipe(
+  section: TemplateComposition['sections'][number],
+  recipes: readonly WizardDesignIntervention['sectionVariants'][number][],
+) {
+  for (const recipe of recipes) {
+    const featureVariant = section.type === 'features' ? FEATURES_RECIPE_VARIANTS[recipe] : undefined;
+    if (featureVariant) {
+      return { variantId: featureVariant, layout: getLayoutForVariantId(featureVariant) };
+    }
+    const candidate = RECIPE_VARIANTS[recipe];
+    if (!candidate?.sectionTypes.includes(section.type)) continue;
+    if (candidate.variantId && getVariantById(candidate.variantId)) {
+      return { variantId: candidate.variantId, layout: getLayoutForVariantId(candidate.variantId) };
+    }
+    if (candidate.layout) return { variantId: undefined, layout: candidate.layout };
+  }
+  return undefined;
+}
 
 function applyDesignVariants(
   template: TemplateComposition,
@@ -1116,13 +1154,14 @@ function applyDesignVariants(
           props: layout ? { ...section.props, layout } as typeof section.props : section.props,
         };
       }
-      const selected = (variants || [])
-        .map((variant) => VARIANT_LAYOUTS[variant])
-        .find((candidate) => candidate?.sectionTypes.includes(section.type));
-      if (!selected) return section;
+      const resolved = applyRecipe(section, variants || []);
+      if (!resolved) return section;
       return {
         ...section,
-        props: { ...section.props, layout: selected.layout } as typeof section.props,
+        ...(resolved.variantId ? { variantId: resolved.variantId } : {}),
+        props: resolved.layout
+          ? { ...section.props, layout: resolved.layout } as typeof section.props
+          : section.props,
       };
     }),
   };

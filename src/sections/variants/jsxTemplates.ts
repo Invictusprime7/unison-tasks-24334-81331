@@ -525,3 +525,133 @@ ${rest.map((t) => galleryFigure(t, '', '1 / 1')).join('\n')}
           </div>`;
   return galleryShell('gallery:feature-split', c, grid);
 }
+
+// ============================================================================
+// Testimonials + Pricing Variants (Recovery Phase 3 — first-class families)
+// ============================================================================
+
+function proofIntro(c: ExtractedSectionContent): string {
+  if (!c.heading && !c.subheading) return '';
+  return `          <div className="mb-12 text-center">
+${c.heading ? `            <h2 className="mb-3 text-3xl font-semibold text-foreground">${esc(c.heading)}</h2>\n` : ''}\
+${c.subheading ? `            <p className="mx-auto max-w-2xl text-base text-muted-foreground">${esc(c.subheading)}</p>\n` : ''}\
+          </div>\n`;
+}
+
+function proofShell(variant: string, c: ExtractedSectionContent, body: string, surface = 'bg-background'): string {
+  return `      <section className="${surface} py-20 md:py-24" data-variant="${variant}">
+        <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+${proofIntro(c)}\
+${body}
+        </div>
+      </section>`;
+}
+
+function proofQuotes(c: ExtractedSectionContent, count: number): string[] {
+  const quotes = c.listItems?.length ? c.listItems : [];
+  return Array.from({ length: Math.max(count, quotes.length || count) }, (_, i) => quotes[i] || 'They delivered exactly what we needed, on time.');
+}
+
+function quoteCard(text: string, cls = ''): string {
+  return `            <figure className="m-0 flex h-full flex-col justify-between rounded-[var(--radius)] border border-border bg-card p-8 text-card-foreground ${cls}">
+              <blockquote className="mb-6 text-base leading-relaxed">&ldquo;${esc(text)}&rdquo;</blockquote>
+              <figcaption className="text-sm font-semibold">Verified client</figcaption>
+            </figure>`;
+}
+
+export function testimonialsGridJSX(c: ExtractedSectionContent): string {
+  const quotes = proofQuotes(c, 3);
+  const body = `          <div className="grid gap-6 md:grid-cols-3">
+${quotes.map((q) => quoteCard(q)).join('\n')}
+          </div>`;
+  return proofShell('testimonials:grid', c, body);
+}
+
+export function testimonialsRailJSX(c: ExtractedSectionContent): string {
+  const quotes = proofQuotes(c, 4);
+  const body = `          <div className="flex snap-x snap-mandatory gap-6 overflow-x-auto pb-4" role="group" aria-label="Customer testimonials">
+${quotes.map((q) => quoteCard(q, 'w-[min(420px,85vw)] shrink-0 snap-start')).join('\n')}
+          </div>`;
+  return proofShell('testimonials:rail', c, body);
+}
+
+export function testimonialsSpotlightJSX(c: ExtractedSectionContent): string {
+  const [featured, ...rest] = proofQuotes(c, 3);
+  const body = `          <figure className="mx-auto m-0 max-w-3xl rounded-[var(--radius)] border border-border bg-card p-10 text-center text-card-foreground">
+            <blockquote className="mb-6 text-2xl font-semibold leading-relaxed">&ldquo;${esc(featured)}&rdquo;</blockquote>
+            <figcaption className="text-sm font-semibold">Verified client</figcaption>
+          </figure>
+          <div className="mt-8 grid gap-6 md:grid-cols-2">
+${rest.map((q) => quoteCard(q)).join('\n')}
+          </div>`;
+  return proofShell('testimonials:spotlight', c, body, 'bg-muted');
+}
+
+function pricingPlans(c: ExtractedSectionContent): Array<{ name: string; price: string; features: string[] }> {
+  const names = ['Starter', 'Professional', 'Premium'];
+  const features = c.listItems?.length ? c.listItems : ['Dedicated support', 'Fast turnaround', 'Transparent pricing'];
+  return names.map((name, i) => ({
+    name,
+    price: `$${(i + 1) * 99}`,
+    features: features.slice(0, 3 + i),
+  }));
+}
+
+function planCta(c: ExtractedSectionContent): { label: string; href: string } {
+  const cta = c.ctaButtons?.[0];
+  return { label: cta?.text || 'Get started', href: cta?.href || '#contact' };
+}
+
+export function pricingTiersJSX(c: ExtractedSectionContent): string {
+  const plans = pricingPlans(c);
+  const cta = planCta(c);
+  const body = `          <div className="grid items-start gap-6 sm:grid-cols-2 lg:grid-cols-3">
+${plans.map((plan, i) => `            <article className="flex h-full flex-col rounded-[var(--radius)] border ${i === 1 ? 'border-primary' : 'border-border'} bg-card p-8 text-card-foreground">
+              <h3 className="text-lg font-semibold">${esc(plan.name)}</h3>
+              <p className="mt-2 text-3xl font-semibold">${plan.price}<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
+              <ul className="mt-6 flex-1 list-none space-y-2 p-0 text-sm">
+${plan.features.map((f) => `                <li>✓ ${esc(f)}</li>`).join('\n')}
+              </ul>
+              <a href="${cta.href}" data-ut-intent="lead.capture" className="mt-6 inline-flex w-full items-center justify-center rounded-[var(--radius)] bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground no-underline">${esc(cta.label)}</a>
+            </article>`).join('\n')}
+          </div>`;
+  return proofShell('pricing:tiers', c, body, 'bg-muted');
+}
+
+export function pricingComparisonJSX(c: ExtractedSectionContent): string {
+  const plans = pricingPlans(c);
+  const rows = Array.from(new Set(plans.flatMap((p) => p.features)));
+  const body = `          <div className="overflow-x-auto rounded-[var(--radius)] border border-border bg-card">
+            <table className="w-full border-collapse text-left text-sm text-card-foreground">
+              <caption className="sr-only">Plan comparison</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="p-4">Features</th>
+${plans.map((p) => `                  <th scope="col" className="p-4">${esc(p.name)}<span className="block text-base font-semibold">${p.price}</span></th>`).join('\n')}
+                </tr>
+              </thead>
+              <tbody>
+${rows.map((row) => `                <tr className="border-t border-border">
+                  <th scope="row" className="p-4 font-normal">${esc(row)}</th>
+${plans.map((p) => `                  <td className="p-4">${p.features.includes(row) ? '✓' : '—'}</td>`).join('\n')}
+                </tr>`).join('\n')}
+              </tbody>
+            </table>
+          </div>`;
+  return proofShell('pricing:comparison', c, body, 'bg-muted');
+}
+
+export function pricingAccordionJSX(c: ExtractedSectionContent): string {
+  const plans = pricingPlans(c);
+  const cta = planCta(c);
+  const body = `          <div className="mx-auto max-w-3xl">
+${plans.map((plan) => `            <details className="mb-3 rounded-[var(--radius)] border border-border bg-card p-5 text-card-foreground">
+              <summary className="flex cursor-pointer items-center justify-between text-base font-semibold">${esc(plan.name)}<span>${plan.price}<span className="text-xs font-normal text-muted-foreground">/mo</span></span></summary>
+              <ul className="mt-4 list-none space-y-2 p-0 text-sm">
+${plan.features.map((f) => `                <li>✓ ${esc(f)}</li>`).join('\n')}
+              </ul>
+              <a href="${cta.href}" data-ut-intent="lead.capture" className="mt-5 inline-flex w-full items-center justify-center rounded-[var(--radius)] bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground no-underline">${esc(cta.label)}</a>
+            </details>`).join('\n')}
+          </div>`;
+  return proofShell('pricing:accordion', c, body, 'bg-muted');
+}

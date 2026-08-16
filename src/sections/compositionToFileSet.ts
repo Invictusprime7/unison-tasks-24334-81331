@@ -1274,7 +1274,7 @@ function applyDesignVariants(
 }
 
 function motionRecipesBySection(
-  designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes'>,
+  designIntervention?: DesignInterventionSlice,
 ): Partial<Record<string, WizardMotionRecipe>> {
   const recipes = designIntervention?.motionRecipes;
   if (!recipes?.length) return {};
@@ -1301,7 +1301,7 @@ function motionRecipesBySection(
 function pageModule(
   template: TemplateComposition,
   sectionMapImport: string,
-  designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants'>,
+  designIntervention?: DesignInterventionSlice,
 ): string {
   const sectionsJson = JSON.stringify(resolveSnapshotSectionLayouts(template), null, 2);
   const title = JSON.stringify(template.name);

@@ -1313,7 +1313,10 @@ function applyDesignVariants(
       })
     : undefined;
 
-  if (!variants?.length && !Object.keys(activeVariants || {}).length && !pack) return template;
+  const hasVocabulary = Boolean(
+    designIntervention?.layoutRecipe || designIntervention?.interactionRecipes?.length,
+  );
+  if (!variants?.length && !Object.keys(activeVariants || {}).length && !pack && !hasVocabulary) return template;
 
   return {
     ...template,

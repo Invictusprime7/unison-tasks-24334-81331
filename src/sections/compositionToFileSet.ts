@@ -283,8 +283,7 @@ const cardClass = 'rounded-[var(--radius)] border border-border bg-card text-car
 const buttonClass = 'mt-4 inline-flex items-center justify-center rounded-[var(--radius)] bg-primary px-5 py-2.5 font-body text-sm font-semibold text-primary-foreground no-underline transition-opacity hover:opacity-90';
 
 export default function Services({ props }: { props: any }) {
-  const { headline, subheadline, items = [], layout: rawLayout = 'grid' } = props;
-  const layout = rawLayout === 'rail' ? 'carousel' : rawLayout === 'spotlight' ? 'single' : rawLayout;
+  const { headline, subheadline, items = [], layout = 'grid' } = props;
   const intro = <>{headline && <div className={(layout === 'alternating' ? 'text-left' : 'text-center') + ' mb-12'}><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className={(layout === 'alternating' ? '' : 'mx-auto ') + 'max-w-2xl font-body text-lg text-muted-foreground'}>{subheadline}</p>}</div>}</>;
 
   if (layout === 'alternating') {

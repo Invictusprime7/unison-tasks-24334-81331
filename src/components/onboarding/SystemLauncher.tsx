@@ -152,6 +152,7 @@ import { loadBusinessProfile } from '@/services/businessProfileService';
 import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
 import { planLaunchFormDefinitions } from '@/services/launchFormDefinitions';
+import { persistLaunchFormDefinitions } from '@/services/launchFormDefinitionPersistence';
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
@@ -4047,6 +4048,23 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         throw new Error('The generated site could not be committed to its project. Please confirm again.');
       }
       const launcherRevisionId = result.persistedRevisionId;
+      // Public form contracts live outside the VFS: form-submit rejects any
+      // intent that disagrees with its approved definition. Never fail the
+      // launch over this — the builder can re-provision forms later.
+      const formDefinitionPersistence = await persistLaunchFormDefinitions({
+        businessId: confirmedLaunch.businessId,
+        projectId: launchProjectId,
+        siteId: confirmedLaunch.siteId,
+        definitions: plannedFormDefinitions,
+      });
+      if (formDefinitionPersistence.error) {
+        run.degrade(
+          'commit',
+          'commit.form_definitions_unavailable',
+          'Your forms are live, but their approved settings will finish saving in the builder.',
+          formDefinitionPersistence.error,
+        );
+      }
       const canonicalVfsFiles = Object.keys(result.vfsFiles).length > 0
         ? result.vfsFiles
         : wiredVfsFiles;

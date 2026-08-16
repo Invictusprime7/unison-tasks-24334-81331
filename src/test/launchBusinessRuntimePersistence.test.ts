@@ -487,27 +487,46 @@ describe('launch business runtime persistence', () => {
 
   it('requires a provisioned form definition before accepting public submissions', () => {
     const formSubmit = readFileSync(resolve(process.cwd(), 'supabase/functions/form-submit/index.ts'), 'utf8');
-    const provisioner = readFileSync(resolve(process.cwd(), 'supabase/functions/provision-launch-site/index.ts'), 'utf8');
+    const persistence = readFileSync(resolve(process.cwd(), 'src/services/launchFormDefinitionPersistence.ts'), 'utf8');
+    const launcher = readFileSync(resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'), 'utf8');
 
-    expect(formSubmit).toContain('This form is not configured for the site');
-    expect(provisioner).toContain('formDefinitions: z.array(FormDefinitionSchema)');
-    expect(provisioner).toContain('INSERT INTO public.form_definitions');
+    // form-submit is the enforcement point for approved definitions.
+    expect(formSubmit).toContain('.from("form_definitions")');
+    expect(formSubmit).toContain('.eq("external_id", formId)');
+    expect(formSubmit).toContain('Form intent does not match its approved definition');
+    expect(formSubmit).toContain('Missing required form fields');
+
+    // Confirmed-launch provisioning owns identity only; the commit path writes
+    // the site-scoped form contracts.
+    expect(persistence).toContain("from('form_definitions')");
+    expect(persistence).toContain("onConflict: 'business_id,project_id,site_id,external_id'");
+    expect(launcher).toContain('persistLaunchFormDefinitions({');
   });
 
   it('persists only a site-bound compiled runtime manifest with the confirmed launch', () => {
+    const reconciler = readFileSync(resolve(process.cwd(), 'supabase/functions/reconcile-generated-runtime/index.ts'), 'utf8');
     const provisioner = readFileSync(resolve(process.cwd(), 'supabase/functions/provision-launch-site/index.ts'), 'utf8');
+    const commitService = readFileSync(resolve(process.cwd(), 'src/services/vfsCommitService.ts'), 'utf8');
 
-    expect(provisioner).toContain('generatedSiteRuntimeManifest: GeneratedRuntimeManifestSchema');
-    expect(provisioner).toContain('GENERATED_RUNTIME_SITE_IDENTITY_MISMATCH');
-    expect(provisioner).toContain('GENERATED_RUNTIME_SNAPSHOT_MISMATCH');
-    expect(provisioner).toContain('generatedSiteRuntimeManifest: body.generatedSiteRuntimeManifest');
+    // Manifest persistence is site-bound and transactional.
+    expect(reconciler).toContain("'{generatedSiteRuntimeManifest}'");
+    expect(reconciler).toContain('RUNTIME_SITE_IDENTITY_MISMATCH');
+    expect(reconciler).toContain("project.site_id !== body.manifest.siteId");
+    expect(reconciler).toContain('INSERT INTO public.ai_plugin_instances');
+    expect(reconciler).toContain('RUNTIME_AGENT_UNAVAILABLE');
+    expect(reconciler).toContain('compiledIntents.includes(intent)');
+    expect(reconciler).toContain('enabledCapabilities.includes(capability)');
+
+    // The commit pipeline is the only caller, and it compiles the manifest
+    // from the canonical snapshot before reconciling.
+    expect(commitService).toContain("supabase.functions.invoke('reconcile-generated-runtime'");
+    expect(commitService).toContain('compileGeneratedSiteRuntimeManifest({');
+    expect(commitService).toContain('siteId: project.site_id');
+
+    // Provisioning still validates the runtime controller contract shape.
     expect(provisioner).toContain("PUBLIC_RUNTIME_FUNCTIONS = new Set(['site-runtime', 'intent-exec', 'create-order-checkout'])");
-    expect(provisioner).toContain("'site-runtime'");
     expect(provisioner).toContain('manifest.controllers.find((candidate) =>');
     expect(provisioner).toContain('has no matching controller');
-    expect(provisioner).toContain('body.generatedSiteRuntimeManifest.agents');
-    expect(provisioner).toContain('INSERT INTO public.ai_plugin_instances');
-    expect(provisioner).toContain('GENERATED_RUNTIME_AGENT_UNAVAILABLE');
     expect(provisioner).toContain('references uncompiled intent');
     expect(provisioner).toContain('requires disabled capability');
   });

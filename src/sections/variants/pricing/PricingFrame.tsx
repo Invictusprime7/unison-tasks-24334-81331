@@ -33,7 +33,7 @@ export const normalizePricingTiers = (tiers: unknown, fallback?: unknown): Prici
 };
 
 export const PricingCTA: React.FC<{ tier: PricingTier; theme: ThemeTokens }> = ({ tier, theme }) => {
-  const primary = tier.highlighted || tier.cta?.isPrimary;
+  const primary = Boolean(tier.highlighted || !tier.cta?.variant || tier.cta.variant === 'primary');
   return (
     <a
       href={tier.cta?.href || '#contact'}
@@ -47,7 +47,7 @@ export const PricingCTA: React.FC<{ tier: PricingTier; theme: ThemeTokens }> = (
         border: `1px solid ${primary ? hsl(theme.colors.primary) : hsl(theme.colors.border)}`,
       }}
     >
-      {tier.cta?.text || 'Get started'}
+      {tier.cta?.label || 'Get started'}
     </a>
   );
 };

@@ -60,15 +60,18 @@ describe('Recovery Phase 6 — ArtDirectionPack', () => {
   });
 
   it('applies pack cohesion during compilation when a design brief is present', () => {
-    const composition: TemplateComposition = {
+    const composition = {
       id: 'test-composition',
       name: 'Test',
+      description: 'Test composition',
+      category: 'portfolio',
+      industry: 'portfolio',
       theme: {} as TemplateComposition['theme'],
       sections: [
         { id: 's-hero', type: 'hero', props: { heading: 'Studio' } },
         { id: 's-gallery', type: 'gallery', props: { heading: 'Work' } },
       ],
-    } as TemplateComposition;
+    } as unknown as TemplateComposition;
 
     const files = compositionToReactFileSet(composition, '/src/pages/Home.tsx', {
       designIntervention: {

@@ -1330,7 +1330,8 @@ function applyDesignVariants(
           props: layout ? { ...section.props, layout } as typeof section.props : section.props,
         };
       }
-      const resolved = applyRecipe(section, variants || []);
+      const resolved = applyRecipe(section, variants || [])
+        ?? applyVocabularyRecipes(section, designIntervention);
 
       const packVariantId = pack
         ? clampVariantToPack(pack, section.type, resolved?.variantId ?? section.variantId)

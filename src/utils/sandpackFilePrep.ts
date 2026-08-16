@@ -5904,6 +5904,7 @@ export function prepareSandpackFiles(
   files: Record<string, string>,
   options?: { strict?: boolean; entryPoint?: string; aesthetic?: string; themePresetId?: string | null }
 ): Record<string, string> {
+  let __tp = Date.now(); const __mark = (l:string)=>{ const n=Date.now(); console.log('[T]', l, n-__tp); __tp=n; };
   const effectiveAesthetic = options?.themePresetId ? null : (options?.aesthetic || null);
   const preparedCacheKey =
     `${hashFilesRecord(files)}::${options?.entryPoint || ''}::${options?.themePresetId || ''}::${effectiveAesthetic || ''}`;
@@ -5957,6 +5958,7 @@ export function prepareSandpackFiles(
     if (typeof content === 'string' && content.trim().length > 100 && content.trimStart().startsWith('{')) {
       try {
         // Aggressive check: try to parse any large JSON-like content
+  __mark('unwrap');
         const parsed = JSON.parse(content);
         if (parsed && typeof parsed === 'object' && parsed.files && typeof parsed.files === 'object' && Object.keys(parsed.files).length > 0) {
           console.warn(`[sandpackFilePrep] Per-file JSON structure detected in ${path} — extracting files`);
@@ -6097,6 +6099,7 @@ export function prepareSandpackFiles(
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && normalizedPath !== '/hooks-shim.ts' && !/(^|\/)unison\//i.test(normalizedPath)) {
       componentFilePaths.push(normalizedPath);
     }
+  __mark('classify');
     if (normalizedPath === '/App.tsx' || normalizedPath === '/App.jsx') hasApp = true;
     if (normalizedPath === '/index.tsx' || normalizedPath === '/index.jsx') hasIndex = true;
     if (normalizedPath.endsWith('.css')) hasCSS = true;
@@ -6214,6 +6217,7 @@ export function prepareSandpackFiles(
   }
 
 
+  __mark('css');
   // ALWAYS use our controlled entry point — it includes the createElement safety
   // guard, error boundary, Tailwind CDN config, and nav bridge. VFS-provided
   // index.tsx/main.tsx are just boilerplate mounts that lack these protections.
@@ -6266,6 +6270,7 @@ export function prepareSandpackFiles(
   // App.tsx — `<HashRouter><Routes>…</Routes></HashRouter>` — becomes
   // `<Routes>…</Routes>` inside the guard's router and multi-page navigation
   // (plus the INTENT_TRIGGER → navigateToBuilderPage round-trip) works again.
+  __mark('tsconfig');
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
     if (filePath === '/index.tsx' || filePath === '/index.jsx') continue;
@@ -6302,6 +6307,7 @@ export function prepareSandpackFiles(
     }
   }
 
+  __mark('routerstrip');
   // ── REWRITE self-referencing relative imports ──
   // AI often writes `import Services from './Services'` inside
   // `/src/pages/Services.tsx`, which self-imports and evaluates to undefined
@@ -6309,8 +6315,10 @@ export function prepareSandpackFiles(
   // method of Services"). Redirect to /components/<Name> when available.
   rewriteSelfReferencingImports(sandpackFiles);
 
+  __mark('selfref');
   // ── AUTO-INJECT imports for JSX-used but un-imported components ──
   autoInjectMissingJsxImports(sandpackFiles);
+  __mark('autoinject');
 
   // Missing relative imports must surface as preview diagnostics. Do not
   // synthesize fallback/template components into wizard-generated sites.
@@ -6329,15 +6337,19 @@ export function prepareSandpackFiles(
     },
   );
 
+  __mark('synthesize');
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (/\.(tsx?|jsx?)$/.test(filePath)) {
       sandpackFiles[filePath] = repairMalformedDefaultExportClosures(content);
     }
   }
 
+  __mark('defaultexportclosures');
   repairLocalImportContracts(sandpackFiles);
+  __mark('repairContracts1');
   assertLocalJsxImportContracts(sandpackFiles);
 
+  __mark('assert1');
 
   // ── SAFETY: Validate App.tsx has a default export ──
   // If AI-generated App.tsx only uses named exports (e.g., `export function App`),
@@ -6362,6 +6374,7 @@ export function prepareSandpackFiles(
 
   // ── SAFETY: Validate ALL generated .tsx/.jsx files have a default export ──
   // Prevents "Element type is invalid" when any component is default-imported.
+  __mark('appdefault');
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (!/\.(tsx|jsx)$/.test(filePath)) continue;
     if (filePath === '/index.tsx' || filePath === '/hooks-shim.ts') continue;
@@ -6373,12 +6386,16 @@ export function prepareSandpackFiles(
   // The default-export completion pass above can make one more import rewrite
   // possible. Reconcile again, then fail with the exact file/symbol pair before
   // React receives an undefined JSX element type.
+  __mark('defaultexports');
   repairLocalImportContracts(sandpackFiles);
+  __mark('repairContracts2');
   assertLocalJsxImportContracts(sandpackFiles);
 
+  __mark('assert2');
   // ── CLEANUP: Remove unused imports from VFS files ──
   // AI often imports components/icons it doesn't actually use in the template,
   // producing "'X' is declared but its value is never read" warnings.
+  __mark('nonnull');
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (!/\.(tsx|jsx|ts|js)$/.test(filePath)) continue;
     sandpackFiles[filePath] = removeUnusedImports(content);
@@ -6393,6 +6410,7 @@ export function prepareSandpackFiles(
   }
 
   // Ensure template.css exists if any file imports it
+  __mark('unusedimports');
   const anyImportsTemplateCss = Object.values(sandpackFiles).some(c =>
     typeof c === 'string' && /import\s+['"]\.\/template\.css['"]/.test(c)
   );
@@ -6433,7 +6451,9 @@ export function prepareSandpackFiles(
   }
 
   console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles));
+  __mark('tail');
   const prepared = applySandpackRuntimeShims(sandpackFiles);
+  __mark('shims');
   if (hasApp) {
     if (preparedFilesCache.size >= PREPARED_FILES_CACHE_LIMIT) preparedFilesCache.clear();
     // Store a copy — `prepared` escapes to the caller, who may mutate it

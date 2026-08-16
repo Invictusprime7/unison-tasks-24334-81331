@@ -1,16 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { invoke, maybeSingle } = vi.hoisted(() => ({
+const { invoke, maybeSingle, getUser } = vi.hoisted(() => ({
   invoke: vi.fn(),
   maybeSingle: vi.fn(),
+  getUser: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
+    auth: { getUser },
     functions: { invoke },
     from: vi.fn(() => ({
       select: vi.fn(() => ({
-        eq: vi.fn(() => ({ maybeSingle })),
+        eq: vi.fn(function chainEq() { return { eq: chainEq, maybeSingle }; }),
       })),
     })),
   },
@@ -37,6 +39,17 @@ const shellInput = {
 };
 
 describe('provisionConfirmedLaunchSite', () => {
+  beforeEach(() => {
+    invoke.mockReset();
+    maybeSingle.mockReset();
+    getUser.mockReset();
+  });
+
+  const mockOwnership = () => {
+    getUser.mockResolvedValueOnce({ data: { user: { id: 'owner-user' } }, error: null });
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'membership-id' }, error: null });
+  };
+
   it('sends only the identity shell contract to the confirmed launch endpoint', async () => {
     invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
     maybeSingle.mockResolvedValueOnce({
@@ -51,6 +64,7 @@ describe('provisionConfirmedLaunchSite', () => {
       },
       error: null,
     });
+    mockOwnership();
 
     await expect(provisionConfirmedLaunchSite(shellInput)).resolves.toEqual(ids);
 
@@ -81,6 +95,7 @@ describe('provisionConfirmedLaunchSite', () => {
       },
       error: null,
     });
+    mockOwnership();
 
     await expect(provisionConfirmedLaunchSite(shellInput)).rejects.toThrow('content outside the canonical commit pipeline');
   });
@@ -99,6 +114,7 @@ describe('provisionConfirmedLaunchSite', () => {
       },
       error: null,
     });
+    mockOwnership();
 
     await expect(provisionConfirmedLaunchSite(shellInput)).resolves.toEqual(ids);
   });

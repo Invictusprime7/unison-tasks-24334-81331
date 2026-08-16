@@ -372,7 +372,7 @@ describe('wizard pipeline ownership invariants', () => {
       'utf8',
     );
     const confirmationIndex = launcherSource.indexOf('const confirmed = await requestLaunchConfirmation');
-    const provisionIndex = launcherSource.indexOf('const confirmedLaunch = await provisionConfirmedLaunchSite');
+    const provisionIndex = launcherSource.indexOf('await provisionConfirmedLaunchSite({');
 
     expect(confirmationIndex).toBeGreaterThan(-1);
     expect(provisionIndex).toBeGreaterThan(confirmationIndex);
@@ -388,10 +388,12 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('No site data was created.');
     expect(launcherSource).not.toContain('const installPromise =');
     expect(launcherSource.indexOf('setIsLaunching(false);', confirmationIndex - 250)).toBeGreaterThan(-1);
-    expect(launcherSource.indexOf('setIsLaunching(true);', confirmationIndex)).toBeGreaterThan(provisionIndex - 250);
+    const resumedLaunchIndex = launcherSource.indexOf('setIsLaunching(true);', confirmationIndex);
+    expect(resumedLaunchIndex).toBeGreaterThan(confirmationIndex);
+    expect(resumedLaunchIndex).toBeLessThan(provisionIndex);
   });
 
-  it('always reaches the builder, degrading commit gaps instead of blocking handoff', () => {
+  it('reaches the builder only after the reviewed artifact has a durable committed revision', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
       'utf8',
@@ -402,13 +404,14 @@ describe('wizard pipeline ownership invariants', () => {
     expect(commitIndex).toBeGreaterThan(-1);
     expect(navigateIndex).toBeGreaterThan(commitIndex);
     expect(launcherSource).toContain('if (!result.persistedRevisionId)');
-    // Handoff is guaranteed: a missing revision is recorded as a degradation
-    // and the builder opens on the local draft while saving completes.
-    expect(launcherSource).toContain("'commit.revision_pending'");
+    // Never open an uncommittable local draft. A missing revision must stop the
+    // handoff so retrying cannot create autosave and preview hydration loops.
+    expect(launcherSource).toContain("throw new Error('The generated site could not be committed to its project. Please confirm again.')");
+    expect(launcherSource).not.toContain("'commit.revision_pending'");
     expect(launcherSource).toContain('publishLaunchDegradations(run.snapshot().degradations)');
-    expect(launcherSource).toContain('const canonicalVfsFiles = Object.keys(result.vfsFiles || {}).length > 0');
-    expect(launcherSource).toContain('const canonicalSiteBundleSnapshot = result.siteBundleSnapshot;');
-    expect(launcherSource).toContain('const canonicalRuntimeManifest = result.runtimeManifest;');
+    expect(launcherSource).toContain('const canonicalVfsFiles = Object.keys(result.vfsFiles).length > 0');
+    expect(launcherSource).toContain('const canonicalSiteBundleSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;');
+    expect(launcherSource).toContain('const canonicalRuntimeManifest = result.runtimeManifest ?? pipelineManifest;');
     expect(launcherSource).toContain('vfsFiles: canonicalVfsFiles');
     expect(launcherSource).toContain('siteBundleSnapshot: canonicalSiteBundleSnapshot');
     expect(launcherSource).toContain('runtimeManifest: canonicalRuntimeManifest');

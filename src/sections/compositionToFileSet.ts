@@ -1205,11 +1205,26 @@ function applyRecipe(
 
 function applyDesignVariants(
   template: TemplateComposition,
-  designIntervention?: Pick<WizardDesignIntervention, 'sectionVariants'> & Partial<Pick<WizardDesignIntervention, 'activeVariants'>>,
+  designIntervention?: DesignInterventionSlice,
 ): TemplateComposition {
   const variants = designIntervention?.sectionVariants;
   const activeVariants = designIntervention?.activeVariants;
-  if (!variants?.length && !Object.keys(activeVariants || {}).length) return template;
+
+  /**
+   * Recovery Phase 6 — ArtDirectionPack.
+   * The pack is the cohesion contract: recipe-derived variants are clamped into
+   * the pack's compatible family, and sections with no signal at all inherit the
+   * pack's preferred variant instead of falling back to a registry default.
+   * Explicit `activeVariants` (direct authorship) are never clamped.
+   */
+  const pack = (designIntervention?.industry || designIntervention?.themePresetId)
+    ? resolveArtDirectionPack({
+        industry: designIntervention?.industry,
+        themePresetId: designIntervention?.themePresetId,
+      })
+    : undefined;
+
+  if (!variants?.length && !Object.keys(activeVariants || {}).length && !pack) return template;
 
   return {
     ...template,
@@ -1227,12 +1242,22 @@ function applyDesignVariants(
         };
       }
       const resolved = applyRecipe(section, variants || []);
-      if (!resolved) return section;
+
+      const packVariantId = pack
+        ? clampVariantToPack(pack, section.type, resolved?.variantId ?? section.variantId)
+        : undefined;
+
+      const variantId = packVariantId ?? resolved?.variantId;
+      const layout = variantId
+        ? getLayoutForVariantId(variantId) ?? resolved?.layout
+        : resolved?.layout;
+
+      if (!variantId && !layout) return section;
       return {
         ...section,
-        ...(resolved.variantId ? { variantId: resolved.variantId } : {}),
-        props: resolved.layout
-          ? { ...section.props, layout: resolved.layout } as typeof section.props
+        ...(variantId ? { variantId } : {}),
+        props: layout
+          ? { ...section.props, layout } as typeof section.props
           : section.props,
       };
     }),

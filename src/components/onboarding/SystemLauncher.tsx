@@ -723,8 +723,17 @@ function buildWizardCurrentCodeContext(files: Record<string, string>): string {
   return blocks.join('\n\n');
 }
 
-function buildTemplateGuidance(card: TemplateCardData | null): string {
-  if (!card) return "";
+/**
+ * R4: the industry copy directive is MANDATORY — it is emitted even when no
+ * template card resolved, so Lane B never loses its content contract.
+ * Design guidance stays with the canonical compiler (R3/R5); this payload is
+ * tone / conversion goals / trust signals only.
+ */
+function buildTemplateGuidance(card: TemplateCardData | null, industry?: string): string {
+  const resolvedIndustry = card?.industry || industry || "universal";
+  const copyDirective = buildIndustryCopyDirective(resolvedIndustry);
+
+  if (!card) return copyDirective;
 
   const industryContext = INDUSTRY_CONTEXTS.find((entry) => entry.industry === card.industry);
   const displayLabel = INDUSTRY_DISPLAY[card.industry]?.label || card.industry;
@@ -734,14 +743,11 @@ function buildTemplateGuidance(card: TemplateCardData | null): string {
 
   return [
     `Template: ${card.label}`,
-    `Industry: ${displayLabel}`,
     `Description: ${card.description}`,
     sectionFlow.length > 0 ? `Preferred sections: ${sectionFlow.join(" → ")}` : "",
     card.traits.length > 0 ? `Visual traits: ${card.traits.join(", ")}` : "",
-    industryContext?.toneDirective ? `Tone direction: ${industryContext.toneDirective}` : "",
-    industryContext?.conversionGoals?.length ? `Conversion goals: ${industryContext.conversionGoals.join(", ")}` : "",
-    industryContext?.trustSignals?.length ? `Trust signals: ${industryContext.trustSignals.join(", ")}` : "",
-    "Use a premium image-first hero, semantic sections, one H1, and HSL design tokens only.",
+    copyDirective,
+    "Copy must name the real service, audience, and outcome. No lorem ipsum, no generic filler.",
   ]
     .filter(Boolean)
     .join("\n");

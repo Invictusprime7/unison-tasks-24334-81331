@@ -3938,7 +3938,24 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           }, { yieldToHost: yieldToBrowser });
         },
       });
+      // Seal diagnostics: registered pages that reached the sealed revision
+      // without a file body. The launch still opens, but the gap is recorded.
+      const sealedMissingPageFiles =
+        launchArtifacts.siteBundleSnapshot?.meta?.seal?.missingPageFiles || [];
+      if (sealedMissingPageFiles.length > 0) {
+        launchReliabilityMode = 'lane-b-degraded';
+        console.error('[SystemLauncher] Sealed revision is missing page files', {
+          paths: sealedMissingPageFiles,
+        });
+        run.degrade(
+          'preflight',
+          'preflight.sealed_pages_missing',
+          `${sealedMissingPageFiles.length} page(s) have no body in the sealed site revision.`,
+          sealedMissingPageFiles.join(', '),
+        );
+      }
       const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
+
       const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
         runtime: JSON.parse(launchArtifacts.files['/.unison/published-runtime.json']) as import('@/services/canonicalLaunchVfs').PublishedRuntimeConfig,
         bindingCount: plannedDataBindings.length,

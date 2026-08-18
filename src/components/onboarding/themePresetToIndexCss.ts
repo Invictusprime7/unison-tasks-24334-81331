@@ -503,5 +503,11 @@ export function resolveGeometryTokens(
     const value = declaration.slice(index + 1).trim();
     if (name.startsWith('--ut-') && value) tokens[name] = value;
   }
-  return tokens;
+
+  const pack = resolveArtDirectionPack({
+    ...artDirection,
+    themePresetId: artDirection.themePresetId ?? presetId,
+  });
+  return { ...tokens, ...buildArtDirectionTokens(pack) };
+
 }

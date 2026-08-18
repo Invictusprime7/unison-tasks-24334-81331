@@ -33,6 +33,7 @@ import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundati
 import {
   WIZARD_FOOTER_PATH,
   WIZARD_NAVBAR_PATH,
+  countPageChromeLandmarks,
   isCanonicalWizardSharedChromePath,
 } from './wizardSharedChrome';
 import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';

@@ -214,6 +214,7 @@ function cloneSnapshotWithRuntimeVfs(
   appContext: RuntimeAppContext,
   files: Record<string, string>,
   interactionManifest?: WizardInteractionManifest | null,
+  missingPageFilePolicy: 'throw' | 'report' = 'throw',
 ): SiteBundleSnapshot {
   // Pass 1 seal point: Stage 4b artifact + Lane B convergence + preflight
   // become the single authoritative revision here. Nothing downstream may
@@ -223,9 +224,11 @@ function cloneSnapshotWithRuntimeVfs(
     appContext,
     vfsFiles: files,
     interactionManifest,
+    missingPageFilePolicy,
     sealedBy: siteBundleSnapshot.meta?.source === 'recompile' ? 'recompile' : 'wizard-launch',
   });
 }
+
 
 
 function buildCanonicalPlayground(

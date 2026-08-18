@@ -1,15 +1,26 @@
 import type { TemplateLayoutContract } from '@/services/templateLayoutContract';
 import type { WizardHeroGeometry } from '@/services/wizardGenerationBrief';
 
-export interface WizardPresentationGuardResult {
-  files: Record<string, string>;
-  restored: boolean;
-  reason?: string;
+/**
+ * Recovery Phase 4 — this module is a QUALITY GATE, not a design authority.
+ *
+ * It used to replace a Lane B page body with the Stage 4b canonical page when
+ * it detected visual drift, which made it a second page-body author competing
+ * with Lane B. It now only reports rejections: the launcher decides whether to
+ * run a focused Lane B retry or mark the launch degraded. It never returns a
+ * different page body.
+ */
+export interface WizardPageRejection {
+  path: string;
+  reason: string;
 }
 
-export interface WizardPagePresentationGuardResult {
-  files: Record<string, string>;
-  restoredPaths: string[];
+export interface WizardPresentationAssessment {
+  /** Pages whose Lane B body failed the quality contract. */
+  rejections: WizardPageRejection[];
+  /** Convenience: rejected page paths. */
+  rejectedPaths: string[];
+  /** Convenience: path → reason. */
   reasons: Record<string, string>;
 }
 
@@ -42,27 +53,19 @@ export function assessTemplateVisualFidelity(
   return null;
 }
 
-export function preserveCanonicalHomePresentation(input: {
+export function assessWizardHomePresentation(input: {
   aiFiles: Record<string, string>;
-  canonicalFiles: Record<string, string>;
   homePath: string;
   contract: TemplateLayoutContract;
-}): WizardPresentationGuardResult {
+}): WizardPresentationAssessment {
   const homePath = input.homePath.startsWith('/') ? input.homePath : `/${input.homePath}`;
   const generatedHome = input.aiFiles[homePath] || input.aiFiles[homePath.slice(1)] || '';
-  const canonicalHome = input.canonicalFiles[homePath] || input.canonicalFiles[homePath.slice(1)];
   const reason = generatedPageFallbackReason(generatedHome, Boolean(
     input.contract.sections.some((section) => section.hasMedia),
   ));
-  if (!reason || !canonicalHome) return { files: input.aiFiles, restored: false, reason };
-
-  const files = { ...input.aiFiles, [homePath]: canonicalHome };
-  for (const [path, source] of Object.entries(input.canonicalFiles)) {
-    if (/^\/?src\/components\//.test(path) || path === homePath.replace(/\.(tsx|jsx)$/i, '.sections.ts')) {
-      files[path.startsWith('/') ? path : `/${path}`] = source;
-    }
-  }
-  return { files, restored: true, reason };
+  return reason
+    ? { rejections: [{ path: homePath, reason }], rejectedPaths: [homePath], reasons: { [homePath]: reason } }
+    : { rejections: [], rejectedPaths: [], reasons: {} };
 }
 
 function extractCanonicalSections(pageSource: string): Array<{
@@ -170,19 +173,19 @@ function generatedPageFallbackReason(source: string, requiresMedia: boolean): st
 }
 
 /**
- * The canonical snapshot owns presentation modules. Lane B may enhance a page,
- * but cannot replace a selected template with a generic section stack. This
- * runs after all AI page-repair attempts so the final VFS is the authority.
+ * Assess every registered Wizard page against the quality contract.
+ *
+ * Returns rejections only. The caller re-runs Lane B for the rejected pages or
+ * marks the launch degraded; no canonical page body is substituted here.
  */
-export function preserveCanonicalPagePresentations(input: {
+export function assessWizardPagePresentations(input: {
   aiFiles: Record<string, string>;
   canonicalFiles: Record<string, string>;
   pagePaths: readonly string[];
   homePath?: string;
   requiredHeroGeometry?: WizardHeroGeometry;
-}): WizardPagePresentationGuardResult {
-  const files = { ...input.aiFiles };
-  const restoredPaths: string[] = [];
+}): WizardPresentationAssessment {
+  const rejections: WizardPageRejection[] = [];
   const reasons: Record<string, string> = {};
   const homePath = input.homePath
     ? (input.homePath.startsWith('/') ? input.homePath : `/${input.homePath}`)
@@ -191,7 +194,7 @@ export function preserveCanonicalPagePresentations(input: {
 
   for (const rawPath of input.pagePaths) {
     const path = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
-    const generatedPage = files[path] || files[path.slice(1)] || '';
+    const generatedPage = input.aiFiles[path] || input.aiFiles[path.slice(1)] || '';
     const canonicalPage = input.canonicalFiles[path] || input.canonicalFiles[path.slice(1)];
     if (!canonicalPage) continue;
     const reason = canonicalPageFallbackReason(generatedPage, canonicalPage) ||
@@ -199,17 +202,9 @@ export function preserveCanonicalPagePresentations(input: {
         path === homePath ? null : routeHeroFallbackReason(generatedPage, canonicalPage, canonicalHomePage)
       );
     if (!reason) continue;
-    files[path] = canonicalPage;
-    restoredPaths.push(path);
+    rejections.push({ path, reason });
     reasons[path] = reason;
   }
 
-  if (restoredPaths.length > 0) {
-    for (const [path, source] of Object.entries(input.canonicalFiles)) {
-      if (/^\/?src\/components\//.test(path) || /\.sections\.ts$/i.test(path)) {
-        files[path.startsWith('/') ? path : `/${path}`] = source;
-      }
-    }
-  }
-  return { files, restoredPaths, reasons };
+  return { rejections, rejectedPaths: rejections.map((r) => r.path), reasons };
 }

@@ -376,6 +376,8 @@ export function executeCanonicalPipeline(
     validations,
     compileResult,
     siteBundleSnapshot,
+    compileArtifact: createWizardCompileArtifact(siteBundleSnapshot),
+
     runtimeManifest,
     sitePlan,
     warnings,

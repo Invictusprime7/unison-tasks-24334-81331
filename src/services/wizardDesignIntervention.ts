@@ -236,12 +236,17 @@ export function buildWizardDesignIntervention(
     businessModel: input.businessModel,
     templateId: input.templateId || null,
     themePresetId: input.themePresetId,
+    artDirectionPackId,
     layoutRecipe: baseline.layoutRecipe,
     sectionVariants,
     activeVariants: buildActiveVariants(input.templateId, seed),
-    motionRecipes: rotate(baseline.motionRecipes, `${seed}|motion`),
+    // The pack's motion profile leads; the business-model recipes follow.
+    motionRecipes: Array.from(
+      new Set([pack.motionProfile, ...rotate(baseline.motionRecipes, `${seed}|motion`)]),
+    ),
     interactionRecipes,
     motionBudget: baseline.motionBudget,
-    aiDirective: 'Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.',
+    aiDirective: `Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Art direction is "${pack.name}" — ${pack.description} Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.`,
+
   };
 }

@@ -134,6 +134,51 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(merged['/.unison/design-intervention.json']).toContain('collage-hero');
   });
 
+  it("keeps Lane B as the page-body author even when Stage 4b declared a composition", () => {
+    const snapshot = createSnapshot();
+    snapshot.vfsFiles["/src/pages/Home.tsx"] = [
+      'const SECTIONS = [{"id":"home-hero","type":"hero","props":{"headline":"Canonical headline"}}];',
+      'const HYDRATABLE = new Set([]);',
+      'export default function Home(){ return <main>Canonical composed home</main>; }',
+    ].join("\n");
+    snapshot.vfsFiles["/.unison/compositions/src/pages/Home.json"] = JSON.stringify({
+      pageId: "page_home",
+      route: "/",
+      sections: [{ semanticType: "hero", variantId: "hero:full-bleed" }],
+    });
+
+    const laneBHome = [
+      'export default function Home(){',
+      '  return <main><section data-ut-intent="contact.submit">Lane B authored home</section></main>;',
+      '}',
+    ].join("\n");
+
+    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
+      { "/src/pages/Home.tsx": laneBHome },
+      snapshot.vfsFiles,
+      snapshot,
+    );
+
+    expect(merged["/src/pages/Home.tsx"]).toBe(laneBHome);
+    expect(merged["/src/pages/Home.tsx"]).not.toContain("Canonical composed home");
+    // The declared composition survives as the design contract, not as a body.
+    expect(merged["/.unison/compositions/src/pages/Home.json"]).toContain("hero:full-bleed");
+  });
+
+  it("only falls back to the canonical page body when Lane B produced nothing", () => {
+    const snapshot = createSnapshot();
+    snapshot.vfsFiles["/src/pages/Home.tsx"] =
+      "export default function Home(){ return <main>Canonical composed home</main>; }";
+
+    const degraded = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot);
+    expect(degraded["/src/pages/Home.tsx"]).toContain("Canonical composed home");
+
+    const strict = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot, {
+      allowCanonicalPageFallback: false,
+    });
+    expect(strict["/src/pages/Home.tsx"]).toBeUndefined();
+  });
+
   it("uses LaunchState VFS when the builder preview mounts before VFS import", () => {
     const launchState = createLaunchState({
       systemType: "agency",

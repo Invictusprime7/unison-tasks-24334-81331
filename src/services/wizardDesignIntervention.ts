@@ -2,6 +2,13 @@ import type { BusinessModel, IndustryOverlay } from '@/types/playground';
 import { getCompositionById } from '@/sections/templates';
 import { getVariantById, getVariantIdForLayout, getVariantsForSection } from '@/sections/variants';
 import type { ActiveVariantMap, VariantId } from '@/sections/variants';
+import {
+  ART_DIRECTION_PACKS,
+  isArtDirectionPackId,
+  resolveArtDirectionPackId,
+  type ArtDirectionPackId,
+} from '@/sections/variants/artDirectionPacks';
+
 
 export const WIZARD_DESIGN_INTERVENTION_VERSION = '1.0' as const;
 

@@ -65,3 +65,6 @@ export * from './commitToPipeline';
 
 // Contract Guard — silent-retry-then-surface enforcement for AI patches.
 export * from './contractGuard';
+
+// Pass 1 — named revisions: Stage 4b compile artifact + the single seal point.
+export * from './snapshotSeal';

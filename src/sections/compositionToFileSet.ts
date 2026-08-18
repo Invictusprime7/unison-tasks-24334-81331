@@ -38,7 +38,21 @@ import {
 import type { WizardDesignIntervention, WizardMotionRecipe } from '@/services/wizardDesignIntervention';
 import { getLayoutForVariantId, getVariantById } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';
-import { clampVariantToPack, resolveArtDirectionPack } from '@/sections/variants';
+import { clampVariantToPack, resolveArtDirectionPack, resolveHeroPresentation } from '@/sections/variants';
+import type { HeroLayoutId } from '@/sections/variants';
+
+/**
+ * The pack's hero signature is richer than the section schema's three layouts,
+ * so it is projected down deterministically. Same pack in, same layout out.
+ */
+const HERO_LAYOUT_TO_SECTION_LAYOUT: Record<HeroLayoutId, 'centered' | 'split' | 'full-bleed'> = {
+  'full-bleed': 'full-bleed',
+  poster: 'full-bleed',
+  split: 'split',
+  asymmetric: 'split',
+  centered: 'centered',
+  'stacked-editorial': 'centered',
+};
 
 /**
  * The slice of the wizard design brief the section compiler consumes.

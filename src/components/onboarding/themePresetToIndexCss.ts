@@ -15,6 +15,7 @@ import type { ThemeTokens } from '@/sections/types';
 import { themePresetToThemeTokens } from './themePresetToTokens';
 import {
   buildArtDirectionCssDeclarations,
+  buildEntranceKeyframes,
   buildArtDirectionTokens,
   resolveArtDirectionPack,
   type ArtDirectionResolutionInput,
@@ -111,6 +112,7 @@ export function buildThemedIndexCssFromTokens(
     seed: metadata.seed,
   });
   const artDirection = buildArtDirectionCssDeclarations(artDirectionPack);
+  const entrance = buildEntranceKeyframes(artDirectionPack);
 
 
   // Web-font import for the exact typography injected by the selected card.
@@ -172,8 +174,10 @@ export function buildThemedIndexCssFromTokens(
   --radius: var(--ut-radius-base);
 
   /* Tailwind CDN reads these via theme.fontFamily.heading / body */
-  --font-heading: ${tokens.typography.headingFont};
-  --font-body: ${tokens.typography.bodyFont};
+  /* The style card picks the family; the art-direction pack owns the fallback
+     character (serif / grotesk / mono), weights and display leading. */
+  --font-heading: ${tokens.typography.headingFont}, var(--ut-font-display-stack);
+  --font-body: ${tokens.typography.bodyFont}, var(--ut-font-body-stack);
 }
 
 /* ${SHADCN_LIBRARY_CSS_MARKER}
@@ -286,16 +290,77 @@ export function buildThemedIndexCssFromTokens(
     width: 100%; height: 100%; object-fit: cover;
     filter: var(--ut-media-filter);
   }
+  .ut-display { font-weight: var(--ut-weight-display); line-height: var(--ut-display-leading); }
+  .ut-eyebrow {
+    display: inline-block;
+    font-size: var(--ut-eyebrow-size, 0.75rem);
+    letter-spacing: var(--ut-eyebrow-tracking);
+    text-transform: var(--ut-eyebrow-transform);
+    color: hsl(var(--primary));
+  }
+
+  /* Pills / badges / tags — shape language is pack-owned. */
+  .ut-pill {
+    display: inline-flex; align-items: center; gap: 0.375rem;
+    border-radius: var(--ut-pill-radius);
+    background: var(--ut-pill-fill);
+    border: var(--ut-border-weight) solid var(--ut-pill-stroke);
+    color: var(--ut-pill-color);
+    padding: var(--ut-pill-padding);
+    letter-spacing: var(--ut-pill-tracking);
+    text-transform: var(--ut-pill-transform);
+    font-weight: var(--ut-pill-weight);
+    font-size: 0.75rem;
+    line-height: 1.2;
+    transition: transform var(--ut-motion-duration) var(--ut-motion-ease);
+  }
+  .ut-pill:hover { transform: translateY(var(--ut-hover-lift)); }
+
+  /* Gradient language */
+  .ut-gradient-hero { background-image: var(--ut-gradient-hero); }
+  .ut-gradient-panel { background-image: var(--ut-gradient-panel); }
+  .ut-gradient-text {
+    background-image: var(--ut-gradient-text);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent;
+  }
+  .ut-divider { height: var(--ut-border-weight); background-image: var(--ut-gradient-divider); border: 0; }
+
+  /* Spacing density */
+  .ut-grid { display: grid; gap: var(--ut-grid-gap); }
+  .ut-stack { display: flex; flex-direction: column; gap: var(--ut-stack-gap); }
+  .ut-block { display: flex; flex-direction: column; gap: var(--ut-block-gap); }
+  .ut-pad { padding: var(--ut-card-padding); }
+
+  /* Hero composition */
+  .ut-hero {
+    display: grid;
+    grid-template-columns: var(--ut-hero-columns);
+    align-content: var(--ut-hero-justify);
+    align-items: center;
+    gap: var(--ut-grid-gap);
+    min-height: var(--ut-hero-min-height);
+    padding-block: var(--ut-hero-pad-block);
+    text-align: var(--ut-hero-text-align);
+    background-image: var(--ut-gradient-hero);
+  }
+  @media (max-width: 768px) { .ut-hero { grid-template-columns: 1fr; } }
+  .ut-hero-media { aspect-ratio: var(--ut-hero-media-ratio); overflow: hidden; border-radius: var(--ut-media-frame-radius); }
+  .ut-hero-media > img, .ut-hero-media > video { width: 100%; height: 100%; object-fit: cover; filter: var(--ut-media-filter); }
+
   .ut-reveal {
     animation: ut-reveal var(--ut-motion-duration) var(--ut-motion-ease) both;
   }
+  .ut-reveal-2 { animation-delay: var(--ut-motion-stagger); }
+  .ut-reveal-3 { animation-delay: calc(var(--ut-motion-stagger) * 2); }
+  .ut-reveal-4 { animation-delay: calc(var(--ut-motion-stagger) * 3); }
   @keyframes ut-reveal {
-    from { opacity: 0; transform: translateY(var(--ut-motion-distance)); }
-    to { opacity: 1; transform: none; }
+    from { ${entrance.from} }
+    to { ${entrance.to} }
   }
   @media (prefers-reduced-motion: reduce) {
     .ut-reveal { animation: none; }
-    .ut-surface { transition: none; }
+    .ut-surface, .ut-pill { transition: none; }
   }
 
   .ut-shadcn-popover,
@@ -329,7 +394,7 @@ html, body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: var(--font-body);
-  font-weight: ${tokens.typography.bodyWeight};
+  font-weight: var(--ut-weight-body, ${tokens.typography.bodyWeight});
   margin: 0;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -338,10 +403,10 @@ html, body {
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
-  font-weight: ${tokens.typography.headingWeight};
+  font-weight: var(--ut-weight-display, ${tokens.typography.headingWeight});
   color: hsl(var(--foreground));
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  letter-spacing: var(--ut-heading-tracking, -0.02em);
+  line-height: var(--ut-display-leading, 1.15);
 }
 
 /* Tailwind utility shortcuts that often appear in AI output */

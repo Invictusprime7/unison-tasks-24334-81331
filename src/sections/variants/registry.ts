@@ -595,6 +595,12 @@ export type {
   MediaTreatment,
   RhythmId,
   ArtDirectionDesignContract,
+  ArtDirectionSignature,
+  GradientProfileId,
+  DensityId,
+  HeroLayoutId,
+  PillStyleId,
+  EntranceId,
   ArtDirectionPack,
   ArtDirectionResolutionInput,
 } from './artDirectionPacks';
@@ -609,6 +615,8 @@ export {
   isArtDirectionPackId,
   buildArtDirectionTokens,
   buildArtDirectionCssDeclarations,
+  buildEntranceKeyframes,
+  resolveHeroPresentation,
 } from './artDirectionPacks';
 
 import type { ArtDirectionPack } from './artDirectionPacks';

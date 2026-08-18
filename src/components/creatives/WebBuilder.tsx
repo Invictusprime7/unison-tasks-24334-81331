@@ -5262,15 +5262,16 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     });
   }, [systemType, manifestIdFromState, importBuilderFiles, launchEntryPoint]);
 
-  // Handle section layout swap from SectionLayoutPicker
+  // Handle section layout swap from SectionLayoutPicker — routed through the
+  // canonical commit so the SiteBundleSnapshot owns the swap.
   const handleSwapSection = useCallback((sectionId: string, variantId: string) => {
     const variant = getVariantById(variantId as VariantId);
     if (!variant) {
       toast.error('Could not find the selected layout');
       return;
     }
-    templateCustomizer.setActiveVariant(sectionId, variant.id);
-  }, [templateCustomizer]);
+    void commitVariantSelection(sectionId, variant.id);
+  }, [commitVariantSelection]);
 
   // Handle saving current template
   const handleSaveTemplate = useCallback(async (

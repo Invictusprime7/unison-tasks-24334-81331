@@ -186,7 +186,19 @@ export interface SiteBundleSnapshotMeta {
   generationBrief?: WizardGenerationBrief;
   /** Deterministic composition, interaction, and motion recipes for this launch. */
   designIntervention?: WizardDesignIntervention;
+  /**
+   * Seal stamp written by `sealSnapshot()`. Present only on the final sealed
+   * revision — Stage 4b compile artifacts never carry it.
+   */
+  seal?: {
+    version: '1.0';
+    sealedAt: string;
+    sealedBy: 'wizard-launch' | 'recompile' | 'builder-commit' | 'import';
+    compileArtifactId: string;
+    fileCount: number;
+  };
 }
+
 
 function readSnapshotDesignIntervention(
   files: Record<string, string>,

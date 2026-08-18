@@ -63,7 +63,16 @@ export interface SealSnapshotInput {
   interactionManifest?: WizardInteractionManifest | null;
   /** Which stage produced the final merge (traceability only). */
   sealedBy?: 'wizard-launch' | 'recompile' | 'builder-commit' | 'import';
+  /**
+   * How to handle registered pages with no file in the runtime VFS.
+   * `throw` (default) is the strict wizard/builder path. `report` is used by
+   * the deliberately-degradation-visible modes (canonical page fallback
+   * blocked, canonical merge disabled) so the missing pages surface as seal
+   * diagnostics instead of crashing artifact assembly.
+   */
+  missingPageFilePolicy?: 'throw' | 'report';
 }
+
 
 function baselineOf(artifact: SealSnapshotInput['artifact']): SiteBundleSnapshot {
   return 'kind' in artifact && artifact.kind === 'wizard-compile-artifact'
@@ -104,11 +113,12 @@ export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
     .map((page) => page.filePath)
     .filter((filePath): filePath is string => Boolean(filePath))
     .filter((filePath) => !runtimeVfsFiles[filePath]);
-  if (missingPageFiles.length > 0) {
+  if (missingPageFiles.length > 0 && (input.missingPageFilePolicy || 'throw') === 'throw') {
     throw new SnapshotSealError(
       `sealed revision is missing files for registered pages: ${missingPageFiles.join(', ')}.`,
     );
   }
+
 
   const meta: SiteBundleSnapshotMeta = {
     ...(baseline.meta || ({} as SiteBundleSnapshotMeta)),
@@ -131,7 +141,9 @@ export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
       sealedBy: input.sealedBy || 'wizard-launch',
       compileArtifactId: baseline.snapshotId,
       fileCount: Object.keys(runtimeVfsFiles).length,
+      ...(missingPageFiles.length > 0 ? { missingPageFiles } : {}),
     },
+
   };
 
   return {

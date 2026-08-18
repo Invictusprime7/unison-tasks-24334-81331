@@ -214,6 +214,7 @@ function cloneSnapshotWithRuntimeVfs(
   appContext: RuntimeAppContext,
   files: Record<string, string>,
   interactionManifest?: WizardInteractionManifest | null,
+  missingPageFilePolicy: 'throw' | 'report' = 'throw',
 ): SiteBundleSnapshot {
   // Pass 1 seal point: Stage 4b artifact + Lane B convergence + preflight
   // become the single authoritative revision here. Nothing downstream may
@@ -223,9 +224,11 @@ function cloneSnapshotWithRuntimeVfs(
     appContext,
     vfsFiles: files,
     interactionManifest,
+    missingPageFilePolicy,
     sealedBy: siteBundleSnapshot.meta?.source === 'recompile' ? 'recompile' : 'wizard-launch',
   });
 }
+
 
 
 function buildCanonicalPlayground(
@@ -834,14 +837,23 @@ function* buildCanonicalLaunchArtifactSteps(
   // runtime code, so reparsing every generated page here only duplicates CPU
   // work and can freeze the launcher shell.
   const verifiedViteFiles = viteReadyFiles;
+  // Launch assembly reports missing page files instead of throwing: the wizard
+  // deliberately drops minimal canonical stubs, and the launcher's
+  // `enrich.pages_missing_baseline` gate (Pass 4) is the layer that decides to
+  // re-compile or block. Strict throwing stays the default for builder-commit
+  // and import seals.
+  const missingPageFilePolicy: 'throw' | 'report' = 'report';
+
   const siteBundleSnapshot = runtimeSnapshotSeed
     ? cloneSnapshotWithRuntimeVfs(
         runtimeSnapshotSeed,
         appContext,
         verifiedViteFiles,
         input.interactionManifest,
+        missingPageFilePolicy,
       )
     : undefined;
+
   if (siteBundleSnapshot && resolvedThemePresetId) {
     assertSnapshotThemeSeed(siteBundleSnapshot, resolvedThemePresetId, 'canonical launch -> SiteBundleSnapshot');
   }

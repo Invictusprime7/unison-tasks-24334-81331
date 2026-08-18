@@ -168,9 +168,15 @@ function collectViolations(dir) {
       if (!/\.(ts|tsx)$/.test(name)) continue;
       if (/\.test\.tsx?$|\.spec\.tsx?$/.test(name)) continue;
       const rel = relative(ROOT, full).split(sep).join('/');
-      if (ALLOWLIST.has(rel)) continue;
 
       const text = readFileSync(full, 'utf8');
+      if (!SEAL_ALLOWLIST.has(rel) && text.includes('sealSnapshot')) {
+        for (const usage of findSealViolations(text, full)) {
+          violations.push({ file: rel, ...usage });
+        }
+      }
+
+      if (ALLOWLIST.has(rel)) continue;
       if (
         !FORBIDDEN_SYMBOLS.some((symbol) => text.includes(symbol)) &&
         !text.includes('builder_drafts')

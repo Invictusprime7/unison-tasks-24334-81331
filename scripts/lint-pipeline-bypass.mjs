@@ -82,6 +82,7 @@ const DESIGN_RESOLUTION_ALLOWLIST = new Set([
   // Stage 4b compile + seal surface.
   'src/services/canonicalLaunchVfs.ts',
   'src/services/wizardDesignIntervention.ts',
+  'src/services/templateLayoutContract.ts',
   'src/services/generatedSiteRuntimeManifest.ts',
   // The single legal presentation-op applier (validates ops against the seal).
   'src/services/vfsCommitService.ts',

@@ -24,45 +24,42 @@ describe('Wizard presentation guard', () => {
     expect(assessTemplateVisualFidelity('<main><section>Welcome</section></main>', contract)).toContain('missing template section identity');
   });
 
-  it('retains a rich generated page and restores a generic Home page with its presentation modules', () => {
+  it('accepts a rich generated Home and rejects a generic one', () => {
     const faithful = `<main><section><img src="hero.jpg" alt="Studio" /><button data-ut-intent="contact.submit">Contact</button>${'Photography work '.repeat(100)}</section><section>Portfolio stories</section><footer>Studio</footer></main>`;
-    expect(assessWizardHomePresentation({ aiFiles: { '/src/pages/Home.tsx': faithful }, canonicalFiles: {}, homePath: '/src/pages/Home.tsx', contract }).rejections.length).toBe(0);
+    expect(assessWizardHomePresentation({ aiFiles: { '/src/pages/Home.tsx': faithful }, homePath: '/src/pages/Home.tsx', contract }).rejections.length).toBe(0);
 
     const guarded = assessWizardHomePresentation({
       aiFiles: { '/src/pages/Home.tsx': '<main>Generic page</main>' },
-      canonicalFiles: { '/src/pages/Home.tsx': 'canonical home', '/src/pages/Home.sections.ts': 'canonical map', '/src/components/Hero.tsx': 'canonical hero' },
       homePath: '/src/pages/Home.tsx',
       contract,
     });
     expect(guarded.rejections.length).toBe(1);
-    expect(guarded.files['/src/pages/Home.tsx']).toBe('canonical home');
-    expect(guarded.files['/src/components/Hero.tsx']).toBe('canonical hero');
+    expect(guarded.rejectedPaths).toEqual(['/src/pages/Home.tsx']);
   });
 
-  it('runs before the final VFS merge so generic Home source cannot ship', () => {
+  it('runs before the final VFS merge so drift is detected pre-seal', () => {
     const launcher = readFileSync(resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'), 'utf8');
     expect(launcher).toContain('assessWizardHomePresentation({');
     expect(launcher.indexOf('assessWizardHomePresentation({')).toBeLessThan(launcher.indexOf('const generatedFiles: Record<string, string>'));
   });
 
-  it('restores the real photography composition and its image-led presentation modules', () => {
+  it('rejects a generic Home against the real photography composition and its image-led presentation modules', () => {
     const composition = getCompositionById('portfolio-photography');
     if (!composition) throw new Error('Photography composition must be registered');
     const canonicalFiles = compositionToReactFileSet(composition, '/src/pages/Home.tsx');
+    // The canonical composition is the *expectation*, not a replacement body.
+    expect(canonicalFiles['/src/components/Hero.tsx']).toContain('data-ut-variant');
     const result = assessWizardHomePresentation({
       aiFiles: { '/src/pages/Home.tsx': '<main><section>Generic photographer</section></main>' },
-      canonicalFiles,
       homePath: '/src/pages/Home.tsx',
       contract: buildTemplateLayoutContract(composition),
     });
 
     expect(result.rejections.length).toBe(1);
-    expect(result.files['/src/pages/Home.tsx']).toContain('photo-1537633552985-df8429e8048b');
-    expect(result.files['/src/pages/Home.tsx']).toContain('photo-1519741497674-611481863552');
-    expect(result.files['/src/components/Hero.tsx']).toContain('data-ut-variant="hero:full-bleed"');
+    expect(result.reasons['/src/pages/Home.tsx']).toBeTruthy();
   });
 
-  it('restores only secondary pages that are under-generated', () => {
+  it('rejects only secondary pages that are under-generated', () => {
     const canonicalPage = `const SECTIONS = [
   {"id":"services-hero","type":"hero","variantId":"hero:collage","props":{"layout":"split","image":"hero.jpg"}}
 ];
@@ -85,12 +82,10 @@ const HYDRATABLE = new Set([]);`,
     });
 
     expect(result.rejectedPaths).toEqual(['/src/pages/Services.tsx']);
-    expect(result.files['/src/pages/Services.tsx']).toBe(canonicalPage);
-    expect(result.files['/src/pages/Contact.tsx']).toBe(faithfulPage);
-    expect(result.files['/src/components/Hero.tsx']).toBe('canonical hero');
+    expect(result.reasons['/src/pages/Contact.tsx']).toBeUndefined();
   });
 
-  it('restores a non-home route when its rich AI output repeats the Home hero identity', () => {
+  it('rejects a non-home route when its rich AI output repeats the Home hero identity', () => {
     const homePage = `const SECTIONS = [
   {"id":"home-hero","type":"hero","props":{"headline":"Photography with feeling","badge":"Portrait studio"}}
 ];
@@ -112,10 +107,9 @@ const HYDRATABLE = new Set([]);`;
 
     expect(result.rejectedPaths).toEqual(['/src/pages/Services.tsx']);
     expect(result.reasons['/src/pages/Services.tsx']).toContain('repeats the Home hero identity');
-    expect(result.files['/src/pages/Services.tsx']).toBe(servicesPage);
   });
 
-  it('restores a page that attempts to ship a second navigation or global theme layer', () => {
+  it('rejects a page that attempts to ship a second navigation or global theme layer', () => {
     const canonicalPage = `const SECTIONS = [
   {"id":"services-hero","type":"hero","props":{"headline":"Services"}}
 ];
@@ -130,10 +124,9 @@ const HYDRATABLE = new Set([]);`;
 
     expect(result.rejectedPaths).toEqual(['/src/pages/Services.tsx']);
     expect(result.reasons['/src/pages/Services.tsx']).toContain('shared navigation chrome');
-    expect(result.files['/src/pages/Services.tsx']).toBe(canonicalPage);
   });
 
-  it('restores a page that attempts to inject an independent global stylesheet', () => {
+  it('rejects a page that attempts to inject an independent global stylesheet', () => {
     const canonicalPage = `const SECTIONS = [
   {"id":"contact-hero","type":"hero","props":{"headline":"Contact"}}
 ];
@@ -150,7 +143,7 @@ const HYDRATABLE = new Set([]);`;
     expect(result.reasons['/src/pages/Contact.tsx']).toContain('parallel global theme system');
   });
 
-  it('restores a route whose hero changes the selected Home geometry', () => {
+  it('rejects a route whose hero changes the selected Home geometry', () => {
     const homePage = `const SECTIONS = [
   {"id":"home-hero","type":"hero","props":{"headline":"Studio","layout":"split","image":"hero.jpg"}}
 ];
@@ -177,6 +170,5 @@ const HYDRATABLE = new Set([]);`;
 
     expect(result.rejectedPaths).toEqual(['/src/pages/Pricing.tsx']);
     expect(result.reasons['/src/pages/Pricing.tsx']).toContain('expected data-ut-layout="split"');
-    expect(result.files['/src/pages/Pricing.tsx']).toBe(pricingPage);
   });
 });

@@ -7,8 +7,8 @@ import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import { getCompositionById } from '@/sections/templates';
 import {
   assessTemplateVisualFidelity,
-  preserveCanonicalHomePresentation,
-  preserveCanonicalPagePresentations,
+  assessWizardHomePresentation,
+  assessWizardPagePresentations,
 } from '@/services/wizardPresentationGuard';
 
 const contract: TemplateLayoutContract = {
@@ -26,37 +26,37 @@ describe('Wizard presentation guard', () => {
 
   it('retains a rich generated page and restores a generic Home page with its presentation modules', () => {
     const faithful = `<main><section><img src="hero.jpg" alt="Studio" /><button data-ut-intent="contact.submit">Contact</button>${'Photography work '.repeat(100)}</section><section>Portfolio stories</section><footer>Studio</footer></main>`;
-    expect(preserveCanonicalHomePresentation({ aiFiles: { '/src/pages/Home.tsx': faithful }, canonicalFiles: {}, homePath: '/src/pages/Home.tsx', contract }).restored).toBe(false);
+    expect(assessWizardHomePresentation({ aiFiles: { '/src/pages/Home.tsx': faithful }, canonicalFiles: {}, homePath: '/src/pages/Home.tsx', contract }).rejections.length).toBe(0);
 
-    const guarded = preserveCanonicalHomePresentation({
+    const guarded = assessWizardHomePresentation({
       aiFiles: { '/src/pages/Home.tsx': '<main>Generic page</main>' },
       canonicalFiles: { '/src/pages/Home.tsx': 'canonical home', '/src/pages/Home.sections.ts': 'canonical map', '/src/components/Hero.tsx': 'canonical hero' },
       homePath: '/src/pages/Home.tsx',
       contract,
     });
-    expect(guarded.restored).toBe(true);
+    expect(guarded.rejections.length).toBe(1);
     expect(guarded.files['/src/pages/Home.tsx']).toBe('canonical home');
     expect(guarded.files['/src/components/Hero.tsx']).toBe('canonical hero');
   });
 
   it('runs before the final VFS merge so generic Home source cannot ship', () => {
     const launcher = readFileSync(resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'), 'utf8');
-    expect(launcher).toContain('preserveCanonicalHomePresentation({');
-    expect(launcher.indexOf('preserveCanonicalHomePresentation({')).toBeLessThan(launcher.indexOf('const generatedFiles: Record<string, string>'));
+    expect(launcher).toContain('assessWizardHomePresentation({');
+    expect(launcher.indexOf('assessWizardHomePresentation({')).toBeLessThan(launcher.indexOf('const generatedFiles: Record<string, string>'));
   });
 
   it('restores the real photography composition and its image-led presentation modules', () => {
     const composition = getCompositionById('portfolio-photography');
     if (!composition) throw new Error('Photography composition must be registered');
     const canonicalFiles = compositionToReactFileSet(composition, '/src/pages/Home.tsx');
-    const result = preserveCanonicalHomePresentation({
+    const result = assessWizardHomePresentation({
       aiFiles: { '/src/pages/Home.tsx': '<main><section>Generic photographer</section></main>' },
       canonicalFiles,
       homePath: '/src/pages/Home.tsx',
       contract: buildTemplateLayoutContract(composition),
     });
 
-    expect(result.restored).toBe(true);
+    expect(result.rejections.length).toBe(1);
     expect(result.files['/src/pages/Home.tsx']).toContain('photo-1537633552985-df8429e8048b');
     expect(result.files['/src/pages/Home.tsx']).toContain('photo-1519741497674-611481863552');
     expect(result.files['/src/components/Hero.tsx']).toContain('data-ut-variant="hero:full-bleed"');
@@ -68,7 +68,7 @@ describe('Wizard presentation guard', () => {
 ];
 const HYDRATABLE = new Set([]);`;
     const faithfulPage = `<main><section><button data-ut-intent="contact.submit">Contact</button>${'A considered contact experience '.repeat(80)}</section><section>Availability</section><footer>Studio</footer></main>`;
-    const result = preserveCanonicalPagePresentations({
+    const result = assessWizardPagePresentations({
       aiFiles: {
         '/src/pages/Services.tsx': '<main><section>Our services</section></main>',
         '/src/pages/Contact.tsx': faithfulPage,
@@ -84,7 +84,7 @@ const HYDRATABLE = new Set([]);`,
       pagePaths: ['/src/pages/Services.tsx', '/src/pages/Contact.tsx'],
     });
 
-    expect(result.restoredPaths).toEqual(['/src/pages/Services.tsx']);
+    expect(result.rejectedPaths).toEqual(['/src/pages/Services.tsx']);
     expect(result.files['/src/pages/Services.tsx']).toBe(canonicalPage);
     expect(result.files['/src/pages/Contact.tsx']).toBe(faithfulPage);
     expect(result.files['/src/components/Hero.tsx']).toBe('canonical hero');
@@ -101,7 +101,7 @@ const HYDRATABLE = new Set([]);`;
 const HYDRATABLE = new Set([]);`;
     const copiedHomeHero = `<main><section><h1>Photography with feeling</h1><p>${'Original studio content '.repeat(90)}</p><button data-ut-intent="contact.submit">Contact</button></section><section>Portraits</section><footer>Studio</footer></main>`;
 
-    const result = preserveCanonicalPagePresentations({
+    const result = assessWizardPagePresentations({
       aiFiles: {
         '/src/pages/Home.tsx': `<main><section><h1>Photography with feeling</h1><p>${'Studio story '.repeat(90)}</p><button data-ut-intent="contact.submit">Contact</button></section><section>Portfolio</section><footer>Studio</footer></main>`,
         '/src/pages/Services.tsx': copiedHomeHero,
@@ -110,7 +110,7 @@ const HYDRATABLE = new Set([]);`;
       pagePaths: ['/src/pages/Home.tsx', '/src/pages/Services.tsx'],
     });
 
-    expect(result.restoredPaths).toEqual(['/src/pages/Services.tsx']);
+    expect(result.rejectedPaths).toEqual(['/src/pages/Services.tsx']);
     expect(result.reasons['/src/pages/Services.tsx']).toContain('repeats the Home hero identity');
     expect(result.files['/src/pages/Services.tsx']).toBe(servicesPage);
   });
@@ -122,13 +122,13 @@ const HYDRATABLE = new Set([]);`;
 const HYDRATABLE = new Set([]);`;
     const parallelThemePage = `<main><nav>Duplicate navigation</nav><style>{'body { background: black; }'}</style><section><h1>Services</h1><p>${'A rich but conflicting service page '.repeat(80)}</p><button data-ut-intent="booking.create">Book</button></section><section>Options</section><footer>Duplicate footer</footer></main>`;
 
-    const result = preserveCanonicalPagePresentations({
+    const result = assessWizardPagePresentations({
       aiFiles: { '/src/pages/Services.tsx': parallelThemePage },
       canonicalFiles: { '/src/pages/Services.tsx': canonicalPage },
       pagePaths: ['/src/pages/Services.tsx'],
     });
 
-    expect(result.restoredPaths).toEqual(['/src/pages/Services.tsx']);
+    expect(result.rejectedPaths).toEqual(['/src/pages/Services.tsx']);
     expect(result.reasons['/src/pages/Services.tsx']).toContain('shared navigation chrome');
     expect(result.files['/src/pages/Services.tsx']).toBe(canonicalPage);
   });
@@ -140,13 +140,13 @@ const HYDRATABLE = new Set([]);`;
 const HYDRATABLE = new Set([]);`;
     const parallelThemePage = `<main><style>{'body { background: black; color: red; }'}</style><section><h1>Contact</h1><p>${'A rich but conflicting contact page '.repeat(80)}</p><button data-ut-intent="contact.submit">Send</button></section><section>Availability</section><footer>Studio</footer></main>`;
 
-    const result = preserveCanonicalPagePresentations({
+    const result = assessWizardPagePresentations({
       aiFiles: { '/src/pages/Contact.tsx': parallelThemePage },
       canonicalFiles: { '/src/pages/Contact.tsx': canonicalPage },
       pagePaths: ['/src/pages/Contact.tsx'],
     });
 
-    expect(result.restoredPaths).toEqual(['/src/pages/Contact.tsx']);
+    expect(result.rejectedPaths).toEqual(['/src/pages/Contact.tsx']);
     expect(result.reasons['/src/pages/Contact.tsx']).toContain('parallel global theme system');
   });
 
@@ -161,7 +161,7 @@ const HYDRATABLE = new Set([]);`;
 const HYDRATABLE = new Set([]);`;
     const centeredCandidate = `<main><section data-ut-layout="centered"><img src="pricing.jpg" alt="Pricing" /><h1>Pricing</h1><p>${'A detailed pricing experience '.repeat(90)}</p><button data-ut-intent="booking.create">Book</button></section><section>Plans</section><footer>Studio</footer></main>`;
 
-    const result = preserveCanonicalPagePresentations({
+    const result = assessWizardPagePresentations({
       aiFiles: {
         '/src/pages/Home.tsx': `<main><section data-ut-layout="split" data-ut-media-treatment="split-frame"><img src="hero.jpg" alt="Studio" /><h1>Studio</h1><p>${'A polished studio home experience '.repeat(90)}</p><button data-ut-intent="booking.create">Book</button></section><section>Services</section><footer>Studio</footer></main>`,
         '/src/pages/Pricing.tsx': centeredCandidate,
@@ -175,7 +175,7 @@ const HYDRATABLE = new Set([]);`;
       },
     });
 
-    expect(result.restoredPaths).toEqual(['/src/pages/Pricing.tsx']);
+    expect(result.rejectedPaths).toEqual(['/src/pages/Pricing.tsx']);
     expect(result.reasons['/src/pages/Pricing.tsx']).toContain('expected data-ut-layout="split"');
     expect(result.files['/src/pages/Pricing.tsx']).toBe(pricingPage);
   });

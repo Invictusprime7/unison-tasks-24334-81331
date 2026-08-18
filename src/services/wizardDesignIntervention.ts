@@ -39,6 +39,13 @@ export interface WizardDesignIntervention {
   businessModel: BusinessModel;
   templateId: string | null;
   themePresetId: string;
+  /**
+   * Resolved ONCE here and sealed onto the snapshot. Every downstream layer
+   * (CSS emission, compiler, Lane B brief, previewer, export) reads this id
+   * back instead of re-deriving art direction — one truth, no drift.
+   */
+  artDirectionPackId: ArtDirectionPackId;
+
   layoutRecipe: 'floating-navbar' | 'collage-hero' | 'bento-features' | 'media-card-grid' | 'conversion-form' | 'rich-footer';
   sectionVariants: WizardSectionVariant[];
   /** Stable section instance id -> registry-owned visual variant id. */

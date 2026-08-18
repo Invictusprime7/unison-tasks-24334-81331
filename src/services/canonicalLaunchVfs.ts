@@ -1,5 +1,7 @@
 import type { LayoutCategory } from '@/data/templates/types';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
+import { sealSnapshot } from '@/platform/core/snapshotSeal';
+
 import { ensureViteRootFiles } from '@/services/previewSession';
 import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from '@/types/playground';
 import {
@@ -213,32 +215,18 @@ function cloneSnapshotWithRuntimeVfs(
   files: Record<string, string>,
   interactionManifest?: WizardInteractionManifest | null,
 ): SiteBundleSnapshot {
-  const runtimeVfsFiles = Object.fromEntries(
-    Object.entries(files).filter(([path]) => !path.startsWith('/.unison/')),
-  );
-
-  return {
-    ...siteBundleSnapshot,
+  // Pass 1 seal point: Stage 4b artifact + Lane B convergence + preflight
+  // become the single authoritative revision here. Nothing downstream may
+  // amend page bodies after this returns.
+  return sealSnapshot({
+    artifact: siteBundleSnapshot,
     appContext,
-    vfsFiles: runtimeVfsFiles,
-    meta: {
-      ...(siteBundleSnapshot.meta || {}),
-      source: siteBundleSnapshot.meta?.source || 'wizard',
-      systemId: siteBundleSnapshot.meta?.systemId || appContext.systemType || null,
-      themePresetId: appContext.themePresetId || siteBundleSnapshot.meta?.themePresetId,
-      templateId: appContext.templateId || siteBundleSnapshot.meta?.templateId,
-      industry: appContext.industry || siteBundleSnapshot.meta?.industry || siteBundleSnapshot.industry,
-      verticalContractId: siteBundleSnapshot.meta?.verticalContractId || appContext.systemType || null,
-      interactionManifest: interactionManifest || siteBundleSnapshot.meta?.interactionManifest,
-      themeInjection: {
-        version: '1.0',
-        stage: '4b',
-        presetId: appContext.themePresetId || siteBundleSnapshot.meta?.themePresetId || null,
-        cssPath: '/src/index.css',
-      },
-    },
-  };
+    vfsFiles: files,
+    interactionManifest,
+    sealedBy: siteBundleSnapshot.meta?.source === 'recompile' ? 'recompile' : 'wizard-launch',
+  });
 }
+
 
 function buildCanonicalPlayground(
   siteBundleSnapshot?: SiteBundleSnapshot,

@@ -64,6 +64,8 @@ import {
   buildWizardGenerationBrief,
   type WizardGenerationBrief,
 } from '@/services/wizardGenerationBrief';
+import { createWizardCompileArtifact, type WizardCompileArtifact } from './snapshotSeal';
+
 
 // ============================================================================
 // Pipeline Result
@@ -79,7 +81,13 @@ export interface CanonicalPipelineResult {
   validations: PlaygroundValidation[];
   compileResult: PlaygroundCompileResult;
   siteBundleSnapshot: SiteBundleSnapshot;
+  /**
+   * Stage 4b compile artifact (frozen baseline, pre-Lane-B). `sealSnapshot()`
+   * converts this + Lane B + preflight into the final sealed revision.
+   */
+  compileArtifact?: WizardCompileArtifact;
   runtimeManifest: RuntimeManifest;
+
   sitePlan: GeneratedSitePlan | null;
 
   /** Warnings from materialization + validation */
@@ -186,7 +194,19 @@ export interface SiteBundleSnapshotMeta {
   generationBrief?: WizardGenerationBrief;
   /** Deterministic composition, interaction, and motion recipes for this launch. */
   designIntervention?: WizardDesignIntervention;
+  /**
+   * Seal stamp written by `sealSnapshot()`. Present only on the final sealed
+   * revision — Stage 4b compile artifacts never carry it.
+   */
+  seal?: {
+    version: '1.0';
+    sealedAt: string;
+    sealedBy: 'wizard-launch' | 'recompile' | 'builder-commit' | 'import';
+    compileArtifactId: string;
+    fileCount: number;
+  };
 }
+
 
 function readSnapshotDesignIntervention(
   files: Record<string, string>,
@@ -356,6 +376,8 @@ export function executeCanonicalPipeline(
     validations,
     compileResult,
     siteBundleSnapshot,
+    compileArtifact: createWizardCompileArtifact(siteBundleSnapshot),
+
     runtimeManifest,
     sitePlan,
     warnings,
@@ -485,6 +507,8 @@ export function recompileFromPlayground(
     validations,
     compileResult,
     siteBundleSnapshot,
+    compileArtifact: createWizardCompileArtifact(siteBundleSnapshot),
+
     runtimeManifest,
     sitePlan: null,
     warnings,

@@ -599,8 +599,9 @@ function projectToSiteBundleSnapshot(
     vfsFiles: compileResult.vfsFiles,
     uiFoundation,
     themePresetId: resolvedThemePresetId,
-    artDirectionPackId: options?.designIntervention?.artDirectionPackId,
+    artDirectionPackId: (designIntervention || selections.designIntervention)?.artDirectionPackId,
     industry: resolvedIndustry,
+    seed: (designIntervention || selections.designIntervention)?.seed,
   });
 
   return {

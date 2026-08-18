@@ -12,10 +12,10 @@
  */
 import type { ThemePreset } from './themePresets';
 import type { ThemeTokens } from '@/sections/types';
-import {
-  buildEntranceKeyframes, themePresetToThemeTokens } from './themePresetToTokens';
+import { themePresetToThemeTokens } from './themePresetToTokens';
 import {
   buildArtDirectionCssDeclarations,
+  buildEntranceKeyframes,
   buildArtDirectionTokens,
   resolveArtDirectionPack,
   type ArtDirectionResolutionInput,

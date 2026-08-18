@@ -74,6 +74,7 @@ const SECTION_FILES: Record<string, string> = {
   Hero: '/src/components/Hero.tsx',
   About: '/src/components/About.tsx',
   Services: '/src/components/Services.tsx',
+  Features: '/src/components/Features.tsx',
   Gallery: '/src/components/Gallery.tsx',
   Pricing: '/src/components/Pricing.tsx',
   LogoCloud: '/src/components/LogoCloud.tsx',

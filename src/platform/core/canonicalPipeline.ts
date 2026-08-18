@@ -204,7 +204,10 @@ export interface SiteBundleSnapshotMeta {
     sealedBy: 'wizard-launch' | 'recompile' | 'builder-commit' | 'import';
     compileArtifactId: string;
     fileCount: number;
+    /** Registered pages with no VFS file at seal time (report policy only). */
+    missingPageFiles?: string[];
   };
+
 }
 
 

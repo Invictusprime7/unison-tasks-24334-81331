@@ -119,7 +119,17 @@ export function readWizardDesignIntervention(
     if (!intervention.activeVariants) {
       intervention.activeVariants = buildActiveVariants(intervention.templateId, intervention.seed || 'legacy');
     }
+    if (!isArtDirectionPackId(intervention.artDirectionPackId)) {
+      // Legacy brief written before art direction was sealed — re-derive it
+      // from the SAME inputs so the result is identical to a fresh compile.
+      intervention.artDirectionPackId = resolveArtDirectionPackId({
+        industry: intervention.industry,
+        themePresetId: intervention.themePresetId,
+        seed: intervention.seed,
+      });
+    }
     return intervention as WizardDesignIntervention;
+
   } catch {
     return null;
   }

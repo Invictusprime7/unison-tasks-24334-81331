@@ -13,8 +13,15 @@
 import type { ThemePreset } from './themePresets';
 import type { ThemeTokens } from '@/sections/types';
 import { themePresetToThemeTokens } from './themePresetToTokens';
+import {
+  buildArtDirectionCssDeclarations,
+  buildArtDirectionTokens,
+  resolveArtDirectionPack,
+  type ArtDirectionResolutionInput,
+} from '@/sections/variants/artDirectionPacks';
 
 export const SHADCN_LIBRARY_CSS_MARKER = 'SHADCN LIBRARY: canonical Stage 4b foundation';
+
 
 /**
  * Canonical geometry token layer.

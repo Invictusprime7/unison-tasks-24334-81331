@@ -79,7 +79,13 @@ export interface CanonicalPipelineResult {
   validations: PlaygroundValidation[];
   compileResult: PlaygroundCompileResult;
   siteBundleSnapshot: SiteBundleSnapshot;
+  /**
+   * Stage 4b compile artifact (frozen baseline, pre-Lane-B). `sealSnapshot()`
+   * converts this + Lane B + preflight into the final sealed revision.
+   */
+  compileArtifact?: WizardCompileArtifact;
   runtimeManifest: RuntimeManifest;
+
   sitePlan: GeneratedSitePlan | null;
 
   /** Warnings from materialization + validation */

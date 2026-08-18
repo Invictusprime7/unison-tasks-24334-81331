@@ -137,7 +137,7 @@ describe('composition VFS variants', () => {
     const files = compileHome('restaurant-premium');
 
     expect(files['/src/components/Hero.tsx']).toContain('data-ut-variant="hero:full-bleed"');
-    expect(files['/src/components/Hero.tsx']).toContain("const HERO_TOP_PADDING = 'clamp(5.5rem, 8vw, 6.5rem)'");
+    expect(files['/src/components/Hero.tsx']).toContain("const HERO_TOP_PADDING = 'var(--ut-hero-space-top)'");
     expect(files['/src/components/Hero.tsx']).toContain('paddingTop: HERO_TOP_PADDING');
     expect(files['/src/components/Hero.tsx']).not.toContain("paddingTop: '8rem'");
     expect(files['/src/components/Hero.tsx']).not.toContain("paddingTop: '10rem'");

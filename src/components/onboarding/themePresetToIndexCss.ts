@@ -119,7 +119,13 @@ export function buildThemedIndexCssFromTokens(
   --ut-glass-border: hsl(var(--border) / 0.58);
   --ut-glass-shadow: var(--ut-surface-shadow);
   --ut-content-width: 72rem;
+  --ut-gutter: 1.25rem;
+  --ut-shell-width: min(100% - (var(--ut-gutter) * 2), var(--ut-content-width));
+  --ut-carousel-card: min(26.25rem, 85vw);
+  --ut-panel-width: min(22rem, calc(100vw - (var(--ut-gutter) * 2)));
+  --ut-control-radius: calc(var(--radius) - 0.125rem);
   --ut-media-radius: var(--radius);
+
   ${professionalGeometry}
   /* Tailwind CDN reads these via theme.fontFamily.heading / body */
   --font-heading: ${tokens.typography.headingFont};

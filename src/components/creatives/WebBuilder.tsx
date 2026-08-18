@@ -125,8 +125,6 @@ import { CodeViewErrorBoundary } from "./web-builder/CodeViewErrorBoundary";
 import { applyCustomizerOverridesToIframe } from "./web-builder/customizerDomPatcher";
 import { useTemplateCustomizer } from "@/hooks/useTemplateCustomizer";
 import { TemplateCustomizerPanel } from "./web-builder/TemplateCustomizerPanel";
-import { getVariantById } from '@/sections/variants';
-import type { VariantId } from '@/sections/variants/types';
 import { ElementFloatingToolbar } from "./web-builder/ElementFloatingToolbar";
 import { ElementIntentInspector } from "./web-builder/ElementIntentInspector";
 import { CatalogInspectorPanel } from "@/components/business-center/CatalogInspectorPanel";
@@ -5264,13 +5262,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
   // Handle section layout swap from SectionLayoutPicker — routed through the
   // canonical commit so the SiteBundleSnapshot owns the swap.
+  // Pass 5 — the builder never resolves a variant/recipe itself; the canonical
+  // commit (VFSCommitService) is the only layer allowed to validate and apply
+  // a presentation op against the sealed snapshot.
   const handleSwapSection = useCallback((sectionId: string, variantId: string) => {
-    const variant = getVariantById(variantId as VariantId);
-    if (!variant) {
-      toast.error('Could not find the selected layout');
-      return;
-    }
-    void commitVariantSelection(sectionId, variant.id);
+    void commitVariantSelection(sectionId, variantId);
   }, [commitVariantSelection]);
 
   // Handle saving current template

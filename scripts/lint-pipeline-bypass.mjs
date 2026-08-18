@@ -60,6 +60,63 @@ export function findSealViolations(text, fileName = 'source.ts') {
 }
 
 
+// Pass 5 — registries are COMPILER DEPENDENCIES, not co-authorities.
+// Nothing outside the Stage 4b compiler surface may resolve a variant, a
+// layout/motion recipe, or a section primitive. Everyone else dispatches a
+// playground/presentation op and reads the sealed snapshot.
+const DESIGN_RESOLUTION_SYMBOLS = [
+  'getVariantById',
+  'getDefaultVariant',
+  'getVariantIdForLayout',
+  'getLayoutForVariantId',
+  'resolveVariantComponent',
+  'preferredVariantForSection',
+  'clampVariantToPack',
+  'resolvePageComposition',
+];
+const DESIGN_RESOLUTION_ALLOWED_PREFIXES = [
+  'src/platform/core/',
+  'src/sections/',
+];
+const DESIGN_RESOLUTION_ALLOWLIST = new Set([
+  // Stage 4b compile + seal surface.
+  'src/services/canonicalLaunchVfs.ts',
+  'src/services/wizardDesignIntervention.ts',
+  'src/services/templateLayoutContract.ts',
+  'src/services/generatedSiteRuntimeManifest.ts',
+  // The single legal presentation-op applier (validates ops against the seal).
+  'src/services/vfsCommitService.ts',
+  // Transitional: swap helper consumed by the compiler paths above.
+  'src/utils/sectionSwapper.ts',
+]);
+
+function isDesignResolutionOwner(rel) {
+  return (
+    DESIGN_RESOLUTION_ALLOWLIST.has(rel) ||
+    DESIGN_RESOLUTION_ALLOWED_PREFIXES.some((prefix) => rel.startsWith(prefix))
+  );
+}
+
+export function findDesignResolutionViolations(text, fileName = 'source.ts') {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const usages = [];
+  function visit(node) {
+    if (ts.isIdentifier(node) && DESIGN_RESOLUTION_SYMBOLS.includes(node.text)) {
+      const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      usages.push({ line: position.line + 1, symbol: node.text, text: node.text });
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return usages;
+}
+
 // These modules predate the revision-backed writer migration. Keep this list
 // deliberately small and shrink it as each writer moves behind commitMutation.
 const BUILDER_DRAFT_MUTATION_ALLOWLIST = new Map([
@@ -172,6 +229,12 @@ function collectViolations(dir) {
       const text = readFileSync(full, 'utf8');
       if (!SEAL_ALLOWLIST.has(rel) && text.includes('sealSnapshot')) {
         for (const usage of findSealViolations(text, full)) {
+          violations.push({ file: rel, ...usage });
+        }
+      }
+
+      if (!isDesignResolutionOwner(rel) && DESIGN_RESOLUTION_SYMBOLS.some((sym) => text.includes(sym))) {
+        for (const usage of findDesignResolutionViolations(text, full)) {
           violations.push({ file: rel, ...usage });
         }
       }

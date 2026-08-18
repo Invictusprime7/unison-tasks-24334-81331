@@ -3724,7 +3724,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           .join(' | ');
         // Backfill from the wizard's own seed snapshot so every selected page
         // still exists, themed and routed, instead of blocking the launch.
+        // Pass 4 — the completion loop degrades to a STAGE 4b RE-COMPILE of the
+        // page (its baseline body from the compile artifact), never to an
+        // isolated authoring call and never to a missing file.
         const backfilled: string[] = [];
+        const withoutStage4bBaseline: string[] = [];
         for (const path of unresolvedAfterCompletion) {
           const normalized = path.startsWith('/') ? path : `/${path}`;
           const seedSource = siteBundleSnapshot.vfsFiles[normalized]
@@ -3732,7 +3736,22 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           if (typeof seedSource === 'string' && seedSource.trim()) {
             aiSourcedFiles[normalized] = seedSource;
             backfilled.push(normalized);
+          } else {
+            withoutStage4bBaseline.push(normalized);
           }
+        }
+        if (withoutStage4bBaseline.length > 0) {
+          // A registered page with no Stage 4b body means the compile artifact
+          // itself is incomplete — surface it instead of sealing a hole.
+          console.error('[SystemLauncher] Registered pages missing a Stage 4b baseline body', {
+            paths: withoutStage4bBaseline,
+          });
+          run.degrade(
+            'enrich',
+            'enrich.pages_missing_baseline',
+            `${withoutStage4bBaseline.length} page(s) have no Stage 4b baseline to fall back to.`,
+            withoutStage4bBaseline.join(', '),
+          );
         }
         run.degrade(
           'enrich',

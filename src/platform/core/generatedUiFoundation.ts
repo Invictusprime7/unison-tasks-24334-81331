@@ -171,6 +171,8 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
   const requirements = [
     'Prefer manifest-backed @/unison/ui imports; supported Sandpack UI packages are also available.',
     'Use semantic Stage 4b Tailwind tokens; do not overwrite /src/index.css.',
+    'GEOMETRY IS A TOKEN, NEVER A LITERAL. The selected aesthetic (style card) owns all proportions through CSS variables: --ut-section-space, --ut-content-width, --ut-nav-block, --ut-hero-block, --ut-hero-space-top, --ut-hero-media-block, --ut-hero-media-max, --ut-media-block, --ut-media-block-lg, --ut-tile-block, --ut-overlay-block, --ut-eyebrow-size, --ut-media-radius, --radius. Reference them (e.g. min-h-[var(--ut-hero-block)], max-h-[var(--ut-overlay-block)], text-[length:var(--ut-eyebrow-size)]) instead of writing px/rem/vh/vw literals in arbitrary Tailwind values.',
+    'Never author raw CSS: no <style> tags, no styled-jsx, no inline style objects for colors, spacing or sizing, and no document-level style injection. Use Tailwind token classes only. Standard Tailwind spacing/typography scale utilities (p-6, gap-4, text-lg) are fine; arbitrary bracket values with hardcoded units are not.',
     'Use @/unison/ui/icons for Lucide icons and provide accessible labels for icon-only actions.',
     'Import FormGrid/FormFields, FormField, Input, Textarea, Select, Checkbox, FieldLabel, FormHint, and FormError from @/unison/ui/form-fields or @/unison/ui; never invent flat input/textarea/select/checkbox/label modules.',
     'Use Button variants or IconButton for actions; icon-only actions require an accessible label.',

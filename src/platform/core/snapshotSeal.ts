@@ -113,11 +113,12 @@ export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
     .map((page) => page.filePath)
     .filter((filePath): filePath is string => Boolean(filePath))
     .filter((filePath) => !runtimeVfsFiles[filePath]);
-  if (missingPageFiles.length > 0) {
+  if (missingPageFiles.length > 0 && (input.missingPageFilePolicy || 'throw') === 'throw') {
     throw new SnapshotSealError(
       `sealed revision is missing files for registered pages: ${missingPageFiles.join(', ')}.`,
     );
   }
+
 
   const meta: SiteBundleSnapshotMeta = {
     ...(baseline.meta || ({} as SiteBundleSnapshotMeta)),

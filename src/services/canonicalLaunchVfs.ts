@@ -439,15 +439,15 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   // into the SiteBundleSnapshot.
   const merged = { ...canonicalFiles };
 
-  // Declared beats inferred: Stage 4b's own composition descriptors decide who
-  // owns each page body, instead of regex-sniffing the canonical source.
+  // Recovery invariant: Lane B is the only successful-path author of registered
+  // Wizard page bodies. Stage 4b's compositions stay available as sanctioned
+  // vocabulary + preflight expectations, never as a replacement body.
   const resolvedCompositions = collectResolvedCompositions(canonicalFiles);
 
   for (const [path, content] of Object.entries(generatedFiles)) {
     const normalizedPath = normalizePath(path);
-    // The generated UI foundation and Stage 4b's composition descriptors are
-    // compiled from wizard selections and are snapshot-owned. Lane B may read
-    // these modules, never replace them.
+    // Stage 4b owns the UI foundation, the theme contract and its own
+    // composition descriptors. Lane B may read these, never replace them.
     if (
       normalizedPath.startsWith('/src/unison/ui/') ||
       normalizedPath.startsWith(`${RESOLVED_COMPOSITION_ROOT}/`) ||
@@ -473,22 +473,9 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
           { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
         );
       }
-      const canonicalPageSource = readCanonical(normalizedPath);
-      // Stage 4b declared this page's composition → its body is canonical.
-      // Lane B copy is merged into the SECTIONS data block; when no copy can be
-      // merged the canonical baseline stands. There is no branch in which raw
-      // Lane B TSX replaces a declared page body.
-      const stage4bOwnsBody =
-        hasResolvedComposition(resolvedCompositions, normalizedPath) ||
-        isCanonicalComposedPage(canonicalPageSource);
-
-      if (stage4bOwnsBody && canonicalPageSource) {
-        const contentMerge = mergeLaneBIntoCanonicalPage(canonicalPageSource, content);
-        merged[normalizedPath] = contentMerge?.applied ? contentMerge.source : canonicalPageSource;
-        continue;
-      }
-
-      // No Stage 4b composition for this page — Lane B authored it end to end.
+      // A valid Lane B page body is persisted byte-for-byte. Sanitization and
+      // import healing run later in the shared prep pass; no design authority
+      // reinterprets this source.
       merged[normalizedPath] = content;
       continue;
     }
@@ -523,20 +510,10 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     const generatedPage = readGenerated(page.filePath);
     const canonicalPage = readCanonical(page.filePath);
     const existingMergedPage = merged[normalizedPagePath];
-    const stage4bOwnsBody = hasResolvedComposition(resolvedCompositions, normalizedPagePath);
 
     if (existingMergedPage && !isMinimalPreviewFallbackSource(existingMergedPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = existingMergedPage;
-      continue;
-    }
-
-    // Declared pages fall back to their Stage 4b baseline before ever
-    // considering raw Lane B output — a failed enrichment degrades to a good
-    // canonical page, never to an AI-authored replacement of a composed design.
-    if (stage4bOwnsBody && canonicalPage && !isMinimalPreviewFallbackSource(canonicalPage)) {
-      removePathVariants(merged, page.filePath);
-      merged[normalizedPagePath] = canonicalPage;
       continue;
     }
 
@@ -546,6 +523,9 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       continue;
     }
 
+    // Canonical page fallback is a DEGRADED path only. Wizard final merges pass
+    // allowCanonicalPageFallback:false so a missing Lane B page surfaces as an
+    // incomplete launch instead of being masked by a Stage 4b scaffold body.
     if (options.allowCanonicalPageFallback !== false && canonicalPage && !isMinimalPreviewFallbackSource(canonicalPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = canonicalPage;
@@ -554,6 +534,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
     removePathVariants(merged, page.filePath);
   }
+
 
 
   // Shared chrome is snapshot-owned and derived from the same PageRegistry as

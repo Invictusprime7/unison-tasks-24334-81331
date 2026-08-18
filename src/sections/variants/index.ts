@@ -1,2 +1,4 @@
 export { getVariantsForSection, getVariantById, getVariantIdForLayout, getLayoutForVariantId, getDefaultVariant, hasVariants, getSectionTypesWithVariants, resolveVariantComponent, VARIANT_REGISTRY, ART_DIRECTION_PACKS, ART_DIRECTION_PACK_IDS, DEFAULT_ART_DIRECTION_PACK_ID, resolveArtDirectionPack, resolveArtDirectionPackId, getArtDirectionPack, isArtDirectionPackId, buildArtDirectionTokens, buildArtDirectionCssDeclarations, familyForSection, preferredVariantForSection, isVariantInFamily, clampVariantToPack } from './registry';
 export type { ArtDirectionPack, ArtDirectionPackId, ArtDirectionResolutionInput, ArtDirectionDesignContract, MotionProfileId, InteractionProfileId, SurfaceTreatment, AccentPolicy, MediaTreatment, RhythmId } from './registry';
+export type { SectionVariant, VariantId, ActiveVariantMap } from './types';
+

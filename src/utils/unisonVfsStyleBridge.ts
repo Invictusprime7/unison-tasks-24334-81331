@@ -23,6 +23,7 @@ export const UNISON_VFS_STYLE_BRIDGE = `/* UNISON VFS STYLE BRIDGE */
   --ut-eyebrow-size: 0.6875rem;
   --ut-content-width: 72rem;
   --ut-gutter: 1.25rem;
+  --ut-touch-target: 2.75rem;
   --ut-shell-width: min(100% - (var(--ut-gutter) * 2), var(--ut-content-width));
   --ut-carousel-card: min(26.25rem, 85vw);
   --ut-panel-width: min(22rem, calc(100vw - (var(--ut-gutter) * 2)));

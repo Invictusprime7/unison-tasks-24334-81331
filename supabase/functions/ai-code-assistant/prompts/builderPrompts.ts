@@ -141,7 +141,7 @@ const ELITE_DESIGN_KNOWLEDGE = `
 
 **RESPONSIVE DESIGN PATTERNS:**
 - Mobile-first: design for 375px, then enhance for 768px (md), 1024px (lg), 1280px (xl)
-- Touch targets: minimum 44x44px on mobile (min-h-[44px] min-w-[44px])
+- Touch targets: minimum touch target on mobile via tokens (min-h-[var(--ut-touch-target)] min-w-[var(--ut-touch-target)]) — never hardcode px
 - Navigation: horizontal on desktop → hamburger/sheet on mobile (use Sheet component)
 - Images: use aspect-ratio containers (aspect-video, aspect-square) to prevent layout shift
 - Tables: horizontal scroll on mobile (overflow-x-auto) or stack into cards

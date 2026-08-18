@@ -92,7 +92,7 @@ export const GalleryLightbox: React.FC<GalleryLightboxProps> = ({ items, index, 
         <img
           src={item.src}
           alt={item.alt || item.caption || ''}
-          className="max-h-[78vh] w-auto object-contain"
+          className="max-h-[var(--ut-overlay-block)] w-auto object-contain"
           style={{ borderRadius: theme.radius }}
         />
         {item.caption && (

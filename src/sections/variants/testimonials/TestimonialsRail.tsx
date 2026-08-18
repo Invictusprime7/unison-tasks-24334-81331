@@ -42,7 +42,7 @@ export const TestimonialsRail: React.FC<BaseSectionProps<'testimonials'>> = ({ s
             key={i}
             item={item}
             theme={theme}
-            className="w-[min(420px,85vw)] shrink-0 snap-start"
+            className="w-[var(--ut-carousel-card)] shrink-0 snap-start"
           />
         ))}
       </div>

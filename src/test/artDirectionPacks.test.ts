@@ -9,6 +9,13 @@ import {
   resolveArtDirectionPackId,
   getVariantById,
 } from '@/sections/variants';
+import {
+  ART_DIRECTION_PACKS as PACKS,
+  buildArtDirectionTokens,
+  resolveArtDirectionPack,
+  resolveHeroPresentation,
+} from '@/sections/variants/artDirectionPacks';
+import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import type { TemplateComposition } from '@/sections/types';
 
@@ -87,5 +94,83 @@ describe('Recovery Phase 6 — ArtDirectionPack', () => {
     const page = files['/src/pages/Home.tsx'];
     expect(page).toContain('full-bleed');
     expect(page).toContain('cinematic-grid');
+  });
+});
+
+
+describe('Art direction signature — themePresetId drives the design system', () => {
+  const themes = ['modern', 'editorial', 'futuristic', 'minimalist', 'bold', 'organic'];
+
+  it('gives every pack a complete signature contract', () => {
+    for (const id of ART_DIRECTION_PACK_IDS) {
+      const sig = PACKS[id].signature;
+      expect(sig.typography.displayStack, id).toBeTruthy();
+      expect(sig.typography.displayWeight, id).toBeGreaterThan(199);
+      expect(sig.gradient, id).toBeTruthy();
+      expect(sig.density, id).toBeTruthy();
+      expect(sig.hero.layout, id).toBeTruthy();
+      expect(sig.pill, id).toBeTruthy();
+      expect(sig.entrance, id).toBeTruthy();
+    }
+  });
+
+  it('emits typography, gradient, spacing, hero and pill tokens', () => {
+    const tokens = buildArtDirectionTokens(PACKS['neon-grid']);
+    for (const name of [
+      '--ut-font-display-stack', '--ut-weight-display', '--ut-gradient-hero', '--ut-gradient-text',
+      '--ut-grid-gap', '--ut-card-padding', '--ut-hero-layout', '--ut-hero-columns',
+      '--ut-pill-radius', '--ut-motion-stagger',
+    ]) {
+      expect(tokens[name], name).toBeTruthy();
+    }
+  });
+
+  it('changes typography, gradients, spacing, hero layout and pills across style cards for ONE industry', () => {
+    const signatures = themes.map((themePresetId) => {
+      const pack = resolveArtDirectionPack({ industry: 'agency', themePresetId, seed: 'seed-1' });
+      const tokens = buildArtDirectionTokens(pack);
+      return {
+        themePresetId,
+        font: tokens['--ut-font-display-stack'],
+        gradient: tokens['--ut-gradient-hero'],
+        density: tokens['--ut-grid-gap'],
+        hero: tokens['--ut-hero-layout'],
+        pill: tokens['--ut-pill-radius'],
+        entrance: tokens['--ut-entrance'],
+      };
+    });
+
+    // The same industry must not collapse to one look across style cards.
+    for (const key of ['font', 'gradient', 'density', 'hero', 'pill', 'entrance'] as const) {
+      const distinct = new Set(signatures.map((s) => s[key]));
+      expect(distinct.size, `${key} must vary by themePresetId`).toBeGreaterThan(1);
+    }
+  });
+
+  it('projects the pack hero signature into the compiled hero layout', () => {
+    const composition = {
+      id: 'signature-hero',
+      name: 'Signature hero',
+      sections: [{ id: 's-hero', type: 'hero', props: { heading: 'Studio' } }],
+    } as unknown as TemplateComposition;
+
+    const centered = compositionToReactFileSet(composition, '/src/pages/Home.tsx', {
+      designIntervention: { sectionVariants: [], artDirectionPackId: 'glass-tech' },
+    })['/src/pages/Home.tsx'];
+    const poster = compositionToReactFileSet(composition, '/src/pages/Home.tsx', {
+      designIntervention: { sectionVariants: [], artDirectionPackId: 'brutalist-poster' },
+    })['/src/pages/Home.tsx'];
+
+    expect(resolveHeroPresentation(PACKS['glass-tech']).layout).toBe('centered');
+    expect(centered).toContain('centered');
+    expect(poster).toContain('full-bleed');
+  });
+
+  it('renders the signature into the themed stylesheet', () => {
+    const css = buildThemedIndexCss('futuristic', { industry: 'saas', seed: 'seed-1' });
+    expect(css).toContain('--ut-gradient-hero');
+    expect(css).toContain('.ut-pill');
+    expect(css).toContain('.ut-hero {');
+    expect(css).toContain('--ut-font-display-stack');
   });
 });

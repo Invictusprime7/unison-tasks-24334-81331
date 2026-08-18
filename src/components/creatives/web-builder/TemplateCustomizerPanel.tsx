@@ -124,6 +124,7 @@ const ColorSwatch: React.FC<{
 export const TemplateCustomizerPanel: React.FC<TemplateCustomizerPanelProps> = ({
   customizer,
   onApply,
+  onVariantCommit,
   className,
 }) => {
   const [replacingImageId, setReplacingImageId] = useState<string | null>(null);

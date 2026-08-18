@@ -31,8 +31,8 @@ import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
 
 import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {
-  buildCanonicalWizardSharedChromeModules,
-  getMissingCanonicalChromeRoutes,
+  WIZARD_FOOTER_PATH,
+  WIZARD_NAVBAR_PATH,
   isCanonicalWizardSharedChromePath,
 } from './wizardSharedChrome';
 import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';

@@ -81,3 +81,23 @@ Seam by seam:
 6. **Guard / CI** — `wizardPresentationGuard` and `scripts/lint-pipeline-bypass.mjs` already reject hardcoded geometry literals; the new radius/border/type tokens extend the same allow-list rather than adding a new checker.
 
 What does not change: SiteBundleSnapshot shape, DB schema, commit path (`VFSCommitService`), routing, or intent wiring. Existing snapshots keep working because current pack ids remain valid and unresolved fields fall back to today's defaults.
+
+## Deterministic injection — the AI never picks the pack
+
+Pack selection is pure code, computed before any model call. The AI only writes copy and JSX inside the pack it is handed.
+
+**Where the pack is computed (all deterministic):**
+
+- `resolveArtDirectionPackId({ themePresetId, industry })` is a pure table lookup — same inputs, same pack, no randomness, no network.
+- `buildWizardDesignIntervention` already derives a stable FNV-1a `seed` from `wizardSeedId | industry | businessModel | templateId | themePresetId` (`wizardDesignIntervention.ts:182`) and uses it for stable rotation. Pack selection reuses that same seed when a theme maps to multiple packs, so two identical wizard runs produce byte-identical output.
+- Result is stamped into the snapshot (`meta.artDirectionPackId`) at seal time, so later builder commits and `/site-preview/:draftId` re-read the stored id instead of re-resolving.
+
+**Three deterministic injection points, none of them AI:**
+
+1. **CSS** — `buildThemedIndexCssFromTokens` writes the pack's tokens straight into `/src/index.css`. This is a string build in Stage 4b; it runs even if Lane B fails entirely.
+2. **Structure** — `applyDesignVariants` in `compositionToFileSet.ts` clamps every section to the pack's variant family before emission. Sections are chosen by the compiler, not proposed by the model.
+3. **Motion/interaction** — emitted as token-driven classes by the same compiler pass.
+
+**What the AI receives (constraint, not choice):** the `artDirection` block added to `wizardGenerationBrief` — pack name, allowed variant ids per section, token vocabulary, and explicit do/don't rules. Lane B authors copy and JSX inside those bounds. If Lane B ignores them, `wizardPresentationGuard` rejects the output and the deterministic Stage 4b scaffold already on disk stands.
+
+So the failure mode is a plainer page, never an off-brand one: the aesthetic is guaranteed by the compiler; the AI can only add or fail to add content quality on top of it.

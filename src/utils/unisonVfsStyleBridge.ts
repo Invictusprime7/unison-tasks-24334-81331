@@ -4,6 +4,26 @@
  * values in /src/index.css.
  */
 export const UNISON_VFS_STYLE_BRIDGE = `/* UNISON VFS STYLE BRIDGE */
+/*
+ * Geometry token defaults. Stage 4b's themed /src/index.css overrides these
+ * per style card; they exist only so a recovery-path VFS still has a complete
+ * geometry scale. Generated sections must reference these tokens instead of
+ * hardcoding heights, hero blocks, tile sizes or micro type sizes.
+ */
+:root {
+  --ut-nav-block: 4.5rem;
+  --ut-hero-block: 72vh;
+  --ut-hero-space-top: clamp(5.5rem, 8vw, 6.5rem);
+  --ut-hero-media-block: 20rem;
+  --ut-hero-media-max: 33.75rem;
+  --ut-media-block: 16.25rem;
+  --ut-media-block-lg: 20rem;
+  --ut-tile-block: 13.75rem;
+  --ut-overlay-block: 78vh;
+  --ut-eyebrow-size: 0.6875rem;
+  --ut-content-width: 72rem;
+}
+
 @layer components {
   .unison-surface {
     border: 1px solid hsl(var(--border));

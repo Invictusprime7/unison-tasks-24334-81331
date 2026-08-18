@@ -67,21 +67,51 @@ function buildProfessionalGeometry(presetId?: string): string {
 }
 
 
-export function buildThemedIndexCss(preset: ThemePreset): string {
+/**
+ * Metadata accepted by the themed CSS builder. `artDirectionPackId` is the
+ * SEALED pack from `meta.artDirectionPackId` — when present it wins and no
+ * re-derivation happens, which is what keeps CSS, compiler, Lane B and export
+ * on one truth.
+ */
+export interface ThemedIndexCssMetadata {
+  presetId?: string;
+  label?: string;
+  headingFont?: string;
+  bodyFont?: string;
+  artDirectionPackId?: string | null;
+  industry?: string | null;
+  seed?: string | null;
+}
+
+export function buildThemedIndexCss(
+  preset: ThemePreset,
+  artDirection: Omit<ArtDirectionResolutionInput, 'themePresetId'> = {},
+): string {
   return buildThemedIndexCssFromTokens(themePresetToThemeTokens(preset), {
     presetId: preset.id,
     label: preset.label,
     headingFont: preset.typography.headingFont,
     bodyFont: preset.typography.bodyFont,
+    artDirectionPackId: artDirection.sealedPackId,
+    industry: artDirection.industry,
+    seed: artDirection.seed,
   });
 }
 
 export function buildThemedIndexCssFromTokens(
   tokens: ThemeTokens,
-  metadata: { presetId?: string; label?: string; headingFont?: string; bodyFont?: string } = {},
+  metadata: ThemedIndexCssMetadata = {},
 ): string {
   const c = tokens.colors;
   const professionalGeometry = buildProfessionalGeometry(metadata.presetId);
+  const artDirectionPack = resolveArtDirectionPack({
+    sealedPackId: metadata.artDirectionPackId,
+    themePresetId: metadata.presetId,
+    industry: metadata.industry,
+    seed: metadata.seed,
+  });
+  const artDirection = buildArtDirectionCssDeclarations(artDirectionPack);
+
 
   // Web-font import for the exact typography injected by the selected card.
   const fontFamilies = Array.from(

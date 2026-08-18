@@ -59,6 +59,73 @@ export type MediaTreatment = 'full-bleed' | 'framed' | 'duotone' | 'masked' | 's
 /** Vertical cadence between sections. */
 export type RhythmId = 'tight' | 'balanced' | 'airy' | 'expansive';
 
+
+/** Gradient language — how colour transitions are allowed to appear. */
+export type GradientProfileId =
+  | 'none'
+  | 'ink-fade'
+  | 'dawn-wash'
+  | 'spectral-mesh'
+  | 'chrome-sheen'
+  | 'sun-bleed'
+  | 'grid-glow'
+  | 'paper-grain';
+/** Spacing density — grid gaps, card padding, inline gutters. */
+export type DensityId = 'compact' | 'standard' | 'roomy' | 'gallery';
+/** Hero composition owned by the pack (theme-led, not industry-led). */
+export type HeroLayoutId =
+  | 'full-bleed'
+  | 'split'
+  | 'centered'
+  | 'asymmetric'
+  | 'stacked-editorial'
+  | 'poster';
+/** Badge / eyebrow / tag shape language. */
+export type PillStyleId =
+  | 'pill-soft'
+  | 'pill-solid'
+  | 'square-outline'
+  | 'cut-corner'
+  | 'underline-caps'
+  | 'mono-bracket';
+/** Entrance animation character. */
+export type EntranceId =
+  | 'fade-lift'
+  | 'slow-pan'
+  | 'mask-wipe'
+  | 'snap-in'
+  | 'stagger-rise'
+  | 'blur-focus';
+
+/**
+ * The signature half of a pack — the parts the STYLE CARD (themePresetId)
+ * is expected to change even when the industry stays the same: typography
+ * character, gradient language, spacing density, hero composition, pill
+ * shape and entrance animation.
+ */
+export interface ArtDirectionSignature {
+  typography: {
+    /** Fallback stack appended after the style card's chosen family. */
+    displayStack: string;
+    bodyStack: string;
+    displayWeight: number;
+    bodyWeight: number;
+    displayLineHeight: string;
+    eyebrowTracking: string;
+    eyebrowTransform: 'none' | 'uppercase';
+  };
+  gradient: GradientProfileId;
+  density: DensityId;
+  hero: {
+    layout: HeroLayoutId;
+    align: 'start' | 'center';
+    minHeight: string;
+    mediaRatio: string;
+  };
+  pill: PillStyleId;
+  entrance: EntranceId;
+}
+
 /**
  * The aesthetic half of a pack. Every value is emitted as a CSS custom
  * property — generated pages reference tokens and never hardcode literals.
@@ -94,6 +161,8 @@ export interface ArtDirectionPack {
   interactionProfile: InteractionProfileId;
   /** Full aesthetic contract — emitted as CSS custom properties. */
   design: ArtDirectionDesignContract;
+  /** Theme-led signature — typography, gradient, density, hero, pill, motion. */
+  signature: ArtDirectionSignature;
 }
 
 const RHYTHM_SPACE: Record<RhythmId, string> = {
@@ -152,6 +221,111 @@ const MEDIA_RECIPES: Record<MediaTreatment, { radius: string; filter: string; ra
   'soft-mask': { radius: 'calc(var(--ut-radius-base) * 3)', filter: 'saturate(1.05)', ratio: '5 / 4' },
 };
 
+
+const GRADIENT_RECIPES: Record<GradientProfileId, { hero: string; panel: string; text: string; divider: string }> = {
+  none: {
+    hero: 'none',
+    panel: 'none',
+    text: 'none',
+    divider: 'linear-gradient(90deg, hsl(var(--border)), hsl(var(--border)))',
+  },
+  'ink-fade': {
+    hero: 'linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--foreground) / 0.06) 100%)',
+    panel: 'linear-gradient(180deg, hsl(var(--card)) 0%, hsl(var(--muted) / 0.6) 100%)',
+    text: 'linear-gradient(180deg, hsl(var(--foreground)) 30%, hsl(var(--foreground) / 0.62) 100%)',
+    divider: 'linear-gradient(90deg, hsl(var(--foreground) / 0.35), transparent)',
+  },
+  'dawn-wash': {
+    hero: 'linear-gradient(160deg, hsl(var(--primary) / 0.16) 0%, hsl(var(--background)) 55%, hsl(var(--secondary) / 0.14) 100%)',
+    panel: 'linear-gradient(150deg, hsl(var(--card)) 0%, hsl(var(--primary) / 0.08) 100%)',
+    text: 'linear-gradient(100deg, hsl(var(--foreground)), hsl(var(--primary)))',
+    divider: 'linear-gradient(90deg, hsl(var(--primary) / 0.5), transparent)',
+  },
+  'spectral-mesh': {
+    hero: 'radial-gradient(70% 90% at 12% 8%, hsl(var(--primary) / 0.34), transparent 62%), radial-gradient(60% 80% at 88% 18%, hsl(var(--secondary) / 0.3), transparent 66%), radial-gradient(90% 70% at 50% 108%, hsl(var(--accent) / 0.24), transparent 70%)',
+    panel: 'linear-gradient(140deg, hsl(var(--card) / 0.85), hsl(var(--primary) / 0.12))',
+    text: 'linear-gradient(92deg, hsl(var(--primary)), hsl(var(--accent)))',
+    divider: 'linear-gradient(90deg, transparent, hsl(var(--primary) / 0.6), transparent)',
+  },
+  'chrome-sheen': {
+    hero: 'linear-gradient(135deg, hsl(var(--foreground) / 0.08) 0%, transparent 40%, hsl(var(--primary) / 0.18) 100%)',
+    panel: 'linear-gradient(120deg, hsl(var(--card) / 0.9), hsl(var(--foreground) / 0.05))',
+    text: 'linear-gradient(105deg, hsl(var(--foreground)), hsl(var(--primary)) 60%, hsl(var(--foreground)))',
+    divider: 'linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.4), transparent)',
+  },
+  'sun-bleed': {
+    hero: 'linear-gradient(180deg, hsl(var(--primary) / 0.26) 0%, hsl(var(--background)) 70%)',
+    panel: 'linear-gradient(180deg, hsl(var(--primary) / 0.12), hsl(var(--card)))',
+    text: 'linear-gradient(96deg, hsl(var(--primary)), hsl(var(--secondary)))',
+    divider: 'linear-gradient(90deg, hsl(var(--primary)), hsl(var(--secondary) / 0.2))',
+  },
+  'grid-glow': {
+    hero: 'linear-gradient(180deg, hsl(var(--background)), hsl(var(--primary) / 0.14)), repeating-linear-gradient(90deg, hsl(var(--primary) / 0.08) 0px, hsl(var(--primary) / 0.08) 1px, transparent 1px, transparent 3.5rem)',
+    panel: 'linear-gradient(180deg, hsl(var(--card) / 0.8), hsl(var(--primary) / 0.1))',
+    text: 'linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent)))',
+    divider: 'repeating-linear-gradient(90deg, hsl(var(--primary) / 0.5) 0 0.5rem, transparent 0.5rem 1rem)',
+  },
+  'paper-grain': {
+    hero: 'linear-gradient(180deg, hsl(var(--muted) / 0.5), hsl(var(--background)))',
+    panel: 'linear-gradient(180deg, hsl(var(--card)), hsl(var(--muted) / 0.45))',
+    text: 'none',
+    divider: 'linear-gradient(90deg, hsl(var(--foreground) / 0.25), transparent)',
+  },
+};
+
+const DENSITY_RECIPES: Record<DensityId, { gridGap: string; blockGap: string; cardPadding: string; gutter: string; stackGap: string }> = {
+  compact: { gridGap: '1rem', blockGap: '1.25rem', cardPadding: '1.25rem', gutter: '1rem', stackGap: '0.625rem' },
+  standard: { gridGap: '1.5rem', blockGap: '2rem', cardPadding: '1.75rem', gutter: '1.5rem', stackGap: '0.875rem' },
+  roomy: { gridGap: '2.25rem', blockGap: '3rem', cardPadding: '2.25rem', gutter: '2rem', stackGap: '1.125rem' },
+  gallery: { gridGap: '3rem', blockGap: '4.5rem', cardPadding: '2.75rem', gutter: '2.5rem', stackGap: '1.5rem' },
+};
+
+const HERO_LAYOUT_RECIPES: Record<HeroLayoutId, { columns: string; justify: string; textAlign: string; padBlock: string }> = {
+  'full-bleed': { columns: '1fr', justify: 'end', textAlign: 'left', padBlock: 'clamp(6rem, 12vh, 10rem)' },
+  split: { columns: 'minmax(0, 1fr) minmax(0, 1fr)', justify: 'center', textAlign: 'left', padBlock: 'clamp(4rem, 9vh, 7rem)' },
+  centered: { columns: '1fr', justify: 'center', textAlign: 'center', padBlock: 'clamp(5rem, 11vh, 9rem)' },
+  asymmetric: { columns: 'minmax(0, 7fr) minmax(0, 5fr)', justify: 'center', textAlign: 'left', padBlock: 'clamp(4.5rem, 10vh, 8rem)' },
+  'stacked-editorial': { columns: '1fr', justify: 'start', textAlign: 'left', padBlock: 'clamp(4rem, 8vh, 6.5rem)' },
+  poster: { columns: '1fr', justify: 'center', textAlign: 'left', padBlock: 'clamp(5rem, 12vh, 9rem)' },
+};
+
+const PILL_RECIPES: Record<PillStyleId, { radius: string; fill: string; stroke: string; color: string; padding: string; tracking: string; transform: string; weight: string }> = {
+  'pill-soft': { radius: '9999px', fill: 'hsl(var(--primary) / 0.12)', stroke: 'transparent', color: 'hsl(var(--primary))', padding: '0.3125rem 0.75rem', tracking: '0.01em', transform: 'none', weight: '600' },
+  'pill-solid': { radius: '9999px', fill: 'hsl(var(--primary))', stroke: 'transparent', color: 'hsl(var(--primary-foreground))', padding: '0.375rem 0.875rem', tracking: '0.02em', transform: 'none', weight: '700' },
+  'square-outline': { radius: '0px', fill: 'transparent', stroke: 'hsl(var(--foreground) / 0.45)', color: 'hsl(var(--foreground))', padding: '0.3125rem 0.6875rem', tracking: '0.14em', transform: 'uppercase', weight: '600' },
+  'cut-corner': { radius: '0px', fill: 'hsl(var(--foreground))', stroke: 'transparent', color: 'hsl(var(--background))', padding: '0.375rem 0.875rem', tracking: '0.08em', transform: 'uppercase', weight: '800' },
+  'underline-caps': { radius: '0px', fill: 'transparent', stroke: 'transparent', color: 'hsl(var(--primary))', padding: '0 0 0.25rem', tracking: '0.18em', transform: 'uppercase', weight: '600' },
+  'mono-bracket': { radius: '0.125rem', fill: 'hsl(var(--primary) / 0.1)', stroke: 'hsl(var(--primary) / 0.55)', color: 'hsl(var(--primary))', padding: '0.25rem 0.5rem', tracking: '0.1em', transform: 'uppercase', weight: '500' },
+};
+
+const ENTRANCE_RECIPES: Record<EntranceId, { from: string; to: string; stagger: string; hoverLift: string; hoverScale: string }> = {
+  'fade-lift': { from: 'opacity: 0; transform: translateY(var(--ut-motion-distance));', to: 'opacity: 1; transform: none;', stagger: '70ms', hoverLift: '-2px', hoverScale: '1.01' },
+  'slow-pan': { from: 'opacity: 0; transform: translateY(var(--ut-motion-distance)) scale(1.02);', to: 'opacity: 1; transform: none;', stagger: '120ms', hoverLift: '0px', hoverScale: '1.03' },
+  'mask-wipe': { from: 'opacity: 0; clip-path: inset(0 0 100% 0);', to: 'opacity: 1; clip-path: inset(0 0 0 0);', stagger: '90ms', hoverLift: '-1px', hoverScale: '1' },
+  'snap-in': { from: 'opacity: 0; transform: translateY(var(--ut-motion-distance)) scale(0.985);', to: 'opacity: 1; transform: none;', stagger: '40ms', hoverLift: '-3px', hoverScale: '1.02' },
+  'stagger-rise': { from: 'opacity: 0; transform: translateY(var(--ut-motion-distance));', to: 'opacity: 1; transform: none;', stagger: '110ms', hoverLift: '-4px', hoverScale: '1.015' },
+  'blur-focus': { from: 'opacity: 0; filter: blur(0.5rem); transform: translateY(var(--ut-motion-distance));', to: 'opacity: 1; filter: blur(0); transform: none;', stagger: '80ms', hoverLift: '-2px', hoverScale: '1.01' },
+};
+
+/** Entrance keyframes are pack-owned, so the CSS builder can emit them. */
+export function buildEntranceKeyframes(pack: ArtDirectionPack): { from: string; to: string } {
+  const recipe = ENTRANCE_RECIPES[pack.signature.entrance];
+  return { from: recipe.from, to: recipe.to };
+}
+
+/** Hero composition the compiler and Lane B must both honour. */
+export function resolveHeroPresentation(pack: ArtDirectionPack): {
+  layout: HeroLayoutId;
+  align: 'start' | 'center';
+  mediaRatio: string;
+} {
+  return {
+    layout: pack.signature.hero.layout,
+    align: pack.signature.hero.align,
+    mediaRatio: pack.signature.hero.mediaRatio,
+  };
+}
+
 /**
  * Emit the pack's aesthetic contract as `--ut-*` CSS custom properties.
  * The single place a pack turns into style. Consumed by Stage 4b CSS
@@ -159,8 +333,14 @@ const MEDIA_RECIPES: Record<MediaTreatment, { radius: string; filter: string; ra
  */
 export function buildArtDirectionTokens(pack: ArtDirectionPack): Record<string, string> {
   const d = pack.design;
+  const sig = pack.signature;
   const surface = SURFACE_RECIPES[d.surface];
   const media = MEDIA_RECIPES[d.mediaTreatment];
+  const gradient = GRADIENT_RECIPES[sig.gradient];
+  const density = DENSITY_RECIPES[sig.density];
+  const hero = HERO_LAYOUT_RECIPES[sig.hero.layout];
+  const pill = PILL_RECIPES[sig.pill];
+  const entrance = ENTRANCE_RECIPES[sig.entrance];
   return {
     '--ut-art-direction': pack.id,
     '--ut-type-ratio': String(d.typeScaleRatio),
@@ -186,6 +366,52 @@ export function buildArtDirectionTokens(pack: ArtDirectionPack): Record<string, 
     '--ut-motion-duration': d.motionDuration,
     '--ut-motion-ease': d.motionEase,
     '--ut-motion-distance': d.motionDistance,
+
+    // ── Theme-led signature: typography, gradients, density, hero, pills ──
+    '--ut-font-display-stack': sig.typography.displayStack,
+    '--ut-font-body-stack': sig.typography.bodyStack,
+    '--ut-weight-display': String(sig.typography.displayWeight),
+    '--ut-weight-body': String(sig.typography.bodyWeight),
+    '--ut-display-leading': sig.typography.displayLineHeight,
+    '--ut-eyebrow-tracking': sig.typography.eyebrowTracking,
+    '--ut-eyebrow-transform': sig.typography.eyebrowTransform,
+
+    '--ut-gradient-profile': sig.gradient,
+    '--ut-gradient-hero': gradient.hero,
+    '--ut-gradient-panel': gradient.panel,
+    '--ut-gradient-text': gradient.text,
+    '--ut-gradient-divider': gradient.divider,
+
+    '--ut-density': sig.density,
+    '--ut-grid-gap': density.gridGap,
+    '--ut-block-gap': density.blockGap,
+    '--ut-card-padding': density.cardPadding,
+    '--ut-inline-gutter': density.gutter,
+    '--ut-stack-gap': density.stackGap,
+
+    '--ut-hero-layout': sig.hero.layout,
+    '--ut-hero-align': sig.hero.align,
+    '--ut-hero-columns': hero.columns,
+    '--ut-hero-justify': hero.justify,
+    '--ut-hero-text-align': hero.textAlign,
+    '--ut-hero-pad-block': hero.padBlock,
+    '--ut-hero-min-height': sig.hero.minHeight,
+    '--ut-hero-media-ratio': sig.hero.mediaRatio,
+
+    '--ut-pill-style': sig.pill,
+    '--ut-pill-radius': pill.radius,
+    '--ut-pill-fill': pill.fill,
+    '--ut-pill-stroke': pill.stroke,
+    '--ut-pill-color': pill.color,
+    '--ut-pill-padding': pill.padding,
+    '--ut-pill-tracking': pill.tracking,
+    '--ut-pill-transform': pill.transform,
+    '--ut-pill-weight': pill.weight,
+
+    '--ut-entrance': sig.entrance,
+    '--ut-motion-stagger': entrance.stagger,
+    '--ut-hover-lift': entrance.hoverLift,
+    '--ut-hover-scale': entrance.hoverScale,
   };
 }
 

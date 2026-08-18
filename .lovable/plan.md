@@ -112,3 +112,16 @@ Pack injection guarantees the aesthetic; this section guarantees the copy. Lane 
 - **Deterministic last resort** — if repair still fails, the page falls back to industry-grounded copy from the composition/blueprint rather than placeholder text, and the launch reports `lane-b-degraded` with the specific page ids so it is visible instead of silent.
 
 Net effect: the page always renders in the selected art direction with real industry copy; the only variable is whether the copy came from the model or the deterministic industry baseline.
+
+## One truth, no drift
+
+The resolved art direction is a sealed value, not a recomputed one. Rule: it is resolved **once**, at wizard compile, and every downstream surface reads it back.
+
+- **Single resolver** — `resolveArtDirectionPackId` is the only function allowed to choose a pack. No other module may map theme or industry to design decisions.
+- **Sealed once** — the resolved `artDirectionPackId` is written into `meta.seal` next to `themePresetId` at Stage 4b. From that moment it is read, never re-derived.
+- **Read-back everywhere** — CSS emission, `compositionToFileSet`, the Lane B brief, `StyleTokenCard`, `/site-preview/:draftId`, builder commits, and export all consume `meta.artDirectionPackId`. If it is present and a caller tries to re-resolve, that is a bug.
+- **Drift detection** — `vfsDriftWatcher` and the seal check compare the pack recorded in `meta` against the tokens present in `/src/index.css` and the variants present in emitted pages; a mismatch fails the commit instead of silently re-styling.
+- **CI enforcement** — `scripts/lint-pipeline-bypass.mjs` gains a rule rejecting any module other than the resolver that reads `themePresetId` to make a design decision, and any generated file containing hardcoded geometry/radius/shadow literals.
+- **Immutable across edits** — AI Builder edits, variant swaps, and re-publishes inherit the sealed pack. Changing art direction requires an explicit style-card change that goes back through the wizard commit path and produces a new revision in `site_revisions`.
+
+Test coverage: one round-trip test asserting the pack id resolved at wizard time is identical in the snapshot, the emitted CSS, the Lane B brief, the standalone previewer, and the exported zip.

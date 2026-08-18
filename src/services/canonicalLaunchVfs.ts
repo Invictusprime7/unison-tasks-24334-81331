@@ -433,6 +433,8 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   // Stage 4b never composed. After the merge we persist the enriched VFS back
   // into the SiteBundleSnapshot.
   const merged = { ...canonicalFiles };
+  /** Paths whose body in `merged` came from Lane B (or a Lane B App rebase). */
+  const laneBAuthoredPaths = new Set<string>();
 
   // Recovery invariant: Lane B is the only successful-path author of registered
   // Wizard page bodies. Stage 4b's compositions stay available as sanctioned
@@ -456,6 +458,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
     if (shouldMoveLegacyAppIntoHome) {
       merged[normalizePath(homeFilePath)] = rebaseAppModuleForHomePage(content);
+      laneBAuthoredPaths.add(normalizePath(homeFilePath));
       continue;
     }
 
@@ -471,6 +474,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       // import healing run later in the shared prep pass; no design authority
       // reinterprets this source.
       merged[normalizedPath] = content;
+      laneBAuthoredPaths.add(normalizedPath);
       continue;
     }
 
@@ -505,7 +509,11 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     const canonicalPage = readCanonical(page.filePath);
     const existingMergedPage = merged[normalizedPagePath];
 
-    if (existingMergedPage && !isMinimalPreviewFallbackSource(existingMergedPage)) {
+    if (
+      laneBAuthoredPaths.has(normalizedPagePath) &&
+      existingMergedPage &&
+      !isMinimalPreviewFallbackSource(existingMergedPage)
+    ) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = existingMergedPage;
       continue;

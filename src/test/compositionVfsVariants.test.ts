@@ -92,7 +92,9 @@ describe('composition VFS variants', () => {
     expect(routeHero?.sourceSectionId).toBe(hero.id);
     expect(routeHero?.variantId).toBe('hero:full-bleed');
     expect(files[page.filePath]).toContain('"variantId": "hero:full-bleed"');
-    expect(Object.values(files).some((source) => source.includes('SECTION_VARIANT = "hero:full-bleed"'))).toBe(true);
+    // Recovery Phase 2 — variant identity travels as data on the section, not
+    // through a generated per-variant wrapper module.
+    expect(Object.values(files).some((source) => source.includes('/src/components/variants/'))).toBe(false);
   });
 
   it('emits at least four canonical body sections for contact routes across all industries', () => {
@@ -199,16 +201,13 @@ describe('composition VFS variants', () => {
       },
     });
     const page = files['/src/pages/Home.tsx'];
-    const variantModule = Object.entries(files).find(([path, source]) => (
-      path.startsWith('/src/components/variants/') && source.includes('SECTION_VARIANT = "hero:split-image"')
-    ));
+    const variantModules = Object.keys(files).filter((path) => path.startsWith('/src/components/variants/'));
 
     expect(page).toContain(`"variantId": "hero:split-image"`);
     expect(page).toContain('data-ut-variant={section.variantId || undefined}');
     expect(page).toContain('SECTION_MAP[section.id] || SECTION_MAP[section.type]');
-    expect(variantModule).toBeDefined();
-    expect(variantModule?.[1]).toContain('SECTION_LAYOUT = "split"');
-    expect(variantModule?.[1]).toContain('<Hero props={{ ...props, layout: SECTION_LAYOUT }} />');
+    // No variant wrapper tier: the semantic component receives the variant via props.
+    expect(variantModules).toEqual([]);
   });
 
   it('preserves section variant identity when presentation order changes', () => {

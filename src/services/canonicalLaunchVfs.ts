@@ -26,6 +26,11 @@ import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencie
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
 import { isCanonicalComposedPage, mergeLaneBIntoCanonicalPage } from './laneBContentPlan';
+import {
+  RESOLVED_COMPOSITION_ROOT,
+  collectResolvedCompositions,
+  hasResolvedComposition,
+} from '@/platform/core/resolvedComposition';
 
 import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {

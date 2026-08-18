@@ -7679,6 +7679,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                 <TemplateCustomizerPanel
                   customizer={templateCustomizer}
                   onApply={applyCustomizerOverrides}
+                  onVariantCommit={(sectionId, variantId) => { void commitVariantSelection(sectionId, variantId); }}
                 />
               ) : (
                 <CollapsiblePropertiesPanel 

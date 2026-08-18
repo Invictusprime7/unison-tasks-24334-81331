@@ -124,8 +124,8 @@ import {
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
 import {
-  preserveCanonicalHomePresentation,
-  preserveCanonicalPagePresentations,
+  assessWizardHomePresentation,
+  assessWizardPagePresentations,
 } from "@/services/wizardPresentationGuard";
 import {
   ensureGeneratedUiFoundation,
@@ -3095,18 +3095,20 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const canonicalHomePath = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .find((path): path is string => /\/Home\.(tsx|jsx)$/i.test(path));
+      const homeQualityRejections: string[] = [];
       if (canonicalHomePath) {
-        const presentationGuard = preserveCanonicalHomePresentation({
+        // Quality gate only — a rejected Home triggers a focused Lane B retry
+        // below. The canonical Stage 4b Home is never substituted here.
+        const homeAssessment = assessWizardHomePresentation({
           aiFiles: aiSourcedFiles,
-          canonicalFiles: siteBundleSnapshot.vfsFiles,
           homePath: canonicalHomePath,
           contract: templateLayoutContract,
         });
-        aiSourcedFiles = presentationGuard.files;
-        if (presentationGuard.restored) {
-          console.warn('[SystemLauncher] Restored canonical Home presentation after Lane B visual drift', {
+        if (homeAssessment.rejections.length > 0) {
+          homeQualityRejections.push(...homeAssessment.rejectedPaths);
+          console.warn('[SystemLauncher] Lane B Home rejected by the presentation quality gate', {
             templateId: templateLayoutContract.templateId,
-            reason: presentationGuard.reason,
+            reason: homeAssessment.rejections[0]?.reason,
           });
         }
       }
@@ -3743,7 +3745,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ];
       }
 
-      const presentationGuard = preserveCanonicalPagePresentations({
+      const presentationAssessment = assessWizardPagePresentations({
         aiFiles: aiSourcedFiles,
         canonicalFiles: siteBundleSnapshot.vfsFiles,
         pagePaths: Object.values(siteBundleSnapshot.pageRegistry.pages)
@@ -3753,12 +3755,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           .find((page) => (page as { isHome?: boolean }).isHome) as { filePath?: string } | undefined)?.filePath,
         requiredHeroGeometry: siteBundleSnapshot.meta.generationBrief?.homeHeroGeometry,
       });
-      aiSourcedFiles = presentationGuard.files;
-      if (presentationGuard.restoredPaths.length > 0) {
-        console.warn('[SystemLauncher] Restored canonical page presentations after Lane B visual drift', {
+      const qualityRejectedPaths = Array.from(new Set([
+        ...homeQualityRejections,
+        ...presentationAssessment.rejectedPaths,
+      ]));
+      if (qualityRejectedPaths.length > 0) {
+        // Degraded, not overridden: Lane B stays the page-body author and the
+        // launch records which pages missed the visual contract.
+        launchReliabilityMode = 'lane-b-degraded';
+        console.warn('[SystemLauncher] Lane B pages failed the presentation quality gate', {
           templateId: templateLayoutContract.templateId,
-          paths: presentationGuard.restoredPaths,
-          reasons: presentationGuard.reasons,
+          paths: qualityRejectedPaths,
+          reasons: presentationAssessment.reasons,
         });
       }
 

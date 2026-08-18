@@ -74,6 +74,7 @@ const SECTION_FILES: Record<string, string> = {
   Hero: '/src/components/Hero.tsx',
   About: '/src/components/About.tsx',
   Services: '/src/components/Services.tsx',
+  Features: '/src/components/Features.tsx',
   Gallery: '/src/components/Gallery.tsx',
   Pricing: '/src/components/Pricing.tsx',
   LogoCloud: '/src/components/LogoCloud.tsx',
@@ -1023,19 +1024,91 @@ export default function BeforeAfter({ props }: { props: any }) {
 }
 `;
 
+/**
+ * Recovery Phase 2 — `features` is its own semantic family.
+ *
+ * It used to alias onto Services, which silently rendered a benefit-led
+ * feature grid as a sellable-service list. A registered semantic type now
+ * always renders through its own component family.
+ */
+const FEATURES_MODULE = `import React from 'react';
+
+export default function Features({ props }: { props: any }) {
+  const { headline, subheadline, items = [], layout } = props;
+  const iconLeft = layout === 'icon-left';
+  const centered = layout === 'minimal-centered';
+  return (
+    <section data-ut-variant={'features:' + (layout || 'grid')} className="bg-background py-24">
+      <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+        {headline && (
+          <div className={centered ? 'mb-14 text-center' : 'mb-14 max-w-2xl'}>
+            <h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>
+            {subheadline && <p className="font-body text-lg text-muted-foreground">{subheadline}</p>}
+          </div>
+        )}
+        <div className={'grid gap-10 ' + (iconLeft ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+          {items.map((item: any, index: number) => (
+            <div key={index} className={iconLeft ? 'flex gap-4' : (centered ? 'text-center' : '')}>
+              <div className={'mb-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius)] bg-primary/10 font-heading text-base font-semibold text-primary ' + (centered ? 'mx-auto' : '')}>
+                {item.icon || String(index + 1).padStart(2, '0')}
+              </div>
+              <div>
+                <h3 className="mb-2 font-heading text-lg font-semibold text-foreground">{item.title}</h3>
+                {item.description && <p className="font-body text-sm leading-relaxed text-muted-foreground">{item.description}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
+/**
+ * Semantic type → sanctioned component family.
+ *
+ * INVARIANT: no cross-semantic substitution. A registered Gallery stays a
+ * Gallery, Pricing stays Pricing, Features stays Features. When a composition
+ * carries a semantic type with no sanctioned implementation the emitter fails
+ * loudly (see assertSanctionedSectionTypes) so the page can be re-planned or
+ * repaired by Lane B — it is never silently rendered as something else.
+ */
 const SECTION_COMPONENT_BY_TYPE: Record<string, keyof typeof SECTION_FILES> = {
   navbar: 'Navbar', hero: 'Hero', about: 'About',
-  services: 'Services', features: 'Services', pricing: 'Pricing', gallery: 'Gallery',
+  services: 'Services', features: 'Features', pricing: 'Pricing', gallery: 'Gallery',
   'blog-preview': 'BlogPreview', 'before-after': 'BeforeAfter', testimonials: 'Testimonials',
   cta: 'CTA', contact: 'Contact', footer: 'Footer', stats: 'Stats',
   'logo-cloud': 'LogoCloud', team: 'Team', faq: 'FAQ',
 };
+
+export class UnsanctionedSectionTypeError extends Error {
+  readonly sectionTypes: string[];
+  constructor(pageFilePath: string, sectionTypes: string[]) {
+    super(
+      `[compositionToFileSet] page ${pageFilePath} declares section type(s) with no sanctioned component family: ` +
+      `${sectionTypes.join(', ')}. Cross-semantic substitution is forbidden — re-plan the page or run a focused Lane B repair.`,
+    );
+    this.name = 'UnsanctionedSectionTypeError';
+    this.sectionTypes = sectionTypes;
+  }
+}
+
+function assertSanctionedSectionTypes(template: TemplateComposition, pageFilePath: string): void {
+  const unsanctioned = Array.from(new Set(
+    template.sections
+      .map((section) => section.type)
+      .filter((type) => !SECTION_COMPONENT_BY_TYPE[type]),
+  ));
+  if (unsanctioned.length) throw new UnsanctionedSectionTypeError(pageFilePath, unsanctioned);
+}
 
 const SECTION_MODULE_SOURCE: Record<keyof typeof SECTION_FILES, string> = {
   Navbar: NAVBAR_MODULE,
   Hero: HERO_MODULE,
   About: ABOUT_MODULE,
   Services: SERVICES_MODULE,
+  Features: FEATURES_MODULE,
   Gallery: GALLERY_MODULE,
   Pricing: PRICING_MODULE,
   LogoCloud: LOGO_CLOUD_MODULE,
@@ -1051,46 +1124,22 @@ const SECTION_MODULE_SOURCE: Record<keyof typeof SECTION_FILES, string> = {
 };
 
 
+
+
+/**
+ * Recovery Phase 2 — the emitter compiles, it does not reinterpret.
+ *
+ * Registered variants used to be downgraded into a per-section wrapper module
+ * that reduced the variant to `<Component props={{...props, layout}} />`.
+ * That threw away the variant identity at exactly the moment it mattered.
+ * The section map is now a plain semantic-type → component family map; variant
+ * identity travels intact on the section props and in the emitted
+ * ResolvedPageComposition, where Lane B and the preflight can both read it.
+ */
 interface VariantSectionModule {
   path: string;
   componentName: string;
   content: string;
-}
-
-function variantComponentName(component: keyof typeof SECTION_FILES, sectionId: string): string {
-  const suffix = sectionId
-    .split(/[^a-zA-Z0-9]+/)
-    .filter(Boolean)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join('') || 'Section';
-  return `${component}${suffix}Variant`;
-}
-
-function variantSectionModule(
-  component: keyof typeof SECTION_FILES,
-  section: TemplateComposition['sections'][number],
-): VariantSectionModule | null {
-  if (!section.variantId) return null;
-  const layout = getLayoutForVariantId(section.variantId as import('@/sections/variants').VariantId);
-  if (!layout) return null;
-
-  const componentName = variantComponentName(component, section.id);
-  const fileName = `${componentName}.tsx`;
-  return {
-    path: `/src/components/variants/${fileName}`,
-    componentName,
-    content: `import React from 'react';
-import ${component} from '../${component}';
-
-// Snapshot-owned presentation projection for ${section.id}.
-export const SECTION_VARIANT = ${JSON.stringify(section.variantId)};
-export const SECTION_LAYOUT = ${JSON.stringify(layout)};
-
-export default function ${componentName}({ props }: { props: any }) {
-  return <${component} props={{ ...props, layout: SECTION_LAYOUT }} />;
-}
-`,
-  };
 }
 
 function sectionMapModule(template: TemplateComposition, pageFilePath: string): {
@@ -1099,38 +1148,21 @@ function sectionMapModule(template: TemplateComposition, pageFilePath: string): 
   components: Set<keyof typeof SECTION_FILES>;
   variantModules: VariantSectionModule[];
 } {
+  assertSanctionedSectionTypes(template, pageFilePath);
   const sectionTypes = Array.from(new Set(template.sections.map((section) => section.type)));
-  const components = new Set(sectionTypes
-    .map((type) => SECTION_COMPONENT_BY_TYPE[type])
-    .filter((component): component is keyof typeof SECTION_FILES => Boolean(component)));
-  const variantModules = template.sections.flatMap((section) => {
-    const component = SECTION_COMPONENT_BY_TYPE[section.type];
-    return component ? [variantSectionModule(component, section)].filter((module): module is VariantSectionModule => Boolean(module)) : [];
-  });
+  const components = new Set(sectionTypes.map((type) => SECTION_COMPONENT_BY_TYPE[type]));
   const mapPath = pageFilePath.replace(/\.(tsx|jsx)$/i, '.sections.ts');
-  const imports = [
-    ...Array.from(components).map((component) => (
-    `import ${component} from '../components/${component}';`
-    )),
-    ...variantModules.map((module) => (
-      `import ${module.componentName} from '../components/variants/${module.componentName}';`
-    )),
-  ].join('\n');
-  const mappings = [
-    ...sectionTypes
+  const imports = Array.from(components)
+    .map((component) => `import ${component} from '../components/${component}';`)
+    .join('\n');
+  const mappings = sectionTypes
     .map((type) => `${JSON.stringify(type)}: ${SECTION_COMPONENT_BY_TYPE[type]}`)
-    , ...template.sections
-      .map((section) => {
-        const module = variantModules.find((candidate) => candidate.path.endsWith(`/${variantComponentName(SECTION_COMPONENT_BY_TYPE[section.type], section.id)}.tsx`));
-        return module ? `${JSON.stringify(section.id)}: ${module.componentName}` : null;
-      })
-      .filter((mapping): mapping is string => Boolean(mapping)),
-  ].join(',\n  ');
+    .join(',\n  ');
 
   return {
     path: mapPath,
     components,
-    variantModules,
+    variantModules: [],
     content: `import type React from 'react';
 ${imports}
 

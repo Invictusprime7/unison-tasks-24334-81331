@@ -152,6 +152,21 @@ function routeHeroFallbackReason(
   return null;
 }
 
+/**
+ * Geometry belongs to the aesthetic token layer (Stage 4b CSS variables), never
+ * to a generated page. Any arbitrary Tailwind value or inline style that hard
+ * codes a unit (px/rem/vh/vw/%) instead of referencing a `--ut-*` token is drift.
+ */
+const HARDCODED_ARBITRARY_VALUE = /(?:^|[\s"'`:])(?:min-|max-)?(?:w|h|p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|gap-x|gap-y|top|left|right|bottom|inset|text|leading|tracking|rounded|basis|size)-\[(?![^\]]*var\(--)[^\]]*(?:\d(?:px|rem|em|vh|vw|vmin|vmax|ch|%)|clamp\(|calc\()[^\]]*\]/g;
+const HARDCODED_INLINE_GEOMETRY = /\b(?:width|height|minHeight|maxHeight|minWidth|maxWidth|padding|margin|gap|fontSize|lineHeight|borderRadius)\s*:\s*["'`][^"'`]*\d(?:px|rem|em|vh|vw|%)/g;
+
+export function findHardcodedGeometry(source: string): string[] {
+  return [
+    ...(source.match(HARDCODED_ARBITRARY_VALUE) || []),
+    ...(source.match(HARDCODED_INLINE_GEOMETRY) || []),
+  ].map((match) => match.trim());
+}
+
 function generatedPageFallbackReason(source: string, requiresMedia: boolean): string | null {
   if (/<nav\b|\bSiteNavbar\b/.test(source)) {
     return 'generated page attempts to render shared navigation chrome';
@@ -169,8 +184,13 @@ function generatedPageFallbackReason(source: string, requiresMedia: boolean): st
   if (/Lorem ipsum|Coming soon|New site preview|Generating page content/i.test(source)) {
     return 'generated page contains placeholder content';
   }
+  const hardcodedGeometry = findHardcodedGeometry(source);
+  if (hardcodedGeometry.length > 0) {
+    return `generated page hard codes geometry instead of using aesthetic tokens (${hardcodedGeometry.slice(0, 3).join(', ')})`;
+  }
   return null;
 }
+
 
 /**
  * Assess every registered Wizard page against the quality contract.

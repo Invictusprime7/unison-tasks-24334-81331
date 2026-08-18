@@ -241,6 +241,10 @@ export const TemplateCustomizerPanel: React.FC<TemplateCustomizerPanelProps> = (
                 }))}
                 activeVariants={customizer.activeVariants}
                 onVariantSelect={(sectionId, variantId) => {
+                  if (onVariantCommit) {
+                    onVariantCommit(sectionId, variantId);
+                    return;
+                  }
                   customizer.setActiveVariant(sectionId, variantId);
                   onApply();
                 }}

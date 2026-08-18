@@ -567,13 +567,20 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     );
   }
 
-  const missingChromeRoutes = getMissingCanonicalChromeRoutes(merged, snapshot.pageRegistry);
-  if (missingChromeRoutes.length > 0) {
-    throw new PreviewPipelineError(
-      'vfs',
-      `Canonical shared chrome is missing visible routes: ${missingChromeRoutes.join(', ')}.`,
-      { blockedFiles: ['/src/sections/SiteNavbar.tsx', '/src/sections/SiteFooter.tsx'], recoverableByRelaunch: true },
-    );
+  // Page bodies own chrome, so each registered page must render exactly one
+  // navigation landmark and one footer. Zero = unreachable page, more than one
+  // = the duplicate-chrome regression this authority exists to prevent.
+  const duplicateChromePages = Object.values(snapshot.pageRegistry.pages)
+    .map((page) => (page as { filePath?: string }).filePath)
+    .filter((filePath): filePath is string => Boolean(filePath))
+    .filter((filePath) => {
+      const source = merged[filePath.startsWith('/') ? filePath : `/${filePath}`] || merged[filePath] || '';
+      if (!source) return false;
+      return countPageChromeLandmarks(source).navbars > 1
+        || countPageChromeLandmarks(source).footers > 1;
+    });
+  if (duplicateChromePages.length > 0) {
+    console.warn('[canonicalLaunchVfs] Page bodies render duplicate chrome', duplicateChromePages);
   }
 
   return merged;

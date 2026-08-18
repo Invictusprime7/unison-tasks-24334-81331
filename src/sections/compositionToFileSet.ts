@@ -1126,46 +1126,20 @@ const SECTION_MODULE_SOURCE: Record<keyof typeof SECTION_FILES, string> = {
 
 
 
+/**
+ * Recovery Phase 2 — the emitter compiles, it does not reinterpret.
+ *
+ * Registered variants used to be downgraded into a per-section wrapper module
+ * that reduced the variant to `<Component props={{...props, layout}} />`.
+ * That threw away the variant identity at exactly the moment it mattered.
+ * The section map is now a plain semantic-type → component family map; variant
+ * identity travels intact on the section props and in the emitted
+ * ResolvedPageComposition, where Lane B and the preflight can both read it.
+ */
 interface VariantSectionModule {
   path: string;
   componentName: string;
   content: string;
-}
-
-function variantComponentName(component: keyof typeof SECTION_FILES, sectionId: string): string {
-  const suffix = sectionId
-    .split(/[^a-zA-Z0-9]+/)
-    .filter(Boolean)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join('') || 'Section';
-  return `${component}${suffix}Variant`;
-}
-
-function variantSectionModule(
-  component: keyof typeof SECTION_FILES,
-  section: TemplateComposition['sections'][number],
-): VariantSectionModule | null {
-  if (!section.variantId) return null;
-  const layout = getLayoutForVariantId(section.variantId as import('@/sections/variants').VariantId);
-  if (!layout) return null;
-
-  const componentName = variantComponentName(component, section.id);
-  const fileName = `${componentName}.tsx`;
-  return {
-    path: `/src/components/variants/${fileName}`,
-    componentName,
-    content: `import React from 'react';
-import ${component} from '../${component}';
-
-// Snapshot-owned presentation projection for ${section.id}.
-export const SECTION_VARIANT = ${JSON.stringify(section.variantId)};
-export const SECTION_LAYOUT = ${JSON.stringify(layout)};
-
-export default function ${componentName}({ props }: { props: any }) {
-  return <${component} props={{ ...props, layout: SECTION_LAYOUT }} />;
-}
-`,
-  };
 }
 
 function sectionMapModule(template: TemplateComposition, pageFilePath: string): {
@@ -1174,38 +1148,21 @@ function sectionMapModule(template: TemplateComposition, pageFilePath: string): 
   components: Set<keyof typeof SECTION_FILES>;
   variantModules: VariantSectionModule[];
 } {
+  assertSanctionedSectionTypes(template, pageFilePath);
   const sectionTypes = Array.from(new Set(template.sections.map((section) => section.type)));
-  const components = new Set(sectionTypes
-    .map((type) => SECTION_COMPONENT_BY_TYPE[type])
-    .filter((component): component is keyof typeof SECTION_FILES => Boolean(component)));
-  const variantModules = template.sections.flatMap((section) => {
-    const component = SECTION_COMPONENT_BY_TYPE[section.type];
-    return component ? [variantSectionModule(component, section)].filter((module): module is VariantSectionModule => Boolean(module)) : [];
-  });
+  const components = new Set(sectionTypes.map((type) => SECTION_COMPONENT_BY_TYPE[type]));
   const mapPath = pageFilePath.replace(/\.(tsx|jsx)$/i, '.sections.ts');
-  const imports = [
-    ...Array.from(components).map((component) => (
-    `import ${component} from '../components/${component}';`
-    )),
-    ...variantModules.map((module) => (
-      `import ${module.componentName} from '../components/variants/${module.componentName}';`
-    )),
-  ].join('\n');
-  const mappings = [
-    ...sectionTypes
+  const imports = Array.from(components)
+    .map((component) => `import ${component} from '../components/${component}';`)
+    .join('\n');
+  const mappings = sectionTypes
     .map((type) => `${JSON.stringify(type)}: ${SECTION_COMPONENT_BY_TYPE[type]}`)
-    , ...template.sections
-      .map((section) => {
-        const module = variantModules.find((candidate) => candidate.path.endsWith(`/${variantComponentName(SECTION_COMPONENT_BY_TYPE[section.type], section.id)}.tsx`));
-        return module ? `${JSON.stringify(section.id)}: ${module.componentName}` : null;
-      })
-      .filter((mapping): mapping is string => Boolean(mapping)),
-  ].join(',\n  ');
+    .join(',\n  ');
 
   return {
     path: mapPath,
     components,
-    variantModules,
+    variantModules: [],
     content: `import type React from 'react';
 ${imports}
 

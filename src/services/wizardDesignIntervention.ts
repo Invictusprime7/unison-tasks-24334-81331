@@ -206,7 +206,19 @@ export function buildWizardDesignIntervention(
   const seed = [input.wizardSeedId || input.businessName, industry, input.businessModel, input.templateId || 'composition', input.themePresetId].join('|');
   const baseline = MODEL_RECIPES[input.businessModel];
   const sectionVariants = rotate(baseline.sectionVariants, seed);
-  const interactionRecipes = [...baseline.interactionRecipes];
+
+  // ART DIRECTION — resolved ONCE, from the style card first. Everything that
+  // follows (motion, interaction, CSS, Lane B brief) obeys this pack.
+  const artDirectionPackId = resolveArtDirectionPackId({
+    themePresetId: input.themePresetId,
+    industry,
+    seed,
+  });
+  const pack = ART_DIRECTION_PACKS[artDirectionPackId];
+
+  const interactionRecipes = Array.from(
+    new Set([pack.interactionProfile, ...baseline.interactionRecipes]),
+  );
 
   if ((input.sellsProducts || input.businessModel === 'ecommerce') && !interactionRecipes.includes('image-lightbox')) {
     interactionRecipes.push('image-lightbox');
@@ -214,6 +226,7 @@ export function buildWizardDesignIntervention(
   if ((input.needsBooking || input.wantsLeadCapture) && !interactionRecipes.includes('accordion')) {
     interactionRecipes.push('accordion');
   }
+
 
   return {
     version: WIZARD_DESIGN_INTERVENTION_VERSION,

@@ -60,6 +60,12 @@ function inferSectionType(section: SectionInfo): SectionType {
 interface TemplateCustomizerPanelProps {
   customizer: TemplateCustomizerReturn;
   onApply: () => void;
+  /**
+   * Canonical variant commit (WebBuilder → commitToPipeline). When provided,
+   * layout variant selection writes to the SiteBundleSnapshot instead of the
+   * customizer's local state.
+   */
+  onVariantCommit?: (sectionId: string, variantId: string) => void;
   className?: string;
 }
 

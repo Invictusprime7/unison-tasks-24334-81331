@@ -529,13 +529,14 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   }
 
 
-
-  // Shared chrome is snapshot-owned and derived from the same PageRegistry as
-  // the router. Lane B may never replace it with stale anchors or partial menus.
-  Object.assign(
-    merged,
-    buildCanonicalWizardSharedChromeModules(snapshot.pageRegistry, snapshot.businessName),
-  );
+  // ── Single chrome authority: the page body ──────────────────────────────
+  // Navigation and footer are composition sections resolved from the wizard
+  // selections (industry + template + art direction), so they must be emitted
+  // by the page body only. The router renders routes and nothing else; any
+  // legacy router-level shared chrome module is dropped here so a site can
+  // never render two navbars / two footers.
+  removePathVariants(merged, WIZARD_NAVBAR_PATH);
+  removePathVariants(merged, WIZARD_FOOTER_PATH);
 
   // Ensure a canonical router exists at /src/App.tsx. Without this the
   // preview's Sandpack bundle has no entry composition and renders blank.
@@ -546,7 +547,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const generatedRouter = generateCanonicalRouter(
     snapshot.pageRegistry,
     snapshot.businessName,
-    { withSharedChrome: true },
+    { withSharedChrome: false },
   );
   if (generatedRouter) {
     merged['/src/App.tsx'] = generatedRouter;

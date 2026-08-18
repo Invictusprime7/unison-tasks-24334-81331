@@ -42,14 +42,17 @@ import { clampVariantToPack, resolveArtDirectionPack } from '@/sections/variants
 
 /**
  * The slice of the wizard design brief the section compiler consumes.
- * `industry` + `themePresetId` resolve the ArtDirectionPack (Recovery Phase 6).
+ * `artDirectionPackId` is the SEALED pack — when present it wins outright.
+ * `industry` + `themePresetId` + `seed` only re-derive it for legacy briefs.
  */
 export type DesignInterventionSlice =
   Pick<WizardDesignIntervention, 'sectionVariants'>
   & Partial<Pick<
     WizardDesignIntervention,
-    'activeVariants' | 'motionRecipes' | 'industry' | 'themePresetId' | 'layoutRecipe' | 'interactionRecipes'
+    'activeVariants' | 'motionRecipes' | 'industry' | 'themePresetId' | 'layoutRecipe'
+    | 'interactionRecipes' | 'artDirectionPackId' | 'seed'
   >>;
+
 import {
   CATALOG_HYDRATION_MODULE,
   CATALOG_HYDRATION_PATH,

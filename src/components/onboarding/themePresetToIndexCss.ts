@@ -249,6 +249,55 @@ export function buildThemedIndexCssFromTokens(
   .ut-content { width: min(100% - 2.5rem, var(--ut-content-width)); margin-inline: auto; }
   .ut-section { padding-block: var(--ut-section-space); }
   .ut-media-frame { overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: var(--ut-media-radius); background: hsl(var(--muted)); }
+
+  /* --- Art direction primitives (pack-owned, token-only) ---------------- */
+  .ut-rhythm { padding-block: var(--ut-rhythm-space); }
+  .ut-display {
+    font-size: var(--ut-type-display);
+    letter-spacing: var(--ut-heading-tracking);
+    text-transform: var(--ut-heading-transform);
+    line-height: 1.04;
+  }
+  .ut-title {
+    font-size: var(--ut-type-title);
+    letter-spacing: var(--ut-heading-tracking);
+    text-transform: var(--ut-heading-transform);
+    line-height: 1.14;
+  }
+  .ut-lead { font-size: var(--ut-type-lead); line-height: 1.55; }
+  .ut-measure { max-width: var(--ut-measure); }
+  .ut-surface {
+    background: var(--ut-surface-fill);
+    border: var(--ut-border-weight) solid var(--ut-surface-stroke);
+    border-radius: var(--ut-radius-base);
+    box-shadow: var(--ut-surface-elevation);
+    transition: transform var(--ut-motion-duration) var(--ut-motion-ease),
+      box-shadow var(--ut-motion-duration) var(--ut-motion-ease);
+  }
+  .ut-surface:hover { box-shadow: var(--ut-surface-elevation-hover); }
+  .ut-accent-wash { background-image: var(--ut-accent-wash); }
+  .ut-media {
+    overflow: hidden;
+    border-radius: var(--ut-media-frame-radius);
+    aspect-ratio: var(--ut-media-ratio);
+    background: hsl(var(--muted));
+  }
+  .ut-media > img, .ut-media > video {
+    width: 100%; height: 100%; object-fit: cover;
+    filter: var(--ut-media-filter);
+  }
+  .ut-reveal {
+    animation: ut-reveal var(--ut-motion-duration) var(--ut-motion-ease) both;
+  }
+  @keyframes ut-reveal {
+    from { opacity: 0; transform: translateY(var(--ut-motion-distance)); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ut-reveal { animation: none; }
+    .ut-surface { transition: none; }
+  }
+
   .ut-shadcn-popover,
   .ut-shadcn-dialog-content { background: hsl(var(--popover)); color: hsl(var(--popover-foreground)); }
   .ut-shadcn-dialog-overlay { background: hsl(var(--foreground) / 0.42); }

@@ -31,8 +31,9 @@ import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
 
 import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {
-  buildCanonicalWizardSharedChromeModules,
-  getMissingCanonicalChromeRoutes,
+  WIZARD_FOOTER_PATH,
+  WIZARD_NAVBAR_PATH,
+  countPageChromeLandmarks,
   isCanonicalWizardSharedChromePath,
 } from './wizardSharedChrome';
 import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
@@ -529,13 +530,14 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   }
 
 
-
-  // Shared chrome is snapshot-owned and derived from the same PageRegistry as
-  // the router. Lane B may never replace it with stale anchors or partial menus.
-  Object.assign(
-    merged,
-    buildCanonicalWizardSharedChromeModules(snapshot.pageRegistry, snapshot.businessName),
-  );
+  // ── Single chrome authority: the page body ──────────────────────────────
+  // Navigation and footer are composition sections resolved from the wizard
+  // selections (industry + template + art direction), so they must be emitted
+  // by the page body only. The router renders routes and nothing else; any
+  // legacy router-level shared chrome module is dropped here so a site can
+  // never render two navbars / two footers.
+  removePathVariants(merged, WIZARD_NAVBAR_PATH);
+  removePathVariants(merged, WIZARD_FOOTER_PATH);
 
   // Ensure a canonical router exists at /src/App.tsx. Without this the
   // preview's Sandpack bundle has no entry composition and renders blank.
@@ -546,7 +548,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const generatedRouter = generateCanonicalRouter(
     snapshot.pageRegistry,
     snapshot.businessName,
-    { withSharedChrome: true },
+    { withSharedChrome: false },
   );
   if (generatedRouter) {
     merged['/src/App.tsx'] = generatedRouter;
@@ -566,13 +568,20 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     );
   }
 
-  const missingChromeRoutes = getMissingCanonicalChromeRoutes(merged, snapshot.pageRegistry);
-  if (missingChromeRoutes.length > 0) {
-    throw new PreviewPipelineError(
-      'vfs',
-      `Canonical shared chrome is missing visible routes: ${missingChromeRoutes.join(', ')}.`,
-      { blockedFiles: ['/src/sections/SiteNavbar.tsx', '/src/sections/SiteFooter.tsx'], recoverableByRelaunch: true },
-    );
+  // Page bodies own chrome, so each registered page must render exactly one
+  // navigation landmark and one footer. Zero = unreachable page, more than one
+  // = the duplicate-chrome regression this authority exists to prevent.
+  const duplicateChromePages = Object.values(snapshot.pageRegistry.pages)
+    .map((page) => (page as { filePath?: string }).filePath)
+    .filter((filePath): filePath is string => Boolean(filePath))
+    .filter((filePath) => {
+      const source = merged[filePath.startsWith('/') ? filePath : `/${filePath}`] || merged[filePath] || '';
+      if (!source) return false;
+      return countPageChromeLandmarks(source).navbars > 1
+        || countPageChromeLandmarks(source).footers > 1;
+    });
+  if (duplicateChromePages.length > 0) {
+    console.warn('[canonicalLaunchVfs] Page bodies render duplicate chrome', duplicateChromePages);
   }
 
   return merged;

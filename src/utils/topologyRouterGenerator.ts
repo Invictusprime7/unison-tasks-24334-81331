@@ -68,10 +68,11 @@ export function generateCanonicalRouterForFiles(
   if (pages.length === 0) return '';
 
   const routes = pagesToRoutes(pages);
-  const withSharedChrome = Boolean(
-    existingFiles['/src/sections/SiteNavbar.tsx'] && existingFiles['/src/sections/SiteFooter.tsx'],
-  );
-  return buildRouterCode(routes, businessName, { withSharedChrome });
+  // Chrome authority lives in the page body: navigation and footer are
+  // deterministic composition sections derived from the wizard selections.
+  // The router therefore never renders its own navbar/footer, which is what
+  // used to produce two competing navbars and two footers per page.
+  return buildRouterCode(routes, businessName, { withSharedChrome: false });
 }
 
 /**

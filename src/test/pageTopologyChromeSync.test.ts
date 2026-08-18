@@ -38,7 +38,8 @@ describe('page topology shared chrome sync', () => {
     expect(result.filesToImport['/src/sections/SiteNavbar.tsx']).toContain('"path": "/contact"');
     expect(result.filesToImport['/src/sections/SiteFooter.tsx']).toContain('"path": "/contact"');
     expect(result.routerCode).toContain('path="/contact"');
-    expect(result.routerCode.match(/<SiteNavbar \/>/g)).toHaveLength(1);
-    expect(result.routerCode.match(/<SiteFooter \/>/g)).toHaveLength(1);
+    // Router renders routes only — chrome is owned by the page body.
+    expect(result.routerCode).not.toContain('<SiteNavbar />');
+    expect(result.routerCode).not.toContain('<SiteFooter />');
   });
 });

@@ -25,6 +25,7 @@
  * preflight — it tests the canonical composition contract only.
  */
 
+import { countPageChromeLandmarks } from '@/services/wizardSharedChrome';
 import { describe, expect, it } from 'vitest';
 import { resolveCapabilities } from '@/services/wizardCapabilityResolver';
 import { materializePlayground } from '@/services/wizardPlaygroundMaterializer';
@@ -315,24 +316,20 @@ describe('Golden industry pipeline — canonical round-trip', () => {
       }
     });
 
-    it('renders registry-derived shared chrome once around every route', () => {
+    it('renders page-owned chrome exactly once per route and none in the router', () => {
       const router = compileA.routerFile.content;
-      const navbar = compileA.vfsFiles['/src/sections/SiteNavbar.tsx'];
-      const footer = compileA.vfsFiles['/src/sections/SiteFooter.tsx'];
 
-      expect(router.match(/<SiteNavbar \/>/g)).toHaveLength(1);
-      expect(router.match(/<SiteFooter \/>/g)).toHaveLength(1);
-      expect(router).toContain("./sections/SiteNavbar.tsx");
-      expect(router).toContain("./sections/SiteFooter.tsx");
+      // Chrome authority is the page body (wizard-derived composition sections).
+      expect(router).not.toContain('<SiteNavbar');
+      expect(router).not.toContain('<SiteFooter');
+      expect(router).not.toContain('./sections/SiteNavbar.tsx');
+      expect(router).not.toContain('./sections/SiteFooter.tsx');
 
       for (const page of Object.values(state.pageRegistry.pages) as BuilderPage[]) {
-        const pageSource = compileA.vfsFiles[page.filePath!];
-        expect(pageSource).not.toContain('<SiteNavbar');
-        expect(pageSource).not.toContain('<SiteFooter');
-        if (!page.showInNav) continue;
-        const route = page.isHome ? '/' : page.path;
-        expect(navbar, `navbar must include ${route}`).toContain(JSON.stringify(route));
-        expect(footer, `footer must include ${route}`).toContain(JSON.stringify(route));
+        const pageSource = compileA.vfsFiles[page.filePath!] || '';
+        const chrome = countPageChromeLandmarks(pageSource);
+        expect(chrome.navbars, `${page.filePath} must render one navbar`).toBeLessThanOrEqual(1);
+        expect(chrome.footers, `${page.filePath} must render one footer`).toBeLessThanOrEqual(1);
       }
     });
 

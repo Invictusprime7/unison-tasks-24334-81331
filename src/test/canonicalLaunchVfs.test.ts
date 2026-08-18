@@ -65,7 +65,7 @@ function createSnapshot(): SiteBundleSnapshot {
 }
 
 describe("buildCanonicalLaunchArtifacts", () => {
-  it("replaces Lane B shared chrome with registry-derived modules at canonical merge", () => {
+  it("drops router-level shared chrome so the page body stays the only chrome authority", () => {
     const snapshot = createSnapshot();
     const aboutPage = createBuilderPage("page_about", "About", "/about", "about", {
       filePath: "/src/pages/About.tsx",
@@ -86,11 +86,10 @@ describe("buildCanonicalLaunchArtifacts", () => {
       snapshot,
     );
 
-    expect(merged["/src/sections/SiteNavbar.tsx"]).toContain('"path": "/about"');
-    expect(merged["/src/sections/SiteNavbar.tsx"]).not.toContain("Stale menu");
-    expect(merged["/src/sections/SiteFooter.tsx"]).toContain('"path": "/about"');
-    expect(merged["/src/App.tsx"]).toContain("<SiteNavbar />");
-    expect(merged["/src/App.tsx"]).toContain("<SiteFooter />");
+    expect(merged["/src/sections/SiteNavbar.tsx"]).toBeUndefined();
+    expect(merged["/src/sections/SiteFooter.tsx"]).toBeUndefined();
+    expect(merged["/src/App.tsx"]).not.toContain("<SiteNavbar />");
+    expect(merged["/src/App.tsx"]).not.toContain("<SiteFooter />");
   });
 
   it("uses the snapshot fallback policy when accepting generated wizard pages", () => {

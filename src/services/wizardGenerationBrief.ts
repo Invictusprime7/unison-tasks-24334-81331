@@ -64,6 +64,12 @@ export interface WizardGenerationBrief {
     classes: string[];
     rule: string;
   };
+  /** Chrome authority: page bodies own exactly one navbar and one footer. */
+  chrome: {
+    owner: 'page-body';
+    rule: string;
+    routes: { path: string; label: string }[];
+  };
   ui: { formFormats: string[]; buttonFormats: string[]; iconFormats: string[] };
 }
 
@@ -194,6 +200,11 @@ export function buildWizardGenerationBrief(input: {
       interactionProfile: pack.interactionProfile,
       classes: ['ut-section', 'ut-rhythm', 'ut-display', 'ut-title', 'ut-lead', 'ut-measure', 'ut-surface', 'ut-accent-wash', 'ut-media', 'ut-reveal'],
       rule: `Author every page inside the "${pack.name}" design system: ${pack.description} Use the ut-* primitives and --ut-* tokens for type scale, surfaces, media framing and motion. Do not invent a competing visual language, and never substitute hardcoded sizes, radii, shadows or gradients for these tokens.`,
+    },
+    chrome: {
+      owner: 'page-body',
+      rule: 'Each page body owns its chrome and must render EXACTLY ONE navigation landmark and EXACTLY ONE footer. The router renders routes only — it adds no navbar and no footer. Never emit /src/sections/SiteNavbar.tsx or /src/sections/SiteFooter.tsx, never render a second <nav>/<header> nav bar or a second <footer>, and keep the nav links identical to the registered routes below.',
+      routes: routes.map((route) => ({ path: route.path, label: route.title })),
     },
     ui: {
       formFormats: [...(input.uiFoundation?.formFormats || [])],

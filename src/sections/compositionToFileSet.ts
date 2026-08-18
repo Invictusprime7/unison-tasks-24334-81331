@@ -220,7 +220,7 @@ export default function Navbar({ props }: { props: any }) {
   if (resolvedLayout === 'minimal-dark') {
     return (
       <header data-ut-variant="navbar:minimal-dark" className={positionClass + ' border-b border-border bg-foreground text-background'}>
-        <div className={shellClass + ' flex min-h-[4.5rem] items-center justify-between'}>
+        <div className={shellClass + ' flex min-h-[var(--ut-nav-block)] items-center justify-between'}>
           <a href="#" className="font-heading text-xl font-semibold text-background no-underline">{brand}</a>
           <nav className="ut-nav-links flex items-center gap-6">{links.map((link: any, index: number) => <a key={index} href={link.href} className="font-body text-sm text-background/75 no-underline hover:text-background">{link.label}</a>)}{cta && <a href={cta.href || '#'} data-ut-intent={cta.intent} className="rounded-[var(--radius)] bg-background px-4 py-2 font-body text-sm font-semibold text-foreground no-underline">{cta.label}</a>}</nav>
         </div>
@@ -230,7 +230,7 @@ export default function Navbar({ props }: { props: any }) {
 
   return (
     <header data-ut-variant="navbar:standard" className={positionClass + ' border-b border-border/50 bg-background/85 backdrop-blur-md'}>
-      <div className={shellClass + ' flex h-20 items-center justify-between'}>
+      <div className={shellClass + ' flex min-h-[var(--ut-nav-block)] items-center justify-between'}>
         <a href="#" className="font-heading text-2xl font-semibold text-primary no-underline">{brand}</a>
         <nav className="ut-nav-links flex items-center gap-8">
           {links.map((link: any, index: number) => <a key={index} href={link.href} className={linkClass}>{link.label}</a>)}
@@ -244,7 +244,7 @@ export default function Navbar({ props }: { props: any }) {
 
 const HERO_MODULE = `import React from 'react';
 
-const HERO_TOP_PADDING = 'clamp(5.5rem, 8vw, 6.5rem)';
+const HERO_TOP_PADDING = 'var(--ut-hero-space-top)';
 const shellClass = 'mx-auto w-full max-w-7xl px-5 sm:px-8';
 const primaryButtonClass = 'inline-flex items-center justify-center rounded-[var(--radius)] bg-primary px-6 py-3 font-body font-semibold text-primary-foreground no-underline transition-opacity hover:opacity-90';
 const outlineButtonClass = 'inline-flex items-center justify-center rounded-[var(--radius)] border border-border bg-transparent px-6 py-3 font-body font-semibold text-foreground no-underline transition-colors hover:bg-muted';
@@ -264,7 +264,7 @@ export default function Hero({ props }: { props: any }) {
 
   if (fullBleed) {
     return (
-      <section data-ut-variant="hero:full-bleed" className="relative flex min-h-[72vh] items-center overflow-hidden bg-foreground pb-36" style={{ paddingTop: HERO_TOP_PADDING }}>
+      <section data-ut-variant="hero:full-bleed" className="relative flex min-h-[var(--ut-hero-block)] items-center overflow-hidden bg-foreground pb-36" style={{ paddingTop: HERO_TOP_PADDING }}>
         {media && <img src={media} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover" />}
         <div className="absolute inset-0 bg-foreground/70" />
         <div className={shellClass + ' relative z-10 text-left'}>{content}</div>
@@ -277,7 +277,7 @@ export default function Hero({ props }: { props: any }) {
       <section data-ut-variant="hero:split-image" className="bg-background pb-24" style={{ paddingTop: HERO_TOP_PADDING }}>
         <div className={shellClass + ' grid items-center gap-10 md:grid-cols-2 lg:gap-20'}>
           <div className="text-left">{content}</div>
-          {media && <div className="ut-media-frame min-h-80"><img src={media} alt="" className="block min-h-80 h-full w-full object-cover" /></div>}
+          {media && <div className="ut-media-frame min-h-[var(--ut-hero-media-block)]"><img src={media} alt="" className="block min-h-[var(--ut-hero-media-block)] h-full w-full object-cover" /></div>}
         </div>
       </section>
     );
@@ -287,7 +287,7 @@ export default function Hero({ props }: { props: any }) {
     <section data-ut-variant="hero:centered" className="bg-background pb-24" style={{ paddingTop: HERO_TOP_PADDING }}>
       <div className={shellClass + ' text-center'}>
         {content}
-        {media && <img src={media} alt="" className="mx-auto mt-12 block max-h-[540px] w-full max-w-5xl rounded-[var(--radius)] border border-border object-cover" />}
+        {media && <img src={media} alt="" className="mx-auto mt-12 block max-h-[var(--ut-hero-media-max)] w-full max-w-5xl rounded-[var(--radius)] border border-border object-cover" />}
         {stats && stats.length > 0 && <div className="ut-hero-stats mt-12 flex flex-wrap justify-center gap-10">{stats.map((stat: any, index: number) => <div key={index} className="text-center"><div className="font-heading text-3xl font-semibold text-primary">{stat.value}</div><div className="font-body text-xs uppercase text-muted-foreground">{stat.label}</div></div>)}</div>}
       </div>
     </section>
@@ -320,7 +320,7 @@ export default function Services({ props }: { props: any }) {
                   {(item.price || item.duration) && <p className="font-heading font-semibold text-primary">{[item.price, item.duration].filter(Boolean).join(' · ')}</p>}
                   {item.cta && <a href={item.cta.href || '#'} data-ut-intent={item.cta.intent} className={buttonClass}>{item.cta.label}</a>}
                 </div>
-                {item.image && <div className={(index % 2 === 0 ? 'md:order-2' : 'md:order-1') + ' ut-media-frame min-h-[260px]'}><img src={item.image} alt={item.title || ''} className="block min-h-[260px] h-full w-full object-cover" /></div>}
+                {item.image && <div className={(index % 2 === 0 ? 'md:order-2' : 'md:order-1') + ' ut-media-frame min-h-[var(--ut-media-block)]'}><img src={item.image} alt={item.title || ''} className="block min-h-[var(--ut-media-block)] h-full w-full object-cover" /></div>}
               </article>
             ))}
           </div>
@@ -691,7 +691,7 @@ export default function Gallery({ props }: { props: any }) {
     <div role="dialog" aria-modal="true" aria-label={visible[lightbox].alt || 'Gallery image'} onClick={() => setLightbox(null)} className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/90 p-6">
       <button type="button" aria-label="Close gallery" onClick={() => setLightbox(null)} className="absolute right-5 top-5 h-10 w-10 rounded-full bg-background/20 text-lg text-background">×</button>
       <figure className="m-0 max-h-full max-w-5xl" onClick={(event) => event.stopPropagation()}>
-        <img src={visible[lightbox].src} alt={visible[lightbox].alt} className="max-h-[78vh] w-auto rounded-[var(--radius)] object-contain" />
+        <img src={visible[lightbox].src} alt={visible[lightbox].alt} className="max-h-[var(--ut-overlay-block)] w-auto rounded-[var(--radius)] object-contain" />
         {visible[lightbox].caption && <figcaption className="mt-3 text-center font-body text-sm text-background">{visible[lightbox].caption}</figcaption>}
       </figure>
     </div>
@@ -702,7 +702,7 @@ export default function Gallery({ props }: { props: any }) {
       <section data-ut-variant="gallery:editorial-mosaic" className="bg-background py-24">
         <div className={shellClass}>
           {intro}{filters}
-          <div className="grid auto-rows-[220px] grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid auto-rows-[var(--ut-tile-block)] grid-cols-2 gap-4 lg:grid-cols-4">
             {visible.map((item, index) => figure(item, index, index % 5 === 0 ? 'col-span-2 row-span-2' : index % 7 === 3 ? 'col-span-2' : ''))}
           </div>
         </div>
@@ -942,7 +942,7 @@ export default function About({ props }: { props: any }) {
       <div className={shellClass + ' grid items-center gap-10 md:grid-cols-2 lg:gap-16'}>
         <div className={layout === 'text-right' ? 'md:order-2' : ''}>{copy}</div>
         <div className={(layout === 'text-right' ? 'md:order-1 ' : '') + 'ut-media-frame overflow-hidden rounded-[var(--radius)] border border-border'}>
-          <img src={image} alt={headline || ''} loading="lazy" className="block h-full min-h-[320px] w-full object-cover" />
+          <img src={image} alt={headline || ''} loading="lazy" className="block h-full min-h-[var(--ut-media-block-lg)] w-full object-cover" />
         </div>
       </div>
     </section>
@@ -1011,8 +1011,8 @@ export default function BeforeAfter({ props }: { props: any }) {
           {items.map((item: any, index: number) => (
             <figure key={index} className="m-0 overflow-hidden rounded-[var(--radius)] border border-border bg-card">
               <div className="grid grid-cols-2">
-                <div className="relative"><img src={item.before} alt={(item.label || 'Result') + ' before'} loading="lazy" className="aspect-square w-full object-cover" /><span className="absolute left-3 top-3 rounded-full bg-foreground/70 px-2.5 py-1 font-body text-[11px] font-semibold uppercase text-background">Before</span></div>
-                <div className="relative"><img src={item.after} alt={(item.label || 'Result') + ' after'} loading="lazy" className="aspect-square w-full object-cover" /><span className="absolute left-3 top-3 rounded-full bg-primary px-2.5 py-1 font-body text-[11px] font-semibold uppercase text-primary-foreground">After</span></div>
+                <div className="relative"><img src={item.before} alt={(item.label || 'Result') + ' before'} loading="lazy" className="aspect-square w-full object-cover" /><span className="absolute left-3 top-3 rounded-full bg-foreground/70 px-2.5 py-1 font-body text-[length:var(--ut-eyebrow-size)] font-semibold uppercase text-background">Before</span></div>
+                <div className="relative"><img src={item.after} alt={(item.label || 'Result') + ' after'} loading="lazy" className="aspect-square w-full object-cover" /><span className="absolute left-3 top-3 rounded-full bg-primary px-2.5 py-1 font-body text-[length:var(--ut-eyebrow-size)] font-semibold uppercase text-primary-foreground">After</span></div>
               </div>
               {item.label && <figcaption className="p-4 font-body text-sm text-muted-foreground">{item.label}</figcaption>}
             </figure>

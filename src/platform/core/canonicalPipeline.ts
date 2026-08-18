@@ -505,6 +505,8 @@ export function recompileFromPlayground(
     validations,
     compileResult,
     siteBundleSnapshot,
+    compileArtifact: createWizardCompileArtifact(siteBundleSnapshot),
+
     runtimeManifest,
     sitePlan: null,
     warnings,

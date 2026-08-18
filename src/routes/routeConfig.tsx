@@ -31,6 +31,8 @@ const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const TeamManagement = lazy(() => import("@/pages/TeamManagement"));
 const AIChat = lazy(() => import("@/pages/AIChat"));
 const ExternalPreviewPage = lazy(() => import("@/pages/ExternalPreviewPage"));
+const SiteSnapshotPreviewPage = lazy(() => import("@/pages/SiteSnapshotPreviewPage"));
+
 
 export type RouteShell = "public" | "onboarding" | "workspace" | "project" | "builder" | "focus";
 export type RouteChrome = "none" | "legacy" | "canonical" | "fullscreen";
@@ -251,6 +253,31 @@ export const appRoutes: AppRouteConfig[] = [
       chrome: "none",
     },
   },
+  {
+    path: "/site-preview",
+    element: withAsyncBoundary(<SiteSnapshotPreviewPage />),
+    meta: {
+      id: "site-snapshot-preview",
+      title: "Snapshot previewer",
+      section: "builder",
+      shell: "focus",
+      chrome: "fullscreen",
+      requiresAuth: true,
+    },
+  },
+  {
+    path: "/site-preview/:draftId",
+    element: withAsyncBoundary(<SiteSnapshotPreviewPage />),
+    meta: {
+      id: "site-snapshot-preview-draft",
+      title: "Snapshot previewer",
+      section: "builder",
+      shell: "focus",
+      chrome: "fullscreen",
+      requiresAuth: true,
+    },
+  },
+
   {
     // R6: the standalone AI page generator was a parallel visual pipeline
     // (own PageRenderer, own noir/warm/minimal theme presets, no

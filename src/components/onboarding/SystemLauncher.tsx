@@ -37,6 +37,8 @@ import {
 } from "@/data/templates/types";
 import { THEME_PRESETS, type ThemePreset } from "./themePresets";
 import { ThemeLivePreview } from "./ThemeLivePreview";
+import { StyleTokenCard } from "./StyleTokenCard";
+
 import { TemplateLivePreview } from "./TemplateLivePreview";
 import { WizardTopAction } from "./WizardTopAction";
 import { LaunchReviewSummary } from "./LaunchReviewSummary";
@@ -4836,7 +4838,20 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                         ? `Selected: ${selectedTheme.label}. Hover any style to compare.`
                         : "Hover a style to preview, or continue with the industry default."}
                     </p>
+
+                    <label className="block text-xs font-semibold text-white/50 mt-5 mb-3 uppercase tracking-wider">
+                      Resolved Style Tokens
+                    </label>
+                    <StyleTokenCard
+                      theme={hoveredTheme ?? selectedTheme ?? THEME_PRESETS[0]}
+                      businessName={businessName}
+                    />
+                    <p className="mt-2 text-[10px] text-white/30 leading-relaxed">
+                      Rendered from the same color, typography and geometry tokens
+                      the generator hands to every section — no hardcoded styling.
+                    </p>
                   </div>
+
                 </div>
 
 

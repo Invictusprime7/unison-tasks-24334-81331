@@ -392,7 +392,7 @@ export const componentStyles = {
   container: 'mx-auto w-full max-w-6xl',
   card: 'ut-foundation-card bg-card text-card-foreground',
   interactiveCard: 'ut-foundation-card bg-card text-card-foreground focus-within:ring-2 focus-within:ring-ring',
-  button: 'inline-flex min-h-10 items-center justify-center gap-2 rounded-[calc(var(--radius)-0.125rem)] px-4 py-2 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+  button: 'inline-flex min-h-10 items-center justify-center gap-2 rounded-[var(--ut-control-radius)] px-4 py-2 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
 } as const;
 
 export const motionStyles = {
@@ -436,7 +436,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from './cn';
 
 const buttonVariants = cva(
-  'inline-flex min-h-10 items-center justify-center gap-2 rounded-[calc(var(--radius)-0.125rem)] px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex min-h-10 items-center justify-center gap-2 rounded-[var(--ut-control-radius)] px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
@@ -511,15 +511,15 @@ export function FieldLabel({ className, ...props }: React.ComponentPropsWithoutR
 }
 
 export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn('flex h-10 w-full rounded-[calc(var(--radius)-0.125rem)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
+  return <input className={cn('flex h-10 w-full rounded-[var(--ut-control-radius)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
 }
 
 export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={cn('flex min-h-28 w-full rounded-[calc(var(--radius)-0.125rem)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
+  return <textarea className={cn('flex min-h-28 w-full rounded-[var(--ut-control-radius)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
 }
 
 export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={cn('flex h-10 w-full rounded-[calc(var(--radius)-0.125rem)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
+  return <select className={cn('flex h-10 w-full rounded-[var(--ut-control-radius)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
 }
 
 export function Checkbox({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
@@ -631,7 +631,7 @@ import { cn } from './cn';
 export interface NavigationLink { label: string; href: string; intent?: string; }
 
 export function FloatingNavbar({ brand, links, ctaLabel, ctaIntent, className }: { brand: string; links: NavigationLink[]; ctaLabel?: string; ctaIntent?: string; className?: string }) {
-  return <header className={cn('sticky top-3 z-40 mx-auto w-[min(100%-1.5rem,72rem)] rounded-[var(--radius)] border border-border bg-background/80 px-4 py-3 shadow-sm backdrop-blur-md', className)}><div className="flex items-center justify-between gap-4"><a href="#top" className="text-base font-bold text-foreground">{brand}</a><nav className="hidden items-center gap-5 md:flex">{links.map((link) => <a key={link.href} href={link.href} data-ut-intent={link.intent || 'nav.anchor'} className="text-sm text-muted-foreground transition-colors hover:text-foreground">{link.label}</a>)}</nav>{ctaLabel && <Button className="hidden md:inline-flex" data-ut-intent={ctaIntent || 'cta.primary'}>{ctaLabel}</Button>}<Dialog.Root><Dialog.Trigger asChild><button type="button" aria-label="Open navigation" className="grid size-10 place-items-center rounded-[calc(var(--radius)-0.125rem)] hover:bg-accent md:hidden"><Menu className="size-5" /></button></Dialog.Trigger><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-50 bg-foreground/30 backdrop-blur-sm" /><Dialog.Content className="fixed right-3 top-3 z-50 w-[min(22rem,calc(100vw-1.5rem))] rounded-[var(--radius)] border border-border bg-card p-5 shadow-xl"><div className="mb-6 flex items-center justify-between"><Dialog.Title className="font-semibold">{brand}</Dialog.Title><Dialog.Close asChild><button type="button" aria-label="Close navigation" className="grid size-9 place-items-center rounded-[calc(var(--radius)-0.125rem)] hover:bg-accent"><X className="size-5" /></button></Dialog.Close></div><nav className="grid gap-2">{links.map((link) => <Dialog.Close key={link.href} asChild><a href={link.href} data-ut-intent={link.intent || 'nav.anchor'} className="rounded-[calc(var(--radius)-0.125rem)] px-3 py-3 text-foreground hover:bg-accent">{link.label}</a></Dialog.Close>)}{ctaLabel && <Button data-ut-intent={ctaIntent || 'cta.primary'}>{ctaLabel}</Button>}</nav></Dialog.Content></Dialog.Portal></Dialog.Root></div></header>;
+  return <header className={cn('sticky top-3 z-40 mx-auto w-[var(--ut-shell-width)] rounded-[var(--radius)] border border-border bg-background/80 px-4 py-3 shadow-sm backdrop-blur-md', className)}><div className="flex items-center justify-between gap-4"><a href="#top" className="text-base font-bold text-foreground">{brand}</a><nav className="hidden items-center gap-5 md:flex">{links.map((link) => <a key={link.href} href={link.href} data-ut-intent={link.intent || 'nav.anchor'} className="text-sm text-muted-foreground transition-colors hover:text-foreground">{link.label}</a>)}</nav>{ctaLabel && <Button className="hidden md:inline-flex" data-ut-intent={ctaIntent || 'cta.primary'}>{ctaLabel}</Button>}<Dialog.Root><Dialog.Trigger asChild><button type="button" aria-label="Open navigation" className="grid size-10 place-items-center rounded-[var(--ut-control-radius)] hover:bg-accent md:hidden"><Menu className="size-5" /></button></Dialog.Trigger><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-50 bg-foreground/30 backdrop-blur-sm" /><Dialog.Content className="fixed right-3 top-3 z-50 w-[var(--ut-panel-width)] rounded-[var(--radius)] border border-border bg-card p-5 shadow-xl"><div className="mb-6 flex items-center justify-between"><Dialog.Title className="font-semibold">{brand}</Dialog.Title><Dialog.Close asChild><button type="button" aria-label="Close navigation" className="grid size-9 place-items-center rounded-[var(--ut-control-radius)] hover:bg-accent"><X className="size-5" /></button></Dialog.Close></div><nav className="grid gap-2">{links.map((link) => <Dialog.Close key={link.href} asChild><a href={link.href} data-ut-intent={link.intent || 'nav.anchor'} className="rounded-[var(--ut-control-radius)] px-3 py-3 text-foreground hover:bg-accent">{link.label}</a></Dialog.Close>)}{ctaLabel && <Button data-ut-intent={ctaIntent || 'cta.primary'}>{ctaLabel}</Button>}</nav></Dialog.Content></Dialog.Portal></Dialog.Root></div></header>;
 }
 `,
     '/src/unison/ui/recipes.tsx': `${marker}

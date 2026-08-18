@@ -401,7 +401,7 @@ export default function Testimonials({ props }: { props: any }) {
         <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
           {intro}
           <div className="flex snap-x gap-6 overflow-x-auto pb-4">
-            {items.map((item: any, index: number) => <article key={index} className={cardClass + ' w-[min(420px,85vw)] shrink-0 snap-start p-8'}>{item.rating && <div className="mb-4 text-accent">{'★'.repeat(item.rating)}{'☆'.repeat(5-item.rating)}</div>}{quote(item)}</article>)}
+            {items.map((item: any, index: number) => <article key={index} className={cardClass + ' w-[var(--ut-carousel-card)] shrink-0 snap-start p-8'}>{item.rating && <div className="mb-4 text-accent">{'★'.repeat(item.rating)}{'☆'.repeat(5-item.rating)}</div>}{quote(item)}</article>)}
           </div>
         </div>
       </section>
@@ -436,7 +436,7 @@ export default function CTA({ props }: { props: any }) {
   if (layout === 'split') {
     return (
       <section data-ut-variant="cta:split-card" className="bg-background py-24">
-        <div className="relative mx-auto grid w-[calc(100%-2.5rem)] max-w-7xl items-center gap-8 overflow-hidden rounded-[var(--radius)] bg-foreground p-8 text-background sm:p-16 md:grid-cols-2">
+        <div className="relative mx-auto grid w-[var(--ut-shell-width)] items-center gap-8 overflow-hidden rounded-[var(--radius)] bg-foreground p-8 text-background sm:p-16 md:grid-cols-2">
           {backgroundImage && <img src={backgroundImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-25" />}
           <div className="relative"><h2 className="mb-4 font-heading text-3xl font-semibold sm:text-5xl">{headline}</h2>{description && <p className="font-body text-lg leading-relaxed text-background/75">{description}</p>}</div>
           <div className="relative flex flex-col gap-3">{ctas.map((cta: any, index: number) => <a key={index} href={cta.href || '#'} data-ut-intent={cta.intent} className={cta.variant === 'outline' ? outlineButtonClass + ' border-background/45 text-background hover:bg-background/10' : primaryButtonClass}>{cta.label}</a>)}</div>
@@ -764,7 +764,7 @@ export default function Gallery({ props }: { props: any }) {
         <div className={shellClass}>{intro}{filters}</div>
         <div className="flex snap-x gap-4 overflow-x-auto px-5 pb-4 sm:px-8">
           {visible.map((item, index) => (
-            <div key={index} className="w-[min(420px,80vw)] shrink-0 snap-start">{figure(item, index, 'aspect-[4/5]')}</div>
+            <div key={index} className="w-[var(--ut-carousel-card)] shrink-0 snap-start">{figure(item, index, 'aspect-[4/5]')}</div>
           ))}
         </div>
         {overlay}

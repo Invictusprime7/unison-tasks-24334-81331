@@ -65,7 +65,7 @@ function createSnapshot(): SiteBundleSnapshot {
 }
 
 describe("buildCanonicalLaunchArtifacts", () => {
-  it("replaces Lane B shared chrome with registry-derived modules at canonical merge", () => {
+  it("drops router-level shared chrome so the page body stays the only chrome authority", () => {
     const snapshot = createSnapshot();
     const aboutPage = createBuilderPage("page_about", "About", "/about", "about", {
       filePath: "/src/pages/About.tsx",

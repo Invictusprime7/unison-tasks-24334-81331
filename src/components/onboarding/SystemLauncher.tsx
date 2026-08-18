@@ -124,8 +124,8 @@ import {
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
 import {
-  preserveCanonicalHomePresentation,
-  preserveCanonicalPagePresentations,
+  assessWizardHomePresentation,
+  assessWizardPagePresentations,
 } from "@/services/wizardPresentationGuard";
 import {
   ensureGeneratedUiFoundation,
@@ -3745,7 +3745,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ];
       }
 
-      const presentationGuard = preserveCanonicalPagePresentations({
+      const presentationAssessment = assessWizardPagePresentations({
         aiFiles: aiSourcedFiles,
         canonicalFiles: siteBundleSnapshot.vfsFiles,
         pagePaths: Object.values(siteBundleSnapshot.pageRegistry.pages)
@@ -3755,12 +3755,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           .find((page) => (page as { isHome?: boolean }).isHome) as { filePath?: string } | undefined)?.filePath,
         requiredHeroGeometry: siteBundleSnapshot.meta.generationBrief?.homeHeroGeometry,
       });
-      aiSourcedFiles = presentationGuard.files;
-      if (presentationGuard.restoredPaths.length > 0) {
-        console.warn('[SystemLauncher] Restored canonical page presentations after Lane B visual drift', {
+      const qualityRejectedPaths = Array.from(new Set([
+        ...homeQualityRejections,
+        ...presentationAssessment.rejectedPaths,
+      ]));
+      if (qualityRejectedPaths.length > 0) {
+        // Degraded, not overridden: Lane B stays the page-body author and the
+        // launch records which pages missed the visual contract.
+        launchReliabilityMode = 'lane-b-degraded';
+        console.warn('[SystemLauncher] Lane B pages failed the presentation quality gate', {
           templateId: templateLayoutContract.templateId,
-          paths: presentationGuard.restoredPaths,
-          reasons: presentationGuard.reasons,
+          paths: qualityRejectedPaths,
+          reasons: presentationAssessment.reasons,
         });
       }
 

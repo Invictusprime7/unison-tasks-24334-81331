@@ -416,13 +416,6 @@ export function recompileFromPlayground(
       '[canonicalPipeline] Recompile Stage 4b requires the original wizard themeTokens; CSS recovery is not allowed.',
     );
   }
-  const themedCss = buildThemedIndexCssFromTokens(options.themeTokens, {
-    presetId: themePresetId,
-    label: themePresetId,
-  });
-  if (!themedCss.includes('--primary:') || !themedCss.includes(SHADCN_LIBRARY_CSS_MARKER)) {
-    throw new Error('[canonicalPipeline] Recompile Stage 4b did not produce the canonical shadcn stylesheet.');
-  }
   const warnings: string[] = [];
   const errors: string[] = [];
 
@@ -463,6 +456,15 @@ export function recompileFromPlayground(
     themePresetId,
     wizardSeedId: recoveredSeedId,
   });
+  // Art direction is read back from the sealed brief — never re-derived here.
+  const themedCss = buildThemedIndexCssFromTokens(options.themeTokens, {
+    presetId: themePresetId,
+    label: themePresetId,
+    artDirectionPackId: designIntervention.artDirectionPackId,
+  });
+  if (!themedCss.includes('--primary:') || !themedCss.includes(SHADCN_LIBRARY_CSS_MARKER)) {
+    throw new Error('[canonicalPipeline] Recompile Stage 4b did not produce the canonical shadcn stylesheet.');
+  }
   const compileResult = compilePlayground(playground, existingVfsFiles, businessName, {
     selectedTemplateId: options?.selectedTemplateId,
     selectedThemeId: options?.selectedThemeId,
@@ -597,6 +599,8 @@ function projectToSiteBundleSnapshot(
     vfsFiles: compileResult.vfsFiles,
     uiFoundation,
     themePresetId: resolvedThemePresetId,
+    artDirectionPackId: options?.designIntervention?.artDirectionPackId,
+    industry: resolvedIndustry,
   });
 
   return {

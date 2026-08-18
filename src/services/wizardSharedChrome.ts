@@ -208,3 +208,14 @@ export function getMissingCanonicalChromeRoutes(
     .filter((item) => !navbar.includes(JSON.stringify(item.path)) || !footer.includes(JSON.stringify(item.path)))
     .map((item) => item.path);
 }
+
+/**
+ * Chrome is owned by the page body (deterministic composition sections derived
+ * from the wizard selections). Counting landmarks lets every authority — merge,
+ * quality gate, drift watcher — assert "exactly one navbar, exactly one footer".
+ */
+export function countPageChromeLandmarks(source: string): { navbars: number; footers: number } {
+  const navbars = (source.match(/<(?:nav\b|SiteNavbar\b|Navbar\b)/g) || []).length;
+  const footers = (source.match(/<(?:footer\b|SiteFooter\b|Footer\b)/g) || []).length;
+  return { navbars, footers };
+}

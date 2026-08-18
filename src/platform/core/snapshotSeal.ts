@@ -141,7 +141,9 @@ export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
       sealedBy: input.sealedBy || 'wizard-launch',
       compileArtifactId: baseline.snapshotId,
       fileCount: Object.keys(runtimeVfsFiles).length,
+      ...(missingPageFiles.length > 0 ? { missingPageFiles } : {}),
     },
+
   };
 
   return {

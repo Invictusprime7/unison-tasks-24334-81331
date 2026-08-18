@@ -147,7 +147,7 @@ describe('composition VFS variants', () => {
     expect(files['/src/components/CTA.tsx']).toContain('data-ut-variant="cta:split-card"');
     expect(files['/src/components/Contact.tsx']).toContain('data-ut-variant="contact:split-card"');
     expect(files['/src/components/Footer.tsx']).toContain('data-ut-variant="footer:dark-band"');
-    expect(files['/src/components/Hero.tsx']).toContain('{media && <div className="ut-media-frame min-h-80">');
+    expect(files['/src/components/Hero.tsx']).toContain('{media && <div className="ut-media-frame min-h-[var(--ut-hero-media-block)]">');
     expect(files['/src/components/Services.tsx']).toContain("item.image ? 'grid items-center gap-8 md:grid-cols-2 lg:gap-14' : 'max-w-2xl'");
     expect(files['/src/pages/Home.tsx']).toContain('data-ut-media-treatment={section.type === \'hero\' ? mediaTreatment : undefined}');
   });

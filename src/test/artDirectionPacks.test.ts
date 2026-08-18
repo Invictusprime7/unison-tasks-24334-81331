@@ -16,6 +16,7 @@ import {
   resolveHeroPresentation,
 } from '@/sections/variants/artDirectionPacks';
 import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
+import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import type { TemplateComposition } from '@/sections/types';
 
@@ -167,7 +168,8 @@ describe('Art direction signature — themePresetId drives the design system', (
   });
 
   it('renders the signature into the themed stylesheet', () => {
-    const css = buildThemedIndexCss('futuristic', { industry: 'saas', seed: 'seed-1' });
+    const preset = THEME_PRESETS.find((p) => p.id === 'futuristic') || THEME_PRESETS[0];
+    const css = buildThemedIndexCss(preset, { industry: 'saas', seed: 'seed-1' });
     expect(css).toContain('--ut-gradient-hero');
     expect(css).toContain('.ut-pill');
     expect(css).toContain('.ut-hero {');

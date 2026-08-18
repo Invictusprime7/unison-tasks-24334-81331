@@ -837,14 +837,21 @@ function* buildCanonicalLaunchArtifactSteps(
   // runtime code, so reparsing every generated page here only duplicates CPU
   // work and can freeze the launcher shell.
   const verifiedViteFiles = viteReadyFiles;
+  // Degradation-visible modes (canonical merge disabled, canonical page
+  // fallback blocked) intentionally ship without canonical page bodies, so the
+  // seal records the gap as a diagnostic instead of aborting the launch.
+  const missingPageFilePolicy: 'throw' | 'report' =
+    mergeWithCanonicalSnapshot && input.allowCanonicalPageFallback !== false ? 'throw' : 'report';
   const siteBundleSnapshot = runtimeSnapshotSeed
     ? cloneSnapshotWithRuntimeVfs(
         runtimeSnapshotSeed,
         appContext,
         verifiedViteFiles,
         input.interactionManifest,
+        missingPageFilePolicy,
       )
     : undefined;
+
   if (siteBundleSnapshot && resolvedThemePresetId) {
     assertSnapshotThemeSeed(siteBundleSnapshot, resolvedThemePresetId, 'canonical launch -> SiteBundleSnapshot');
   }

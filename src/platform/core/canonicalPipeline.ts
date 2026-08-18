@@ -64,6 +64,8 @@ import {
   buildWizardGenerationBrief,
   type WizardGenerationBrief,
 } from '@/services/wizardGenerationBrief';
+import { createWizardCompileArtifact, type WizardCompileArtifact } from './snapshotSeal';
+
 
 // ============================================================================
 // Pipeline Result

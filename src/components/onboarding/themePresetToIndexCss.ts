@@ -24,7 +24,7 @@ export const SHADCN_LIBRARY_CSS_MARKER = 'SHADCN LIBRARY: canonical Stage 4b fou
  * design token so the selected style card (and only the selected style card)
  * owns the site's proportions.
  */
-function buildGeometryScale(presetId?: string): string {
+export function buildGeometryScale(presetId?: string): string {
   switch (presetId) {
     case 'minimalist':
       return '--ut-nav-block: 4.25rem; --ut-hero-block: 64vh; --ut-hero-space-top: clamp(5rem, 7vw, 6rem); --ut-hero-media-block: 18rem; --ut-hero-media-max: 30rem; --ut-media-block: 15rem; --ut-media-block-lg: 18rem; --ut-tile-block: 12.5rem; --ut-overlay-block: 82vh; --ut-eyebrow-size: 0.6875rem;';
@@ -120,6 +120,7 @@ export function buildThemedIndexCssFromTokens(
   --ut-glass-shadow: var(--ut-surface-shadow);
   --ut-content-width: 72rem;
   --ut-gutter: 1.25rem;
+  --ut-touch-target: 2.75rem;
   --ut-shell-width: min(100% - (var(--ut-gutter) * 2), var(--ut-content-width));
   --ut-carousel-card: min(26.25rem, 85vw);
   --ut-panel-width: min(22rem, calc(100vw - (var(--ut-gutter) * 2)));
@@ -388,4 +389,22 @@ img { max-width: 100%; height: auto; display: block; }
 a { color: inherit; text-decoration: none; }
 ul, ol { padding-left: 1.25rem; }
 `;
+}
+
+/**
+ * Aesthetic-resolved geometry token map for the selected style card.
+ * Consumed by the AI generation brief so Lane B styles with tokens only.
+ */
+export function resolveGeometryTokens(presetId?: string): Record<string, string> {
+  const shared = '--ut-content-width: 72rem; --ut-gutter: 1.25rem; --ut-touch-target: 2.75rem; --ut-shell-width: min(100% - (var(--ut-gutter) * 2), var(--ut-content-width)); --ut-carousel-card: min(26.25rem, 85vw); --ut-panel-width: min(22rem, calc(100vw - (var(--ut-gutter) * 2))); --ut-control-radius: calc(var(--radius) - 0.125rem); --ut-media-radius: var(--radius);';
+  const declarations = `${buildProfessionalGeometry(presetId)} ${shared}`;
+  const tokens: Record<string, string> = {};
+  for (const declaration of declarations.split(';')) {
+    const index = declaration.indexOf(':');
+    if (index < 0) continue;
+    const name = declaration.slice(0, index).trim();
+    const value = declaration.slice(index + 1).trim();
+    if (name.startsWith('--ut-') && value) tokens[name] = value;
+  }
+  return tokens;
 }

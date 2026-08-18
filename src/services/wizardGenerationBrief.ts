@@ -1,6 +1,7 @@
 import type { GeneratedUiManifest } from '@/platform/core/generatedUiFoundation';
 import type { PageRegistry } from '@/types/pageRegistry';
 import { normalizeWizardPageRole } from '@/services/wizardPageQuality';
+import { resolveGeometryTokens } from '@/components/onboarding/themePresetToIndexCss';
 
 export interface WizardHeroGeometry {
   layout: string;
@@ -31,6 +32,17 @@ export interface WizardGenerationBrief {
     };
   }>;
   homeHeroGeometry: WizardHeroGeometry;
+  /**
+   * Geometry is delegated to the aesthetic selection: these are the resolved
+   * CSS variables for the selected style card. Generated pages must reference
+   * them (e.g. min-h-[var(--ut-hero-block)]) and never hardcode px/rem/vh.
+   */
+  geometry: {
+    source: 'selected-style-card';
+    themePresetId: string | null;
+    tokens: Record<string, string>;
+    rule: string;
+  };
   ui: { formFormats: string[]; buttonFormats: string[]; iconFormats: string[] };
 }
 
@@ -92,6 +104,7 @@ export function buildWizardGenerationBrief(input: {
   pageRegistry: PageRegistry;
   vfsFiles: Record<string, string>;
   uiFoundation?: Pick<GeneratedUiManifest, 'formFormats' | 'buttonFormats' | 'iconFormats'>;
+  themePresetId?: string | null;
 }): WizardGenerationBrief {
   const homePage = Object.values(input.pageRegistry.pages).find((page) => page.isHome);
   const homePath = homePage?.filePath || '';
@@ -130,6 +143,12 @@ export function buildWizardGenerationBrief(input: {
     },
     routes,
     homeHeroGeometry,
+    geometry: {
+      source: 'selected-style-card',
+      themePresetId: input.themePresetId || null,
+      tokens: resolveGeometryTokens(input.themePresetId || undefined),
+      rule: 'Style with these tokens only. Never write px/rem/vh/vw/%/clamp()/calc() literals in Tailwind arbitrary values or inline styles, and never author raw CSS or <style> tags.',
+    },
     ui: {
       formFormats: [...(input.uiFoundation?.formFormats || [])],
       buttonFormats: [...(input.uiFoundation?.buttonFormats || [])],

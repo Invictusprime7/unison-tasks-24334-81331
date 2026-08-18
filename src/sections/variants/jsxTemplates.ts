@@ -81,7 +81,7 @@ export function heroFullBleedJSX(c: ExtractedSectionContent): string {
   const bgStyle = c.imageSrc
     ? `{{ backgroundImage: "url('${c.imageSrc}')", backgroundSize: "cover", backgroundPosition: "center" }}`
     : `{{ background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)" }}`;
-  return `      <section className="relative min-h-[80vh] flex items-center justify-center" data-variant="hero:full-bleed" style={${bgStyle}}>
+  return `      <section className="relative min-h-[var(--ut-hero-block)] flex items-center justify-center" data-variant="hero:full-bleed" style={${bgStyle}}>
         <div className="absolute inset-0 bg-gradient-to-br from-gray-900/80 to-gray-900/60" />
         <div className="relative z-10 max-w-4xl mx-auto px-4 text-center py-20">
 ${c.badge ? `          <span className="inline-block text-xs font-medium tracking-wide uppercase mb-4 px-3 py-1 rounded-full bg-white/10 text-white/90 border border-white/20 backdrop-blur-sm">${esc(c.badge)}</span>\n` : ''}\
@@ -485,7 +485,7 @@ ${grid}
 
 export function galleryEditorialMosaicJSX(c: ExtractedSectionContent): string {
   const tiles = galleryTiles(c, 6);
-  const grid = `          <div className="grid auto-rows-[200px] grid-cols-2 gap-4 lg:grid-cols-4">
+  const grid = `          <div className="grid auto-rows-[var(--ut-tile-block)] grid-cols-2 gap-4 lg:grid-cols-4">
 ${tiles.map((t, i) => galleryFigure(t, i % 5 === 0 ? 'col-span-2 row-span-2' : i % 7 === 3 ? 'col-span-2' : '', 'auto')).join('\n')}
           </div>`;
   return galleryShell('gallery:editorial-mosaic', c, grid);
@@ -570,7 +570,7 @@ ${quotes.map((q) => quoteCard(q)).join('\n')}
 export function testimonialsRailJSX(c: ExtractedSectionContent): string {
   const quotes = proofQuotes(c, 4);
   const body = `          <div className="flex snap-x snap-mandatory gap-6 overflow-x-auto pb-4" role="group" aria-label="Customer testimonials">
-${quotes.map((q) => quoteCard(q, 'w-[min(420px,85vw)] shrink-0 snap-start')).join('\n')}
+${quotes.map((q) => quoteCard(q, 'w-[var(--ut-carousel-card)] shrink-0 snap-start')).join('\n')}
           </div>`;
   return proofShell('testimonials:rail', c, body);
 }

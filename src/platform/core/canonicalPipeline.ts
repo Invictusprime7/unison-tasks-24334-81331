@@ -566,6 +566,7 @@ function projectToSiteBundleSnapshot(
     pageRegistry: registry,
     vfsFiles: compileResult.vfsFiles,
     uiFoundation,
+    themePresetId: resolvedThemePresetId,
   });
 
   return {

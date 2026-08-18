@@ -20,7 +20,7 @@ export const GalleryEditorialMosaic: React.FC<BaseSectionProps<'gallery'>> = ({ 
       filterable={filterable}
     >
       {({ items: media, open }) => (
-        <div className="grid auto-rows-[200px] grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid auto-rows-[var(--ut-tile-block)] grid-cols-2 gap-4 lg:grid-cols-4">
           {media.map((item, i) => (
             <GalleryFigure
               key={i}

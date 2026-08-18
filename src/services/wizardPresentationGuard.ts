@@ -168,13 +168,27 @@ export function findHardcodedGeometry(source: string): string[] {
 }
 
 function generatedPageFallbackReason(source: string, requiresMedia: boolean): string | null {
-  if (/<nav\b|\bSiteNavbar\b/.test(source)) {
-    return 'generated page attempts to render shared navigation chrome';
+  // Chrome is page-owned and deterministic: exactly one navigation landmark and
+  // exactly one footer per page. Zero means an unreachable page, more than one
+  // means competing chrome (the two-navbar / two-footer regression).
+  const chrome = countPageChromeLandmarks(source);
+  if (chrome.navbars === 0) {
+    return 'generated page renders no navigation landmark';
+  }
+  if (chrome.navbars > 1) {
+    return 'generated page renders competing navigation chrome';
+  }
+  if (chrome.footers === 0) {
+    return 'generated page renders no footer landmark';
+  }
+  if (chrome.footers > 1) {
+    return 'generated page renders competing footer chrome';
   }
   if (/<style\b|document\.(?:body|documentElement)|createElement\(\s*['"]style['"]/.test(source)) {
     return 'generated page attempts to author a parallel global theme system';
   }
-  const semanticRegions = (source.match(/<(?:section|article|aside|header|main|footer|nav)\b/gi) || []).length;
+  // Chrome landmarks do not count toward content structure.
+  const semanticRegions = (source.match(/<(?:section|article|aside|main)\b/gi) || []).length;
   if (source.trim().length < 1_200) return 'generated page is too small to replace the canonical composition';
   if (semanticRegions < 3) return 'generated page has too few semantic regions';
   if (!/data-ut-intent\s*=/.test(source)) return 'generated page has no canonical action intent';

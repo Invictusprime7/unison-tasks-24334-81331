@@ -26,6 +26,11 @@ import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencie
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
 import { isCanonicalComposedPage, mergeLaneBIntoCanonicalPage } from './laneBContentPlan';
+import {
+  RESOLVED_COMPOSITION_ROOT,
+  collectResolvedCompositions,
+  hasResolvedComposition,
+} from '@/platform/core/resolvedComposition';
 
 import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {
@@ -427,18 +432,25 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     !canonicalHomeIsAuthoritative
   );
 
-  // Canonical snapshot is the base for router/root support. Lane B is the
-  // authority for registered page bodies/components; after this merge we persist
-  // the enriched VFS back into the SiteBundleSnapshot so future preview hydrations
-  // do not restore stale canonical stubs over AI-authored wizard output.
+  // Canonical snapshot is the base for router/root support and — Pass 3 — for
+  // every page whose design Stage 4b has *declared* via a ResolvedPageComposition.
+  // Lane B is a CONTENT author on those pages and the body author only on pages
+  // Stage 4b never composed. After the merge we persist the enriched VFS back
+  // into the SiteBundleSnapshot.
   const merged = { ...canonicalFiles };
+
+  // Declared beats inferred: Stage 4b's own composition descriptors decide who
+  // owns each page body, instead of regex-sniffing the canonical source.
+  const resolvedCompositions = collectResolvedCompositions(canonicalFiles);
 
   for (const [path, content] of Object.entries(generatedFiles)) {
     const normalizedPath = normalizePath(path);
-    // The generated UI foundation is compiled from wizard selections and is
-    // snapshot-owned. Lane B may import these modules, never replace them.
+    // The generated UI foundation and Stage 4b's composition descriptors are
+    // compiled from wizard selections and are snapshot-owned. Lane B may read
+    // these modules, never replace them.
     if (
       normalizedPath.startsWith('/src/unison/ui/') ||
+      normalizedPath.startsWith(`${RESOLVED_COMPOSITION_ROOT}/`) ||
       normalizedPath === '/.unison/ui-manifest.json' ||
       normalizedPath === '/.unison/design-intervention.json'
     ) {
@@ -461,16 +473,23 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
           { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
         );
       }
-      // R5 — Lane B is a CONTENT author, not a design author. When the canonical
-      // compiler already produced a composed page (variants, art direction,
-      // layout/interaction recipes executed), keep that design and merge only
-      // Lane B's copy into its SECTIONS data block. Lane B keeps full ownership
-      // whenever the canonical page is a stub / non-composed module.
       const canonicalPageSource = readCanonical(normalizedPath);
-      const contentMerge = mergeLaneBIntoCanonicalPage(canonicalPageSource, content);
-      merged[normalizedPath] = contentMerge?.applied ? contentMerge.source : (
-        isCanonicalComposedPage(canonicalPageSource) ? (canonicalPageSource as string) : content
-      );
+      // Stage 4b declared this page's composition → its body is canonical.
+      // Lane B copy is merged into the SECTIONS data block; when no copy can be
+      // merged the canonical baseline stands. There is no branch in which raw
+      // Lane B TSX replaces a declared page body.
+      const stage4bOwnsBody =
+        hasResolvedComposition(resolvedCompositions, normalizedPath) ||
+        isCanonicalComposedPage(canonicalPageSource);
+
+      if (stage4bOwnsBody && canonicalPageSource) {
+        const contentMerge = mergeLaneBIntoCanonicalPage(canonicalPageSource, content);
+        merged[normalizedPath] = contentMerge?.applied ? contentMerge.source : canonicalPageSource;
+        continue;
+      }
+
+      // No Stage 4b composition for this page — Lane B authored it end to end.
+      merged[normalizedPath] = content;
       continue;
     }
 
@@ -504,10 +523,20 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     const generatedPage = readGenerated(page.filePath);
     const canonicalPage = readCanonical(page.filePath);
     const existingMergedPage = merged[normalizedPagePath];
+    const stage4bOwnsBody = hasResolvedComposition(resolvedCompositions, normalizedPagePath);
 
     if (existingMergedPage && !isMinimalPreviewFallbackSource(existingMergedPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = existingMergedPage;
+      continue;
+    }
+
+    // Declared pages fall back to their Stage 4b baseline before ever
+    // considering raw Lane B output — a failed enrichment degrades to a good
+    // canonical page, never to an AI-authored replacement of a composed design.
+    if (stage4bOwnsBody && canonicalPage && !isMinimalPreviewFallbackSource(canonicalPage)) {
+      removePathVariants(merged, page.filePath);
+      merged[normalizedPagePath] = canonicalPage;
       continue;
     }
 
@@ -525,6 +554,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
     removePathVariants(merged, page.filePath);
   }
+
 
   // Shared chrome is snapshot-owned and derived from the same PageRegistry as
   // the router. Lane B may never replace it with stale anchors or partial menus.

@@ -29,6 +29,12 @@ const cardClass = 'ut-foundation-card bg-card text-card-foreground';
  */
 
 import type { TemplateComposition } from './types';
+import {
+  RESOLVED_COMPOSITION_VERSION,
+  resolvedCompositionPathFor,
+  serializeResolvedComposition,
+  type ResolvedPageComposition,
+} from '@/platform/core/resolvedComposition';
 import type { WizardDesignIntervention, WizardMotionRecipe } from '@/services/wizardDesignIntervention';
 import { getLayoutForVariantId, getVariantById } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';
@@ -1482,6 +1488,53 @@ export default function Page() {
 }
 
 /**
+ * Pass 2 — Stage 4b declares its resolution instead of leaving it implicit.
+ *
+ * Every visual decision this compiler just executed (variant identity, layout,
+ * motion, media treatment) is written out as a ResolvedPageComposition so no
+ * downstream layer has to re-infer it from the emitted TSX.
+ */
+export function resolvePageComposition(
+  template: TemplateComposition,
+  pageFilePath: string,
+  options?: { designIntervention?: DesignInterventionSlice },
+): ResolvedPageComposition {
+  const projected = applyDesignVariants(template, options?.designIntervention);
+  const sections = resolveSnapshotSectionLayouts(projected);
+  const motion = motionRecipesBySection(options?.designIntervention);
+
+  return {
+    version: RESOLVED_COMPOSITION_VERSION,
+    compiledBy: 'stage-4b',
+    pageFilePath,
+    templateName: template.name,
+    layoutRecipe: options?.designIntervention?.layoutRecipe,
+    sections: sections.map((section) => {
+      const props = (section.props || {}) as Record<string, unknown>;
+      const layout = typeof props.layout === 'string' ? props.layout : undefined;
+      const mediaRecipe = section.type === 'hero'
+        ? (layout === 'full-bleed'
+          ? 'full-bleed-overlay'
+          : layout === 'split'
+            ? 'split-frame'
+            : (props.image || props.backgroundImage)
+              ? 'centered-frame'
+              : 'text-only')
+        : undefined;
+      return {
+        sectionId: section.id,
+        semanticType: section.type,
+        primitiveId: SECTION_COMPONENT_BY_TYPE[section.type] ?? null,
+        variantId: section.variantId,
+        layoutRecipe: layout,
+        motionRecipe: motion[section.type],
+        mediaRecipe,
+      };
+    }),
+  };
+}
+
+/**
  * Generate a full multi-file VFS payload for one composed page.
  * Shared component files are emitted with idempotent content across pages
  * within the same generation; safe to merge by simple object spread.
@@ -1504,6 +1557,9 @@ export function compositionToReactFileSet(
     [FORM_RUNTIME_PATH]: FORM_RUNTIME_MODULE,
     [PUBLISHED_ACTION_RUNTIME_PATH]: PUBLISHED_ACTION_RUNTIME_MODULE,
     [pageFilePath]: pageModule(projectedTemplate, sectionMapImport, options?.designIntervention),
+    [resolvedCompositionPathFor(pageFilePath)]: serializeResolvedComposition(
+      resolvePageComposition(template, pageFilePath, options),
+    ),
   };
   for (const component of sectionMap.components) {
     files[SECTION_FILES[component]] = SECTION_MODULE_SOURCE[component];
@@ -1516,3 +1572,4 @@ export function compositionToReactFileSet(
   }
   return files;
 }
+

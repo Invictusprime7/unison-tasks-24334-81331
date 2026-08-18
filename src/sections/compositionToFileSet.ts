@@ -29,6 +29,12 @@ const cardClass = 'ut-foundation-card bg-card text-card-foreground';
  */
 
 import type { TemplateComposition } from './types';
+import {
+  RESOLVED_COMPOSITION_VERSION,
+  resolvedCompositionPathFor,
+  serializeResolvedComposition,
+  type ResolvedPageComposition,
+} from '@/platform/core/resolvedComposition';
 import type { WizardDesignIntervention, WizardMotionRecipe } from '@/services/wizardDesignIntervention';
 import { getLayoutForVariantId, getVariantById } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';

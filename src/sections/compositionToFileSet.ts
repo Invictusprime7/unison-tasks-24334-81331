@@ -1390,9 +1390,16 @@ function applyDesignVariants(
         : undefined;
 
       const variantId = packVariantId ?? resolved?.variantId;
-      const layout = variantId
+      let layout = variantId
         ? getLayoutForVariantId(variantId) ?? resolved?.layout
         : resolved?.layout;
+
+      // Hero composition is theme-led: when nothing else declared a layout the
+      // sealed pack's hero signature decides it, so two industries sharing a
+      // style card still differ from two style cards sharing an industry.
+      if (pack && section.type === 'hero' && !layout && !(section.props as { layout?: string })?.layout) {
+        layout = HERO_LAYOUT_TO_SECTION_LAYOUT[resolveHeroPresentation(pack).layout];
+      }
 
       if (!variantId && !layout) return section;
       return {

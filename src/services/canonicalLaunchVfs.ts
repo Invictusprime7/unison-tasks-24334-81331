@@ -837,11 +837,13 @@ function* buildCanonicalLaunchArtifactSteps(
   // runtime code, so reparsing every generated page here only duplicates CPU
   // work and can freeze the launcher shell.
   const verifiedViteFiles = viteReadyFiles;
-  // Degradation-visible modes (canonical merge disabled, canonical page
-  // fallback blocked) intentionally ship without canonical page bodies, so the
-  // seal records the gap as a diagnostic instead of aborting the launch.
-  const missingPageFilePolicy: 'throw' | 'report' =
-    mergeWithCanonicalSnapshot && input.allowCanonicalPageFallback !== false ? 'throw' : 'report';
+  // Launch assembly reports missing page files instead of throwing: the wizard
+  // deliberately drops minimal canonical stubs, and the launcher's
+  // `enrich.pages_missing_baseline` gate (Pass 4) is the layer that decides to
+  // re-compile or block. Strict throwing stays the default for builder-commit
+  // and import seals.
+  const missingPageFilePolicy: 'throw' | 'report' = 'report';
+
   const siteBundleSnapshot = runtimeSnapshotSeed
     ? cloneSnapshotWithRuntimeVfs(
         runtimeSnapshotSeed,

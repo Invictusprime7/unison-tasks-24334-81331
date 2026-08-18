@@ -30,6 +30,36 @@ const ALLOWLIST = new Set([
 
 const FORBIDDEN_SYMBOLS = ['executeCanonicalPipeline', 'recompileFromPlayground'];
 
+// Pass 1 — one seal point. Only the canonical launch assembler may convert a
+// Stage 4b compile artifact into the sealed SiteBundleSnapshot.
+const SEAL_SYMBOLS = ['sealSnapshot'];
+const SEAL_ALLOWLIST = new Set([
+  'src/platform/core/snapshotSeal.ts',
+  'src/platform/core/index.ts',
+  'src/services/canonicalLaunchVfs.ts',
+]);
+
+export function findSealViolations(text, fileName = 'source.ts') {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const usages = [];
+  function visit(node) {
+    if (ts.isIdentifier(node) && SEAL_SYMBOLS.includes(node.text)) {
+      const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      usages.push({ line: position.line + 1, symbol: node.text, text: node.text });
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return usages;
+}
+
+
 // These modules predate the revision-backed writer migration. Keep this list
 // deliberately small and shrink it as each writer moves behind commitMutation.
 const BUILDER_DRAFT_MUTATION_ALLOWLIST = new Map([

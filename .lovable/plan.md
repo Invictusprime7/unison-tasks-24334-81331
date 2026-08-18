@@ -56,3 +56,28 @@ Grow from 8 to roughly 12–14 packs so each theme card has 2–3 genuinely diff
 3. Compiler consumes motion/interaction profiles
 4. Lane B art-direction brief in prompts
 5. New packs + guard rules
+
+## How this wires into the current system
+
+No new pipeline. Every change hangs off seams that already exist and already carry `themePresetId`.
+
+```text
+Wizard style card (themePresets.ts)
+  → canonicalLaunchVfs (meta.themePresetId, already persisted)
+  → resolveArtDirectionPackId(theme, industry)   [changed: theme leads]
+      ├─ themePresetToIndexCss  → /src/index.css --ut-* tokens   [pack layer added]
+      ├─ DesignInterventionSlice → compositionToFileSet          [existing call site :1348]
+      ├─ wizardGenerationBrief  → Lane B prompt                  [new artDirection field]
+      └─ snapshotSeal meta      → reproducible previews
+```
+
+Seam by seam:
+
+1. **Resolution** — `resolveArtDirectionPack({ industry, themePresetId })` keeps its exact signature and callers. Only the internal lookup order changes, so `compositionToFileSet.ts:1348` needs no edit to start honoring the style card.
+2. **CSS tokens** — `resolveGeometryTokens(presetId)` and `buildThemedIndexCssFromTokens` already key off `presetId`. They gain a pack lookup and emit the additional `--ut-*` tokens in the same string. `StyleTokenCard` and `wizardGenerationBrief.geometry.tokens` pick them up automatically because both call `resolveGeometryTokens`.
+3. **Compiler** — `DesignInterventionSlice` already carries `industry` and `themePresetId`; the compiler resolves the pack from them today. Motion/interaction profiles get consumed in the same `applyDesignVariants` pass that already clamps variants, so section emission gains motion classes without a new stage.
+4. **Lane B** — `buildWizardGenerationBrief` (called from `canonicalPipeline.ts:592`) gains an `artDirection` block next to the existing `geometry` block. Lane B already receives this brief, so the prompt change is one field, not new plumbing.
+5. **Seal / reproducibility** — `canonicalLaunchVfs` already stamps `meta.themePresetId`; it additionally stamps the resolved `artDirectionPackId` so builder commits and `/site-preview/:draftId` resolve the same pack the wizard did.
+6. **Guard / CI** — `wizardPresentationGuard` and `scripts/lint-pipeline-bypass.mjs` already reject hardcoded geometry literals; the new radius/border/type tokens extend the same allow-list rather than adding a new checker.
+
+What does not change: SiteBundleSnapshot shape, DB schema, commit path (`VFSCommitService`), routing, or intent wiring. Existing snapshots keep working because current pack ids remain valid and unresolved fields fall back to today's defaults.

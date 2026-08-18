@@ -63,7 +63,16 @@ export interface SealSnapshotInput {
   interactionManifest?: WizardInteractionManifest | null;
   /** Which stage produced the final merge (traceability only). */
   sealedBy?: 'wizard-launch' | 'recompile' | 'builder-commit' | 'import';
+  /**
+   * How to handle registered pages with no file in the runtime VFS.
+   * `throw` (default) is the strict wizard/builder path. `report` is used by
+   * the deliberately-degradation-visible modes (canonical page fallback
+   * blocked, canonical merge disabled) so the missing pages surface as seal
+   * diagnostics instead of crashing artifact assembly.
+   */
+  missingPageFilePolicy?: 'throw' | 'report';
 }
+
 
 function baselineOf(artifact: SealSnapshotInput['artifact']): SiteBundleSnapshot {
   return 'kind' in artifact && artifact.kind === 'wizard-compile-artifact'

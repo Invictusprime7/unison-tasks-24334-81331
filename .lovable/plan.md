@@ -101,3 +101,14 @@ Pack selection is pure code, computed before any model call. The AI only writes 
 **What the AI receives (constraint, not choice):** the `artDirection` block added to `wizardGenerationBrief` — pack name, allowed variant ids per section, token vocabulary, and explicit do/don't rules. Lane B authors copy and JSX inside those bounds. If Lane B ignores them, `wizardPresentationGuard` rejects the output and the deterministic Stage 4b scaffold already on disk stands.
 
 So the failure mode is a plainer page, never an off-brand one: the aesthetic is guaranteed by the compiler; the AI can only add or fail to add content quality on top of it.
+
+## Content quality must never fail
+
+Pack injection guarantees the aesthetic; this section guarantees the copy. Lane B is retried and repaired rather than skipped:
+
+- **Mandatory brief** — the `artDirection` block ships alongside the existing industry copy directive, so every Lane B batch is told both the design system and the industry voice.
+- **Quality gate per page** — `wizardPresentationGuard` already flags degraded output; extend it with a content check (placeholder/lorem text, duplicated hero headlines across pages, empty section copy) so a hollow page is detected, not shipped.
+- **Targeted repair, not full regeneration** — a page that fails the content check is re-sent through the existing Lane B repair path scoped to that page only, using the existing `laneBBatchPlanner` budget split. Bounded retries with backoff, per the gateway error contract (only 429/5xx retry).
+- **Deterministic last resort** — if repair still fails, the page falls back to industry-grounded copy from the composition/blueprint rather than placeholder text, and the launch reports `lane-b-degraded` with the specific page ids so it is visible instead of silent.
+
+Net effect: the page always renders in the selected art direction with real industry copy; the only variable is whether the copy came from the model or the deterministic industry baseline.

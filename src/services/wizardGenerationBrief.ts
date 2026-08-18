@@ -61,6 +61,13 @@ export interface WizardGenerationBrief {
     headingTransform: string;
     motionProfile: string;
     interactionProfile: string;
+    /** Theme-led signature the style card owns, not the industry. */
+    typography: { displayStack: string; bodyStack: string; displayWeight: number; bodyWeight: number };
+    gradient: string;
+    density: string;
+    hero: { layout: string; align: string; mediaRatio: string };
+    pill: string;
+    entrance: string;
     classes: string[];
     rule: string;
   };
@@ -198,8 +205,28 @@ export function buildWizardGenerationBrief(input: {
       headingTransform: pack.design.headingTransform,
       motionProfile: pack.motionProfile,
       interactionProfile: pack.interactionProfile,
-      classes: ['ut-section', 'ut-rhythm', 'ut-display', 'ut-title', 'ut-lead', 'ut-measure', 'ut-surface', 'ut-accent-wash', 'ut-media', 'ut-reveal'],
-      rule: `Author every page inside the "${pack.name}" design system: ${pack.description} Use the ut-* primitives and --ut-* tokens for type scale, surfaces, media framing and motion. Do not invent a competing visual language, and never substitute hardcoded sizes, radii, shadows or gradients for these tokens.`,
+      typography: {
+        displayStack: pack.signature.typography.displayStack,
+        bodyStack: pack.signature.typography.bodyStack,
+        displayWeight: pack.signature.typography.displayWeight,
+        bodyWeight: pack.signature.typography.bodyWeight,
+      },
+      gradient: pack.signature.gradient,
+      density: pack.signature.density,
+      hero: {
+        layout: pack.signature.hero.layout,
+        align: pack.signature.hero.align,
+        mediaRatio: pack.signature.hero.mediaRatio,
+      },
+      pill: pack.signature.pill,
+      entrance: pack.signature.entrance,
+      classes: [
+        'ut-section', 'ut-rhythm', 'ut-display', 'ut-title', 'ut-lead', 'ut-measure', 'ut-eyebrow',
+        'ut-surface', 'ut-accent-wash', 'ut-media', 'ut-reveal', 'ut-reveal-2', 'ut-reveal-3', 'ut-reveal-4',
+        'ut-pill', 'ut-gradient-hero', 'ut-gradient-panel', 'ut-gradient-text', 'ut-divider',
+        'ut-grid', 'ut-stack', 'ut-block', 'ut-pad', 'ut-hero', 'ut-hero-media',
+      ],
+      rule: `Author every page inside the "${pack.name}" design system: ${pack.description} Typography is ${pack.signature.typography.displayStack.split(',')[0]} display at weight ${pack.signature.typography.displayWeight} over ${pack.signature.typography.bodyStack.split(',')[0]} body; gradient language is "${pack.signature.gradient}" (use ut-gradient-hero / ut-gradient-panel / ut-gradient-text, never a hand-written gradient); spacing density is "${pack.signature.density}" (use ut-grid / ut-stack / ut-block / ut-pad, never literal gap or padding values); the hero is "${pack.signature.hero.layout}" aligned ${pack.signature.hero.align} (use ut-hero + ut-hero-media, never a different hero composition); badges, tags and eyebrows use ut-pill / ut-eyebrow so the "${pack.signature.pill}" shape language stays consistent; entrance motion is "${pack.signature.entrance}" via ut-reveal and ut-reveal-2/3/4 for stagger. Use the ut-* primitives and --ut-* tokens for type scale, surfaces, media framing and motion. Do not invent a competing visual language, and never substitute hardcoded sizes, radii, shadows or gradients for these tokens.`,
     },
     chrome: {
       owner: 'page-body',

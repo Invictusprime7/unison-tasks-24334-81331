@@ -1024,19 +1024,91 @@ export default function BeforeAfter({ props }: { props: any }) {
 }
 `;
 
+/**
+ * Recovery Phase 2 — `features` is its own semantic family.
+ *
+ * It used to alias onto Services, which silently rendered a benefit-led
+ * feature grid as a sellable-service list. A registered semantic type now
+ * always renders through its own component family.
+ */
+const FEATURES_MODULE = `import React from 'react';
+
+export default function Features({ props }: { props: any }) {
+  const { headline, subheadline, items = [], layout } = props;
+  const iconLeft = layout === 'icon-left';
+  const centered = layout === 'minimal-centered';
+  return (
+    <section data-ut-variant={'features:' + (layout || 'grid')} className="bg-background py-24">
+      <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
+        {headline && (
+          <div className={centered ? 'mb-14 text-center' : 'mb-14 max-w-2xl'}>
+            <h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>
+            {subheadline && <p className="font-body text-lg text-muted-foreground">{subheadline}</p>}
+          </div>
+        )}
+        <div className={'grid gap-10 ' + (iconLeft ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+          {items.map((item: any, index: number) => (
+            <div key={index} className={iconLeft ? 'flex gap-4' : (centered ? 'text-center' : '')}>
+              <div className={'mb-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius)] bg-primary/10 font-heading text-base font-semibold text-primary ' + (centered ? 'mx-auto' : '')}>
+                {item.icon || String(index + 1).padStart(2, '0')}
+              </div>
+              <div>
+                <h3 className="mb-2 font-heading text-lg font-semibold text-foreground">{item.title}</h3>
+                {item.description && <p className="font-body text-sm leading-relaxed text-muted-foreground">{item.description}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
+/**
+ * Semantic type → sanctioned component family.
+ *
+ * INVARIANT: no cross-semantic substitution. A registered Gallery stays a
+ * Gallery, Pricing stays Pricing, Features stays Features. When a composition
+ * carries a semantic type with no sanctioned implementation the emitter fails
+ * loudly (see assertSanctionedSectionTypes) so the page can be re-planned or
+ * repaired by Lane B — it is never silently rendered as something else.
+ */
 const SECTION_COMPONENT_BY_TYPE: Record<string, keyof typeof SECTION_FILES> = {
   navbar: 'Navbar', hero: 'Hero', about: 'About',
-  services: 'Services', features: 'Services', pricing: 'Pricing', gallery: 'Gallery',
+  services: 'Services', features: 'Features', pricing: 'Pricing', gallery: 'Gallery',
   'blog-preview': 'BlogPreview', 'before-after': 'BeforeAfter', testimonials: 'Testimonials',
   cta: 'CTA', contact: 'Contact', footer: 'Footer', stats: 'Stats',
   'logo-cloud': 'LogoCloud', team: 'Team', faq: 'FAQ',
 };
+
+export class UnsanctionedSectionTypeError extends Error {
+  readonly sectionTypes: string[];
+  constructor(pageFilePath: string, sectionTypes: string[]) {
+    super(
+      `[compositionToFileSet] page ${pageFilePath} declares section type(s) with no sanctioned component family: ` +
+      `${sectionTypes.join(', ')}. Cross-semantic substitution is forbidden — re-plan the page or run a focused Lane B repair.`,
+    );
+    this.name = 'UnsanctionedSectionTypeError';
+    this.sectionTypes = sectionTypes;
+  }
+}
+
+function assertSanctionedSectionTypes(template: TemplateComposition, pageFilePath: string): void {
+  const unsanctioned = Array.from(new Set(
+    template.sections
+      .map((section) => section.type)
+      .filter((type) => !SECTION_COMPONENT_BY_TYPE[type]),
+  ));
+  if (unsanctioned.length) throw new UnsanctionedSectionTypeError(pageFilePath, unsanctioned);
+}
 
 const SECTION_MODULE_SOURCE: Record<keyof typeof SECTION_FILES, string> = {
   Navbar: NAVBAR_MODULE,
   Hero: HERO_MODULE,
   About: ABOUT_MODULE,
   Services: SERVICES_MODULE,
+  Features: FEATURES_MODULE,
   Gallery: GALLERY_MODULE,
   Pricing: PRICING_MODULE,
   LogoCloud: LOGO_CLOUD_MODULE,
@@ -1050,6 +1122,8 @@ const SECTION_MODULE_SOURCE: Record<keyof typeof SECTION_FILES, string> = {
   Team: TEAM_MODULE,
   FAQ: FAQ_MODULE,
 };
+
+
 
 
 interface VariantSectionModule {

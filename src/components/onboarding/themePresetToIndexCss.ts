@@ -484,12 +484,17 @@ ul, ol { padding-left: 1.25rem; }
 }
 
 /**
- * Aesthetic-resolved geometry token map for the selected style card.
- * Consumed by the AI generation brief so Lane B styles with tokens only.
+ * Aesthetic-resolved token map for the selected style card AND its resolved
+ * art direction pack. Consumed by the AI generation brief so Lane B styles
+ * with tokens only — it is the exact vocabulary emitted into /src/index.css.
  */
-export function resolveGeometryTokens(presetId?: string): Record<string, string> {
+export function resolveGeometryTokens(
+  presetId?: string,
+  artDirection: ArtDirectionResolutionInput = {},
+): Record<string, string> {
   const shared = '--ut-content-width: 72rem; --ut-gutter: 1.25rem; --ut-touch-target: 2.75rem; --ut-shell-width: min(100% - (var(--ut-gutter) * 2), var(--ut-content-width)); --ut-carousel-card: min(26.25rem, 85vw); --ut-panel-width: min(22rem, calc(100vw - (var(--ut-gutter) * 2))); --ut-control-radius: calc(var(--radius) - 0.125rem); --ut-media-radius: var(--radius);';
   const declarations = `${buildProfessionalGeometry(presetId)} ${shared}`;
+
   const tokens: Record<string, string> = {};
   for (const declaration of declarations.split(';')) {
     const index = declaration.indexOf(':');

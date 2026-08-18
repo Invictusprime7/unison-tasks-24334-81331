@@ -2,6 +2,13 @@ import type { BusinessModel, IndustryOverlay } from '@/types/playground';
 import { getCompositionById } from '@/sections/templates';
 import { getVariantById, getVariantIdForLayout, getVariantsForSection } from '@/sections/variants';
 import type { ActiveVariantMap, VariantId } from '@/sections/variants';
+import {
+  ART_DIRECTION_PACKS,
+  isArtDirectionPackId,
+  resolveArtDirectionPackId,
+  type ArtDirectionPackId,
+} from '@/sections/variants/artDirectionPacks';
+
 
 export const WIZARD_DESIGN_INTERVENTION_VERSION = '1.0' as const;
 
@@ -32,6 +39,13 @@ export interface WizardDesignIntervention {
   businessModel: BusinessModel;
   templateId: string | null;
   themePresetId: string;
+  /**
+   * Resolved ONCE here and sealed onto the snapshot. Every downstream layer
+   * (CSS emission, compiler, Lane B brief, previewer, export) reads this id
+   * back instead of re-deriving art direction — one truth, no drift.
+   */
+  artDirectionPackId: ArtDirectionPackId;
+
   layoutRecipe: 'floating-navbar' | 'collage-hero' | 'bento-features' | 'media-card-grid' | 'conversion-form' | 'rich-footer';
   sectionVariants: WizardSectionVariant[];
   /** Stable section instance id -> registry-owned visual variant id. */
@@ -105,13 +119,23 @@ export function readWizardDesignIntervention(
     if (!intervention.activeVariants) {
       intervention.activeVariants = buildActiveVariants(intervention.templateId, intervention.seed || 'legacy');
     }
+    if (!isArtDirectionPackId(intervention.artDirectionPackId)) {
+      // Legacy brief written before art direction was sealed — re-derive it
+      // from the SAME inputs so the result is identical to a fresh compile.
+      intervention.artDirectionPackId = resolveArtDirectionPackId({
+        industry: intervention.industry,
+        themePresetId: intervention.themePresetId,
+        seed: intervention.seed,
+      });
+    }
     return intervention as WizardDesignIntervention;
+
   } catch {
     return null;
   }
 }
 
-const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'activeVariants' | 'aiDirective'>> = {
+const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'activeVariants' | 'aiDirective' | 'artDirectionPackId'>> = {
   appointment_service: {
     layoutRecipe: 'collage-hero', sectionVariants: ['split-media-hero', 'bento-services', 'testimonial-rail', 'conversion-form'],
     motionRecipes: ['service-progressive-disclosure', 'proof-led-stagger', 'conversion-feedback'], interactionRecipes: ['mobile-nav-dialog', 'accordion'], motionBudget: 'restrained',
@@ -182,7 +206,19 @@ export function buildWizardDesignIntervention(
   const seed = [input.wizardSeedId || input.businessName, industry, input.businessModel, input.templateId || 'composition', input.themePresetId].join('|');
   const baseline = MODEL_RECIPES[input.businessModel];
   const sectionVariants = rotate(baseline.sectionVariants, seed);
-  const interactionRecipes = [...baseline.interactionRecipes];
+
+  // ART DIRECTION — resolved ONCE, from the style card first. Everything that
+  // follows (motion, interaction, CSS, Lane B brief) obeys this pack.
+  const artDirectionPackId = resolveArtDirectionPackId({
+    themePresetId: input.themePresetId,
+    industry,
+    seed,
+  });
+  const pack = ART_DIRECTION_PACKS[artDirectionPackId];
+
+  const interactionRecipes = Array.from(
+    new Set([pack.interactionProfile, ...baseline.interactionRecipes]),
+  );
 
   if ((input.sellsProducts || input.businessModel === 'ecommerce') && !interactionRecipes.includes('image-lightbox')) {
     interactionRecipes.push('image-lightbox');
@@ -190,6 +226,7 @@ export function buildWizardDesignIntervention(
   if ((input.needsBooking || input.wantsLeadCapture) && !interactionRecipes.includes('accordion')) {
     interactionRecipes.push('accordion');
   }
+
 
   return {
     version: WIZARD_DESIGN_INTERVENTION_VERSION,
@@ -199,12 +236,17 @@ export function buildWizardDesignIntervention(
     businessModel: input.businessModel,
     templateId: input.templateId || null,
     themePresetId: input.themePresetId,
+    artDirectionPackId,
     layoutRecipe: baseline.layoutRecipe,
     sectionVariants,
     activeVariants: buildActiveVariants(input.templateId, seed),
-    motionRecipes: rotate(baseline.motionRecipes, `${seed}|motion`),
+    // The pack's motion profile leads; the business-model recipes follow.
+    motionRecipes: Array.from(
+      new Set([pack.motionProfile, ...rotate(baseline.motionRecipes, `${seed}|motion`)]),
+    ),
     interactionRecipes,
     motionBudget: baseline.motionBudget,
-    aiDirective: 'Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.',
+    aiDirective: `Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Art direction is "${pack.name}" — ${pack.description} Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.`,
+
   };
 }

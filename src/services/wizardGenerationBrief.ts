@@ -2,6 +2,7 @@ import type { GeneratedUiManifest } from '@/platform/core/generatedUiFoundation'
 import type { PageRegistry } from '@/types/pageRegistry';
 import { normalizeWizardPageRole } from '@/services/wizardPageQuality';
 import { resolveGeometryTokens } from '@/components/onboarding/themePresetToIndexCss';
+import { resolveArtDirectionPack } from '@/sections/variants/artDirectionPacks';
 
 export interface WizardHeroGeometry {
   layout: string;
@@ -41,6 +42,26 @@ export interface WizardGenerationBrief {
     source: 'selected-style-card';
     themePresetId: string | null;
     tokens: Record<string, string>;
+    rule: string;
+  };
+  /**
+   * The named design system the AI authors INSIDE. It is resolved
+   * deterministically before any model call and sealed on the snapshot — the
+   * AI never picks it and may never deviate from it.
+   */
+  artDirection: {
+    source: 'sealed-art-direction-pack';
+    packId: string;
+    name: string;
+    description: string;
+    rhythm: string;
+    surface: string;
+    accentPolicy: string;
+    mediaTreatment: string;
+    headingTransform: string;
+    motionProfile: string;
+    interactionProfile: string;
+    classes: string[];
     rule: string;
   };
   ui: { formFormats: string[]; buttonFormats: string[]; iconFormats: string[] };
@@ -105,7 +126,17 @@ export function buildWizardGenerationBrief(input: {
   vfsFiles: Record<string, string>;
   uiFoundation?: Pick<GeneratedUiManifest, 'formFormats' | 'buttonFormats' | 'iconFormats'>;
   themePresetId?: string | null;
+  /** Sealed pack id from meta.artDirectionPackId. Wins over re-derivation. */
+  artDirectionPackId?: string | null;
+  industry?: string | null;
+  seed?: string | null;
 }): WizardGenerationBrief {
+  const pack = resolveArtDirectionPack({
+    sealedPackId: input.artDirectionPackId,
+    themePresetId: input.themePresetId,
+    industry: input.industry,
+    seed: input.seed,
+  });
   const homePage = Object.values(input.pageRegistry.pages).find((page) => page.isHome);
   const homePath = homePage?.filePath || '';
   const homeSource = homePath
@@ -146,8 +177,23 @@ export function buildWizardGenerationBrief(input: {
     geometry: {
       source: 'selected-style-card',
       themePresetId: input.themePresetId || null,
-      tokens: resolveGeometryTokens(input.themePresetId || undefined),
+      tokens: resolveGeometryTokens(input.themePresetId || undefined, { sealedPackId: pack.id }),
       rule: 'Style with these tokens only. Never write px/rem/vh/vw/%/clamp()/calc() literals in Tailwind arbitrary values or inline styles, and never author raw CSS or <style> tags.',
+    },
+    artDirection: {
+      source: 'sealed-art-direction-pack',
+      packId: pack.id,
+      name: pack.name,
+      description: pack.description,
+      rhythm: pack.design.rhythm,
+      surface: pack.design.surface,
+      accentPolicy: pack.design.accentPolicy,
+      mediaTreatment: pack.design.mediaTreatment,
+      headingTransform: pack.design.headingTransform,
+      motionProfile: pack.motionProfile,
+      interactionProfile: pack.interactionProfile,
+      classes: ['ut-section', 'ut-rhythm', 'ut-display', 'ut-title', 'ut-lead', 'ut-measure', 'ut-surface', 'ut-accent-wash', 'ut-media', 'ut-reveal'],
+      rule: `Author every page inside the "${pack.name}" design system: ${pack.description} Use the ut-* primitives and --ut-* tokens for type scale, surfaces, media framing and motion. Do not invent a competing visual language, and never substitute hardcoded sizes, radii, shadows or gradients for these tokens.`,
     },
     ui: {
       formFormats: [...(input.uiFoundation?.formFormats || [])],

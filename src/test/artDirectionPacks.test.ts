@@ -39,9 +39,10 @@ describe('Recovery Phase 6 — ArtDirectionPack', () => {
     }
   });
 
-  it('resolves deterministically from industry, then theme preset', () => {
+  it('resolves deterministically with the theme preset leading and industry narrowing', () => {
     expect(resolveArtDirectionPackId({ industry: 'portfolio' })).toBe('cinematic-portfolio');
-    expect(resolveArtDirectionPackId({ industry: 'saas', themePresetId: 'editorial' })).toBe('glass-tech');
+    // Theme leads: the editorial family wins, narrowed to a saas-compatible pack.
+    expect(resolveArtDirectionPackId({ industry: 'saas', themePresetId: 'editorial' })).toBe('swiss-grid');
     expect(resolveArtDirectionPackId({ industry: 'unknown-thing', themePresetId: 'editorial' })).toBe('editorial-noir');
     expect(resolveArtDirectionPackId({})).toBe('soft-editorial');
     // Stable across calls.
@@ -78,6 +79,8 @@ describe('Recovery Phase 6 — ArtDirectionPack', () => {
         sectionVariants: [],
         industry: 'portfolio',
         themePresetId: 'editorial',
+        // The SEALED pack always wins over re-derivation.
+        artDirectionPackId: 'cinematic-portfolio',
       },
     });
 

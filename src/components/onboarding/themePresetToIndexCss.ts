@@ -13,8 +13,15 @@
 import type { ThemePreset } from './themePresets';
 import type { ThemeTokens } from '@/sections/types';
 import { themePresetToThemeTokens } from './themePresetToTokens';
+import {
+  buildArtDirectionCssDeclarations,
+  buildArtDirectionTokens,
+  resolveArtDirectionPack,
+  type ArtDirectionResolutionInput,
+} from '@/sections/variants/artDirectionPacks';
 
 export const SHADCN_LIBRARY_CSS_MARKER = 'SHADCN LIBRARY: canonical Stage 4b foundation';
+
 
 /**
  * Canonical geometry token layer.
@@ -60,21 +67,51 @@ function buildProfessionalGeometry(presetId?: string): string {
 }
 
 
-export function buildThemedIndexCss(preset: ThemePreset): string {
+/**
+ * Metadata accepted by the themed CSS builder. `artDirectionPackId` is the
+ * SEALED pack from `meta.artDirectionPackId` — when present it wins and no
+ * re-derivation happens, which is what keeps CSS, compiler, Lane B and export
+ * on one truth.
+ */
+export interface ThemedIndexCssMetadata {
+  presetId?: string;
+  label?: string;
+  headingFont?: string;
+  bodyFont?: string;
+  artDirectionPackId?: string | null;
+  industry?: string | null;
+  seed?: string | null;
+}
+
+export function buildThemedIndexCss(
+  preset: ThemePreset,
+  artDirection: Omit<ArtDirectionResolutionInput, 'themePresetId'> = {},
+): string {
   return buildThemedIndexCssFromTokens(themePresetToThemeTokens(preset), {
     presetId: preset.id,
     label: preset.label,
     headingFont: preset.typography.headingFont,
     bodyFont: preset.typography.bodyFont,
+    artDirectionPackId: artDirection.sealedPackId,
+    industry: artDirection.industry,
+    seed: artDirection.seed,
   });
 }
 
 export function buildThemedIndexCssFromTokens(
   tokens: ThemeTokens,
-  metadata: { presetId?: string; label?: string; headingFont?: string; bodyFont?: string } = {},
+  metadata: ThemedIndexCssMetadata = {},
 ): string {
   const c = tokens.colors;
   const professionalGeometry = buildProfessionalGeometry(metadata.presetId);
+  const artDirectionPack = resolveArtDirectionPack({
+    sealedPackId: metadata.artDirectionPackId,
+    themePresetId: metadata.presetId,
+    industry: metadata.industry,
+    seed: metadata.seed,
+  });
+  const artDirection = buildArtDirectionCssDeclarations(artDirectionPack);
+
 
   // Web-font import for the exact typography injected by the selected card.
   const fontFamilies = Array.from(
@@ -128,6 +165,12 @@ export function buildThemedIndexCssFromTokens(
   --ut-media-radius: var(--radius);
 
   ${professionalGeometry}
+
+  /* ART DIRECTION: ${artDirectionPack.name} — ${artDirectionPack.description} */
+  ${artDirection}
+  /* The pack owns radius language; the theme card owns colour + typography. */
+  --radius: var(--ut-radius-base);
+
   /* Tailwind CDN reads these via theme.fontFamily.heading / body */
   --font-heading: ${tokens.typography.headingFont};
   --font-body: ${tokens.typography.bodyFont};
@@ -206,6 +249,55 @@ export function buildThemedIndexCssFromTokens(
   .ut-content { width: min(100% - 2.5rem, var(--ut-content-width)); margin-inline: auto; }
   .ut-section { padding-block: var(--ut-section-space); }
   .ut-media-frame { overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: var(--ut-media-radius); background: hsl(var(--muted)); }
+
+  /* --- Art direction primitives (pack-owned, token-only) ---------------- */
+  .ut-rhythm { padding-block: var(--ut-rhythm-space); }
+  .ut-display {
+    font-size: var(--ut-type-display);
+    letter-spacing: var(--ut-heading-tracking);
+    text-transform: var(--ut-heading-transform);
+    line-height: 1.04;
+  }
+  .ut-title {
+    font-size: var(--ut-type-title);
+    letter-spacing: var(--ut-heading-tracking);
+    text-transform: var(--ut-heading-transform);
+    line-height: 1.14;
+  }
+  .ut-lead { font-size: var(--ut-type-lead); line-height: 1.55; }
+  .ut-measure { max-width: var(--ut-measure); }
+  .ut-surface {
+    background: var(--ut-surface-fill);
+    border: var(--ut-border-weight) solid var(--ut-surface-stroke);
+    border-radius: var(--ut-radius-base);
+    box-shadow: var(--ut-surface-elevation);
+    transition: transform var(--ut-motion-duration) var(--ut-motion-ease),
+      box-shadow var(--ut-motion-duration) var(--ut-motion-ease);
+  }
+  .ut-surface:hover { box-shadow: var(--ut-surface-elevation-hover); }
+  .ut-accent-wash { background-image: var(--ut-accent-wash); }
+  .ut-media {
+    overflow: hidden;
+    border-radius: var(--ut-media-frame-radius);
+    aspect-ratio: var(--ut-media-ratio);
+    background: hsl(var(--muted));
+  }
+  .ut-media > img, .ut-media > video {
+    width: 100%; height: 100%; object-fit: cover;
+    filter: var(--ut-media-filter);
+  }
+  .ut-reveal {
+    animation: ut-reveal var(--ut-motion-duration) var(--ut-motion-ease) both;
+  }
+  @keyframes ut-reveal {
+    from { opacity: 0; transform: translateY(var(--ut-motion-distance)); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ut-reveal { animation: none; }
+    .ut-surface { transition: none; }
+  }
+
   .ut-shadcn-popover,
   .ut-shadcn-dialog-content { background: hsl(var(--popover)); color: hsl(var(--popover-foreground)); }
   .ut-shadcn-dialog-overlay { background: hsl(var(--foreground) / 0.42); }
@@ -392,12 +484,17 @@ ul, ol { padding-left: 1.25rem; }
 }
 
 /**
- * Aesthetic-resolved geometry token map for the selected style card.
- * Consumed by the AI generation brief so Lane B styles with tokens only.
+ * Aesthetic-resolved token map for the selected style card AND its resolved
+ * art direction pack. Consumed by the AI generation brief so Lane B styles
+ * with tokens only — it is the exact vocabulary emitted into /src/index.css.
  */
-export function resolveGeometryTokens(presetId?: string): Record<string, string> {
+export function resolveGeometryTokens(
+  presetId?: string,
+  artDirection: ArtDirectionResolutionInput = {},
+): Record<string, string> {
   const shared = '--ut-content-width: 72rem; --ut-gutter: 1.25rem; --ut-touch-target: 2.75rem; --ut-shell-width: min(100% - (var(--ut-gutter) * 2), var(--ut-content-width)); --ut-carousel-card: min(26.25rem, 85vw); --ut-panel-width: min(22rem, calc(100vw - (var(--ut-gutter) * 2))); --ut-control-radius: calc(var(--radius) - 0.125rem); --ut-media-radius: var(--radius);';
   const declarations = `${buildProfessionalGeometry(presetId)} ${shared}`;
+
   const tokens: Record<string, string> = {};
   for (const declaration of declarations.split(';')) {
     const index = declaration.indexOf(':');
@@ -406,5 +503,11 @@ export function resolveGeometryTokens(presetId?: string): Record<string, string>
     const value = declaration.slice(index + 1).trim();
     if (name.startsWith('--ut-') && value) tokens[name] = value;
   }
-  return tokens;
+
+  const pack = resolveArtDirectionPack({
+    ...artDirection,
+    themePresetId: artDirection.themePresetId ?? presetId,
+  });
+  return { ...tokens, ...buildArtDirectionTokens(pack) };
+
 }

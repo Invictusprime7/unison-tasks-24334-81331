@@ -42,14 +42,17 @@ import { clampVariantToPack, resolveArtDirectionPack } from '@/sections/variants
 
 /**
  * The slice of the wizard design brief the section compiler consumes.
- * `industry` + `themePresetId` resolve the ArtDirectionPack (Recovery Phase 6).
+ * `artDirectionPackId` is the SEALED pack — when present it wins outright.
+ * `industry` + `themePresetId` + `seed` only re-derive it for legacy briefs.
  */
 export type DesignInterventionSlice =
   Pick<WizardDesignIntervention, 'sectionVariants'>
   & Partial<Pick<
     WizardDesignIntervention,
-    'activeVariants' | 'motionRecipes' | 'industry' | 'themePresetId' | 'layoutRecipe' | 'interactionRecipes'
+    'activeVariants' | 'motionRecipes' | 'industry' | 'themePresetId' | 'layoutRecipe'
+    | 'interactionRecipes' | 'artDirectionPackId' | 'seed'
   >>;
+
 import {
   CATALOG_HYDRATION_MODULE,
   CATALOG_HYDRATION_PATH,
@@ -1338,18 +1341,26 @@ function applyDesignVariants(
   const activeVariants = designIntervention?.activeVariants;
 
   /**
-   * Recovery Phase 6 — ArtDirectionPack.
-   * The pack is the cohesion contract: recipe-derived variants are clamped into
-   * the pack's compatible family, and sections with no signal at all inherit the
-   * pack's preferred variant instead of falling back to a registry default.
-   * Explicit `activeVariants` (direct authorship) are never clamped.
+   * ArtDirectionPack — the cohesion contract.
+   * Recipe-derived variants are clamped into the pack's compatible family, and
+   * sections with no signal at all inherit the pack's preferred variant instead
+   * of falling back to a registry default. Explicit `activeVariants` (direct
+   * authorship) are never clamped. The SEALED pack id wins; industry/theme are
+   * only used to re-derive it for briefs written before sealing existed.
    */
-  const pack = (designIntervention?.industry || designIntervention?.themePresetId)
+  const pack = (
+    designIntervention?.artDirectionPackId
+    || designIntervention?.industry
+    || designIntervention?.themePresetId
+  )
     ? resolveArtDirectionPack({
+        sealedPackId: designIntervention?.artDirectionPackId,
         industry: designIntervention?.industry,
         themePresetId: designIntervention?.themePresetId,
+        seed: designIntervention?.seed,
       })
     : undefined;
+
 
   const hasVocabulary = Boolean(
     designIntervention?.layoutRecipe || designIntervention?.interactionRecipes?.length,

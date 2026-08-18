@@ -165,6 +165,12 @@ export function buildThemedIndexCssFromTokens(
   --ut-media-radius: var(--radius);
 
   ${professionalGeometry}
+
+  /* ART DIRECTION: ${artDirectionPack.name} — ${artDirectionPack.description} */
+  ${artDirection}
+  /* The pack owns radius language; the theme card owns colour + typography. */
+  --radius: var(--ut-radius-base);
+
   /* Tailwind CDN reads these via theme.fontFamily.heading / body */
   --font-heading: ${tokens.typography.headingFont};
   --font-body: ${tokens.typography.bodyFont};

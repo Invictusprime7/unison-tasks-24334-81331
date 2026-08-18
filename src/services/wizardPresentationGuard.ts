@@ -1,5 +1,6 @@
 import type { TemplateLayoutContract } from '@/services/templateLayoutContract';
 import type { WizardHeroGeometry } from '@/services/wizardGenerationBrief';
+import { countPageChromeLandmarks } from '@/services/wizardSharedChrome';
 
 /**
  * Recovery Phase 4 — this module is a QUALITY GATE, not a design authority.

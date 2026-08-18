@@ -25,12 +25,7 @@ import type { WizardInteractionManifest } from './wizardInteractionEnrichment';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
-import { isCanonicalComposedPage, mergeLaneBIntoCanonicalPage } from './laneBContentPlan';
-import {
-  RESOLVED_COMPOSITION_ROOT,
-  collectResolvedCompositions,
-  hasResolvedComposition,
-} from '@/platform/core/resolvedComposition';
+import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
 
 import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {
@@ -442,7 +437,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   // Recovery invariant: Lane B is the only successful-path author of registered
   // Wizard page bodies. Stage 4b's compositions stay available as sanctioned
   // vocabulary + preflight expectations, never as a replacement body.
-  const resolvedCompositions = collectResolvedCompositions(canonicalFiles);
 
   for (const [path, content] of Object.entries(generatedFiles)) {
     const normalizedPath = normalizePath(path);

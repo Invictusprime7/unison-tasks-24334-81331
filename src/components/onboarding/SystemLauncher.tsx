@@ -3095,18 +3095,20 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const canonicalHomePath = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .find((path): path is string => /\/Home\.(tsx|jsx)$/i.test(path));
+      const homeQualityRejections: string[] = [];
       if (canonicalHomePath) {
-        const presentationGuard = preserveCanonicalHomePresentation({
+        // Quality gate only — a rejected Home triggers a focused Lane B retry
+        // below. The canonical Stage 4b Home is never substituted here.
+        const homeAssessment = assessWizardHomePresentation({
           aiFiles: aiSourcedFiles,
-          canonicalFiles: siteBundleSnapshot.vfsFiles,
           homePath: canonicalHomePath,
           contract: templateLayoutContract,
         });
-        aiSourcedFiles = presentationGuard.files;
-        if (presentationGuard.restored) {
-          console.warn('[SystemLauncher] Restored canonical Home presentation after Lane B visual drift', {
+        if (homeAssessment.rejections.length > 0) {
+          homeQualityRejections.push(...homeAssessment.rejectedPaths);
+          console.warn('[SystemLauncher] Lane B Home rejected by the presentation quality gate', {
             templateId: templateLayoutContract.templateId,
-            reason: presentationGuard.reason,
+            reason: homeAssessment.rejections[0]?.reason,
           });
         }
       }

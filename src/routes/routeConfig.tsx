@@ -31,6 +31,8 @@ const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const TeamManagement = lazy(() => import("@/pages/TeamManagement"));
 const AIChat = lazy(() => import("@/pages/AIChat"));
 const ExternalPreviewPage = lazy(() => import("@/pages/ExternalPreviewPage"));
+const SiteSnapshotPreviewPage = lazy(() => import("@/pages/SiteSnapshotPreviewPage"));
+
 
 export type RouteShell = "public" | "onboarding" | "workspace" | "project" | "builder" | "focus";
 export type RouteChrome = "none" | "legacy" | "canonical" | "fullscreen";

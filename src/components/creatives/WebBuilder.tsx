@@ -2737,82 +2737,86 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   ]);
 
   // Snapshot-owned visual variants must enter the revision ledger before a
-  // page is regenerated. The customizer reflects the selected state locally;
-  // this bridge reconciles it against the returned canonical VFS/snapshot.
+  // page is regenerated. Variant selection and section swaps are committed
+  // through the canonical pipeline (commitMutation → commitToPipeline), so the
+  // SiteBundleSnapshot — not the customizer's local state — owns the result.
   const presentationCommitInFlightRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!businessId || !currentDraftId) return;
-    const desiredVariants = templateCustomizer.activeVariants;
-    if (Object.keys(desiredVariants).length === 0) return;
+
+  const commitPresentationOps = useCallback(async (
+    requestedOps: Array<{ type: 'setVariant'; sectionId: string; variantId: string }>,
+  ): Promise<boolean> => {
+    if (!businessId || !currentDraftId || requestedOps.length === 0) return false;
 
     const beforeFiles = virtualFSRef.current.getSandpackFiles();
     const snapshot = resolveSnapshot(beforeFiles, effectiveRouteState as any).snapshot
       ?? effectiveRouteState?.siteBundleSnapshot
       ?? null;
-    const currentVariants = snapshot?.meta?.designIntervention?.activeVariants;
-    if (!currentVariants) return;
-    const presentationOps = Object.entries(desiredVariants)
-      .filter(([sectionId, variantId]) => currentVariants[sectionId] !== variantId)
-      .map(([sectionId, variantId]) => ({ type: 'setVariant' as const, sectionId, variantId }));
-    if (presentationOps.length === 0) return;
+    // No SiteBundleSnapshot = no canonical surface to mutate. The customizer
+    // keeps its local reflection; nothing enters the ledger.
+    if (!snapshot) return false;
+
+    const currentVariants = snapshot.meta?.designIntervention?.activeVariants ?? {};
+    const presentationOps = requestedOps.filter(
+      (op) => currentVariants[op.sectionId] !== op.variantId,
+    );
+    if (presentationOps.length === 0) return true;
 
     const operationKey = JSON.stringify(presentationOps);
-    if (presentationCommitInFlightRef.current === operationKey) return;
+    if (presentationCommitInFlightRef.current === operationKey) return false;
     presentationCommitInFlightRef.current = operationKey;
 
-    void (async () => {
-      try {
-        const { data: { user } } = await supabaseClient.auth.getUser();
-        if (!user) return;
-        const patch = emptyPatchPlan(`Presentation · ${presentationOps.length} variant update(s)`);
-        patch.presentationOps.push(...presentationOps);
-        const commit = await commitMutation({
-          source: 'playground-edit',
-          identity: {
-            userId: user.id,
-            businessId,
-            projectId: resolvedProjectId || currentDraftId,
-            draftId: currentDraftId,
-            revisionId: currentRevisionIdRef.current,
-            sessionId: `web-builder:${currentDraftId}`,
-          },
-          current: {
-            vfsFiles: beforeFiles,
-            siteBundleSnapshot: snapshot,
-            playground: {
-              pageRegistry: creatorPlayground.pageRegistry,
-              creatorData: creatorPlayground.creatorData,
-              calendars: snapshot.calendars ?? {},
-              popups: snapshot.popups ?? {},
-            } as never,
-          },
-          patch,
-          options: {
-            requirePreviewPass: false,
-            requireReadinessPass: false,
-            industry: snapshot.industry,
-            themePresetId: snapshot.meta.themePresetId ?? undefined,
-            themeTokens: snapshot.themeTokens,
-          },
-        });
-        if (commit.status !== 'committed') {
-          throw new CommitRejectedError('presentation mutation was rejected', commit);
-        }
-        importBuilderFiles(commit.vfsFiles, {
-          replace: true,
-          preferredPath: activePagePath,
-          entryPoint: launchEntryPoint,
-        });
-        if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
-      } catch (err) {
-        console.warn('[WebBuilder] presentation commit failed:', err);
-        toast.error('Could not save the selected layout');
-      } finally {
-        presentationCommitInFlightRef.current = null;
+    try {
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      if (!user) return false;
+      const patch = emptyPatchPlan(`Presentation · ${presentationOps.length} variant update(s)`);
+      patch.presentationOps.push(...presentationOps);
+      const commit = await commitMutation({
+        source: 'playground-edit',
+        identity: {
+          userId: user.id,
+          businessId,
+          projectId: resolvedProjectId || currentDraftId,
+          draftId: currentDraftId,
+          revisionId: currentRevisionIdRef.current,
+          sessionId: `web-builder:${currentDraftId}`,
+        },
+        current: {
+          vfsFiles: beforeFiles,
+          siteBundleSnapshot: snapshot,
+          playground: {
+            pageRegistry: creatorPlayground.pageRegistry,
+            creatorData: creatorPlayground.creatorData,
+            calendars: snapshot.calendars ?? {},
+            popups: snapshot.popups ?? {},
+          } as never,
+        },
+        patch,
+        options: {
+          requirePreviewPass: false,
+          requireReadinessPass: false,
+          industry: snapshot.industry,
+          themePresetId: snapshot.meta.themePresetId ?? undefined,
+          themeTokens: snapshot.themeTokens,
+        },
+      });
+      if (commit.status !== 'committed') {
+        throw new CommitRejectedError('presentation mutation was rejected', commit);
       }
-    })();
+      importBuilderFiles(commit.vfsFiles, {
+        replace: true,
+        preferredPath: activePagePath,
+        entryPoint: launchEntryPoint,
+      });
+      if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
+      return true;
+    } catch (err) {
+      console.warn('[WebBuilder] presentation commit failed:', err);
+      toast.error('Could not save the selected layout');
+      return false;
+    } finally {
+      presentationCommitInFlightRef.current = null;
+    }
   }, [
-    templateCustomizer.activeVariants,
     businessId,
     currentDraftId,
     resolvedProjectId,
@@ -2823,6 +2827,38 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     effectiveRouteState,
     importBuilderFiles,
   ]);
+
+  /**
+   * Canonical entry for setVariant / swap-section UI actions.
+   * The snapshot commit is the source of truth; the customizer's local map is
+   * only mirrored so the picker highlights the committed variant, and it is
+   * rolled back when the commit is refused.
+   */
+  const commitVariantSelection = useCallback(async (sectionId: string, variantId: string) => {
+    const previous = templateCustomizer.activeVariants[sectionId];
+    templateCustomizer.setActiveVariant(sectionId, variantId as never);
+    const ok = await commitPresentationOps([{ type: 'setVariant', sectionId, variantId }]);
+    if (!ok && businessId && currentDraftId) {
+      if (previous) templateCustomizer.setActiveVariant(sectionId, previous as never);
+      else templateCustomizer.clearActiveVariant(sectionId);
+    }
+  }, [templateCustomizer, commitPresentationOps, businessId, currentDraftId]);
+
+  // Reconciler: any variant state that entered the customizer outside the
+  // canonical actions above (template parse, restore) is pushed into the
+  // snapshot as well, so local state can never diverge from the ledger.
+  useEffect(() => {
+    const desiredVariants = templateCustomizer.activeVariants;
+    if (Object.keys(desiredVariants).length === 0) return;
+    void commitPresentationOps(
+      Object.entries(desiredVariants).map(([sectionId, variantId]) => ({
+        type: 'setVariant' as const,
+        sectionId,
+        variantId,
+      })),
+    );
+  }, [templateCustomizer.activeVariants, commitPresentationOps]);
+
 
   // ── Preview Floating Toolbar → VFSCommitService bridge ───────────────────
   // Mirrors the layout fast-path effect: persists every toolbar-driven edit

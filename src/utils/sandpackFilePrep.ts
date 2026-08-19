@@ -4465,16 +4465,12 @@ export function buildTypeOnlyModuleSource(statement: string, importPath: string)
     .split(',')
     .map((entry) => entry.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0]?.trim())
     .filter((name): name is string => !!name && /^[A-Za-z_$][\w$]*$/.test(name));
-  const defaultName = statement.match(/import\s+type\s+([A-Za-z_$][\w$]*)/)?.[1];
-
   const lines = [
     `// Auto-synthesized type module for unresolved type-only import "${importPath}".`,
     ...names.map((name) => `export type ${name} = Record<string, unknown>;`),
+    'export {};',
+    '',
   ];
-  if (defaultName) {
-    lines.push(`type ${defaultName} = Record<string, unknown>;`, `export default ${defaultName};`);
-  }
-  lines.push('export {};', '');
   return lines.join('\n');
 }
 

@@ -3,6 +3,8 @@ import type { PageRegistry } from '@/types/pageRegistry';
 import { normalizeWizardPageRole } from '@/services/wizardPageQuality';
 import { resolveGeometryTokens } from '@/components/onboarding/themePresetToIndexCss';
 import { resolveArtDirectionPack } from '@/sections/variants/artDirectionPacks';
+import { childSeed, seededPick, seededRotate } from '@/platform/core/generationSeed';
+
 
 export interface WizardHeroGeometry {
   layout: string;

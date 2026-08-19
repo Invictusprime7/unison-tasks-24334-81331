@@ -3950,12 +3950,20 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }, {
         timeoutMs: 180_000,
         degradeCode: 'preflight.seed_recovery',
-        degradeMessage: 'Final checks took too long, so the builder opened your complete wizard-generated seed.',
+        degradeMessage: 'Final checks took too long, so the builder opened your pages without the strict import audit.',
         fallback: async () => {
           await yieldToBrowser();
+          // AUTHORITY: the fallback must NOT swap the authored file set for the
+          // deterministic Stage 4b scaffold — that silently reverts Lane B page
+          // bodies and makes the launch look like a second, competing pipeline.
+          // Snapshot files are layered UNDER the authored files as a backstop
+          // only; the only thing this path relaxes is the strict preflight.
           return buildCanonicalLaunchArtifactsAsync({
             ...launchArtifactInput,
-            generatedFiles: siteBundleSnapshot.vfsFiles,
+            generatedFiles: {
+              ...siteBundleSnapshot.vfsFiles,
+              ...(launchArtifactInput.generatedFiles || {}),
+            },
             strictPreflight: false,
           }, { yieldToHost: yieldToBrowser });
         },

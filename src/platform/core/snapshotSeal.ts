@@ -126,6 +126,12 @@ export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
     systemId: baseline.meta?.systemId || input.appContext.systemType || null,
     themePresetId: input.appContext.themePresetId || baseline.meta?.themePresetId,
     templateId: input.appContext.templateId || baseline.meta?.templateId,
+    // The art-direction pack is sealed exactly as Stage 4b resolved it —
+    // sealing must never re-derive it, or the aesthetic drifts on recompile.
+    artDirectionPackId:
+      baseline.meta?.artDirectionPackId ??
+      baseline.meta?.designIntervention?.artDirectionPackId ??
+      null,
     industry: input.appContext.industry || baseline.meta?.industry || baseline.industry,
     verticalContractId: baseline.meta?.verticalContractId || input.appContext.systemType || null,
     // The generation seed is sealed exactly as Stage 4b resolved it — sealing

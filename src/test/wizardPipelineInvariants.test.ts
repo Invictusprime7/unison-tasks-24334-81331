@@ -423,6 +423,17 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).not.toContain('revision history could not be recorded');
   });
 
+  it('keeps the exact committed wizard handoff authoritative for builder first paint', () => {
+    const builderSource = readFileSync(
+      resolve(process.cwd(), 'src/components/creatives/WebBuilder.tsx'),
+      'utf8',
+    );
+
+    expect(builderSource).toContain('const routeCarriesHydratedRevision = Boolean(');
+    expect(builderSource).toContain('effectiveRouteState?.revisionId === revision.id');
+    expect(builderSource).toContain('!routeCarriesHydratedRevision');
+  });
+
   it('defers malformed registered pages to completion instead of failing the entire launch', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),

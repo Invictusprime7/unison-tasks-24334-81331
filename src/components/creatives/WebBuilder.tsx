@@ -3967,6 +3967,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
 
     setAutoSaveStatus('saving');
+    const autosaveSnapshot = hydratedRevision?.siteBundleSnapshot ?? null;
+    const livePageRegistry = creatorPlaygroundStateRef.current.pageRegistry;
+    const hasLivePages = Object.keys(livePageRegistry?.pages ?? {}).length > 0;
+    const autosavePlayground = hasLivePages
+      ? {
+          pageRegistry: livePageRegistry,
+          creatorData: creatorPlaygroundStateRef.current.creatorData,
+          calendars: (autosaveSnapshot as { calendars?: unknown } | null)?.calendars ?? {},
+          popups: (autosaveSnapshot as { popups?: unknown } | null)?.popups ?? {},
+        }
+      : (hydratedRevision?.playground ?? null);
     const persist = async (): Promise<boolean> => {
       try {
         const existingDraftId = currentDraftIdRef.current;

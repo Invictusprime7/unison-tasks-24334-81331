@@ -41,9 +41,17 @@ export async function persistLaunchFormDefinitions(
     is_active: true,
   }));
 
-  const { error } = await supabase
+  const persist = () => supabase
     .from('form_definitions')
     .upsert(rows as never, { onConflict: 'business_id,project_id,site_id,external_id' });
+
+  let { error } = await persist();
+  // Launch provisioning and membership writes complete immediately before
+  // this call. Retry once when the data API has not observed that new identity
+  // yet; deterministic conflicts remain safe because this is an upsert.
+  if (error && /fetch|network|timeout|temporar|row-level security|permission/i.test(error.message)) {
+    ({ error } = await persist());
+  }
 
   if (error) {
     return { persistedCount: 0, error: error.message };

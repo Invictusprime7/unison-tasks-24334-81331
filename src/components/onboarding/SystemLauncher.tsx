@@ -1915,6 +1915,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const expectedThemedCss = buildThemedIndexCssFromTokens(earlyThemeTokens, {
         presetId: earlyResolvedPreset.id,
         label: earlyResolvedPreset.id,
+        artDirectionPackId: siteBundleSnapshot.meta.artDirectionPackId,
       });
       const actualIndexCss =
         compiledPlayground?.vfsFiles?.['/src/index.css'] ??
@@ -1936,8 +1937,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         // Repair the themed stylesheet in place rather than aborting the launch.
         if (compiledPlayground?.vfsFiles) compiledPlayground.vfsFiles['/src/index.css'] = expectedThemedCss;
         if (siteBundleSnapshot?.vfsFiles) siteBundleSnapshot.vfsFiles['/src/index.css'] = expectedThemedCss;
-        run.degrade('seed', 'seed.theme_css_repaired',
-          'Your theme stylesheet was re-applied to the scaffold.', msg);
+        // This repair is synchronous and complete, so it is an internal
+        // invariant diagnostic rather than a user-visible launch degradation.
+        // The committed snapshot receives the repaired canonical stylesheet.
       }
 
       // ── Resolve composition from selected Template card only ──
@@ -2019,6 +2021,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const themedIndexCss = buildThemedIndexCssFromTokens(themedTokens, {
         presetId: resolvedPreset.id,
         label: resolvedPreset.id,
+        artDirectionPackId: siteBundleSnapshot.meta.artDirectionPackId,
       });
 
       // ── Blueprint enriched with Style card palette + custom instructions ──

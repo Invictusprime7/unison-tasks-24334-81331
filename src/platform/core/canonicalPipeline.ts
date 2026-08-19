@@ -168,6 +168,14 @@ export interface SiteBundleSnapshotMeta {
   /** Wizard seed identifier when applicable. */
   wizardSeedId?: string;
   /**
+   * Canonical generation seed (see `@/platform/core/generationSeed`).
+   * Every controlled design variation in this site was derived from this
+   * string. Persisted so refresh, recompile, preview, playground and publish
+   * all reproduce the identical composition — and so an intentional
+   * regeneration can be explained by a changed seed rather than by chance.
+   */
+  generationSeed?: string;
+  /**
    * Resolved ThemePreset id from the wizard Style-card. Persisted into the
    * snapshot so recompiles/autosaves can re-emit themed /src/index.css
    * without re-passing wizard props (chain-of-custody after compile).
@@ -301,6 +309,12 @@ export function executeCanonicalPipeline(
     templateId: selections.templateId,
     themePresetId,
     wizardSeedId: selections.wizardSeedId,
+    // Every wizard dimension feeds the canonical generation seed so goals and
+    // page selections materially change the composition — not just the theme.
+    primaryGoal: selections.primaryGoal,
+    secondaryGoals: selections.secondaryGoals,
+    requestedPages: selections.requestedPages,
+    projectId: selections.businessId,
     needsBooking: selections.needsBooking,
     sellsProducts: selections.sellsProducts,
     wantsLeadCapture: selections.wantsLeadCapture,
@@ -629,6 +643,7 @@ function projectToSiteBundleSnapshot(
       themePresetId: resolvedThemePresetId,
       templateId: resolvedTemplateId,
       wizardSeedId: selections.wizardSeedId ?? undefined,
+      generationSeed: (designIntervention || selections.designIntervention)?.seed,
       interactionManifest: selections.interactionManifest,
       themeInjection: {
         version: '1.0',

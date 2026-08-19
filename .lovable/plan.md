@@ -1,35 +1,42 @@
-# Fix: two navbars and two footers on generated sites
+# Fix: preview falls back to the Lane A scaffold + "steps skipped" note
 
 ## What is actually happening
 
-Generated sites have **two separate systems that each render site chrome**, and nothing reconciles them.
+The console error from your last launch is the tell:
 
-1. **Router-level chrome (global).** The canonical router always renders a shared navbar and footer around every route. `src/services/canonicalLaunchVfs.ts` builds the router with shared chrome enabled unconditionally, and `src/utils/topologyRouterGenerator.ts:178-208` emits `<SiteNavbar />` above the routes and `<SiteFooter />` below them. Those two files come from `src/services/wizardSharedChrome.ts`, which renders a sticky `<header>` with `NavLink`s and an active-state pill.
+```text
+[prep] Wizard VFS is missing local module "./components/GalleryItem"
+required by /pages/Gallery.tsx; refusing to synthesize an empty component.
+```
 
-2. **Page-level chrome (per page).** Every page body is compiled from a composition whose `SECTIONS` array still contains `navbar` and `footer` sections. `src/sections/compositionToFileSet.ts:1081,1185` maps those section types to the local `Navbar`/`Footer` components (`:199-238`, `:540-579`), which render a second sticky `<header>` and a second `<footer>` inside the page.
+Lane B authored `Gallery.tsx` **and** a companion component next to it, but only the page file survived the merge:
 
-In the screenshot: the first bar with the red "Home" pill is the router's `SiteNavbar` (that pill is `isActive ? bg-primary text-primary-foreground` in `wizardSharedChrome.ts`). The bar directly below with the brand mark and Gallery/Services/About/Contact is the page composition's `Navbar` section. Same duplication for footers at the bottom.
+- `src/components/onboarding/SystemLauncher.tsx:2430-2441` (first pass) and `:2588-2596` (batched recovery) build `requestedPaths` from the page list and then **filter every returned file that is not exactly a requested page path**. Companion modules Lane B writes (`/src/pages/components/GalleryItem.tsx`, shared cards, etc.) are silently dropped.
+- The page body that imports them is kept, so the emitted VFS is internally inconsistent.
+- `src/utils/sandpackFilePrep.ts:4522` runs with `failOnMissingImport: true` for wizard drafts (`:6325`) and throws `PreviewPipelineError` instead of stubbing the module.
+- The launch run records that as a degradation, so the preview shows the Lane A scaffold and `LaunchDegradationNote` renders "Your site is ready with a few steps skipped".
 
-3. **A third possible source.** Lane B (the AI page author) may also hand-author `<header>`/`<footer>` markup. `wizardPresentationGuard.ts:171` rejects only `<nav`/`SiteNavbar` — `<header>` and `<footer>` are allowed, and the semantic-region check at `:177-179` actually counts `header`/`footer` toward passing. Even when a page is rejected, `SystemLauncher.tsx:3779-3790` only marks the launch `lane-b-degraded`; the offending file still ships.
+Nothing in the Lane B brief or the prompt currently forbids companion files, so the model is not misbehaving — the merge is throwing away legal output.
 
-## Direction
+## Plan
 
-Make **shared chrome the single chrome authority**, because it owns real router navigation (`NavLink`, active state, `nav.goto` intents) and is snapshot-owned so the AI cannot overwrite it. Page bodies stop rendering chrome entirely.
+1. **Stop dropping Lane B companion modules.**
+   In both merge sites in `SystemLauncher.tsx`, keep a returned file when it is either a requested page path **or** a new supporting module under `/src/` that no requested page owns (components, sections, data, hooks-free helpers). Keep rejecting files that would overwrite canonical Lane A authority: `/src/App.tsx`, `/src/main.tsx`, `/src/index.css`, the router, and the UI foundation.
 
-To keep the design cohesion the art-direction work just landed, the shared navbar/footer are generated **from the sealed art-direction pack's `navbarFamily` / `footerFamily` variant**, so a `cinematic-portfolio` site still gets its minimal dark nav rather than a generic bar.
+2. **Validate the page/companion set as a unit before accepting it.**
+   After the scoped merge, resolve every relative import of each accepted page against the merged file map. If a page's companions are missing, reject that page for targeted Lane B repair (the existing retry path) instead of admitting a page that cannot compile.
 
-## Changes
+3. **Close the import contract at seal time, not at preview time.**
+   Run the same relative-import resolution check over the merged artifact before it is sealed, so a missing module is a Lane B repair signal during the run rather than a `PreviewPipelineError` after handoff.
 
-1. **Strip chrome sections from page compositions.** In `src/sections/compositionToFileSet.ts`, filter `navbar` and `footer` section types out of the emitted `SECTIONS` when the site uses shared chrome, and stop emitting the now-unused `Navbar`/`Footer` page modules for those pages.
+4. **Make the remaining failure legible.**
+   If a page still has unresolved imports after the targeted retry, degrade that single page with a specific code (`lane_b.unresolved_module`) naming the page and module, rather than the generic "AI copy polish was skipped" line.
 
-2. **Style shared chrome from the sealed pack.** Extend `src/services/wizardSharedChrome.ts` to accept the resolved `artDirectionPackId` and emit the pack's navbar/footer variant styling using `--ut-*` tokens only (no hardcoded geometry, so the pipeline lint guard stays green). Thread the pack id from `canonicalLaunchVfs.ts` where chrome is generated.
+5. **Regression tests.**
+   Add cases in the wizard pipeline invariant tests: (a) a Lane B batch returning `Gallery.tsx` plus `components/GalleryItem.tsx` keeps both files; (b) a batch returning a page whose companion is missing is rejected for repair and never reaches the sealed snapshot; (c) Lane B still cannot overwrite `App.tsx` / `index.css` / router.
 
-3. **Close the AI chrome hole.** Extend `generatedPageFallbackReason` in `src/services/wizardPresentationGuard.ts` to reject page-level `<header>`/`<footer>` chrome, and stop counting `header`/`footer`/`nav` toward the semantic-region minimum. Add an explicit rule to the Lane B brief (`src/services/wizardGenerationBrief.ts`) and the builder prompt: pages author body content only; navigation and footer are owned by the shared layout.
+## Technical notes
 
-4. **Make rejection actually remove duplicate chrome.** In `SystemLauncher.tsx`, before merging Lane B output, strip page-level `<header>`/`<footer>` chrome blocks from AI files (or fall back to the canonical body for that page) instead of only flagging `lane-b-degraded`.
-
-5. **Regression test.** A test asserting a compiled wizard site has exactly one `<header>`-rendering chrome component and one `<footer>` across router + page files.
-
-## Alternative (if you'd rather keep page-level chrome)
-
-Drop `<SiteNavbar />`/`<SiteFooter />` from the router and keep the composition's variant-driven navbar/footer. This preserves per-page art direction but loses router-aware active-nav state and re-exposes chrome to AI overwrite. The plan above is the recommended one.
+- Files touched: `src/components/onboarding/SystemLauncher.tsx` (two merge blocks + acceptance helper), a small shared import-resolution helper (reusing the resolution logic already in `src/utils/sandpackFilePrep.ts`), and `src/test/wizardPipelineInvariants.test.ts`.
+- `failOnMissingImport` stays `true` — it is the correct backstop. The fix is to make sure the artifact never reaches it in a broken state.
+- No change to Lane A / Stage 4b authority, the seal, or `commitToPipeline`.

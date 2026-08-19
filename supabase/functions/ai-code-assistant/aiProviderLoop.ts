@@ -121,6 +121,10 @@ export async function runProviderLoop(opts: {
   // must NOT mask the real failure — the client would show "rate limited" even
   // though the actual cause was a timeout on a different provider.
   let hadNonRateLimitError = false;
+  // True once any direct provider reports a billing/quota-exhausted 429. Those
+  // keys cannot recover within this request, so the managed gateway becomes the
+  // only path that can answer and must get the whole remaining budget.
+  let directQuotaExhausted = false;
   const recordProviderError = (label: string, detail: string) => {
     const message = `${label}: ${detail}`;
     providerErrors.push(message);
@@ -128,7 +132,11 @@ export async function runProviderLoop(opts: {
     if (!/429|rate limit|402|payment required/i.test(detail)) {
       hadNonRateLimitError = true;
     }
+    if (!/gateway/i.test(label) && isQuotaExhausted(detail)) {
+      directQuotaExhausted = true;
+    }
   };
+
 
   const createAttemptSignal = (timeoutMs: number) => {
     const controller = new AbortController();

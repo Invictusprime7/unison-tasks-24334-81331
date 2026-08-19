@@ -2427,18 +2427,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 if (!batchStructured?.files || Object.keys(batchStructured.files).length === 0) {
                   return { error: new Error(`Lane B first-pass batch ${batchNumber} returned no structured files.`) };
                 }
-                const requestedPaths = new Set(batch.map((path) => (
-                  path.startsWith('/') ? path : `/${path}`
-                )));
-                const scopedFiles = Object.fromEntries(
-                  Object.entries(batchStructured.files)
-                    .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content] as const)
-                    .filter(([path]) => requestedPaths.has(path)),
+                // Lane B may author a page AND the companion modules that page
+                // imports. Keep both — dropping companions produces pages that
+                // import modules which do not exist, which fails preview prep.
+                const { pages: scopedPages, companions } = scopeLaneBBatchFiles(
+                  batchStructured.files as Record<string, unknown>,
+                  batch,
                 );
-                if (Object.keys(scopedFiles).length === 0) {
+                if (Object.keys(scopedPages).length === 0) {
                   return { error: new Error(`Lane B first-pass batch ${batchNumber} omitted every requested page file.`) };
                 }
-                return { files: scopedFiles };
+                return { files: { ...companions, ...scopedPages } };
+
               } catch (batchError) {
                 return { error: batchError };
               }

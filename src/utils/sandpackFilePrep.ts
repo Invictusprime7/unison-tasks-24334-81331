@@ -4547,6 +4547,16 @@ function synthesizeMissingLocalImports(
         continue;
       }
 
+      if (isTypeOnlyImportStatement(match[0])) {
+        const typePath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.ts`;
+        sandpackFiles[typePath] = buildTypeOnlyModuleSource(match[0], rawImportPath);
+        existingPaths.add(typePath);
+        console.warn(
+          `[sandpackFilePrep] Synthesized type-only module ${typePath} for erased import "${rawImportPath}" in ${filePath}`,
+        );
+        continue;
+      }
+
       if (options.failOnMissingImport) {
         throw new PreviewPipelineError(
           'prep',
@@ -4554,6 +4564,7 @@ function synthesizeMissingLocalImports(
           { blockedFiles: [filePath], recoverableByRelaunch: true },
         );
       }
+
 
       // Derive a component name from the import statement (default OR first named).
       const stmt = match[0];

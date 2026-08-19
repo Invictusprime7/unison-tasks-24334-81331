@@ -231,7 +231,9 @@ export function buildWizardGenerationBrief(input: {
     industry: input.industry,
     seed: input.seed,
   });
+  const seed = input.seed || `${input.themePresetId || 'theme'}|${input.industry || 'general'}`;
   const homePage = Object.values(input.pageRegistry.pages).find((page) => page.isHome);
+
   const homePath = homePage?.filePath || '';
   const homeSource = homePath
     ? (input.vfsFiles[homePath] || input.vfsFiles[homePath.replace(/^\//, '')] || '')

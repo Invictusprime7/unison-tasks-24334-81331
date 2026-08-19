@@ -3985,8 +3985,18 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         if (!existingDraftId || !businessId || !canonicalProjectId) {
           throw new Error('Canonical project identity is required before cloud autosave.');
         }
+        if (!autosavePlayground) {
+          // No canonical playground yet (registry still hydrating). Committing
+          // now would throw inside the pipeline and persist a rejected revision,
+          // which strands the draft without a committed projection.
+          console.warn('[AutoSave] Skipped — canonical playground not hydrated yet.');
+          setAutoSaveStatus('idle');
+          return false;
+        }
         const { data: { user } } = await supabaseClient.auth.getUser();
         if (!user) throw new Error('Authenticated project identity is required before cloud autosave.');
+
+
 
         const commit = await commitMutation({
           source: 'playground-edit',

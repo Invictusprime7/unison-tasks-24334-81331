@@ -4051,6 +4051,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // cloned SiteBundleSnapshot. This launcher only appends metadata files.
       const wiredVfsFiles = preWiredVfsFiles;
 
+      // Close the local-import contract BEFORE the artifact is sealed. Preview
+      // prep refuses to synthesize placeholders for wizard drafts, so a page
+      // importing an unauthored companion would otherwise surface as a
+      // PreviewPipelineError after handoff (preview falls back to scaffold).
+      const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);
+      if (preSealUnresolvedImports.length > 0) {
+        launchReliabilityMode = 'lane-b-degraded';
+        for (const item of preSealUnresolvedImports.slice(0, 3)) {
+          run.degrade(
+            'preflight',
+            'lane_b.unresolved_module',
+            `${item.filePath.split('/').pop()} references a module that was not generated ("${item.importPath}") — regenerate that page from the AI panel.`,
+            describeUnresolvedImports(preSealUnresolvedImports),
+          );
+        }
+        console.warn('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
+      }
+
+
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
         console.log(
           `[SystemLauncher] Applied ${launchArtifacts.bindingApplication?.appliedBindings} wizard bindings to deterministic VFS`,

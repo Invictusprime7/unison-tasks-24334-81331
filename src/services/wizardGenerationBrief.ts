@@ -101,10 +101,70 @@ export interface WizardGenerationBrief {
   ui: { formFormats: string[]; buttonFormats: string[]; iconFormats: string[] };
 }
 
+/** Role → page-depth floor. Never below 4 content sections. */
+const ROLE_DEPTH: Record<string, { minSections: number; maxSections: number }> = {
+  home: { minSections: 6, maxSections: 9 },
+  services: { minSections: 5, maxSections: 8 },
+  products: { minSections: 5, maxSections: 8 },
+  pricing: { minSections: 5, maxSections: 8 },
+  portfolio: { minSections: 5, maxSections: 8 },
+  gallery: { minSections: 5, maxSections: 8 },
+  about: { minSections: 4, maxSections: 7 },
+  booking: { minSections: 4, maxSections: 7 },
+  contact: { minSections: 4, maxSections: 7 },
+  faq: { minSections: 4, maxSections: 7 },
+};
+
+const SURFACE_RHYTHMS = [
+  'base → raised → base → accent-wash → base',
+  'accent-wash → base → raised → base → raised',
+  'raised → base → accent-wash → raised → base',
+  'base → accent-wash → raised → base → accent-wash',
+];
+
+const CTA_EMPHASIS = [
+  'inline text CTA inside the narrative block',
+  'full-width accent CTA band before the footer',
+  'paired CTA card sitting beside supporting proof',
+  'sticky-feeling CTA strip after the primary proof section',
+];
+
+const ROLE_SECTION_POOL: Record<string, string[]> = {
+  home: ['hero', 'proof', 'services', 'process', 'testimonials', 'gallery', 'faq', 'cta'],
+  services: ['hero', 'services', 'process', 'outcomes', 'testimonials', 'pricing-teaser', 'faq', 'cta'],
+  products: ['hero', 'catalog', 'highlights', 'materials', 'testimonials', 'faq', 'cta'],
+  pricing: ['hero', 'plans', 'comparison', 'inclusions', 'testimonials', 'faq', 'cta'],
+  portfolio: ['hero', 'featured-project', 'gallery', 'process', 'testimonials', 'cta'],
+  gallery: ['hero', 'gallery', 'featured-project', 'process', 'testimonials', 'cta'],
+  about: ['hero', 'story', 'team', 'values', 'timeline', 'testimonials', 'cta'],
+  booking: ['hero', 'availability', 'how-it-works', 'policies', 'testimonials', 'faq', 'cta'],
+  contact: ['hero', 'contact-form', 'locations', 'hours', 'faq', 'cta'],
+  faq: ['hero', 'faq', 'categories', 'contact-form', 'cta'],
+};
+
+function routeDepth(role: string): { minSections: number; maxSections: number } {
+  return ROLE_DEPTH[role] || { minSections: 4, maxSections: 7 };
+}
+
+function routeSignature(seed: string, pageId: string, role: string, minSections: number) {
+  const pageSeed = childSeed(seed, 'page', pageId, role);
+  const pool = ROLE_SECTION_POOL[role] || ['hero', 'overview', 'proof', 'details', 'testimonials', 'faq', 'cta'];
+  const [head, ...rest] = pool;
+  const rotated = seededRotate(childSeed(pageSeed, 'sections'), rest);
+  const tail = rotated.filter((entry) => entry !== 'cta');
+  const ordered = [head, ...tail].slice(0, Math.max(minSections - 1, 3));
+  return {
+    surfaceRhythm: seededPick(childSeed(pageSeed, 'surface'), SURFACE_RHYTHMS),
+    ctaEmphasis: seededPick(childSeed(pageSeed, 'cta'), CTA_EMPHASIS),
+    sectionOrder: [...ordered, 'cta'],
+  };
+}
+
 function generationTitle(role: string, title: string): string {
   const label = title.trim() || role.replace(/[-_]/g, ' ').trim() || 'Explore';
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
+
 
 function generationAngle(role: string, title: string): string {
   const label = generationTitle(role, title).toLowerCase();

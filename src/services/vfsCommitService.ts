@@ -1076,6 +1076,17 @@ export async function loadProjectedRevisionForDraft(
     throw new Error(`[VFSCommitService] canonical draft ${draftId} was not found for project ${projectId}`);
   }
   if (typeof draft.last_revision_id !== 'string' || !draft.last_revision_id) {
+    // Recovery: a draft can lose its pointer when the very first post-launch
+    // commit was rejected (the pointer only advances on `committed`). Rather
+    // than declaring the wizard site lost, project the newest usable revision
+    // for this draft so the builder can still open and re-commit.
+    const recovered = await loadRecoveryRevisionForDraft(projectId, draftId);
+    if (recovered) {
+      console.warn(
+        `[VFSCommitService] draft ${draftId} had no committed projection; recovered revision ${recovered.id} (${recovered.status})`,
+      );
+      return recovered;
+    }
     throw new Error(`[VFSCommitService] canonical draft ${draftId} has no committed revision projection`);
   }
 
@@ -1089,9 +1100,36 @@ export async function loadProjectedRevisionForDraft(
     .maybeSingle();
   if (revisionError) throw revisionError;
   if (!revision) {
+    const recovered = await loadRecoveryRevisionForDraft(projectId, draftId);
+    if (recovered) return recovered;
     throw new Error(`[VFSCommitService] draft ${draftId} points to an invalid committed revision`);
   }
   return mapRevisionRow(revision as Record<string, unknown>);
+}
+
+/**
+ * Best-effort projection for a draft whose committed pointer is missing.
+ * Prefers a committed revision; otherwise returns the newest revision that
+ * still carries VFS files so the wizard output is never stranded.
+ */
+async function loadRecoveryRevisionForDraft(
+  projectId: string,
+  draftId: string,
+): Promise<LoadedRevision | null> {
+  const { data, error } = await supabase
+    .from('site_revisions')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('draft_id', draftId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error || !Array.isArray(data) || data.length === 0) return null;
+  const rows = data as Record<string, unknown>[];
+  const hasFiles = (row: Record<string, unknown>) =>
+    Object.keys((row.vfs_files as Record<string, string>) ?? {}).length > 0;
+  const committed = rows.find((row) => row.status === 'committed' && hasFiles(row));
+  const usable = committed ?? rows.find(hasFiles);
+  return usable ? mapRevisionRow(usable) : null;
 }
 
 /**

@@ -3967,6 +3967,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
 
     setAutoSaveStatus('saving');
+    const autosaveSnapshot = hydratedRevision?.siteBundleSnapshot ?? null;
+    const livePageRegistry = creatorPlaygroundStateRef.current.pageRegistry;
+    const hasLivePages = Object.keys(livePageRegistry?.pages ?? {}).length > 0;
+    const autosavePlayground = hasLivePages
+      ? {
+          pageRegistry: livePageRegistry,
+          creatorData: creatorPlaygroundStateRef.current.creatorData,
+          calendars: (autosaveSnapshot as { calendars?: unknown } | null)?.calendars ?? {},
+          popups: (autosaveSnapshot as { popups?: unknown } | null)?.popups ?? {},
+        }
+      : (hydratedRevision?.playground ?? null);
     const persist = async (): Promise<boolean> => {
       try {
         const existingDraftId = currentDraftIdRef.current;
@@ -3974,8 +3985,18 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         if (!existingDraftId || !businessId || !canonicalProjectId) {
           throw new Error('Canonical project identity is required before cloud autosave.');
         }
+        if (!autosavePlayground) {
+          // No canonical playground yet (registry still hydrating). Committing
+          // now would throw inside the pipeline and persist a rejected revision,
+          // which strands the draft without a committed projection.
+          console.warn('[AutoSave] Skipped — canonical playground not hydrated yet.');
+          setAutoSaveStatus('idle');
+          return false;
+        }
         const { data: { user } } = await supabaseClient.auth.getUser();
         if (!user) throw new Error('Authenticated project identity is required before cloud autosave.');
+
+
 
         const commit = await commitMutation({
           source: 'playground-edit',
@@ -3989,7 +4010,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           },
           current: {
             vfsFiles: currentVfsFiles,
-            siteBundleSnapshot: hydratedRevision?.siteBundleSnapshot ?? undefined,
+            siteBundleSnapshot: autosaveSnapshot ?? undefined,
+            // Non-wizard commits recompile from the canonical playground; without
+            // it commitToPipeline throws and every autosave persists a `rejected`
+            // revision, leaving builder_drafts.last_revision_id null (the draft
+            // then looks "lost" on reopen). Prefer the live registry, fall back to
+            // the hydrated revision's playground projection.
+            playground: (autosavePlayground ?? undefined) as never,
             activePagePath,
           },
           patch: legacyFilesToPatchPlan(currentVfsFiles, `Autosave: ${reason}`),

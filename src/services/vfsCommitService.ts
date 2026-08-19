@@ -1160,14 +1160,22 @@ async function loadRecoveryRevisionForDraft(
     .eq('project_id', projectId)
     .eq('draft_id', draftId)
     .order('created_at', { ascending: false })
-    .limit(20);
+    .limit(50);
   if (error || !Array.isArray(data) || data.length === 0) return null;
   const rows = data as Record<string, unknown>[];
   const hasFiles = (row: Record<string, unknown>) =>
     Object.keys((row.vfs_files as Record<string, string>) ?? {}).length > 0;
-  const committed = rows.find((row) => row.status === 'committed' && hasFiles(row));
-  const usable = committed ?? rows.find(hasFiles);
+  const hasSnapshot = (row: Record<string, unknown>) =>
+    Boolean(row.site_bundle_snapshot && typeof row.site_bundle_snapshot === 'object');
+  const usable =
+    rows.find((row) => row.status === 'committed' && hasFiles(row) && hasSnapshot(row))
+    ?? rows.find((row) => row.status === 'committed' && hasFiles(row))
+    // Revival: a rejected autosave still carries the full wizard VFS. Prefer the
+    // newest one that also kept its snapshot so the builder reopens canonically.
+    ?? rows.find((row) => hasFiles(row) && hasSnapshot(row))
+    ?? rows.find(hasFiles);
   return usable ? mapRevisionRow(usable) : null;
+
 }
 
 /**

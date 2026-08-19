@@ -648,6 +648,8 @@ function projectToSiteBundleSnapshot(
       verticalContractId: resolvedSystemId,
       themePresetId: resolvedThemePresetId,
       templateId: resolvedTemplateId,
+      artDirectionPackId:
+        (designIntervention || selections.designIntervention)?.artDirectionPackId ?? null,
       wizardSeedId: selections.wizardSeedId ?? undefined,
       generationSeed: (designIntervention || selections.designIntervention)?.seed,
       interactionManifest: selections.interactionManifest,

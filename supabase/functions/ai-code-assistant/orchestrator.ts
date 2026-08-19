@@ -38,6 +38,8 @@ import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditRein
 import { buildCodeModePrompt } from "./prompts/codePrompt.ts";
 import { buildTemplateJsonPrompt, buildTemplateHtmlPrompt, buildTemplateReactPrompt } from "./prompts/templatePrompts.ts";
 import { buildEditAssistantPrompt, buildDebugAssistantPrompt, buildGeneralBuilderPrompt } from "./prompts/builderPrompts.ts";
+import { buildDesignDirectorDirective } from "./prompts/designDirector.ts";
+
 import { generateImageIfNeeded } from "./imageGeneration.ts";
 import { runProviderLoop } from "./aiProviderLoop.ts";
 import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext, detectIssueHint } from "./contextCompactor.ts";
@@ -99,8 +101,9 @@ RUNTIME + IMPORT CONTRACT (HARD):
 - "@/unison/ui/motion" only exports the curated recipes Reveal, RevealGroup, Stagger, StaggerItem, and the MotionRecipe type — nothing else. Raw framer-motion primitives (motion, AnimatePresence, useAnimation, useReducedMotion, useScroll, useInView, etc.) live at "@/unison/ui/animation" instead, e.g. import { motion, AnimatePresence } from "@/unison/ui/animation".
 - Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally.
 - Use plain <img alt="..."> for images, not a framework-specific Image component.
-- Every emitted source string must independently parse as TSX. Balance every JSX tag, brace, bracket, parenthesis, quote, and template literal before returning JSON.`;
+- Every emitted source string must independently parse as TSX. Balance every JSX tag, brace, bracket, parenthesis, quote, and template literal before returning JSON.${buildDesignDirectorDirective()}`;
 }
+
 
 function buildWizardInteractionBasePrompt(): string {
   return `You are the final interaction planner for a validated System Launcher website.

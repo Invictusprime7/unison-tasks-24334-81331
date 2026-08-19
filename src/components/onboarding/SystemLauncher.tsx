@@ -3949,24 +3949,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         return artifacts;
       }, {
         timeoutMs: 180_000,
-        degradeCode: 'preflight.seed_recovery',
-        degradeMessage: 'Final checks took too long, so the builder opened your pages without the strict import audit.',
-        fallback: async () => {
-          await yieldToBrowser();
-          // AUTHORITY: the fallback must NOT swap the authored file set for the
-          // deterministic Stage 4b scaffold — that silently reverts Lane B page
-          // bodies and makes the launch look like a second, competing pipeline.
-          // Snapshot files are layered UNDER the authored files as a backstop
-          // only; the only thing this path relaxes is the strict preflight.
-          return buildCanonicalLaunchArtifactsAsync({
-            ...launchArtifactInput,
-            generatedFiles: {
-              ...siteBundleSnapshot.vfsFiles,
-              ...(launchArtifactInput.generatedFiles || {}),
-            },
-            strictPreflight: false,
-          }, { yieldToHost: yieldToBrowser });
-        },
+        // NO FALLBACK BY DESIGN. The launch artifact set has exactly one
+        // author: Stage 4b (deterministic scaffold + sealed art direction)
+        // merged with Lane B (AI-authored page bodies). A seed-recovery
+        // fallback would constitute a second, competing wizard pipeline that
+        // silently reverts AI-authored pages. If preflight stalls, the stage
+        // throws and the launch surfaces the real failure instead.
       });
       // Seal diagnostics: registered pages that reached the sealed revision
       // without a file body. The launch still opens, but the gap is recorded.

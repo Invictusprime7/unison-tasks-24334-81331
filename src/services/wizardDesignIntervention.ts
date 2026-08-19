@@ -3,6 +3,11 @@ import { getCompositionById } from '@/sections/templates';
 import { getVariantById, getVariantIdForLayout, getVariantsForSection } from '@/sections/variants';
 import type { ActiveVariantMap, VariantId } from '@/sections/variants';
 import {
+  childSeed,
+  deriveGenerationSeed,
+  seededRotate,
+} from '@/platform/core/generationSeed';
+import {
   ART_DIRECTION_PACKS,
   isArtDirectionPackId,
   resolveArtDirectionPackId,
@@ -63,6 +68,11 @@ export interface WizardDesignInterventionInput {
   templateId?: string | null;
   themePresetId: string;
   wizardSeedId?: string | null;
+  /** Wizard goal + page selections participate in the generation seed. */
+  primaryGoal?: string | null;
+  secondaryGoals?: readonly string[] | null;
+  requestedPages?: readonly string[] | null;
+  projectId?: string | null;
   needsBooking?: boolean;
   sellsProducts?: boolean;
   wantsLeadCapture?: boolean;
@@ -203,9 +213,23 @@ export function buildWizardDesignIntervention(
   input: WizardDesignInterventionInput,
 ): WizardDesignIntervention {
   const industry = input.industryOverlay || 'general';
-  const seed = [input.wizardSeedId || input.businessName, industry, input.businessModel, input.templateId || 'composition', input.themePresetId].join('|');
+  // ONE canonical generation seed: every wizard dimension participates, plus
+  // the launch nonce so an intentional regeneration yields a different — but
+  // still fully reproducible — composition.
+  const seed = deriveGenerationSeed({
+    businessName: input.businessName,
+    businessModel: input.businessModel,
+    industry: typeof industry === 'string' ? industry : String(industry),
+    templateId: input.templateId,
+    themePresetId: input.themePresetId,
+    primaryGoal: input.primaryGoal,
+    secondaryGoals: input.secondaryGoals,
+    requestedPages: input.requestedPages,
+    projectId: input.projectId,
+    launchNonce: input.wizardSeedId,
+  });
   const baseline = MODEL_RECIPES[input.businessModel];
-  const sectionVariants = rotate(baseline.sectionVariants, seed);
+  const sectionVariants = seededRotate(childSeed(seed, 'section-variants'), baseline.sectionVariants);
 
   // ART DIRECTION — resolved ONCE, from the style card first. Everything that
   // follows (motion, interaction, CSS, Lane B brief) obeys this pack.
@@ -242,7 +266,7 @@ export function buildWizardDesignIntervention(
     activeVariants: buildActiveVariants(input.templateId, seed),
     // The pack's motion profile leads; the business-model recipes follow.
     motionRecipes: Array.from(
-      new Set([pack.motionProfile, ...rotate(baseline.motionRecipes, `${seed}|motion`)]),
+      new Set([pack.motionProfile, ...seededRotate(childSeed(seed, 'motion'), baseline.motionRecipes)]),
     ),
     interactionRecipes,
     motionBudget: baseline.motionBudget,

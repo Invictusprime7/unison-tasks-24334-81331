@@ -635,25 +635,63 @@ export async function commitMutation(
 // Internals
 // ----------------------------------------------------------------------------
 
+/**
+ * Recover the *sealed* theme identity that already exists in the working VFS.
+ * This is not a re-derivation or a default: `/.unison/site-bundle-snapshot.json`
+ * is written by Stage 4b and carries the authoritative seal. Reading it lets a
+ * revived draft (whose in-memory snapshot was never rehydrated) keep committing
+ * against its original theme instead of throwing ThemeSeedError forever.
+ */
+function readSealedThemePresetId(
+  files: Record<string, string>,
+): { themePresetId?: string; templateId?: string } {
+  const raw = files['/.unison/site-bundle-snapshot.json'];
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as SiteBundleSnapshot;
+    const meta = parsed?.meta as (SiteBundleSnapshot['meta'] & {
+      seal?: { themePresetId?: string; templateId?: string };
+    }) | undefined;
+    return {
+      themePresetId:
+        meta?.themePresetId
+        || meta?.seal?.themePresetId
+        || meta?.themeInjection?.presetId
+        || undefined,
+      templateId: meta?.templateId || meta?.seal?.templateId || undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 function buildCanonicalInput(
   input: CommitMutationInput,
   workingFiles: Record<string, string>,
   snapshotOverride?: SiteBundleSnapshot | null,
 ): CanonicalCommitInput {
   const snapshot = snapshotOverride ?? input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined;
+  const sealed = readSealedThemePresetId(workingFiles);
+  const themePresetId =
+    input.options?.themePresetId
+    ?? snapshot?.meta?.themePresetId
+    ?? sealed.themePresetId
+    ?? undefined;
   return {
     selections: input.options?.selections,
     playground: input.current.playground,
     existingVfsFiles: workingFiles,
     businessName: input.options?.businessName,
     industry: input.options?.industry,
-    selectedTemplateId: input.options?.selectedTemplateId ?? snapshot?.meta?.templateId ?? undefined,
-    selectedThemeId: input.options?.selectedThemeId ?? snapshot?.meta?.themePresetId ?? undefined,
-    themePresetId: input.options?.themePresetId ?? snapshot?.meta?.themePresetId ?? undefined,
+    selectedTemplateId:
+      input.options?.selectedTemplateId ?? snapshot?.meta?.templateId ?? sealed.templateId ?? undefined,
+    selectedThemeId: input.options?.selectedThemeId ?? themePresetId,
+    themePresetId,
     themeTokens: input.options?.themeTokens ?? snapshot?.themeTokens,
     compiledContract: input.options?.compiledContract,
   };
 }
+
 
 function applyPresentationOps(
   snapshot: SiteBundleSnapshot | null | undefined,
@@ -1108,9 +1146,31 @@ export async function loadProjectedRevisionForDraft(
 }
 
 /**
+ * Score a candidate revision for revival. Highest score wins; ties break on
+ * recency. Sealed rows (carrying `/.unison/site-bundle-snapshot.json`) come
+ * first because they still hold the authoritative wizard output — later
+ * rejected autosaves are often partial mirrors of the same draft.
+ */
+export function scoreRevivalRevision(row: {
+  status?: unknown;
+  vfs_files?: unknown;
+  site_bundle_snapshot?: unknown;
+}): number {
+  const files = (row.vfs_files as Record<string, string>) ?? {};
+  const fileCount = Object.keys(files).length;
+  if (fileCount === 0) return -1;
+  const snapshot = (row.site_bundle_snapshot ?? {}) as Record<string, unknown>;
+  let score = 0;
+  if (row.status === 'committed') score += 4000;
+  if (files['/.unison/site-bundle-snapshot.json']) score += 2000;
+  if (Object.keys(snapshot).length > 0) score += 1000;
+  return score + Math.min(fileCount, 999);
+}
+
+/**
  * Best-effort projection for a draft whose committed pointer is missing.
- * Prefers a committed revision; otherwise returns the newest revision that
- * still carries VFS files so the wizard output is never stranded.
+ * Returns the highest-scoring revision that still carries VFS files so a
+ * previously generated site is never stranded behind a rejected autosave.
  */
 async function loadRecoveryRevisionForDraft(
   projectId: string,
@@ -1122,15 +1182,22 @@ async function loadRecoveryRevisionForDraft(
     .eq('project_id', projectId)
     .eq('draft_id', draftId)
     .order('created_at', { ascending: false })
-    .limit(20);
+    .limit(50);
   if (error || !Array.isArray(data) || data.length === 0) return null;
   const rows = data as Record<string, unknown>[];
-  const hasFiles = (row: Record<string, unknown>) =>
-    Object.keys((row.vfs_files as Record<string, string>) ?? {}).length > 0;
-  const committed = rows.find((row) => row.status === 'committed' && hasFiles(row));
-  const usable = committed ?? rows.find(hasFiles);
-  return usable ? mapRevisionRow(usable) : null;
+  let best: Record<string, unknown> | null = null;
+  let bestScore = 0;
+  for (const row of rows) {
+    const score = scoreRevivalRevision(row);
+    // rows arrive newest-first, so strict `>` keeps the newest of equal scores
+    if (score > 0 && score > bestScore) {
+      best = row;
+      bestScore = score;
+    }
+  }
+  return best ? mapRevisionRow(best) : null;
 }
+
 
 /**
  * Move D — publish flow loads the latest revision whose publish gate +

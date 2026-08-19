@@ -16,6 +16,8 @@
  * It is intentionally idempotent: running it on a healthy draft is a no-op.
  */
 import { supabase } from '@/integrations/supabase/client';
+import { scoreRevivalRevision } from '@/services/vfsCommitService';
+
 
 export interface DraftBusinessRepairResult {
   repaired: boolean;
@@ -115,21 +117,70 @@ async function ensureProjectMembership(projectId: string, userId: string): Promi
   }
 }
 
+/**
+ * Revival source: a draft can lose its own `vfs_files` mirror (interrupted
+ * autosave, cleared draft row) while the generated site still lives in the
+ * revision ledger — including rejected autosaves, which carry the full VFS.
+ * Pull the newest usable revision so previously generated sites are never lost.
+ */
+async function loadRevivalRevision(
+  projectId: string,
+  draftId: string,
+): Promise<{ vfsFiles: Record<string, string>; snapshot: Record<string, unknown> } | null> {
+  const { data, error } = await supabase
+    .from('site_revisions')
+    .select('vfs_files, site_bundle_snapshot, status, created_at')
+    .eq('project_id', projectId)
+    .eq('draft_id', draftId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error || !Array.isArray(data) || data.length === 0) return null;
+  const rows = data as Record<string, unknown>[];
+  let best: Record<string, unknown> | null = null;
+  let bestScore = 0;
+  for (const row of rows) {
+    const score = scoreRevivalRevision(row);
+    if (score > 0 && score > bestScore) {
+      best = row;
+      bestScore = score;
+    }
+  }
+  if (!best) return null;
+  return {
+    vfsFiles: asRecord(best.vfs_files) as Record<string, string>,
+    snapshot: asRecord(best.site_bundle_snapshot),
+  };
+
+}
+
 async function backfillCommittedRevision(
   draft: DraftRow,
   businessId: string,
   projectId: string,
   notes: string[],
 ): Promise<{ revisionId: string | null; empty: boolean }> {
-  const vfsFiles = asRecord(draft.vfs_files) as Record<string, string>;
   const metadata = asRecord(draft.metadata);
-  const snapshot = asRecord(metadata.siteBundleSnapshot);
+  let vfsFiles = asRecord(draft.vfs_files) as Record<string, string>;
+  let snapshot = asRecord(metadata.siteBundleSnapshot);
+
+  if (Object.keys(vfsFiles).length === 0) {
+    const revived = await loadRevivalRevision(projectId, draft.id);
+    if (revived) {
+      vfsFiles = revived.vfsFiles;
+      if (Object.keys(snapshot).length === 0) snapshot = revived.snapshot;
+      notes.push('Revived the generated site from the project revision history.');
+    }
+  }
+
   const activePagePath =
-    typeof metadata.activePagePath === 'string' && metadata.activePagePath.trim()
+    typeof metadata.activePagePath === 'string'
+    && metadata.activePagePath.trim()
+    && vfsFiles[metadata.activePagePath.trim()]
       ? metadata.activePagePath.trim()
       : Object.keys(vfsFiles).find((path) => /\/(pages\/)?(Home|Index)\.tsx$/i.test(path))
         || Object.keys(vfsFiles).find((path) => path.endsWith('.tsx'))
         || '';
+
 
   if (Object.keys(vfsFiles).length === 0 || !activePagePath || !vfsFiles[activePagePath]) {
     notes.push('This project has no generated site content yet.');

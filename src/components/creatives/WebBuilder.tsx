@@ -6204,13 +6204,32 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
   console.log('[WebBuilder] About to return JSX...');
 
-  const builderRuntimeContext = normalizeUnisonRuntimeContext(
-    hydratedRevision
-      ? (hydratedRevision.siteBundleSnapshot as SiteBundleSnapshot | null)?.appContext?.runtimeContext
-      : effectiveRouteState?.runtimeManifest?.appContext?.runtimeContext
-        ?? effectiveRouteState?.siteBundleSnapshot?.appContext?.runtimeContext
-        ?? launch?.runtimeManifest?.appContext?.runtimeContext,
-  );
+  const persistedRuntimeContext = hydratedRevision
+    ? (hydratedRevision.siteBundleSnapshot as SiteBundleSnapshot | null)?.appContext?.runtimeContext
+    : effectiveRouteState?.runtimeManifest?.appContext?.runtimeContext
+      ?? effectiveRouteState?.siteBundleSnapshot?.appContext?.runtimeContext
+      ?? launch?.runtimeManifest?.appContext?.runtimeContext;
+  // Revival: older / recovered revisions predate the persisted runtime context
+  // (or were committed before appContext existed). Rather than declaring the
+  // site unrecoverable, rebuild the tenant identity from the revision row —
+  // the revision already carries the durable business/project/draft triple.
+  const revivedRuntimeContext = hydratedRevision
+    ? {
+        workspaceId: hydratedRevision.businessId,
+        businessId: hydratedRevision.businessId,
+        projectId: hydratedRevision.projectId,
+        websiteId: hydratedRevision.draftId,
+        snapshotId:
+          (hydratedRevision.siteBundleSnapshot as SiteBundleSnapshot | null)?.snapshotId
+          || hydratedRevision.id,
+        environment: 'builder' as const,
+        revisionId: hydratedRevision.id,
+      }
+    : undefined;
+  const builderRuntimeContext =
+    normalizeUnisonRuntimeContext(persistedRuntimeContext)
+    ?? normalizeUnisonRuntimeContext(revivedRuntimeContext);
+
   const projectRuntime = useMemo(() => {
     if (
       !hydratedRevision

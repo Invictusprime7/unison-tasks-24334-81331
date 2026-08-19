@@ -156,6 +156,12 @@ import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeCon
 import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
 import { planLaunchFormDefinitions } from '@/services/launchFormDefinitions';
 import { persistLaunchFormDefinitions } from '@/services/launchFormDefinitionPersistence';
+import {
+  scopeLaneBBatchFiles,
+  findUnresolvedLocalImports,
+  describeUnresolvedImports,
+} from '@/services/laneBCompanionModules';
+
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";

@@ -446,14 +446,18 @@ export function recompileFromPlayground(
     for (const v of validations.filter(v => v.severity === 'warning')) warnings.push(v.message);
   }
 
-  // Recover wizardSeedId from the existing snapshot so recompiles preserve
-  // chain-of-custody back to the original wizard payload.
+  // Recover wizardSeedId + sealed art direction from the existing snapshot so
+  // recompiles preserve chain-of-custody back to the original wizard payload.
   let recoveredSeedId: string | undefined;
+  let sealedPackId: string | undefined;
   try {
     const snapRaw = existingVfsFiles['/.unison/site-bundle-snapshot.json'];
     if (snapRaw) {
-      const snap = JSON.parse(snapRaw) as { meta?: { wizardSeedId?: string } };
+      const snap = JSON.parse(snapRaw) as {
+        meta?: { wizardSeedId?: string; artDirectionPackId?: string | null };
+      };
       recoveredSeedId = snap?.meta?.wizardSeedId;
+      sealedPackId = snap?.meta?.artDirectionPackId || undefined;
     }
   } catch { /* ignore */ }
 
@@ -476,11 +480,14 @@ export function recompileFromPlayground(
     themePresetId,
     wizardSeedId: recoveredSeedId,
   });
-  // Art direction is read back from the sealed brief — never re-derived here.
+  // Art direction is read back from the sealed snapshot meta first, then the
+  // sealed design intervention — never re-derived here.
+  const recompileArtDirectionPackId =
+    sealedPackId || designIntervention.artDirectionPackId;
   const themedCss = buildThemedIndexCssFromTokens(options.themeTokens, {
     presetId: themePresetId,
     label: themePresetId,
-    artDirectionPackId: designIntervention.artDirectionPackId,
+    artDirectionPackId: recompileArtDirectionPackId,
   });
   if (!themedCss.includes('--primary:') || !themedCss.includes(SHADCN_LIBRARY_CSS_MARKER)) {
     throw new Error('[canonicalPipeline] Recompile Stage 4b did not produce the canonical shadcn stylesheet.');

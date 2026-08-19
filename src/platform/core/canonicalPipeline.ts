@@ -65,6 +65,7 @@ import {
   type WizardGenerationBrief,
 } from '@/services/wizardGenerationBrief';
 import { createWizardCompileArtifact, type WizardCompileArtifact } from './snapshotSeal';
+import { isArtDirectionPackId } from '@/sections/variants/artDirectionPacks';
 
 
 // ============================================================================

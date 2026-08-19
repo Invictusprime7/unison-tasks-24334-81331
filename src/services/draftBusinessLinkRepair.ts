@@ -47,6 +47,16 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function snapshotFromVfs(vfsFiles: Record<string, string>): Record<string, unknown> {
+  const raw = vfsFiles['/.unison/site-bundle-snapshot.json'];
+  if (!raw) return {};
+  try {
+    return asRecord(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
 async function resolveOwningBusiness(
   draft: DraftRow,
   projectBusinessId: string | null,
@@ -146,9 +156,13 @@ async function loadRevivalRevision(
     }
   }
   if (!best) return null;
+  const vfsFiles = asRecord(best.vfs_files) as Record<string, string>;
+  const persistedSnapshot = asRecord(best.site_bundle_snapshot);
   return {
-    vfsFiles: asRecord(best.vfs_files) as Record<string, string>,
-    snapshot: asRecord(best.site_bundle_snapshot),
+    vfsFiles,
+    snapshot: Object.keys(persistedSnapshot).length > 0
+      ? persistedSnapshot
+      : snapshotFromVfs(vfsFiles),
   };
 
 }
@@ -170,6 +184,10 @@ async function backfillCommittedRevision(
       if (Object.keys(snapshot).length === 0) snapshot = revived.snapshot;
       notes.push('Revived the generated site from the project revision history.');
     }
+  }
+
+  if (Object.keys(snapshot).length === 0) {
+    snapshot = snapshotFromVfs(vfsFiles);
   }
 
   const activePagePath =
@@ -207,7 +225,9 @@ async function backfillCommittedRevision(
       p_business_id: businessId,
       p_draft_id: draft.id,
       p_parent_revision_id: draft.last_revision_id,
-      p_source: 'system-repair',
+      // `system-restore` is the canonical recovery source accepted by the
+      // site_revisions ledger. Keep repair inside the existing source contract.
+      p_source: 'system-restore',
       p_status: 'committed',
       p_patch_json: {},
       p_vfs_files: vfsFiles,

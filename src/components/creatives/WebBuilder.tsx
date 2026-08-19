@@ -3989,7 +3989,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           },
           current: {
             vfsFiles: currentVfsFiles,
-            siteBundleSnapshot: hydratedRevision?.siteBundleSnapshot ?? undefined,
+            siteBundleSnapshot: autosaveSnapshot ?? undefined,
+            // Non-wizard commits recompile from the canonical playground; without
+            // it commitToPipeline throws and every autosave persists a `rejected`
+            // revision, leaving builder_drafts.last_revision_id null (the draft
+            // then looks "lost" on reopen). Prefer the live registry, fall back to
+            // the hydrated revision's playground projection.
+            playground: (autosavePlayground ?? undefined) as never,
             activePagePath,
           },
           patch: legacyFilesToPatchPlan(currentVfsFiles, `Autosave: ${reason}`),

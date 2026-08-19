@@ -1167,6 +1167,23 @@ export function scoreRevivalRevision(row: {
   return score + Math.min(fileCount, 999);
 }
 
+function snapshotFromRevisionFiles(
+  files: Record<string, string>,
+  persistedSnapshot: unknown,
+): unknown {
+  const persisted = persistedSnapshot && typeof persistedSnapshot === 'object'
+    ? persistedSnapshot as Record<string, unknown>
+    : {};
+  if (Object.keys(persisted).length > 0) return persisted;
+  const raw = files['/.unison/site-bundle-snapshot.json'];
+  if (!raw) return persistedSnapshot;
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return persistedSnapshot;
+  }
+}
+
 /**
  * Best-effort projection for a draft whose committed pointer is missing.
  * Returns the highest-scoring revision that still carries VFS files so a
@@ -1195,7 +1212,12 @@ async function loadRecoveryRevisionForDraft(
       bestScore = score;
     }
   }
-  return best ? mapRevisionRow(best) : null;
+  if (!best) return null;
+  const files = (best.vfs_files as Record<string, string>) ?? {};
+  return mapRevisionRow({
+    ...best,
+    site_bundle_snapshot: snapshotFromRevisionFiles(files, best.site_bundle_snapshot),
+  });
 }
 
 

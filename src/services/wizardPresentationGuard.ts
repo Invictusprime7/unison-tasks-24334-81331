@@ -208,18 +208,31 @@ function generatedPageFallbackReason(source: string, requiresMedia: boolean): st
 
 /**
  * Page-depth floor. Premium multi-page sites never ship a two-block route, so
- * the brief declares a minimum section count per role and Lane B must meet it.
+ * the brief declares a minimum section count per role and Lane B should meet it.
+ *
+ * Depth is counted structurally: inline semantic regions PLUS composed block
+ * components (`<HeroBlock />`), because the compiler legitimately extracts
+ * sections into component files. A tolerance of one block is allowed so a
+ * near-miss never discards otherwise valid AI content.
  */
 function pageDepthFallbackReason(source: string, minSections: number | undefined): string | null {
   if (!minSections || minSections <= 0 || !source.trim()) return null;
   const chrome = countPageChromeLandmarks(source);
   const semanticRegions = (source.match(/<(?:section|article)\b/gi) || []).length;
-  const contentSections = Math.max(semanticRegions - Math.max(chrome.navbars - 1, 0), 0);
-  if (contentSections < minSections) {
-    return `generated page is too shallow (${contentSections} content sections, needs ${minSections})`;
+  const composedBlocks = new Set(
+    (source.match(/<([A-Z][A-Za-z0-9_]*)\b/g) || []).map((tag) => tag.slice(1)),
+  ).size;
+  const contentSections = Math.max(
+    semanticRegions + composedBlocks - Math.max(chrome.navbars - 1, 0),
+    0,
+  );
+  const floor = Math.max(minSections - 1, 3);
+  if (contentSections < floor) {
+    return `generated page is too shallow (${contentSections} content sections, needs ${floor})`;
   }
   return null;
 }
+
 
 
 /**

@@ -16,6 +16,8 @@
  * It is intentionally idempotent: running it on a healthy draft is a no-op.
  */
 import { supabase } from '@/integrations/supabase/client';
+import { scoreRevivalRevision } from '@/services/vfsCommitService';
+
 
 export interface DraftBusinessRepairResult {
   repaired: boolean;

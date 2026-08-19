@@ -121,6 +121,10 @@ export async function runProviderLoop(opts: {
   // must NOT mask the real failure — the client would show "rate limited" even
   // though the actual cause was a timeout on a different provider.
   let hadNonRateLimitError = false;
+  // True once any direct provider reports a billing/quota-exhausted 429. Those
+  // keys cannot recover within this request, so the managed gateway becomes the
+  // only path that can answer and must get the whole remaining budget.
+  let directQuotaExhausted = false;
   const recordProviderError = (label: string, detail: string) => {
     const message = `${label}: ${detail}`;
     providerErrors.push(message);
@@ -128,7 +132,11 @@ export async function runProviderLoop(opts: {
     if (!/429|rate limit|402|payment required/i.test(detail)) {
       hadNonRateLimitError = true;
     }
+    if (!/gateway/i.test(label) && isQuotaExhausted(detail)) {
+      directQuotaExhausted = true;
+    }
   };
+
 
   const createAttemptSignal = (timeoutMs: number) => {
     const controller = new AbortController();
@@ -624,10 +632,12 @@ export async function runProviderLoop(opts: {
   if (!content && hasLastResortGateway) {
     const remaining = budgetRemaining();
     if (remaining >= 8_000) {
-      // The gateway needs ~30 s to respond for large wizard-seed prompts
-      // (observed: success at 29 s with a 30 s planned-model timeout). The
-      // previous 25 s cap aborted the gateway just before it could complete.
-      const perModelMs = Math.min(35_000, Math.max(8_000, remaining - 2_000));
+      // The gateway needs ~30 s for large wizard-seed prompts. When the direct
+      // keys are billing-exhausted the gateway is the ONLY provider that can
+      // answer, so it gets the entire remaining budget instead of a 35 s slice.
+      const gatewayCapMs = directQuotaExhausted ? Number.MAX_SAFE_INTEGER : 35_000;
+      const perModelMs = Math.min(gatewayCapMs, Math.max(8_000, remaining - 2_000));
+
       const gatewayModel: ModelSpec = {
         id: 'google/gemini-3.6-flash',
         maxTokens: Math.min(providerPlan.fallbackMaxTokens, 32_000),

@@ -243,6 +243,7 @@ export function buildWizardGenerationBrief(input: {
     .map((page) => {
       const role = normalizeWizardPageRole(page.pageRole || page.pageType || (page.isHome ? 'home' : 'custom'));
       const title = generationTitle(role, page.title);
+      const depth = routeDepth(role);
       return {
         pageId: page.pageId,
         path: page.filePath,
@@ -255,6 +256,8 @@ export function buildWizardGenerationBrief(input: {
           mustDifferFromHome: !page.isHome,
           geometry: homeHeroGeometry,
         },
+        depth,
+        signature: routeSignature(seed, page.pageId, role, depth.minSections),
       };
     });
 
@@ -268,6 +271,10 @@ export function buildWizardGenerationBrief(input: {
     },
     routes,
     homeHeroGeometry,
+    depth: {
+      rule: 'Every route must render at least its declared minSections content sections (hero excluded from the floor only when the page declares 4). Never ship a page with two or three blocks. Each page follows its own surfaceRhythm and ctaEmphasis so no two pages of this site read the same, and no page reuses another page\'s section order.',
+    },
+
     geometry: {
       source: 'selected-style-card',
       themePresetId: input.themePresetId || null,

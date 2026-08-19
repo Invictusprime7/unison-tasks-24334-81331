@@ -1156,6 +1156,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     });
   }, []);
 
+  // Canonical identity backfill. A wizard/launcher handoff (or a resumed
+  // session) can arrive with only a subset of {projectId, businessId,
+  // draftId}. Every commit gate (autosave, AI apply, presentation ops) is
+  // all-or-nothing on that triple, so a single missing field silently
+  // disables in-builder AI editing. Recover the missing pieces from the
+  // canonical `builder_drafts` row instead of failing closed.
+  const [identityBackfill, setIdentityBackfill] = useState<{
+    projectId?: string;
+    businessId?: string;
+  }>({});
+
   // Pass 2 (identity hardening): resolved real projects.id for the active
   // draft. Used to construct BuilderIdentity at commit/deploy/AI-apply
   // boundaries instead of aliasing the draft id as projectId.
@@ -1163,7 +1174,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     templateFiles.currentProjectId ||
     (effectiveRouteState?.projectId as string | undefined) ||
     (effectiveRouteState?.returnProjectId as string | undefined) ||
+    identityBackfill.projectId ||
     null;
+
 
   const hydrateSavedTemplate = useCallback((template: {
     id: string;

@@ -38,6 +38,8 @@ import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditRein
 import { buildCodeModePrompt } from "./prompts/codePrompt.ts";
 import { buildTemplateJsonPrompt, buildTemplateHtmlPrompt, buildTemplateReactPrompt } from "./prompts/templatePrompts.ts";
 import { buildEditAssistantPrompt, buildDebugAssistantPrompt, buildGeneralBuilderPrompt } from "./prompts/builderPrompts.ts";
+import { buildDesignDirectorDirective } from "./prompts/designDirector.ts";
+
 import { generateImageIfNeeded } from "./imageGeneration.ts";
 import { runProviderLoop } from "./aiProviderLoop.ts";
 import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext, detectIssueHint } from "./contextCompactor.ts";

@@ -33,8 +33,27 @@ export interface WizardGenerationBrief {
       mustDifferFromHome: boolean;
       geometry: WizardHeroGeometry;
     };
+    /**
+     * Page-depth floor. A premium multi-page site never ships a two-block
+     * page: every route declares how many content sections it must contain.
+     */
+    depth: { minSections: number; maxSections: number };
+    /**
+     * Seeded, per-page anti-repetition signature. Derived deterministically
+     * from the canonical generation seed so two pages of the same site never
+     * repeat the same rhythm, and two launches of the same wizard answers
+     * reproduce byte-identically.
+     */
+    signature: {
+      surfaceRhythm: string;
+      ctaEmphasis: string;
+      sectionOrder: string[];
+    };
   }>;
   homeHeroGeometry: WizardHeroGeometry;
+  /** Cross-page contract the AI must satisfy for every route. */
+  depth: { rule: string };
+
   /**
    * Geometry is delegated to the aesthetic selection: these are the resolved
    * CSS variables for the selected style card. Generated pages must reference

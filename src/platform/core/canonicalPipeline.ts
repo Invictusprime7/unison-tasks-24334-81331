@@ -301,6 +301,12 @@ export function executeCanonicalPipeline(
     templateId: selections.templateId,
     themePresetId,
     wizardSeedId: selections.wizardSeedId,
+    // Every wizard dimension feeds the canonical generation seed so goals and
+    // page selections materially change the composition — not just the theme.
+    primaryGoal: selections.primaryGoal,
+    secondaryGoals: selections.secondaryGoals,
+    requestedPages: selections.requestedPages,
+    projectId: selections.businessId,
     needsBooking: selections.needsBooking,
     sellsProducts: selections.sellsProducts,
     wantsLeadCapture: selections.wantsLeadCapture,

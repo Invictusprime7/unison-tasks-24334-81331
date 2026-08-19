@@ -3341,7 +3341,39 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           return false;
         }
 
+        // Companion modules: Lane B may author supporting modules alongside the
+        // page. Keep them, then verify the page's relative imports all resolve
+        // against the merged VFS before admitting it. A page whose companions
+        // are missing cannot compile and would blow up preview prep.
+        const { companions: acceptedCompanions } = scopeLaneBBatchFiles(
+          candidateFiles as Record<string, unknown>,
+          [normalizedPath],
+        );
+        const closureUnresolved = findUnresolvedLocalImports(
+          {
+            ...canonicalScaffoldFiles,
+            ...aiSourcedFiles,
+            ...acceptedCompanions,
+            [normalizedPath]: normalizedCandidate,
+          },
+          [normalizedPath],
+        );
+        if (closureUnresolved.length > 0) {
+          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt,
+            accepted: false,
+            reason: `Page imports modules that were not authored: ${describeUnresolvedImports(closureUnresolved)}`,
+          });
+          return false;
+        }
+
+        for (const [companionPath, companionSource] of Object.entries(acceptedCompanions)) {
+          if (!aiSourcedFiles[companionPath]) aiSourcedFiles[companionPath] = companionSource;
+        }
         aiSourcedFiles[normalizedPath] = normalizedCandidate;
+
         if (!laneBRepairedPaths.includes(normalizedPath)) {
           laneBRepairedPaths.push(normalizedPath);
         }

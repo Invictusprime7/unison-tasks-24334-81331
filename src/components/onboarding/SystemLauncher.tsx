@@ -2585,15 +2585,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   batchResult.data as Record<string, unknown> | null,
                   `${brand} ${system.name}`,
                 );
-                const requestedPaths = new Set(batch.map((path) => (
-                  path.startsWith('/') ? path : `/${path}`
-                )));
-                const scopedFiles = Object.fromEntries(
-                  Object.entries(batchStructured?.files || {})
-                    .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content] as const)
-                    .filter(([path]) => requestedPaths.has(path)),
+                const { pages: scopedPages, companions } = scopeLaneBBatchFiles(
+                  (batchStructured?.files || {}) as Record<string, unknown>,
+                  batch,
                 );
-                return { files: scopedFiles };
+                return { files: { ...companions, ...scopedPages } };
+
               } catch (batchThrow) {
                 completedBatches += 1;
                 setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);

@@ -10,7 +10,7 @@ function registryWithPages() {
   const about = createBuilderPage('about', 'About', '/about', 'about', {
     showInNav: true, navOrder: 1, filePath: '/src/pages/About.tsx',
   });
-  const services = createBuilderPage('services', 'Services', '/services', 'services', {
+  const services = createBuilderPage('services', 'Services', '/services', 'custom', {
     showInNav: true, navOrder: 2, filePath: '/src/pages/Services.tsx',
   });
   registry.pages = { home, about, services };
@@ -33,7 +33,7 @@ describe('wizard generation brief — depth + anti-repetition', () => {
       expect(route.depth.minSections).toBeGreaterThanOrEqual(4);
       expect(route.depth.maxSections).toBeGreaterThan(route.depth.minSections);
       expect(route.signature.sectionOrder.length).toBeGreaterThanOrEqual(4);
-      expect(route.signature.sectionOrder.at(-1)).toBe('cta');
+      expect(route.signature.sectionOrder[route.signature.sectionOrder.length - 1]).toBe('cta');
     }
     expect(brief.routes.find((r) => r.role === 'home')?.depth.minSections).toBe(6);
   });

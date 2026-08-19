@@ -2636,7 +2636,22 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         }
         console.log('[WebBuilder] hydrated from site_revisions:', revision.id, Object.keys(files).length, 'files');
         const currentFiles = virtualFSRef.current.getSandpackFiles();
-        if (computeBuilderVfsSignature(currentFiles) !== computeBuilderVfsSignature(files)) {
+        const routeFiles = effectiveRouteState?.vfsFiles || {};
+        const routeCarriesHydratedRevision = Boolean(
+          effectiveRouteState?.revisionId === revision.id
+          && Object.keys(routeFiles).length > 0,
+        );
+        // Wizard handoff already carries commitMutation's exact persisted VFS.
+        // Its synchronous route-state importer owns first paint; replaying the
+        // same revision through this async effect creates a last-writer-wins
+        // race with snapshot projection/router hydration and can replace the
+        // generated pages just as Sandpack starts compiling. Keep loading the
+        // revision for identity/runtime metadata, but do not write its files a
+        // second time when navigation state names that exact revision.
+        if (
+          !routeCarriesHydratedRevision
+          && computeBuilderVfsSignature(currentFiles) !== computeBuilderVfsSignature(files)
+        ) {
           importBuilderFiles(files, { entryPoint: launchEntryPoint });
         }
         setHydratedRevision(revision);

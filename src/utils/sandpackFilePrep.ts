@@ -4446,6 +4446,38 @@ function buildCanonicalWizardChromeModules(): Record<string, string> {
  * can find and replace it. This matches the no-op default-export safety net in
  * `repairLocalImportContracts`.
  */
+/**
+ * Type-only imports (`import type { X } from './x'` or `import { type X }`)
+ * are erased at runtime, so a missing target must never fail a wizard launch.
+ * We satisfy them with a permissive declaration module instead.
+ */
+export function isTypeOnlyImportStatement(statement: string): boolean {
+  if (/^\s*import\s+type\b/.test(statement)) return true;
+  const named = statement.match(/\{([^}]*)\}/)?.[1];
+  if (!named) return false;
+  const specifiers = named.split(',').map((entry) => entry.trim()).filter(Boolean);
+  return specifiers.length > 0 && specifiers.every((entry) => /^type\s+/.test(entry));
+}
+
+export function buildTypeOnlyModuleSource(statement: string, importPath: string): string {
+  const named = statement.match(/\{([^}]*)\}/)?.[1] ?? '';
+  const names = named
+    .split(',')
+    .map((entry) => entry.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0]?.trim())
+    .filter((name): name is string => !!name && /^[A-Za-z_$][\w$]*$/.test(name));
+  const defaultName = statement.match(/import\s+type\s+([A-Za-z_$][\w$]*)/)?.[1];
+
+  const lines = [
+    `// Auto-synthesized type module for unresolved type-only import "${importPath}".`,
+    ...names.map((name) => `export type ${name} = Record<string, unknown>;`),
+  ];
+  if (defaultName) {
+    lines.push(`type ${defaultName} = Record<string, unknown>;`, `export default ${defaultName};`);
+  }
+  lines.push('export {};', '');
+  return lines.join('\n');
+}
+
 function synthesizeMissingLocalImports(
   sandpackFiles: Record<string, string>,
   options: {

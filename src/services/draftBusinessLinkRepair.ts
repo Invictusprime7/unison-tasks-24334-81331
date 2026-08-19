@@ -134,16 +134,21 @@ async function loadRevivalRevision(
     .limit(50);
   if (error || !Array.isArray(data) || data.length === 0) return null;
   const rows = data as Record<string, unknown>[];
-  const files = (row: Record<string, unknown>) => asRecord(row.vfs_files) as Record<string, string>;
-  const hasFiles = (row: Record<string, unknown>) => Object.keys(files(row)).length > 0;
-  const hasSnapshot = (row: Record<string, unknown>) =>
-    Object.keys(asRecord(row.site_bundle_snapshot)).length > 0;
-  const usable =
-    rows.find((row) => row.status === 'committed' && hasFiles(row) && hasSnapshot(row))
-    ?? rows.find((row) => hasFiles(row) && hasSnapshot(row))
-    ?? rows.find(hasFiles);
-  if (!usable) return null;
-  return { vfsFiles: files(usable), snapshot: asRecord(usable.site_bundle_snapshot) };
+  let best: Record<string, unknown> | null = null;
+  let bestScore = 0;
+  for (const row of rows) {
+    const score = scoreRevivalRevision(row);
+    if (score > 0 && score > bestScore) {
+      best = row;
+      bestScore = score;
+    }
+  }
+  if (!best) return null;
+  return {
+    vfsFiles: asRecord(best.vfs_files) as Record<string, string>,
+    snapshot: asRecord(best.site_bundle_snapshot),
+  };
+
 }
 
 async function backfillCommittedRevision(

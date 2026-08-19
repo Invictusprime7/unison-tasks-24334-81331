@@ -47,6 +47,7 @@ import {
 import { fixJsxVoidElements, fixJsxStyleStrings } from "@/utils/aiCodeCleaner";
 import { applyDesignProfileToTemplate } from "@/utils/designPatternExtractor";
 import { generateDesignVariation, randomFontPairing } from "@/utils/designVariation";
+import { deriveGenerationSeed } from "@/platform/core/generationSeed";
 import { useLaunch } from "@/contexts/useLaunchHooks";
 import type { SystemsBuildContext } from "@/types/systemsBuildContext";
 import { createLaunchState } from "@/types/launchState";
@@ -275,8 +276,16 @@ function buildContractAndContext(chipId: string, prompt: string, businessName?: 
   }
 
   // Convert to edge function's expected format (SystemsBuildContext shape)
-  const fonts = randomFontPairing();
-  const design = generateDesignVariation();
+  // Deterministic from the request identity — same prompt/industry/name
+  // reproduces the same visual variation.
+  const generationSeed = deriveGenerationSeed({
+    businessName: name,
+    industry: canonicalIndustry,
+    primaryGoal: blueprint.capabilities.primaryGoal,
+    launchNonce: prompt,
+  });
+  const fonts = randomFontPairing(generationSeed);
+  const design = generateDesignVariation(generationSeed);
   const compositionMeta = getCompositionMeta(getCategoryForChip(chipId));
 
   const context: SystemsBuildContext = {

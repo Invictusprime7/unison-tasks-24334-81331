@@ -70,6 +70,7 @@ import {
 import {
   generateDesignVariation,
 } from "@/utils/designVariation";
+import { deriveGenerationSeed } from "@/platform/core/generationSeed";
 // (aiCodeCleaner imports removed alongside the wizard fast-path enrichment)
 import { sanitizeGeneratedFiles } from "@/utils/tsxSanitizer";
 import { type LauncherHandoff } from "@/types/runtimeManifest";
@@ -1751,7 +1752,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ...(compositionMeta?.intents || []),
       ]));
 
-      const design = generateDesignVariation();
       const resolvedIndustry = industryProfile?.industry || generationCategory;
       const preselect = selectedSystem ? LAUNCHER_PRESELECTS[selectedSystem] : undefined;
       // Track 4: typed per-vertical contract is the sole source of truth for
@@ -1776,6 +1776,19 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const earlyResolvedPreset = selectedStyle;
       const earlyThemeTokens = themePresetToThemeTokens(earlyResolvedPreset);
       const industryTemplateGuidance = buildTemplateGuidance(effectiveTemplate, resolvedIndustry);
+      // Style variation is resolved from the CANONICAL generation seed, never
+      // from Math.random(): the same wizard answers reproduce the same site.
+      const design = generateDesignVariation(deriveGenerationSeed({
+        businessName,
+        businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
+        industry: resolvedIndustry,
+        templateId: effectiveTemplate?.id,
+        themePresetId: earlyResolvedPreset?.id,
+        primaryGoal: resolvedPrimaryGoal,
+        secondaryGoals: resolvedCustomerNeeds,
+        requestedPages: resolvedRequestedPages,
+        projectId: plannedBusinessId,
+      }));
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};

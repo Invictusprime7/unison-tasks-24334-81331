@@ -156,6 +156,12 @@ import { buildBusinessRuntimeContract } from '@/platform/core/businessRuntimeCon
 import { planSectionDataBindings } from '@/services/autoEmitSectionBindings';
 import { planLaunchFormDefinitions } from '@/services/launchFormDefinitions';
 import { persistLaunchFormDefinitions } from '@/services/launchFormDefinitionPersistence';
+import {
+  scopeLaneBBatchFiles,
+  findUnresolvedLocalImports,
+  describeUnresolvedImports,
+} from '@/services/laneBCompanionModules';
+
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
@@ -2427,18 +2433,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 if (!batchStructured?.files || Object.keys(batchStructured.files).length === 0) {
                   return { error: new Error(`Lane B first-pass batch ${batchNumber} returned no structured files.`) };
                 }
-                const requestedPaths = new Set(batch.map((path) => (
-                  path.startsWith('/') ? path : `/${path}`
-                )));
-                const scopedFiles = Object.fromEntries(
-                  Object.entries(batchStructured.files)
-                    .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content] as const)
-                    .filter(([path]) => requestedPaths.has(path)),
+                // Lane B may author a page AND the companion modules that page
+                // imports. Keep both — dropping companions produces pages that
+                // import modules which do not exist, which fails preview prep.
+                const { pages: scopedPages, companions } = scopeLaneBBatchFiles(
+                  batchStructured.files as Record<string, unknown>,
+                  batch,
                 );
-                if (Object.keys(scopedFiles).length === 0) {
+                if (Object.keys(scopedPages).length === 0) {
                   return { error: new Error(`Lane B first-pass batch ${batchNumber} omitted every requested page file.`) };
                 }
-                return { files: scopedFiles };
+                return { files: { ...companions, ...scopedPages } };
+
               } catch (batchError) {
                 return { error: batchError };
               }
@@ -2585,15 +2591,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   batchResult.data as Record<string, unknown> | null,
                   `${brand} ${system.name}`,
                 );
-                const requestedPaths = new Set(batch.map((path) => (
-                  path.startsWith('/') ? path : `/${path}`
-                )));
-                const scopedFiles = Object.fromEntries(
-                  Object.entries(batchStructured?.files || {})
-                    .map(([path, content]) => [path.startsWith('/') ? path : `/${path}`, content] as const)
-                    .filter(([path]) => requestedPaths.has(path)),
+                const { pages: scopedPages, companions } = scopeLaneBBatchFiles(
+                  (batchStructured?.files || {}) as Record<string, unknown>,
+                  batch,
                 );
-                return { files: scopedFiles };
+                return { files: { ...companions, ...scopedPages } };
+
               } catch (batchThrow) {
                 completedBatches += 1;
                 setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
@@ -3338,7 +3341,39 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           return false;
         }
 
+        // Companion modules: Lane B may author supporting modules alongside the
+        // page. Keep them, then verify the page's relative imports all resolve
+        // against the merged VFS before admitting it. A page whose companions
+        // are missing cannot compile and would blow up preview prep.
+        const { companions: acceptedCompanions } = scopeLaneBBatchFiles(
+          candidateFiles as Record<string, unknown>,
+          [normalizedPath],
+        );
+        const closureUnresolved = findUnresolvedLocalImports(
+          {
+            ...canonicalScaffoldFiles,
+            ...aiSourcedFiles,
+            ...acceptedCompanions,
+            [normalizedPath]: normalizedCandidate,
+          },
+          [normalizedPath],
+        );
+        if (closureUnresolved.length > 0) {
+          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt,
+            accepted: false,
+            reason: `Page imports modules that were not authored: ${describeUnresolvedImports(closureUnresolved)}`,
+          });
+          return false;
+        }
+
+        for (const [companionPath, companionSource] of Object.entries(acceptedCompanions)) {
+          if (!aiSourcedFiles[companionPath]) aiSourcedFiles[companionPath] = companionSource;
+        }
         aiSourcedFiles[normalizedPath] = normalizedCandidate;
+
         if (!laneBRepairedPaths.includes(normalizedPath)) {
           laneBRepairedPaths.push(normalizedPath);
         }
@@ -4015,6 +4050,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // snapshot VFS and returns the exact validated files represented by the
       // cloned SiteBundleSnapshot. This launcher only appends metadata files.
       const wiredVfsFiles = preWiredVfsFiles;
+
+      // Close the local-import contract BEFORE the artifact is sealed. Preview
+      // prep refuses to synthesize placeholders for wizard drafts, so a page
+      // importing an unauthored companion would otherwise surface as a
+      // PreviewPipelineError after handoff (preview falls back to scaffold).
+      const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);
+      if (preSealUnresolvedImports.length > 0) {
+        launchReliabilityMode = 'lane-b-degraded';
+        for (const item of preSealUnresolvedImports.slice(0, 3)) {
+          run.degrade(
+            'preflight',
+            'lane_b.unresolved_module',
+            `${item.filePath.split('/').pop()} references a module that was not generated ("${item.importPath}") — regenerate that page from the AI panel.`,
+            describeUnresolvedImports(preSealUnresolvedImports),
+          );
+        }
+        console.warn('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
+      }
+
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
         console.log(

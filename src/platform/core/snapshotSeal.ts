@@ -128,6 +128,9 @@ export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
     templateId: input.appContext.templateId || baseline.meta?.templateId,
     industry: input.appContext.industry || baseline.meta?.industry || baseline.industry,
     verticalContractId: baseline.meta?.verticalContractId || input.appContext.systemType || null,
+    // The generation seed is sealed exactly as Stage 4b resolved it — sealing
+    // must never re-derive or drop it, or the site stops being reproducible.
+    generationSeed: baseline.meta?.generationSeed || baseline.meta?.designIntervention?.seed,
     interactionManifest: input.interactionManifest || baseline.meta?.interactionManifest,
     themeInjection: {
       version: '1.0',

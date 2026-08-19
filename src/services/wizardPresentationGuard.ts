@@ -219,6 +219,8 @@ export function assessWizardPagePresentations(input: {
   pagePaths: readonly string[];
   homePath?: string;
   requiredHeroGeometry?: WizardHeroGeometry;
+  /** path → minimum number of content sections (page-depth floor). */
+  sectionFloors?: Record<string, number>;
 }): WizardPresentationAssessment {
   const rejections: WizardPageRejection[] = [];
   const reasons: Record<string, string> = {};
@@ -226,6 +228,7 @@ export function assessWizardPagePresentations(input: {
     ? (input.homePath.startsWith('/') ? input.homePath : `/${input.homePath}`)
     : '/src/pages/Home.tsx';
   const canonicalHomePage = input.canonicalFiles[homePath] || input.canonicalFiles[homePath.slice(1)];
+  const floors = input.sectionFloors || {};
 
   for (const rawPath of input.pagePaths) {
     const path = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
@@ -233,7 +236,8 @@ export function assessWizardPagePresentations(input: {
     const canonicalPage = input.canonicalFiles[path] || input.canonicalFiles[path.slice(1)];
     if (!canonicalPage) continue;
     const reason = canonicalPageFallbackReason(generatedPage, canonicalPage) ||
-      heroGeometryFallbackReason(generatedPage, input.requiredHeroGeometry) || (
+      heroGeometryFallbackReason(generatedPage, input.requiredHeroGeometry) ||
+      pageDepthFallbackReason(generatedPage, floors[path] ?? floors[path.slice(1)]) || (
         path === homePath ? null : routeHeroFallbackReason(generatedPage, canonicalPage, canonicalHomePage)
       );
     if (!reason) continue;
@@ -243,3 +247,4 @@ export function assessWizardPagePresentations(input: {
 
   return { rejections, rejectedPaths: rejections.map((r) => r.path), reasons };
 }
+

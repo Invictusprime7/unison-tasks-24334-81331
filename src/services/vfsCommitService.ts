@@ -635,25 +635,63 @@ export async function commitMutation(
 // Internals
 // ----------------------------------------------------------------------------
 
+/**
+ * Recover the *sealed* theme identity that already exists in the working VFS.
+ * This is not a re-derivation or a default: `/.unison/site-bundle-snapshot.json`
+ * is written by Stage 4b and carries the authoritative seal. Reading it lets a
+ * revived draft (whose in-memory snapshot was never rehydrated) keep committing
+ * against its original theme instead of throwing ThemeSeedError forever.
+ */
+function readSealedThemePresetId(
+  files: Record<string, string>,
+): { themePresetId?: string; templateId?: string } {
+  const raw = files['/.unison/site-bundle-snapshot.json'];
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as SiteBundleSnapshot;
+    const meta = parsed?.meta as (SiteBundleSnapshot['meta'] & {
+      seal?: { themePresetId?: string; templateId?: string };
+    }) | undefined;
+    return {
+      themePresetId:
+        meta?.themePresetId
+        || meta?.seal?.themePresetId
+        || meta?.themeInjection?.presetId
+        || undefined,
+      templateId: meta?.templateId || meta?.seal?.templateId || undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 function buildCanonicalInput(
   input: CommitMutationInput,
   workingFiles: Record<string, string>,
   snapshotOverride?: SiteBundleSnapshot | null,
 ): CanonicalCommitInput {
   const snapshot = snapshotOverride ?? input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined;
+  const sealed = readSealedThemePresetId(workingFiles);
+  const themePresetId =
+    input.options?.themePresetId
+    ?? snapshot?.meta?.themePresetId
+    ?? sealed.themePresetId
+    ?? undefined;
   return {
     selections: input.options?.selections,
     playground: input.current.playground,
     existingVfsFiles: workingFiles,
     businessName: input.options?.businessName,
     industry: input.options?.industry,
-    selectedTemplateId: input.options?.selectedTemplateId ?? snapshot?.meta?.templateId ?? undefined,
-    selectedThemeId: input.options?.selectedThemeId ?? snapshot?.meta?.themePresetId ?? undefined,
-    themePresetId: input.options?.themePresetId ?? snapshot?.meta?.themePresetId ?? undefined,
+    selectedTemplateId:
+      input.options?.selectedTemplateId ?? snapshot?.meta?.templateId ?? sealed.templateId ?? undefined,
+    selectedThemeId: input.options?.selectedThemeId ?? themePresetId,
+    themePresetId,
     themeTokens: input.options?.themeTokens ?? snapshot?.themeTokens,
     compiledContract: input.options?.compiledContract,
   };
 }
+
 
 function applyPresentationOps(
   snapshot: SiteBundleSnapshot | null | undefined,

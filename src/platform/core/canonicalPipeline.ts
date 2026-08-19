@@ -472,7 +472,7 @@ export function recompileFromPlayground(
       '[canonicalPipeline] Recompile presentation contract mismatch between SiteBundleSnapshot metadata and VFS mirror.',
     );
   }
-  const designIntervention = snapshotDesignIntervention || mirroredDesignIntervention || buildWizardDesignIntervention({
+  const resolvedDesignIntervention = snapshotDesignIntervention || mirroredDesignIntervention || buildWizardDesignIntervention({
     businessName: businessName || '',
     businessModel: 'general',
     industryOverlay: industry,
@@ -483,7 +483,11 @@ export function recompileFromPlayground(
   // Art direction is read back from the sealed snapshot meta first, then the
   // sealed design intervention — never re-derived here.
   const recompileArtDirectionPackId =
-    sealedPackId || designIntervention.artDirectionPackId;
+    sealedPackId || resolvedDesignIntervention.artDirectionPackId;
+  const designIntervention =
+    recompileArtDirectionPackId === resolvedDesignIntervention.artDirectionPackId
+      ? resolvedDesignIntervention
+      : { ...resolvedDesignIntervention, artDirectionPackId: recompileArtDirectionPackId };
   const themedCss = buildThemedIndexCssFromTokens(options.themeTokens, {
     presetId: themePresetId,
     label: themePresetId,

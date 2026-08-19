@@ -15,6 +15,8 @@
  * before the artifact is sealed.
  */
 
+import { isTypeOnlyImportStatement } from '@/utils/sandpackFilePrep';
+
 const MODULE_EXTENSIONS = ['.tsx', '.jsx', '.ts', '.js'] as const;
 
 /** Files Lane A / Stage 4b owns. Lane B may never overwrite these. */
@@ -136,6 +138,9 @@ export function findUnresolvedLocalImports(
     while ((match = importRegex.exec(content)) !== null) {
       const importPath = match[1];
       if (/\.(css|scss|less|svg|png|jpe?g|webp|gif)$/i.test(importPath)) continue;
+      // Type-only imports are erased at runtime; the preview synthesizes a
+      // declaration module for them, so they never break the import closure.
+      if (isTypeOnlyImportStatement(match[0])) continue;
       if (resolveRelativeModule(filePath, importPath, existingPaths)) continue;
       unresolved.push({ filePath, importPath });
     }

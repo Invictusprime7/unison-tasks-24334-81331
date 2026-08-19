@@ -183,6 +183,12 @@ export interface SiteBundleSnapshotMeta {
   themePresetId?: string | null;
   /** Resolved template id from the wizard Template-card. */
   templateId?: string | null;
+  /**
+   * Sealed ArtDirectionPack id resolved at Stage 4b. Every downstream design
+   * consumer (themed CSS, composition compiler, Lane B brief) reads this id
+   * instead of re-deriving a pack, so the aesthetic cannot drift.
+   */
+  artDirectionPackId?: string | null;
   /** Durable constrained final interaction plan. */
   interactionManifest?: WizardInteractionManifest;
   /** Explicit chain-of-custody for the Stage 4b dynamic theme stylesheet. */
@@ -440,14 +446,18 @@ export function recompileFromPlayground(
     for (const v of validations.filter(v => v.severity === 'warning')) warnings.push(v.message);
   }
 
-  // Recover wizardSeedId from the existing snapshot so recompiles preserve
-  // chain-of-custody back to the original wizard payload.
+  // Recover wizardSeedId + sealed art direction from the existing snapshot so
+  // recompiles preserve chain-of-custody back to the original wizard payload.
   let recoveredSeedId: string | undefined;
+  let sealedPackId: string | undefined;
   try {
     const snapRaw = existingVfsFiles['/.unison/site-bundle-snapshot.json'];
     if (snapRaw) {
-      const snap = JSON.parse(snapRaw) as { meta?: { wizardSeedId?: string } };
+      const snap = JSON.parse(snapRaw) as {
+        meta?: { wizardSeedId?: string; artDirectionPackId?: string | null };
+      };
       recoveredSeedId = snap?.meta?.wizardSeedId;
+      sealedPackId = snap?.meta?.artDirectionPackId || undefined;
     }
   } catch { /* ignore */ }
 
@@ -462,7 +472,7 @@ export function recompileFromPlayground(
       '[canonicalPipeline] Recompile presentation contract mismatch between SiteBundleSnapshot metadata and VFS mirror.',
     );
   }
-  const designIntervention = snapshotDesignIntervention || mirroredDesignIntervention || buildWizardDesignIntervention({
+  const resolvedDesignIntervention = snapshotDesignIntervention || mirroredDesignIntervention || buildWizardDesignIntervention({
     businessName: businessName || '',
     businessModel: 'general',
     industryOverlay: industry,
@@ -470,11 +480,19 @@ export function recompileFromPlayground(
     themePresetId,
     wizardSeedId: recoveredSeedId,
   });
-  // Art direction is read back from the sealed brief — never re-derived here.
+  // Art direction is read back from the sealed snapshot meta first, then the
+  // sealed design intervention — never re-derived here.
+  const recompileArtDirectionPackId = isArtDirectionPackId(sealedPackId)
+    ? sealedPackId
+    : resolvedDesignIntervention.artDirectionPackId;
+  const designIntervention =
+    recompileArtDirectionPackId === resolvedDesignIntervention.artDirectionPackId
+      ? resolvedDesignIntervention
+      : { ...resolvedDesignIntervention, artDirectionPackId: recompileArtDirectionPackId };
   const themedCss = buildThemedIndexCssFromTokens(options.themeTokens, {
     presetId: themePresetId,
     label: themePresetId,
-    artDirectionPackId: designIntervention.artDirectionPackId,
+    artDirectionPackId: recompileArtDirectionPackId,
   });
   if (!themedCss.includes('--primary:') || !themedCss.includes(SHADCN_LIBRARY_CSS_MARKER)) {
     throw new Error('[canonicalPipeline] Recompile Stage 4b did not produce the canonical shadcn stylesheet.');
@@ -642,6 +660,8 @@ function projectToSiteBundleSnapshot(
       verticalContractId: resolvedSystemId,
       themePresetId: resolvedThemePresetId,
       templateId: resolvedTemplateId,
+      artDirectionPackId:
+        (designIntervention || selections.designIntervention)?.artDirectionPackId ?? null,
       wizardSeedId: selections.wizardSeedId ?? undefined,
       generationSeed: (designIntervention || selections.designIntervention)?.seed,
       interactionManifest: selections.interactionManifest,

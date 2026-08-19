@@ -482,8 +482,9 @@ export function recompileFromPlayground(
   });
   // Art direction is read back from the sealed snapshot meta first, then the
   // sealed design intervention — never re-derived here.
-  const recompileArtDirectionPackId =
-    sealedPackId || resolvedDesignIntervention.artDirectionPackId;
+  const recompileArtDirectionPackId = isArtDirectionPackId(sealedPackId)
+    ? sealedPackId
+    : resolvedDesignIntervention.artDirectionPackId;
   const designIntervention =
     recompileArtDirectionPackId === resolvedDesignIntervention.artDirectionPackId
       ? resolvedDesignIntervention

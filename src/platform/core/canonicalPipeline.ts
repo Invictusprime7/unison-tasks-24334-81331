@@ -183,6 +183,12 @@ export interface SiteBundleSnapshotMeta {
   themePresetId?: string | null;
   /** Resolved template id from the wizard Template-card. */
   templateId?: string | null;
+  /**
+   * Sealed ArtDirectionPack id resolved at Stage 4b. Every downstream design
+   * consumer (themed CSS, composition compiler, Lane B brief) reads this id
+   * instead of re-deriving a pack, so the aesthetic cannot drift.
+   */
+  artDirectionPackId?: string | null;
   /** Durable constrained final interaction plan. */
   interactionManifest?: WizardInteractionManifest;
   /** Explicit chain-of-custody for the Stage 4b dynamic theme stylesheet. */

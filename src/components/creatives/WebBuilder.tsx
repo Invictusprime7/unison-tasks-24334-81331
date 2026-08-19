@@ -1156,6 +1156,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     });
   }, []);
 
+  // Canonical identity backfill. A wizard/launcher handoff (or a resumed
+  // session) can arrive with only a subset of {projectId, businessId,
+  // draftId}. Every commit gate (autosave, AI apply, presentation ops) is
+  // all-or-nothing on that triple, so a single missing field silently
+  // disables in-builder AI editing. Recover the missing pieces from the
+  // canonical `builder_drafts` row instead of failing closed.
+  const [identityBackfill, setIdentityBackfill] = useState<{
+    projectId?: string;
+    businessId?: string;
+  }>({});
+
   // Pass 2 (identity hardening): resolved real projects.id for the active
   // draft. Used to construct BuilderIdentity at commit/deploy/AI-apply
   // boundaries instead of aliasing the draft id as projectId.
@@ -1163,7 +1174,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     templateFiles.currentProjectId ||
     (effectiveRouteState?.projectId as string | undefined) ||
     (effectiveRouteState?.returnProjectId as string | undefined) ||
+    identityBackfill.projectId ||
     null;
+
 
   const hydrateSavedTemplate = useCallback((template: {
     id: string;
@@ -1383,7 +1396,62 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     })();
     return () => { cancelled = true; };
   }, [routeBusinessId, projectId, recoveredBusinessId]);
-  const businessId = routeBusinessId || recoveredBusinessId || undefined;
+  const businessId = routeBusinessId || recoveredBusinessId || identityBackfill.businessId || undefined;
+
+  // Backfill the canonical triple from the draft row (and, when the draft id
+  // itself is unknown, from the project row). Runs once per missing field so
+  // AI edits / autosave stop failing with "Canonical project identity is
+  // unavailable" after a wizard handoff that only carried partial state.
+  useEffect(() => {
+    const knownProjectId = resolvedProjectId || projectId || null;
+    const needsProject = !knownProjectId;
+    const needsBusiness = !businessId;
+    const needsDraft = !currentDraftId;
+    if (!needsProject && !needsBusiness && !needsDraft) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        let draftId = currentDraftId || templateFiles.currentDraftId || null;
+        if (!draftId && knownProjectId) {
+          draftId = await findBuilderDraftIdForProject({
+            projectId: knownProjectId,
+            projectName: projectNameFromState,
+            businessId,
+          });
+        }
+        if (cancelled || !draftId) return;
+
+        if (!currentDraftId) setCurrentDraftId(draftId);
+        if (!needsProject && !needsBusiness) return;
+
+        const { data } = await supabaseClient
+          .from('builder_drafts')
+          .select('project_id, business_id')
+          .eq('id', draftId)
+          .maybeSingle();
+        if (cancelled || !data) return;
+
+        setIdentityBackfill((prev) => {
+          const next = { ...prev };
+          if (needsProject && data.project_id) next.projectId = data.project_id;
+          if (needsBusiness && data.business_id) next.businessId = data.business_id;
+          return next.projectId === prev.projectId && next.businessId === prev.businessId ? prev : next;
+        });
+      } catch (err) {
+        console.warn('[WebBuilder] canonical identity backfill failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [
+    businessId,
+    currentDraftId,
+    projectId,
+    projectNameFromState,
+    resolvedProjectId,
+    templateFiles.currentDraftId,
+  ]);
+
 
   // Local editable project name. Seeded from route state, kept in sync if the
   // user (or another tab) renames the project via CloudProjects.

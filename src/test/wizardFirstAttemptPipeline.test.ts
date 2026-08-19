@@ -18,7 +18,12 @@ describe('Wizard Lane B first-attempt pipeline', () => {
     expect(launcher).toContain('batchOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS');
     expect(launcher).toContain('const batchPrompt = buildFirstAttemptPrompt(batch);');
     expect(launcher).toContain('wizardSeed: scopeWizardSeedToPageFiles(wizardSeed, batch)');
-    expect(launcher).toContain('requestedPaths.has(path)');
+    expect(launcher).toContain('scopeLaneBBatchFiles(');
+    const companions = readFileSync(
+      resolve(process.cwd(), 'src/services/laneBCompanionModules.ts'),
+      'utf8',
+    );
+    expect(companions).toContain('requested.has(path)');
   });
 
   it('keeps the Edge authoring prompt aligned with client acceptance', () => {

@@ -15,6 +15,18 @@
  * before the artifact is sealed.
  */
 
+/**
+ * Type-only imports are erased at runtime (the preview synthesizes a
+ * declaration module for them), so they never break an import closure.
+ */
+function isTypeOnlyImportStatement(statement: string): boolean {
+  if (/^\s*(?:import|export)\s+type\b/.test(statement)) return true;
+  const named = statement.match(/\{([^}]*)\}/)?.[1];
+  if (!named) return false;
+  const specifiers = named.split(',').map((entry) => entry.trim()).filter(Boolean);
+  return specifiers.length > 0 && specifiers.every((entry) => /^type\s+/.test(entry));
+}
+
 const MODULE_EXTENSIONS = ['.tsx', '.jsx', '.ts', '.js'] as const;
 
 /** Files Lane A / Stage 4b owns. Lane B may never overwrite these. */
@@ -136,6 +148,9 @@ export function findUnresolvedLocalImports(
     while ((match = importRegex.exec(content)) !== null) {
       const importPath = match[1];
       if (/\.(css|scss|less|svg|png|jpe?g|webp|gif)$/i.test(importPath)) continue;
+      // Type-only imports are erased at runtime; the preview synthesizes a
+      // declaration module for them, so they never break the import closure.
+      if (isTypeOnlyImportStatement(match[0])) continue;
       if (resolveRelativeModule(filePath, importPath, existingPaths)) continue;
       unresolved.push({ filePath, importPath });
     }

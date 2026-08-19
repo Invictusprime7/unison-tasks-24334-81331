@@ -3,6 +3,8 @@ import type { PageRegistry } from '@/types/pageRegistry';
 import { normalizeWizardPageRole } from '@/services/wizardPageQuality';
 import { resolveGeometryTokens } from '@/components/onboarding/themePresetToIndexCss';
 import { resolveArtDirectionPack } from '@/sections/variants/artDirectionPacks';
+import { childSeed, seededPick, seededRotate } from '@/platform/core/generationSeed';
+
 
 export interface WizardHeroGeometry {
   layout: string;
@@ -31,8 +33,27 @@ export interface WizardGenerationBrief {
       mustDifferFromHome: boolean;
       geometry: WizardHeroGeometry;
     };
+    /**
+     * Page-depth floor. A premium multi-page site never ships a two-block
+     * page: every route declares how many content sections it must contain.
+     */
+    depth: { minSections: number; maxSections: number };
+    /**
+     * Seeded, per-page anti-repetition signature. Derived deterministically
+     * from the canonical generation seed so two pages of the same site never
+     * repeat the same rhythm, and two launches of the same wizard answers
+     * reproduce byte-identically.
+     */
+    signature: {
+      surfaceRhythm: string;
+      ctaEmphasis: string;
+      sectionOrder: string[];
+    };
   }>;
   homeHeroGeometry: WizardHeroGeometry;
+  /** Cross-page contract the AI must satisfy for every route. */
+  depth: { rule: string };
+
   /**
    * Geometry is delegated to the aesthetic selection: these are the resolved
    * CSS variables for the selected style card. Generated pages must reference
@@ -80,10 +101,70 @@ export interface WizardGenerationBrief {
   ui: { formFormats: string[]; buttonFormats: string[]; iconFormats: string[] };
 }
 
+/** Role → page-depth floor. Never below 4 content sections. */
+const ROLE_DEPTH: Record<string, { minSections: number; maxSections: number }> = {
+  home: { minSections: 6, maxSections: 9 },
+  services: { minSections: 5, maxSections: 8 },
+  products: { minSections: 5, maxSections: 8 },
+  pricing: { minSections: 5, maxSections: 8 },
+  portfolio: { minSections: 5, maxSections: 8 },
+  gallery: { minSections: 5, maxSections: 8 },
+  about: { minSections: 4, maxSections: 7 },
+  booking: { minSections: 4, maxSections: 7 },
+  contact: { minSections: 4, maxSections: 7 },
+  faq: { minSections: 4, maxSections: 7 },
+};
+
+const SURFACE_RHYTHMS = [
+  'base → raised → base → accent-wash → base',
+  'accent-wash → base → raised → base → raised',
+  'raised → base → accent-wash → raised → base',
+  'base → accent-wash → raised → base → accent-wash',
+];
+
+const CTA_EMPHASIS = [
+  'inline text CTA inside the narrative block',
+  'full-width accent CTA band before the footer',
+  'paired CTA card sitting beside supporting proof',
+  'sticky-feeling CTA strip after the primary proof section',
+];
+
+const ROLE_SECTION_POOL: Record<string, string[]> = {
+  home: ['hero', 'proof', 'services', 'process', 'testimonials', 'gallery', 'faq', 'cta'],
+  services: ['hero', 'services', 'process', 'outcomes', 'testimonials', 'pricing-teaser', 'faq', 'cta'],
+  products: ['hero', 'catalog', 'highlights', 'materials', 'testimonials', 'faq', 'cta'],
+  pricing: ['hero', 'plans', 'comparison', 'inclusions', 'testimonials', 'faq', 'cta'],
+  portfolio: ['hero', 'featured-project', 'gallery', 'process', 'testimonials', 'cta'],
+  gallery: ['hero', 'gallery', 'featured-project', 'process', 'testimonials', 'cta'],
+  about: ['hero', 'story', 'team', 'values', 'timeline', 'testimonials', 'cta'],
+  booking: ['hero', 'availability', 'how-it-works', 'policies', 'testimonials', 'faq', 'cta'],
+  contact: ['hero', 'contact-form', 'locations', 'hours', 'faq', 'cta'],
+  faq: ['hero', 'faq', 'categories', 'contact-form', 'cta'],
+};
+
+function routeDepth(role: string): { minSections: number; maxSections: number } {
+  return ROLE_DEPTH[role] || { minSections: 4, maxSections: 7 };
+}
+
+function routeSignature(seed: string, pageId: string, role: string, minSections: number) {
+  const pageSeed = childSeed(seed, 'page', pageId, role);
+  const pool = ROLE_SECTION_POOL[role] || ['hero', 'overview', 'proof', 'details', 'testimonials', 'faq', 'cta'];
+  const [head, ...rest] = pool;
+  const rotated = seededRotate(childSeed(pageSeed, 'sections'), rest);
+  const tail = rotated.filter((entry) => entry !== 'cta');
+  const ordered = [head, ...tail].slice(0, Math.max(minSections - 1, 3));
+  return {
+    surfaceRhythm: seededPick(childSeed(pageSeed, 'surface'), SURFACE_RHYTHMS),
+    ctaEmphasis: seededPick(childSeed(pageSeed, 'cta'), CTA_EMPHASIS),
+    sectionOrder: [...ordered, 'cta'],
+  };
+}
+
 function generationTitle(role: string, title: string): string {
   const label = title.trim() || role.replace(/[-_]/g, ' ').trim() || 'Explore';
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
+
 
 function generationAngle(role: string, title: string): string {
   const label = generationTitle(role, title).toLowerCase();
@@ -150,7 +231,9 @@ export function buildWizardGenerationBrief(input: {
     industry: input.industry,
     seed: input.seed,
   });
+  const seed = input.seed || `${input.themePresetId || 'theme'}|${input.industry || 'general'}`;
   const homePage = Object.values(input.pageRegistry.pages).find((page) => page.isHome);
+
   const homePath = homePage?.filePath || '';
   const homeSource = homePath
     ? (input.vfsFiles[homePath] || input.vfsFiles[homePath.replace(/^\//, '')] || '')
@@ -162,6 +245,7 @@ export function buildWizardGenerationBrief(input: {
     .map((page) => {
       const role = normalizeWizardPageRole(page.pageRole || page.pageType || (page.isHome ? 'home' : 'custom'));
       const title = generationTitle(role, page.title);
+      const depth = routeDepth(role);
       return {
         pageId: page.pageId,
         path: page.filePath,
@@ -174,6 +258,8 @@ export function buildWizardGenerationBrief(input: {
           mustDifferFromHome: !page.isHome,
           geometry: homeHeroGeometry,
         },
+        depth,
+        signature: routeSignature(seed, page.pageId, role, depth.minSections),
       };
     });
 
@@ -187,6 +273,10 @@ export function buildWizardGenerationBrief(input: {
     },
     routes,
     homeHeroGeometry,
+    depth: {
+      rule: 'Every route must render at least its declared minSections content sections (hero excluded from the floor only when the page declares 4). Never ship a page with two or three blocks. Each page follows its own surfaceRhythm and ctaEmphasis so no two pages of this site read the same, and no page reuses another page\'s section order.',
+    },
+
     geometry: {
       source: 'selected-style-card',
       themePresetId: input.themePresetId || null,

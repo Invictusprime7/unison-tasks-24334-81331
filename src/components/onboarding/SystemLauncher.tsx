@@ -3788,6 +3788,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         homePath: (Object.values(siteBundleSnapshot.pageRegistry.pages)
           .find((page) => (page as { isHome?: boolean }).isHome) as { filePath?: string } | undefined)?.filePath,
         requiredHeroGeometry: siteBundleSnapshot.meta.generationBrief?.homeHeroGeometry,
+        sectionFloors: Object.fromEntries(
+          (siteBundleSnapshot.meta.generationBrief?.routes || [])
+            .filter((route) => route.depth?.minSections)
+            .map((route) => [route.path, route.depth.minSections]),
+        ),
+
       });
       const qualityRejectedPaths = Array.from(new Set([
         ...homeQualityRejections,

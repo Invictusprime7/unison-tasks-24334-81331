@@ -1146,9 +1146,31 @@ export async function loadProjectedRevisionForDraft(
 }
 
 /**
+ * Score a candidate revision for revival. Highest score wins; ties break on
+ * recency. Sealed rows (carrying `/.unison/site-bundle-snapshot.json`) come
+ * first because they still hold the authoritative wizard output — later
+ * rejected autosaves are often partial mirrors of the same draft.
+ */
+export function scoreRevivalRevision(row: {
+  status?: unknown;
+  vfs_files?: unknown;
+  site_bundle_snapshot?: unknown;
+}): number {
+  const files = (row.vfs_files as Record<string, string>) ?? {};
+  const fileCount = Object.keys(files).length;
+  if (fileCount === 0) return -1;
+  const snapshot = (row.site_bundle_snapshot ?? {}) as Record<string, unknown>;
+  let score = 0;
+  if (row.status === 'committed') score += 4000;
+  if (files['/.unison/site-bundle-snapshot.json']) score += 2000;
+  if (Object.keys(snapshot).length > 0) score += 1000;
+  return score + Math.min(fileCount, 999);
+}
+
+/**
  * Best-effort projection for a draft whose committed pointer is missing.
- * Prefers a committed revision; otherwise returns the newest revision that
- * still carries VFS files so the wizard output is never stranded.
+ * Returns the highest-scoring revision that still carries VFS files so a
+ * previously generated site is never stranded behind a rejected autosave.
  */
 async function loadRecoveryRevisionForDraft(
   projectId: string,
@@ -1163,20 +1185,19 @@ async function loadRecoveryRevisionForDraft(
     .limit(50);
   if (error || !Array.isArray(data) || data.length === 0) return null;
   const rows = data as Record<string, unknown>[];
-  const hasFiles = (row: Record<string, unknown>) =>
-    Object.keys((row.vfs_files as Record<string, string>) ?? {}).length > 0;
-  const hasSnapshot = (row: Record<string, unknown>) =>
-    Boolean(row.site_bundle_snapshot && typeof row.site_bundle_snapshot === 'object');
-  const usable =
-    rows.find((row) => row.status === 'committed' && hasFiles(row) && hasSnapshot(row))
-    ?? rows.find((row) => row.status === 'committed' && hasFiles(row))
-    // Revival: a rejected autosave still carries the full wizard VFS. Prefer the
-    // newest one that also kept its snapshot so the builder reopens canonically.
-    ?? rows.find((row) => hasFiles(row) && hasSnapshot(row))
-    ?? rows.find(hasFiles);
-  return usable ? mapRevisionRow(usable) : null;
-
+  let best: Record<string, unknown> | null = null;
+  let bestScore = 0;
+  for (const row of rows) {
+    const score = scoreRevivalRevision(row);
+    // rows arrive newest-first, so strict `>` keeps the newest of equal scores
+    if (score > 0 && score > bestScore) {
+      best = row;
+      bestScore = score;
+    }
+  }
+  return best ? mapRevisionRow(best) : null;
 }
+
 
 /**
  * Move D — publish flow loads the latest revision whose publish gate +

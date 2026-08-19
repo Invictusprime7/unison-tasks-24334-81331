@@ -189,11 +189,6 @@ function stableIndex(seed: string, size: number): number {
   return (hash >>> 0) % size;
 }
 
-function rotate<T>(items: readonly T[], seed: string): T[] {
-  const start = stableIndex(seed, items.length);
-  return [...items.slice(start), ...items.slice(0, start)];
-}
-
 function buildActiveVariants(templateId: string | null | undefined, seed: string): ActiveVariantMap {
   const composition = templateId ? getCompositionById(templateId) : null;
   if (!composition) return {};

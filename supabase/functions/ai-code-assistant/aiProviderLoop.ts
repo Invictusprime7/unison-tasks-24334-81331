@@ -632,10 +632,12 @@ export async function runProviderLoop(opts: {
   if (!content && hasLastResortGateway) {
     const remaining = budgetRemaining();
     if (remaining >= 8_000) {
-      // The gateway needs ~30 s to respond for large wizard-seed prompts
-      // (observed: success at 29 s with a 30 s planned-model timeout). The
-      // previous 25 s cap aborted the gateway just before it could complete.
-      const perModelMs = Math.min(35_000, Math.max(8_000, remaining - 2_000));
+      // The gateway needs ~30 s for large wizard-seed prompts. When the direct
+      // keys are billing-exhausted the gateway is the ONLY provider that can
+      // answer, so it gets the entire remaining budget instead of a 35 s slice.
+      const gatewayCapMs = directQuotaExhausted ? Number.MAX_SAFE_INTEGER : 35_000;
+      const perModelMs = Math.min(gatewayCapMs, Math.max(8_000, remaining - 2_000));
+
       const gatewayModel: ModelSpec = {
         id: 'google/gemini-3.6-flash',
         maxTokens: Math.min(providerPlan.fallbackMaxTokens, 32_000),

@@ -5027,6 +5027,12 @@ export function processCode(code: string, filePath: string): string {
     return code;
   }
 
+  // Collapse duplicate top-level declarations before any other transform so a
+  // merged page body can never hard-fail Babel with "already been declared".
+  code = dedupeTopLevelDeclarations(code);
+
+
+
   // ── Repair: strip dangling/unterminated import openers ─────────────────
   // AI generation (or an earlier repair pass) sometimes leaves a truncated
   // `import { ` opener with no closing brace / `from` clause — e.g. the rest

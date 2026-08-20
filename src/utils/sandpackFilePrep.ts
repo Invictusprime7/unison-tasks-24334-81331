@@ -2127,7 +2127,6 @@ function createProxyApp(targetPath: string): string {
   const importPath = toRelativeSandpackImport('/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
 
   return `import React from 'react';
-import { HashRouter } from 'react-router-dom';
 import * as PreviewEntryModule from '${importPath}';
 
 // Robust component discovery: prefer default export, then find first PascalCase function/class component
@@ -2185,11 +2184,10 @@ export default function App() {
     }, React.createElement('h2', { style: { fontSize: 18, marginBottom: 8 } }, 'No renderable component found'), React.createElement('p', { style: { color: '#888', fontSize: 14 } }, 'The entry file does not export a valid React component. Check that your component uses "export default" or a named PascalCase export.'), React.createElement('p', { style: { color: '#aaa', fontSize: 12, marginTop: 12 } }, 'Source: ${targetPath}')));
   }
 
-  return React.createElement(
-    HashRouter,
-    null,
-    React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry))
-  );
+  // NOTE: no router here. /index.tsx mounts the single canonical
+  // <HashRouter> via __RouterGuard — wrapping again throws
+  // "You cannot render a <Router> inside another <Router>".
+  return React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry));
 }
 `;
 }

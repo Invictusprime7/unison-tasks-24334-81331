@@ -6784,6 +6784,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         nextFiles: proposedFiles,
                         snapshotForPreflight,
                         activePagePath,
+                        playground: aiCommitPlayground,
+                        businessName: aiCommitBusinessName,
+                        industry: snapshotForPreflight?.industry,
                       }
                     : null;
                   if (!commitCtx) {
@@ -7256,6 +7259,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       nextFiles: proposedFiles,
                       snapshotForPreflight,
                       activePagePath,
+                      playground: aiCommitPlayground,
+                      businessName: aiCommitBusinessName,
+                      industry: snapshotForPreflight?.industry,
                     }
                   : null;
                 if (!commitCtx) {

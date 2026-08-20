@@ -4032,6 +4032,10 @@ function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): voi
   }
 }
 
+function hasExplicitModuleExtension(path: string): boolean {
+  return /\.(tsx|jsx|ts|js|mjs|cjs|json|css|scss|less|svg|png|jpe?g|webp|gif|avif|woff2?)$/i.test(path);
+}
+
 function resolveRelativeModuleTarget(
   filePath: string,
   rawImportPath: string,
@@ -4051,7 +4055,7 @@ function resolveRelativeModuleTarget(
   }
 
   resolved = '/' + stack.join('/');
-  const candidates = /\.\w+$/.test(resolved)
+  const candidates = hasExplicitModuleExtension(resolved)
     ? [resolved]
     : [
         resolved,
@@ -4513,12 +4517,12 @@ function synthesizeMissingLocalImports(
         else if (p !== '.' && p !== '') stack.push(p);
       }
       resolved = '/' + stack.join('/');
-      const writePath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
+      const writePath = hasExplicitModuleExtension(resolved) ? resolved : `${resolved}.tsx`;
       if (existingPaths.has(writePath)) continue;
       if (extensions.some((ext) => existingPaths.has(resolved + ext))) continue;
 
       if (/(^|\/)theme$/i.test(resolved) && options.themeModule) {
-        const themePath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.ts`;
+        const themePath = hasExplicitModuleExtension(resolved) ? resolved : `${resolved}.ts`;
         sandpackFiles[themePath] = options.themeModule;
         existingPaths.add(themePath);
         console.warn(
@@ -4548,7 +4552,7 @@ function synthesizeMissingLocalImports(
       }
 
       if (isTypeOnlyImportStatement(match[0])) {
-        const typePath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.ts`;
+        const typePath = hasExplicitModuleExtension(resolved) ? resolved : `${resolved}.ts`;
         sandpackFiles[typePath] = buildTypeOnlyModuleSource(match[0], rawImportPath);
         existingPaths.add(typePath);
         console.warn(
@@ -4753,7 +4757,7 @@ function generateMissingComponents(sandpackFiles: Record<string, string>): void 
       const candidates = [resolved, ...extensions.map(ext => resolved + ext)];
       if (candidates.some(c => existingPaths.has(c))) continue;
 
-      const targetPath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
+      const targetPath = hasExplicitModuleExtension(resolved) ? resolved : `${resolved}.tsx`;
       if (existingPaths.has(targetPath)) continue;
 
       const importStatement = im[0];

@@ -29,6 +29,14 @@ function isTypeOnlyImportStatement(statement: string): boolean {
 
 const MODULE_EXTENSIONS = ['.tsx', '.jsx', '.ts', '.js'] as const;
 
+/**
+ * `Home.sections` is a dotted module NAME, not a file with a `.sections`
+ * extension. Only a known extension short-circuits extension probing.
+ */
+export function hasExplicitModuleExtension(path: string): boolean {
+  return /\.(tsx|jsx|ts|js|mjs|cjs|json|css|scss|less|svg|png|jpe?g|webp|gif|avif|woff2?)$/i.test(path);
+}
+
 /** Files Lane A / Stage 4b owns. Lane B may never overwrite these. */
 const LANE_A_AUTHORITY_PATHS = new Set([
   '/src/app.tsx',

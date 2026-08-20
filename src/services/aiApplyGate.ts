@@ -28,6 +28,7 @@ import {
 import { legacyFilesToPatchPlan } from '@/types/patchPlan';
 import type { BuilderIdentity } from '@/types/builderIdentity';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
+import type { PlaygroundState } from '@/platform/core/playground';
 
 export interface AiCommitContext {
   businessId: string;
@@ -39,6 +40,15 @@ export interface AiCommitContext {
   nextFiles: Record<string, string>;
   snapshotForPreflight?: SiteBundleSnapshot | null;
   activePagePath: string;
+  /**
+   * Canonical playground state. REQUIRED for the recompile path —
+   * `commitToPipeline` throws "non-wizard commits require `playground`" when
+   * it is missing, which surfaced as "Canonical pipeline failed; nothing safe
+   * to publish" on every AI edit.
+   */
+  playground?: PlaygroundState | null;
+  businessName?: string;
+  industry?: string;
 }
 
 export interface AiCommitDryRunOutcome {
@@ -105,13 +115,15 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
         vfsFiles: ctx.beforeFiles,
         siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
         activePagePath: ctx.activePagePath,
+        playground: ctx.playground ?? undefined,
       },
       patch,
       options: {
         dryRun: true,
         requirePreviewPass: true,
         requireReadinessPass: false,
-        industry: ctx.snapshotForPreflight?.industry,
+        businessName: ctx.businessName,
+        industry: ctx.industry ?? ctx.snapshotForPreflight?.industry,
       },
     });
     return { accepted: true, blockers: [], commit };
@@ -152,12 +164,14 @@ export async function persistAiCommit(ctx: AiCommitContext): Promise<CommitMutat
       vfsFiles: ctx.beforeFiles,
       siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
       activePagePath: ctx.activePagePath,
+      playground: ctx.playground ?? undefined,
     },
     patch,
     options: {
       requirePreviewPass: true,
       requireReadinessPass: false,
-      industry: ctx.snapshotForPreflight?.industry,
+      businessName: ctx.businessName,
+      industry: ctx.industry ?? ctx.snapshotForPreflight?.industry,
     },
   });
 }

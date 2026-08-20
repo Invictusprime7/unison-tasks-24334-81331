@@ -2184,9 +2184,8 @@ export default function App() {
     }, React.createElement('h2', { style: { fontSize: 18, marginBottom: 8 } }, 'No renderable component found'), React.createElement('p', { style: { color: '#888', fontSize: 14 } }, 'The entry file does not export a valid React component. Check that your component uses "export default" or a named PascalCase export.'), React.createElement('p', { style: { color: '#aaa', fontSize: 12, marginTop: 12 } }, 'Source: ${targetPath}')));
   }
 
-  // NOTE: no router here. /index.tsx mounts the single canonical
-  // <HashRouter> via __RouterGuard — wrapping again throws
-  // "You cannot render a <Router> inside another <Router>".
+  // NOTE: no router here. /index.tsx mounts the single canonical hash router
+  // via __RouterGuard; wrapping again triggers the nested-router error.
   return React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry));
 }
 `;

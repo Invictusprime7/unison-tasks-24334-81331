@@ -103,13 +103,18 @@ function resolveRelativeModule(
   }
   resolved = `/${stack.join('/')}`;
 
-  const candidates = /\.\w+$/.test(resolved)
+  // NOTE: a trailing dotted segment is NOT necessarily a file extension.
+  // Canonical wizard pages import their section map as "./Home.sections"
+  // (file: Home.sections.ts). Only treat the suffix as an extension when it is
+  // a real module/asset extension, otherwise keep probing with extensions.
+  const candidates = hasExplicitModuleExtension(resolved)
     ? [resolved]
     : [
         resolved,
         ...MODULE_EXTENSIONS.map((ext) => `${resolved}${ext}`),
         ...MODULE_EXTENSIONS.map((ext) => `${resolved}/index${ext}`),
       ];
+
 
   return candidates.find((candidate) => existingPaths.has(candidate)) || null;
 }

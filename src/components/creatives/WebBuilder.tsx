@@ -3681,7 +3681,33 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     return previewCode;
   }, [templateCustomizer, previewCode]);
 
+  // Canonical playground handed to AI Builder commits. Without it,
+  // commitToPipeline's recompile path throws ("non-wizard commits require
+  // `playground`") and every AI edit is rejected as
+  // "Canonical pipeline failed; nothing safe to publish".
+  const aiCommitPlayground = useMemo<PlaygroundState>(() => ({
+    pageRegistry: creatorPlayground.pageRegistry,
+    creatorData: creatorPlayground.creatorData,
+    bindings: playgroundBindings,
+    calendars: playgroundCalendars,
+    popups: playgroundPopups,
+  }), [
+    creatorPlayground.pageRegistry,
+    creatorPlayground.creatorData,
+    playgroundBindings,
+    playgroundCalendars,
+    playgroundPopups,
+  ]);
+
+  const aiCommitBusinessName =
+    creatorPlayground.creatorData.businessInfo.businessName ||
+    currentTemplateName ||
+    projectNameFromState ||
+    systemName ||
+    undefined;
+
   // Build the v2 save payload — full multi-page VFS round-trip
+
   const buildSavePayload = useCallback(() => {
     const canonicalPlayground = {
       pageRegistry: creatorPlayground.pageRegistry,

@@ -4970,6 +4970,55 @@ function collectTopLevelBindingNames(code: string): Set<string> {
 }
 
 /**
+ * Repair: duplicate top-level declarations of the same identifier.
+ *
+ * A Lane B page body merged onto a canonical page scaffold can end up with two
+ * top-level `Home` declarations (e.g. a scaffold `const Home` plus the authored
+ * `const Home: React.FC`). Babel hard-fails with "Identifier 'Home' has already
+ * been declared" *before* any preview renders, and Sandpack's own error path
+ * then crashes trying to mutate the frozen SyntaxError ("Cannot assign to read
+ * only property 'message'"), hiding the real cause.
+ *
+ * The LAST declaration wins (it is the authored/most recent one). Earlier
+ * duplicates are renamed to `Name__dup<n>` and stripped of their `export` /
+ * `export default` keywords so references and the default export bind to the
+ * surviving declaration.
+ */
+export function dedupeTopLevelDeclarations(code: string): string {
+  const declRe = /^(export\s+default\s+|export\s+)?(?:async\s+)?(const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/;
+  const lines = code.split('\n');
+  const occurrences = new Map<string, number[]>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = declRe.exec(lines[i]);
+    if (!match) continue;
+    const name = match[3];
+    const list = occurrences.get(name);
+    if (list) list.push(i);
+    else occurrences.set(name, [i]);
+  }
+
+  let changed = false;
+  for (const [name, indices] of occurrences) {
+    if (indices.length < 2) continue;
+    // Keep the last declaration; neutralize the earlier ones.
+    indices.slice(0, -1).forEach((lineIndex, dupIndex) => {
+      const original = lines[lineIndex];
+      const match = declRe.exec(original);
+      if (!match) return;
+      const alias = `${name}__dup${dupIndex + 1}`;
+      let next = original.slice(match[0].length);
+      const keyword = match[2];
+      next = `${keyword} ${alias}${next}`;
+      lines[lineIndex] = next;
+      changed = true;
+    });
+  }
+
+  return changed ? lines.join('\n') : code;
+}
+
+/**
  * Process code to strip/transform imports that Sandpack can't resolve.
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
  */

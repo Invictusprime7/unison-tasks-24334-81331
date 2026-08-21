@@ -65,6 +65,25 @@ import {
 } from '@/services/wizardGenerationBrief';
 import { createWizardCompileArtifact, type WizardCompileArtifact } from './snapshotSeal';
 import { isArtDirectionPackId } from '@/sections/variants/artDirectionPacks';
+import { getCompositionById } from '@/sections/templates';
+import {
+  buildTemplateLayoutContract,
+  stampTemplateLayoutIdentity,
+} from '@/services/templateLayoutContract';
+
+/**
+ * Stage 4b identity stamp. Applied on EVERY compile and recompile so a page
+ * body can never lose its template identity after an edit round-trip.
+ */
+function applyStage4bTemplateIdentity(
+  files: Record<string, string>,
+  templateId?: string | null,
+): Record<string, string> {
+  if (!templateId) return files;
+  const composition = getCompositionById(templateId);
+  if (!composition) return files;
+  return stampTemplateLayoutIdentity(files, buildTemplateLayoutContract(composition));
+}
 
 
 // ============================================================================
@@ -377,6 +396,7 @@ export function executeCanonicalPipeline(
     wantsLeadCapture: selections.wantsLeadCapture,
     sellsProducts: selections.sellsProducts,
   }).files;
+  compileResult.vfsFiles = applyStage4bTemplateIdentity(compileResult.vfsFiles, selections.templateId);
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
@@ -516,6 +536,10 @@ export function recompileFromPlayground(
     themePresetId,
   });
   Object.assign(compileResult.vfsFiles, uiFoundation.files);
+  compileResult.vfsFiles = applyStage4bTemplateIdentity(
+    compileResult.vfsFiles,
+    options?.selectedTemplateId,
+  );
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(

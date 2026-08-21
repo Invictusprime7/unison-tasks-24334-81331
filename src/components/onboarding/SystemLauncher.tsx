@@ -4347,6 +4347,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     <>
       <Dialog
         open={open}
+        // While the launch-review AlertDialog is up, the wizard must drop its
+        // modality. Two stacked Radix modals leave the parent's focus trap and
+        // `pointer-events: none` body lock in place, which makes "Confirm Site
+        // Launch" unclickable — the launch then appears to hang forever right
+        // after "Finalizing preview…".
+        modal={!launchPreviewConfirmation}
         onOpenChange={(isOpen) => {
           if (!isOpen) resolveLaunchConfirmation(false);
           onOpenChange(isOpen);

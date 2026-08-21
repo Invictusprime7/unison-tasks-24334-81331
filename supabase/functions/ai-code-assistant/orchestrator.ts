@@ -105,13 +105,6 @@ RUNTIME + IMPORT CONTRACT (HARD):
 }
 
 
-function buildWizardInteractionBasePrompt(): string {
-  return `You are the final interaction planner for a validated System Launcher website.
-Return ONLY raw JSON with this exact shape: {"templateId":"provided template id","layoutSignature":"provided template layout signature","interactions":[{"target":{"kind":"template-root|interactive|intent","value":"only for intent"},"effect":"hover-lift|hover-glow|reveal|stagger-reveal|click-feedback"}]}.
-Do not return TSX, CSS, imports, files, routes, handlers, selectors outside the target vocabulary, or prose.
-You may choose at most 12 interactions. Preserve all template layout, semantic HSL tokens, data-ut-intent attributes, routes, and page topology.`;
-}
-
 function buildWizardContentBasePrompt(): string {
   return `You are the content planner for a validated System Launcher page.
 Return ONLY raw JSON containing authored content and approved presentation choices. The client compiler owns TSX, routes, imports, theme classes, and behavior.
@@ -322,8 +315,6 @@ async function runBuilderLane(
   let basePrompt: string;
   if (task.type === 'wizard_seed_generation') {
     basePrompt = buildWizardSeedBasePrompt();
-  } else if (task.type === 'wizard_interaction_enrichment') {
-    basePrompt = buildWizardInteractionBasePrompt();
   } else if (task.type === 'wizard_content_enrichment') {
     basePrompt = buildWizardContentBasePrompt();
   } else if (mode === 'template-json' || mode === 'template-html' || mode === 'template-react') {
@@ -386,7 +377,7 @@ async function runBuilderLane(
     : { compactedFiles: '', fileCount: 0, excludedFiles: [] };
 
   // ── 7. Assemble final prompt by task type ──────────────────────────────
-  const thinkingInstruction = task.type === 'wizard_seed_generation' || task.type === 'wizard_interaction_enrichment'
+  const thinkingInstruction = task.type === 'wizard_seed_generation'
     ? ''
     : buildThinkingInstruction(task.skipThinking);
   const elementsLibraryBlock = buildElementsLibraryBlock(siteElementsLibraryContext, surgicalEdit);
@@ -469,10 +460,6 @@ async function runBuilderLane(
 
   if (task.type === 'wizard_seed_generation') {
     finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, root files, SiteNavbar, or SiteFooter.\nThe deterministic App router renders route-registry-derived shared chrome exactly once around every page. Emit body-only page files and never import or render shared chrome inside them.\nThe Home page must be a complete production landing page with at least 5 body content regions, real industry-specific copy, and working data-ut-intent attributes.\nEvery secondary page must contain at least 4 purpose-specific body regions and 1200+ characters of authored TSX, matching the launcher quality gate exactly.\nSilently self-check every requested file for parseable TSX, snapshot-approved imports, accessible image alt text, and canonical data-ut-intent wiring before returning JSON.\n`;
-  }
-
-  if (task.type === 'wizard_interaction_enrichment') {
-    finalSystemPrompt += '\n\n[WIZARD INTERACTION ENRICHMENT — PLAN ONLY]\nReturn the interaction JSON object only. The client compiler owns all implementation and will reject any unsupported value.';
   }
 
   if (task.type === 'wizard_content_enrichment') {

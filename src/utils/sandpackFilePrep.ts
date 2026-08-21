@@ -4480,6 +4480,69 @@ export function buildTypeOnlyModuleSource(statement: string, importPath: string)
   return lines.join('\n');
 }
 
+/**
+ * Lane B frequently writes `import CalendarPlus from './components/CalendarPlus'`
+ * for what is actually a lucide-react icon. The module never exists, so the
+ * wizard preview dies in the strict missing-module gate. Rewrite those imports
+ * to the real icon package instead of failing (or synthesizing an empty stub).
+ */
+export function rewriteLucideIconLocalImports(
+  sandpackFiles: Record<string, string>,
+): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+
+    let next = content;
+    const importRegex = /import\s+([\w*{},\s]+?)\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    let match: RegExpExecArray | null;
+    const rewrites: Array<{ statement: string; replacement: string }> = [];
+
+    while ((match = importRegex.exec(content)) !== null) {
+      const [statement, clause, rawImportPath] = match;
+      if (/\.(css|scss|less|json|svg|png|jpe?g|webp|gif)$/i.test(rawImportPath)) continue;
+      if (resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths)) continue;
+
+      const basename = (rawImportPath.split('/').pop() || '').replace(/\.(tsx?|jsx?)$/i, '');
+      const defaultName = clause.match(/^\s*([A-Za-z_$][\w$]*)\s*(?:,|$)/)?.[1];
+      const namedNames = (clause.match(/\{([^}]*)\}/)?.[1] ?? '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+
+      const specifiers: string[] = [];
+      if (defaultName && isLucideIconName(basename)) {
+        specifiers.push(defaultName === basename ? basename : `${basename} as ${defaultName}`);
+      }
+      for (const entry of namedNames) {
+        const [source, alias] = entry.split(/\s+as\s+/).map((part) => part.trim());
+        if (!source || !isLucideIconName(source)) continue;
+        specifiers.push(alias ? `${source} as ${alias}` : source);
+      }
+      if (specifiers.length === 0) continue;
+
+      // Only rewrite when EVERY binding in the statement resolved to an icon.
+      const bindingCount = (defaultName ? 1 : 0) + namedNames.length;
+      if (specifiers.length !== bindingCount) continue;
+
+      rewrites.push({
+        statement,
+        replacement: `import { ${specifiers.join(', ')} } from 'lucide-react';`,
+      });
+    }
+
+    for (const { statement, replacement } of rewrites) {
+      next = next.split(statement).join(replacement);
+      console.warn(
+        `[sandpackFilePrep] Rewrote unresolved local icon import to lucide-react in ${filePath}: ${statement.trim()}`,
+      );
+    }
+
+    if (next !== content) sandpackFiles[filePath] = next;
+  }
+}
+
 function synthesizeMissingLocalImports(
   sandpackFiles: Record<string, string>,
   options: {

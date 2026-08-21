@@ -47,7 +47,6 @@ import type { ThemeTokens } from '@/sections/types';
 import type { GeneratedSitePlan } from './siteTopologyPlanner';
 import type { BusinessSystemState } from './capabilityRegistry';
 import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
-import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
 import {
   buildGeneratedUiFoundation,
@@ -190,8 +189,6 @@ export interface SiteBundleSnapshotMeta {
    * instead of re-deriving a pack, so the aesthetic cannot drift.
    */
   artDirectionPackId?: string | null;
-  /** Durable constrained final interaction plan. */
-  interactionManifest?: WizardInteractionManifest;
   /** Explicit chain-of-custody for the Stage 4b dynamic theme stylesheet. */
   themeInjection?: {
     version: '1.0';
@@ -574,7 +571,6 @@ function projectToSiteBundleSnapshot(
     templateId?: string | null;
     wizardSeedId?: string | null;
     themeTokens?: ThemeTokens;
-    interactionManifest?: WizardInteractionManifest;
     uiFoundation?: GeneratedUiManifest;
     designIntervention?: WizardDesignIntervention;
   },
@@ -665,7 +661,6 @@ function projectToSiteBundleSnapshot(
         (designIntervention || selections.designIntervention)?.artDirectionPackId ?? null,
       wizardSeedId: selections.wizardSeedId ?? undefined,
       generationSeed: (designIntervention || selections.designIntervention)?.seed,
-      interactionManifest: selections.interactionManifest,
       themeInjection: {
         version: '1.0',
         stage: '4b',

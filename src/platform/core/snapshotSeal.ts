@@ -21,7 +21,6 @@
 
 import type { SiteBundleSnapshot, SiteBundleSnapshotMeta } from './canonicalPipeline';
 import type { RuntimeAppContext } from '@/types/runtimeManifest';
-import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 
 export const SNAPSHOT_SEAL_VERSION = '1.0' as const;
 
@@ -60,7 +59,6 @@ export interface SealSnapshotInput {
   vfsFiles: Record<string, string>;
   /** Runtime context stamped onto the sealed revision. */
   appContext: RuntimeAppContext;
-  interactionManifest?: WizardInteractionManifest | null;
   /** Which stage produced the final merge (traceability only). */
   sealedBy?: 'wizard-launch' | 'recompile' | 'builder-commit' | 'import';
   /**
@@ -137,7 +135,6 @@ export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
     // The generation seed is sealed exactly as Stage 4b resolved it — sealing
     // must never re-derive or drop it, or the site stops being reproducible.
     generationSeed: baseline.meta?.generationSeed || baseline.meta?.designIntervention?.seed,
-    interactionManifest: input.interactionManifest || baseline.meta?.interactionManifest,
     themeInjection: {
       version: '1.0',
       stage: '4b',

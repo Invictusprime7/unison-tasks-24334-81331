@@ -33,7 +33,6 @@ import type { PlaygroundState } from './playground';
 import type { ThemeTokens } from '@/sections/types';
 import type { CompiledContract } from './contractCompiler';
 import { PreviewGate, PublishGate, type GateVerdict } from './gates';
-import { readWizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 
 // ============================================================================
 // Commit Source — every legal caller MUST identify itself.

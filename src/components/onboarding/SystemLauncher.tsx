@@ -165,6 +165,7 @@ import {
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
+import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
 // ============================================================================
 // Types
@@ -1884,9 +1885,23 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const preWiredExistingFiles: Record<string, string> = {
         '/.unison/wizard-seed.json': JSON.stringify(preWizardSeed, null, 2),
       };
+      const selectedComposition = effectiveTemplate?.id
+        ? getCompositionById(effectiveTemplate.id)
+        : null;
+      const mergeContext = createWizardMergeContext({
+        industry: resolvedIndustry,
+        templateId: effectiveTemplate?.id,
+        themePresetId: earlyResolvedPreset.id,
+        themeTokens: earlyThemeTokens,
+        templateLayoutContract: selectedComposition
+          ? buildTemplateLayoutContract({ ...selectedComposition, theme: earlyThemeTokens })
+          : null,
+        wizardSeedId,
+      });
 
       const stage4b = await runWizardStage4b({
         selections: wizardSelections,
+        mergeContext,
         existingVfsFiles: preWiredExistingFiles,
         yieldToHost: yieldToBrowser,
       });
@@ -3946,6 +3961,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         themePresetId: resolvedPreset.id,
         backendRequired: false,
         wizardSelections,
+        mergeContext,
         businessRuntime,
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
@@ -3968,7 +3984,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         });
         return artifacts;
       }, {
-        timeoutMs: 180_000,
+        timeoutMs: 240_000,
         // NO FALLBACK BY DESIGN. The launch artifact set has exactly one
         // author: Stage 4b (deterministic scaffold + sealed art direction)
         // merged with Lane B (AI-authored page bodies). A seed-recovery

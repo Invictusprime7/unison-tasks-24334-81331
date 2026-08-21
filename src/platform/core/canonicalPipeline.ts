@@ -70,6 +70,10 @@ import {
   buildTemplateLayoutContract,
   stampTemplateLayoutIdentity,
 } from '@/services/templateLayoutContract';
+import {
+  assertWizardMergeContextMatchesSelections,
+  type WizardMergeContext,
+} from '@/services/wizardMergeContext';
 
 /**
  * Stage 4b identity stamp. Applied on EVERY compile and recompile so a page
@@ -271,10 +275,12 @@ function readSnapshotDesignIntervention(
 export function executeCanonicalPipeline(
   selections: WizardSelections,
   existingVfsFiles: Record<string, string> = {},
+  mergeContext?: WizardMergeContext,
 ): CanonicalPipelineResult {
   assertWithinCommit('executeCanonicalPipeline');
+  if (mergeContext) assertWizardMergeContextMatchesSelections(mergeContext, selections);
   const themePresetId = assertThemeSeed(
-    selections.themePresetId,
+    mergeContext?.themePresetId ?? selections.themePresetId,
     'WizardSelections -> Lane A',
   );
   const warnings: string[] = [];
@@ -316,7 +322,7 @@ export function executeCanonicalPipeline(
   // Stage 4: Compile playground → VFS + router + bindings
   // Pass the wizard's Template + Style card selections so subpage scaffolds are
   // real role-filtered themed compositions instead of generic placeholders.
-  const themeTokens = selections.themeTokens;
+  const themeTokens = mergeContext?.themeTokens ?? selections.themeTokens;
   if (!themeTokens) {
     throw new Error(
       '[canonicalPipeline] Stage 4b assertion failed: selections.themeTokens is missing. ' +
@@ -328,10 +334,10 @@ export function executeCanonicalPipeline(
   const designIntervention = buildWizardDesignIntervention({
     businessName: selections.businessName,
     businessModel: selections.businessModel,
-    industryOverlay: selections.industryOverlay || (selections as { industry?: string }).industry,
-    templateId: selections.templateId,
+    industryOverlay: mergeContext?.industry || selections.industryOverlay || (selections as { industry?: string }).industry,
+    templateId: mergeContext?.templateId || selections.templateId,
     themePresetId,
-    wizardSeedId: selections.wizardSeedId,
+    wizardSeedId: mergeContext?.wizardSeedId || selections.wizardSeedId,
     // Every wizard dimension feeds the canonical generation seed so goals and
     // page selections materially change the composition — not just the theme.
     primaryGoal: selections.primaryGoal,

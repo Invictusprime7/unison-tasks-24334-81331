@@ -33,6 +33,7 @@ import type { PlaygroundState } from './playground';
 import type { ThemeTokens } from '@/sections/types';
 import type { CompiledContract } from './contractCompiler';
 import { PreviewGate, PublishGate, type GateVerdict } from './gates';
+import type { WizardMergeContext } from '@/services/wizardMergeContext';
 
 // ============================================================================
 // Commit Source — every legal caller MUST identify itself.
@@ -60,6 +61,8 @@ export interface CommitInput {
   selectedThemeId?: string;
   themePresetId?: string;
   themeTokens?: ThemeTokens;
+  /** One validated identity carrier for the Wizard → Stage 4b → seal path. */
+  mergeContext?: WizardMergeContext;
   /**
    * Optional pre-compiled contract. When provided we run PreviewGate +
    * PublishGate and surface their verdict on the result.
@@ -147,6 +150,7 @@ function runWizardLaunch(input: CommitInput): CanonicalPipelineResult {
   return executeCanonicalPipeline(
     input.selections,
     input.existingVfsFiles ?? {},
+    input.mergeContext,
   );
 }
 

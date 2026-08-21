@@ -18,6 +18,7 @@ workerScope.onmessage = (event) => {
       {
         selections: request.selections,
         existingVfsFiles: request.existingVfsFiles,
+        mergeContext: request.mergeContext,
       },
       'wizard-launch',
     );

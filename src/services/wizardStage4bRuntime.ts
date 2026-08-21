@@ -4,11 +4,13 @@ import {
   type CommitResult,
 } from '@/platform/core';
 import type { WizardSelections } from '@/types/playground';
+import type { WizardMergeContext } from '@/services/wizardMergeContext';
 
 export interface WizardStage4bWorkerRequest {
   requestId: string;
   selections: WizardSelections;
   existingVfsFiles: Record<string, string>;
+  mergeContext: WizardMergeContext;
 }
 
 export type WizardStage4bWorkerResponse =
@@ -36,6 +38,7 @@ interface WizardStage4bWorkerLike {
 
 export interface RunWizardStage4bOptions {
   selections: WizardSelections;
+  mergeContext: WizardMergeContext;
   existingVfsFiles?: Record<string, string>;
   signal?: AbortSignal;
   yieldToHost?: () => Promise<void>;
@@ -43,6 +46,7 @@ export interface RunWizardStage4bOptions {
   fallbackCommit?: (
     selections: WizardSelections,
     existingVfsFiles: Record<string, string>,
+    mergeContext: WizardMergeContext,
   ) => CommitResult;
   now?: () => number;
 }
@@ -157,12 +161,13 @@ function runStage4bWorker(
  */
 export async function runWizardStage4b({
   selections,
+  mergeContext,
   existingVfsFiles = {},
   signal,
   yieldToHost = () => Promise.resolve(),
   workerFactory = defaultWorkerFactory,
-  fallbackCommit = (fallbackSelections, fallbackFiles) => commitToPipeline(
-    { selections: fallbackSelections, existingVfsFiles: fallbackFiles },
+  fallbackCommit = (fallbackSelections, fallbackFiles, fallbackMergeContext) => commitToPipeline(
+    { selections: fallbackSelections, existingVfsFiles: fallbackFiles, mergeContext: fallbackMergeContext },
     'wizard-launch',
   ),
   now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
@@ -183,6 +188,7 @@ export async function runWizardStage4b({
       requestId: createRequestId(),
       selections,
       existingVfsFiles,
+      mergeContext,
     }, signal);
     publishPipelineCommit(pipelineResult);
     const durationMs = Math.max(0, now() - startedAt);
@@ -197,7 +203,7 @@ export async function runWizardStage4b({
 
   await yieldToHost();
   if (signal?.aborted) throw toAbortError(signal);
-  const pipelineResult = fallbackCommit(selections, existingVfsFiles);
+  const pipelineResult = fallbackCommit(selections, existingVfsFiles, mergeContext);
   const durationMs = Math.max(0, now() - startedAt);
   console.info('[WizardStage4b] compile completed', {
     execution: 'main-thread-fallback',

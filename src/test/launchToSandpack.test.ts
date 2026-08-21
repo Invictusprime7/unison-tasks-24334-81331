@@ -12,6 +12,32 @@ import { buildThemedIndexCss } from "@/components/onboarding/themePresetToIndexC
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 
 describe("launchStateToSandpackFiles", () => {
+  it('does not reintroduce raw launcher paths after canonical normalization', () => {
+    const launchState = createLaunchState({
+      systemType: 'store',
+      systemName: 'Store',
+      businessName: 'Vela',
+      templateName: 'Storefront',
+      templateCategory: 'store',
+      vfsFiles: {
+        '/App.tsx': "import Home from './pages/Home'; export default function App() { return <Home />; }",
+        '/pages/Home.tsx': 'export default function Home() { return <main>Normalized</main>; }',
+        '/index.css': ':root { --primary: 221 83% 53%; }',
+      },
+      preloadedIntents: [],
+    });
+
+    const previewFiles = launchStateToSandpackFiles({
+      launchState,
+      vfsFiles: launchState.vfsFiles,
+    });
+
+    expect(previewFiles['/App.tsx']).toContain("from './pages/Home'");
+    expect(previewFiles['/pages/Home.tsx']).toContain('Normalized');
+    expect(previewFiles['/src/App.tsx']).toBeUndefined();
+    expect(previewFiles['/src/pages/Home.tsx']).toBeUndefined();
+  });
+
   it('blocks a wizard preview when Sandpack disconnects a registered route from its router', () => {
     const snapshot = {
       snapshotId: 'snap_route_reachability',

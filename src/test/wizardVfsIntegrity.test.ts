@@ -127,4 +127,38 @@ describe('wizard VFS integrity', () => {
     expect(previewResult['/App.tsx']).toContain('Cache reuse check');
     expect(previewResult['/launch-metadata.json']).toBeUndefined();
   });
+
+  it('resolves aliases, absolute src paths, re-exports, and JSON modules after flattening', () => {
+    const files = {
+      '/src/App.tsx': [
+        "import Home from '@/pages/Home';",
+        "import settings from '/src/data/settings.json';",
+        "export { Card } from '@/components/Card';",
+        'export default function App() { return <Home title={settings.title} />; }',
+      ].join('\n'),
+      '/src/pages/Home.tsx': [
+        "import { Card } from '/src/components/Card';",
+        'export default function Home({ title }: { title: string }) { return <Card>{title}</Card>; }',
+      ].join('\n'),
+      '/src/components/Card.tsx': 'export function Card({ children }: { children: React.ReactNode }) { return <section>{children}</section>; }',
+      '/src/data/settings.json': JSON.stringify({ title: 'Resolved preview' }),
+      '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
+      '/.unison/site-bundle-snapshot.json': JSON.stringify({
+        snapshotId: 'snap_module_resolution',
+        pageRegistry: { pages: {} },
+        vfsFiles: {},
+        meta: { source: 'wizard' },
+      }),
+    };
+
+    const prepared = prepareSandpackFiles(files);
+
+    expect(prepared['/data/settings.json']).toContain('Resolved preview');
+    expect(prepared['/App.tsx']).toContain("from './pages/Home'");
+    expect(prepared['/App.tsx']).toContain("from './components/Card'");
+    expect(prepared['/App.tsx']).not.toContain('@/');
+    expect(prepared['/pages/Home.tsx']).toContain("from '../components/Card'");
+    expect(prepared['/pages/Home.tsx']).not.toContain('/src/');
+  });
 });

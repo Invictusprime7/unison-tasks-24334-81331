@@ -11,3 +11,5 @@ const home = out['/pages/Home.tsx'] || '';
 console.log('parse failures:', bad);
 console.log('remaining token overrides in Home:', (home.match(/['"`]--(primary|background|foreground|card|muted|border|accent|radius)/g) || []).length);
 console.log('remaining data-attr class literals:', (home.match(/['"`]data-[a-z-]+=/g) || []).length);
+const idx = home.search(/['"`]data-[a-z-]+=/);
+console.log(JSON.stringify(home.slice(Math.max(0, idx - 300), idx + 120)));

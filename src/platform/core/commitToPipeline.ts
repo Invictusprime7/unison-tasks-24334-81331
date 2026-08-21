@@ -144,17 +144,8 @@ function runWizardLaunch(input: CommitInput): CanonicalPipelineResult {
       "[commitToPipeline] source 'wizard-launch' requires `selections`.",
     );
   }
-  // The launcher creates the constrained AI plan after its first structural
-  // compile. Revision commits receive that plan in the VFS, so recover it
-  // here and promote it into the next canonical snapshot instead of leaving
-  // it as an unowned launcher file.
-  const interactionManifest =
-    input.selections.interactionManifest ||
-    readWizardInteractionManifest(input.existingVfsFiles ?? {});
   return executeCanonicalPipeline(
-    interactionManifest
-      ? { ...input.selections, interactionManifest }
-      : input.selections,
+    input.selections,
     input.existingVfsFiles ?? {},
   );
 }

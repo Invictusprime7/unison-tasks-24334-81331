@@ -94,6 +94,8 @@ export interface LaunchState {
   businessId?: string;
   siteId?: string;
   projectId?: string;
+  draftId?: string;
+  revisionId?: string;
   manifestId?: string;
   entryPoint?: string;
   runtimeManifest?: RuntimeManifest;

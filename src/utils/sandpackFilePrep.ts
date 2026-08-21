@@ -4039,7 +4039,11 @@ function resolveRelativeModuleTarget(
   rawImportPath: string,
   existingPaths: Set<string>,
 ): string | null {
-  const extensions = ['.tsx', '.jsx', '.ts', '.js'];
+  const extensions = [
+    '.tsx', '.jsx', '.ts', '.js', '.mjs', '.cjs',
+    '.json', '.css', '.scss', '.less',
+    '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif',
+  ];
   const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
   let resolved = rawImportPath.startsWith('/')
     ? rawImportPath
@@ -5479,6 +5483,28 @@ export function processCode(code: string, filePath: string): string {
     ),
   );
 
+  // Cover re-exports, multiline imports, and dynamic imports as well as the
+  // ordinary single-line aliases above. The persisted VFS uses `/src`, while
+  // Sandpack receives those files flattened at its root.
+  processed = processed.replace(
+    /(\b(?:from|import\s*\()\s*['"])@\/([^'"\n]+)(['"]\s*\)?)/g,
+    (_match, prefix, modulePath, suffix) => (
+      `${prefix}${aliasModuleToRelativeImport(filePath, `@/${modulePath}`)}${suffix}`
+    ),
+  );
+  processed = processed.replace(
+    /(\b(?:from|import\s*\()\s*['"])\/src\/([^'"\n]+)(['"]\s*\)?)/g,
+    (_match, prefix, modulePath, suffix) => (
+      `${prefix}${toRelativeSandpackImport(filePath, `/${modulePath}`)}${suffix}`
+    ),
+  );
+  processed = processed.replace(
+    /(\bimport\s*['"])\/src\/([^'"\n]+)(['"])/g,
+    (_match, prefix, modulePath, suffix) => (
+      `${prefix}${toRelativeSandpackImport(filePath, `/${modulePath}`)}${suffix}`
+    ),
+  );
+
   // Process remaining imports — strip unresolvable npm packages to prevent Sandpack crashes
 
   // Generated Unison Radix facades re-export the external primitive. Sandpack
@@ -6112,7 +6138,7 @@ export function prepareSandpackFiles(
     // Skip files Sandpack doesn't need
     if (normalizedPath.includes('node_modules') ||
         normalizedPath.includes('/.') ||
-        normalizedPath.endsWith('.json') ||
+        normalizedPath === '/package.json' ||
         normalizedPath.endsWith('.config.ts') ||
         normalizedPath.endsWith('.config.js')) {
       continue;

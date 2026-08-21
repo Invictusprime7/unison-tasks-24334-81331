@@ -31,6 +31,7 @@ import { isLiveEditedVfsPath, resolveSnapshot } from '@/services/snapshotProject
 import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedChrome';
 import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
+import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
 
 const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
 
@@ -5030,6 +5031,21 @@ export function processCode(code: string, filePath: string): string {
   // Collapse duplicate top-level declarations before any other transform so a
   // merged page body can never hard-fail Babel with "already been declared".
   code = dedupeTopLevelDeclarations(code);
+
+  // Stage 4b owns the canonical design tokens. Inline re-declarations authored
+  // by Lane B (`style={{ '--primary': 'hsl(var(--primary))' }}`) are cyclic and
+  // blank out every themed utility below them — strip them before compile.
+  {
+    const guarded = stripCanonicalTokenOverrides(code);
+    if (guarded.strippedTokens > 0 || guarded.strippedAttrClasses > 0) {
+      console.warn('[sandpackFilePrep] stripped generated token overrides', {
+        filePath,
+        tokens: guarded.strippedTokens,
+        attrClasses: guarded.strippedAttrClasses,
+      });
+    }
+    code = guarded.code;
+  }
 
 
 

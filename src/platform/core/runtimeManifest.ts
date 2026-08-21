@@ -96,8 +96,6 @@ export interface RuntimeAppContext {
   themePresetId?: string;
   /** Durable semantic HSL token payload selected by the wizard Style card. */
   themeTokens?: import('@/sections/types').ThemeTokens;
-  /** Durable constrained plan for the final interaction runtime. */
-  interactionManifest?: import('@/services/wizardInteractionEnrichment').WizardInteractionManifest;
   /** Shared Preview capability contract for every canonical wizard launch. */
   previewRuntime?: {
     version: '1.0';

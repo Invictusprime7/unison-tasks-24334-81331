@@ -3,7 +3,6 @@
 
 export type AssistantTaskType =
   | "wizard_seed_generation"
-  | "wizard_interaction_enrichment"
   | "wizard_content_enrichment"
   | "nav_page_generation"
   | "template_json_generation"
@@ -76,18 +75,6 @@ export function classifyTask(opts: {
     return {
       type: "wizard_seed_generation",
       fastPath: true,
-      shouldUseMemory: false,
-      shouldUseCompactContext: true,
-      prefersJsonOutput: true,
-      skipResearch: true,
-      skipThinking: true,
-    };
-  }
-
-  if (mode === "wizard-interactions") {
-    return {
-      type: "wizard_interaction_enrichment",
-      fastPath: false,
       shouldUseMemory: false,
       shouldUseCompactContext: true,
       prefersJsonOutput: true,

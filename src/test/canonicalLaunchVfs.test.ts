@@ -331,29 +331,6 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.siteBundleSnapshot?.vfsFiles['/src/components/SharedRuntime.tsx']).toContain('snapshot');
   });
 
-  it('persists an explicit interaction manifest into app context and the cloned snapshot', () => {
-    const snapshot = createSnapshot();
-    const interactionManifest = {
-      version: '1.0' as const,
-      source: 'ai' as const,
-      templateId: 'agency-template',
-      layoutSignature: 'split-hero',
-      industry: 'agency',
-      interactions: [{ target: { kind: 'interactive' as const, value: 'hero-cta' }, effect: 'hover-lift' as const }],
-    };
-    const artifacts = buildCanonicalLaunchArtifacts({
-      generatedFiles: {},
-      preferredEntryPoint: '/src/App.tsx',
-      siteBundleSnapshot: snapshot,
-      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
-      interactionManifest,
-      themePresetId: 'modern',
-    });
-
-    expect(artifacts.appContext.interactionManifest).toEqual(interactionManifest);
-    expect(artifacts.siteBundleSnapshot?.meta.interactionManifest).toEqual(interactionManifest);
-  });
-
   it("can preserve generated wizard output without merging canonical snapshot files", () => {
     const snapshot = createSnapshot();
     const artifacts = buildCanonicalLaunchArtifacts({

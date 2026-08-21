@@ -23,7 +23,6 @@ import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair, runPreflightRepairSteps } from './aiSitePreflightRepair';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
-import type { WizardInteractionManifest } from './wizardInteractionEnrichment';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
@@ -118,8 +117,6 @@ export interface BuildCanonicalLaunchArtifactsInput {
   aesthetic?: string | null;
   /** Resolved wizard Style-card preset id (drives /src/index.css). */
   themePresetId?: string | null;
-  /** Validated Lane B interaction plan, persisted as canonical runtime data. */
-  interactionManifest?: WizardInteractionManifest | null;
   backendRequired?: boolean;
   wizardSelections?: WizardSelections | null;
   businessRuntime?: BusinessRuntimeContract | null;
@@ -214,7 +211,6 @@ function cloneSnapshotWithRuntimeVfs(
   siteBundleSnapshot: SiteBundleSnapshot,
   appContext: RuntimeAppContext,
   files: Record<string, string>,
-  interactionManifest?: WizardInteractionManifest | null,
   missingPageFilePolicy: 'throw' | 'report' = 'throw',
 ): SiteBundleSnapshot {
   // Pass 1 seal point: Stage 4b artifact + Lane B convergence + preflight
@@ -224,7 +220,6 @@ function cloneSnapshotWithRuntimeVfs(
     artifact: siteBundleSnapshot,
     appContext,
     vfsFiles: files,
-    interactionManifest,
     missingPageFilePolicy,
     sealedBy: siteBundleSnapshot.meta?.source === 'recompile' ? 'recompile' : 'wizard-launch',
   });
@@ -802,9 +797,6 @@ function* buildCanonicalLaunchArtifactSteps(
     input.siteBundleSnapshot,
     resolvedThemePresetId || undefined,
   );
-  // Interaction artifacts are snapshot-owned. The launch adapter must not
-  // synthesize or replace them after the canonical projection.
-  appContext.interactionManifest = input.interactionManifest ?? input.siteBundleSnapshot?.meta?.interactionManifest;
   appContext.themeInjection = {
     version: '1.0',
     stage: '4b',
@@ -858,7 +850,6 @@ function* buildCanonicalLaunchArtifactSteps(
         runtimeSnapshotSeed,
         appContext,
         verifiedViteFiles,
-        input.interactionManifest,
         missingPageFilePolicy,
       )
     : undefined;

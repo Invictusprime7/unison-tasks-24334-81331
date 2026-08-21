@@ -326,8 +326,7 @@ export function buildProviderPlan(
   // wizard seed lineup is intentionally tuned for first-shot success and
   // must not be swapped out for slower advanced-tier models).
   const usesProtectedWizardPlan = task.type === "wizard_seed_generation"
-    || task.type === "wizard_content_enrichment"
-    || task.type === "wizard_interaction_enrichment";
+    || task.type === "wizard_content_enrichment";
   if (!usesProtectedWizardPlan) {
     const baseTokens = plan.gatewayModels[0]?.maxTokens ?? 32000;
     const upgrade = applyComplexityUpgrade(plan.gatewayModels, complexity, baseTokens);

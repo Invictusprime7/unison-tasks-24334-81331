@@ -47,7 +47,6 @@ import type { ThemeTokens } from '@/sections/types';
 import type { GeneratedSitePlan } from './siteTopologyPlanner';
 import type { BusinessSystemState } from './capabilityRegistry';
 import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
-import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
 import {
   buildGeneratedUiFoundation,
@@ -66,6 +65,25 @@ import {
 } from '@/services/wizardGenerationBrief';
 import { createWizardCompileArtifact, type WizardCompileArtifact } from './snapshotSeal';
 import { isArtDirectionPackId } from '@/sections/variants/artDirectionPacks';
+import { getCompositionById } from '@/sections/templates';
+import {
+  buildTemplateLayoutContract,
+  stampTemplateLayoutIdentity,
+} from '@/services/templateLayoutContract';
+
+/**
+ * Stage 4b identity stamp. Applied on EVERY compile and recompile so a page
+ * body can never lose its template identity after an edit round-trip.
+ */
+function applyStage4bTemplateIdentity(
+  files: Record<string, string>,
+  templateId?: string | null,
+): Record<string, string> {
+  if (!templateId) return files;
+  const composition = getCompositionById(templateId);
+  if (!composition) return files;
+  return stampTemplateLayoutIdentity(files, buildTemplateLayoutContract(composition));
+}
 
 
 // ============================================================================
@@ -190,8 +208,6 @@ export interface SiteBundleSnapshotMeta {
    * instead of re-deriving a pack, so the aesthetic cannot drift.
    */
   artDirectionPackId?: string | null;
-  /** Durable constrained final interaction plan. */
-  interactionManifest?: WizardInteractionManifest;
   /** Explicit chain-of-custody for the Stage 4b dynamic theme stylesheet. */
   themeInjection?: {
     version: '1.0';
@@ -380,6 +396,7 @@ export function executeCanonicalPipeline(
     wantsLeadCapture: selections.wantsLeadCapture,
     sellsProducts: selections.sellsProducts,
   }).files;
+  compileResult.vfsFiles = applyStage4bTemplateIdentity(compileResult.vfsFiles, selections.templateId);
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
@@ -519,6 +536,10 @@ export function recompileFromPlayground(
     themePresetId,
   });
   Object.assign(compileResult.vfsFiles, uiFoundation.files);
+  compileResult.vfsFiles = applyStage4bTemplateIdentity(
+    compileResult.vfsFiles,
+    options?.selectedTemplateId,
+  );
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
@@ -574,7 +595,6 @@ function projectToSiteBundleSnapshot(
     templateId?: string | null;
     wizardSeedId?: string | null;
     themeTokens?: ThemeTokens;
-    interactionManifest?: WizardInteractionManifest;
     uiFoundation?: GeneratedUiManifest;
     designIntervention?: WizardDesignIntervention;
   },
@@ -665,7 +685,6 @@ function projectToSiteBundleSnapshot(
         (designIntervention || selections.designIntervention)?.artDirectionPackId ?? null,
       wizardSeedId: selections.wizardSeedId ?? undefined,
       generationSeed: (designIntervention || selections.designIntervention)?.seed,
-      interactionManifest: selections.interactionManifest,
       themeInjection: {
         version: '1.0',
         stage: '4b',

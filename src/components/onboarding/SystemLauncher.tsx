@@ -4018,13 +4018,32 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           sealedMissingPageFiles.join(', '),
         );
       }
-      const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
-
-      const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
-        runtime: JSON.parse(launchArtifacts.files['/.unison/published-runtime.json']) as import('@/services/canonicalLaunchVfs').PublishedRuntimeConfig,
-        bindingCount: plannedDataBindings.length,
-        formDefinitionCount: plannedFormDefinitions.length,
-      });
+      // Nothing between a successful preflight and the review dialog may abort
+      // the launch. These are post-launch readiness reports; a thrown error
+      // here previously killed the run right after "Finalizing preview…" and
+      // the builder never opened.
+      let plannedFormDefinitions: ReturnType<typeof planLaunchFormDefinitions> = [];
+      let publishedRuntimeReadiness: ReturnType<typeof evaluatePublishedRuntimeReadiness> = {
+        ok: false,
+        blockers: ['Publishing readiness was not evaluated.'],
+      } as ReturnType<typeof evaluatePublishedRuntimeReadiness>;
+      try {
+        plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
+        const publishedRuntimeRaw = launchArtifacts.files['/.unison/published-runtime.json'];
+        publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
+          runtime: (publishedRuntimeRaw
+            ? JSON.parse(publishedRuntimeRaw)
+            : {}) as import('@/services/canonicalLaunchVfs').PublishedRuntimeConfig,
+          bindingCount: plannedDataBindings.length,
+          formDefinitionCount: plannedFormDefinitions.length,
+        });
+      } catch (readinessError) {
+        console.warn('[SystemLauncher] publishing readiness evaluation failed', readinessError);
+        publishedRuntimeReadiness = {
+          ok: false,
+          blockers: [readinessError instanceof Error ? readinessError.message : String(readinessError)],
+        } as ReturnType<typeof evaluatePublishedRuntimeReadiness>;
+      }
       if (!publishedRuntimeReadiness.ok) {
         // Publishing readiness is a post-launch concern; never block the user's
         // path into the builder over it.

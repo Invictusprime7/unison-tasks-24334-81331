@@ -55,3 +55,25 @@ export function createWizardMergeContext(input: {
     wizardSeedId: input.wizardSeedId ?? null,
   };
 }
+
+export function assertWizardMergeContextMatchesSelections(
+  context: WizardMergeContext,
+  selections: {
+    industryOverlay?: string | null;
+    industry?: string | null;
+    templateId?: string | null;
+    themePresetId?: string | null;
+    wizardSeedId?: string | null;
+  },
+): void {
+  const selectedIndustry = selections.industryOverlay || selections.industry || 'general';
+  const mismatches = [
+    context.industry !== selectedIndustry ? `industry (${context.industry} !== ${selectedIndustry})` : '',
+    context.templateId !== (selections.templateId ?? null) ? `templateId (${context.templateId} !== ${selections.templateId ?? null})` : '',
+    context.themePresetId !== selections.themePresetId ? `themePresetId (${context.themePresetId} !== ${selections.themePresetId ?? null})` : '',
+    context.wizardSeedId !== (selections.wizardSeedId ?? null) ? `wizardSeedId (${context.wizardSeedId ?? null} !== ${selections.wizardSeedId ?? null})` : '',
+  ].filter(Boolean);
+  if (mismatches.length > 0) {
+    throw new Error(`[wizardMergeContext] Selection drift detected: ${mismatches.join(', ')}.`);
+  }
+}

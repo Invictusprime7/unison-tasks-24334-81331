@@ -103,8 +103,7 @@ import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/p
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
 import {
-  buildLauncherNavigationState,
-  persistLauncherHandoff,
+  persistAndBuildLauncherHandoff,
 } from "@/services/launcherHandoffPersistence";
 import { ImportProjectZipButton } from "@/components/onboarding/ImportProjectZipButton";
 import { ImportUnisonSiteZipButton } from "@/components/onboarding/ImportUnisonSiteZipButton";
@@ -165,6 +164,7 @@ import {
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
+import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
 // ============================================================================
 // Types
@@ -1507,6 +1507,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launchPreviewConfirmation, setLaunchPreviewConfirmation] = useState<LaunchPreviewConfirmation | null>(null);
   const launchConfirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const activeLaunchRunRef = useRef<LaunchRun | null>(null);
   // Business Profile selected in the wizard header. When set, the project
   // is stamped into this business; when null we fall back to
   // install-system provisioning (creates a fresh business).
@@ -1560,7 +1561,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   useEffect(() => {
     if (open) {
       fetchDesignProfile();
+      return;
     }
+    activeLaunchRunRef.current?.cancel();
+    activeLaunchRunRef.current = null;
+    const resolve = launchConfirmationResolverRef.current;
+    launchConfirmationResolverRef.current = null;
+    setLaunchPreviewConfirmation(null);
+    resolve?.(false);
   }, [open, fetchDesignProfile]);
 
   // Milestone 1 — prefill wizard identity from BusinessProfileGate handoff.
@@ -1685,6 +1693,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
   const handleLaunch = async () => {
     if (isLaunching || launchPreviewConfirmation) return;
+    if (!open) return;
     if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
     if (!system) return;
@@ -1706,6 +1715,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     // The launch run owns the journey: it records non-fatal degradations so the
     // wizard never dead-ends the user with an error toast.
     const run: LaunchRun = createLaunchRun();
+    activeLaunchRunRef.current = run;
   // Let the generating state paint before composing the sizeable canonical VFS.
   await yieldToBrowser();
     
@@ -1721,6 +1731,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // User must be authenticated to generate a site
       if (!sessionData.session) {
         toast.error("Please sign in to continue");
+        onOpenChange(false);
         navigate("/auth");
         return;
       }
@@ -1884,9 +1895,23 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const preWiredExistingFiles: Record<string, string> = {
         '/.unison/wizard-seed.json': JSON.stringify(preWizardSeed, null, 2),
       };
+      const selectedComposition = effectiveTemplate?.id
+        ? getCompositionById(effectiveTemplate.id)
+        : null;
+      const mergeContext = createWizardMergeContext({
+        industry: resolvedIndustry,
+        templateId: effectiveTemplate?.id,
+        themePresetId: earlyResolvedPreset.id,
+        themeTokens: earlyThemeTokens,
+        templateLayoutContract: selectedComposition
+          ? buildTemplateLayoutContract({ ...selectedComposition, theme: earlyThemeTokens })
+          : null,
+        wizardSeedId,
+      });
 
       const stage4b = await runWizardStage4b({
         selections: wizardSelections,
+        mergeContext,
         existingVfsFiles: preWiredExistingFiles,
         yieldToHost: yieldToBrowser,
       });
@@ -3946,6 +3971,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         themePresetId: resolvedPreset.id,
         backendRequired: false,
         wizardSelections,
+        mergeContext,
         businessRuntime,
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
@@ -3968,7 +3994,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         });
         return artifacts;
       }, {
-        timeoutMs: 180_000,
+        timeoutMs: 240_000,
         // NO FALLBACK BY DESIGN. The launch artifact set has exactly one
         // author: Stage 4b (deterministic scaffold + sealed art direction)
         // merged with Lane B (AI-authored page bodies). A seed-recovery
@@ -4105,10 +4131,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const launchProjectId = confirmedLaunch.projectId;
       const launcherDraftId = confirmedLaunch.draftId;
 
-      try {
-        localStorage.setItem('unison:lastBusinessId', confirmedLaunch.businessId);
-      } catch { /* browser storage is best-effort */ }
-
       // The platform-core commit pipeline is authoritative. Confirmed launch
       // may create the tenant root, but no builder handoff exists until the
       // canonical snapshot has persisted as revision 1.
@@ -4151,13 +4173,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         throw new Error('The generated site could not be committed to its project. Please confirm again.');
       }
       const launcherRevisionId = result.persistedRevisionId;
+      try {
+        localStorage.setItem('unison:lastBusinessId', confirmedLaunch.businessId);
+      } catch { /* browser storage is best-effort */ }
       // Public form contracts live outside the VFS: form-submit rejects any
       // intent that disagrees with its approved definition. Never fail the
       // launch over this — the builder can re-provision forms later.
       const formDefinitionPersistence = await persistLaunchFormDefinitions({
         businessId: confirmedLaunch.businessId,
-        projectId: launchProjectId,
         siteId: confirmedLaunch.siteId,
+        projectId: launchProjectId,
         definitions: plannedFormDefinitions,
       });
       if (formDefinitionPersistence.error) {
@@ -4232,7 +4257,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         startInPreview: true,
         intentRuntime: true,
         businessId: confirmedLaunch.businessId,
+        siteId: confirmedLaunch.siteId,
         projectId: launchProjectId,
+        draftId: launcherDraftId,
+        revisionId: launcherRevisionId,
         industry: resolvedIndustry,
         runtimeManifest: canonicalRuntimeManifest,
         entryPoint: launchArtifacts.entryPoint,
@@ -4250,10 +4278,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         fromLauncher: true,
         ...navState,
       };
-      const webBuilderNavigationState = buildLauncherNavigationState(webBuilderRouteState);
-
       setLaunch(launchState);
-      persistLauncherHandoff({
+      const webBuilderNavigationState = persistAndBuildLauncherHandoff({
         routeState: webBuilderRouteState,
         launchState,
       });
@@ -4296,6 +4322,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       resetState();
 
     } catch (e) {
+      if (run.cancelled) return;
       const msg = await getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);
       if (classifyLaunchError(e) === 'fatal') {
@@ -4308,6 +4335,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         setLaunchError(`${msg} Your selections are preserved — press Generate to try again.`);
       }
     } finally {
+      if (activeLaunchRunRef.current === run) activeLaunchRunRef.current = null;
       setIsLaunching(false);
       setLaunchStatus("");
     }

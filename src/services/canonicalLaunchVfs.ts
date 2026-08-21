@@ -27,6 +27,10 @@ import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencie
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
 import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
+import {
+  assertWizardMergeContextMatchesSelections,
+  type WizardMergeContext,
+} from '@/services/wizardMergeContext';
 
 import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {
@@ -130,6 +134,8 @@ export interface BuildCanonicalLaunchArtifactsInput {
   allowCanonicalPageFallback?: boolean;
   /** Throw if internal preflight has to quarantine generated code. */
   strictPreflight?: boolean;
+  /** Validated identity produced once by the Wizard and consumed by the seal. */
+  mergeContext?: WizardMergeContext;
 }
 
 function resolveRelativeVfsModulePath(filePath: string, importPath: string): string {
@@ -630,21 +636,24 @@ function* buildCanonicalLaunchArtifactSteps(
   input: BuildCanonicalLaunchArtifactsInput,
 ): Generator<void, CanonicalLaunchArtifacts, void> {
   const mergeWithCanonicalSnapshot = input.mergeWithCanonicalSnapshot ?? true;
+  if (input.mergeContext && input.wizardSelections) {
+    assertWizardMergeContextMatchesSelections(input.mergeContext, input.wizardSelections);
+  }
   const snapshotThemePresetId = input.siteBundleSnapshot
     ? assertSnapshotThemeSeed(
         input.siteBundleSnapshot,
         assertThemeSeed(
-          input.themePresetId ?? input.siteBundleSnapshot.meta.themePresetId,
+          input.mergeContext?.themePresetId ?? input.themePresetId ?? input.siteBundleSnapshot.meta.themePresetId,
           'SiteBundleSnapshot -> canonical launch',
         ),
         'SiteBundleSnapshot -> canonical launch',
       )
     : null;
-  if (input.siteBundleSnapshot && input.themePresetId) {
-    assertThemeSeed(input.themePresetId, 'WizardMergeContext -> canonical launch', snapshotThemePresetId);
+  if (input.siteBundleSnapshot && (input.mergeContext?.themePresetId || input.themePresetId)) {
+    assertThemeSeed(input.mergeContext?.themePresetId || input.themePresetId, 'WizardMergeContext -> canonical launch', snapshotThemePresetId);
   }
   const resolvedThemePresetId = snapshotThemePresetId || assertThemeSeed(
-    input.themePresetId,
+    input.mergeContext?.themePresetId || input.themePresetId,
     'WizardMergeContext -> canonical launch',
   );
   const generatedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot

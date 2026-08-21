@@ -4183,9 +4183,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         businessId: confirmedLaunch.businessId,
         siteId: confirmedLaunch.siteId,
         projectId: launchProjectId,
-        draftId: launcherDraftId,
-        revisionId: launcherRevisionId,
-        siteId: confirmedLaunch.siteId,
         definitions: plannedFormDefinitions,
       });
       if (formDefinitionPersistence.error) {
@@ -4260,7 +4257,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         startInPreview: true,
         intentRuntime: true,
         businessId: confirmedLaunch.businessId,
+        siteId: confirmedLaunch.siteId,
         projectId: launchProjectId,
+        draftId: launcherDraftId,
+        revisionId: launcherRevisionId,
         industry: resolvedIndustry,
         runtimeManifest: canonicalRuntimeManifest,
         entryPoint: launchArtifacts.entryPoint,

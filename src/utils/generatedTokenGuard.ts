@@ -87,14 +87,16 @@ export function stripCanonicalTokenOverrides(code: string): TokenGuardResult {
     next = next.replace(/\s*style=\{\{\s*\}\}/g, '');
   }
 
-  if (/data-[a-z0-9-]+=/i.test(next)) {
-    next = next.replace(DATA_ATTR_CLASS_LITERAL, (match, _q, offset: number) => {
-      // Only rewrite when the literal sits inside a className/cn(...) context.
-      const window = next.slice(Math.max(0, offset - 200), offset);
-      if (!/className|\bcn\s*\(|clsx\s*\(/.test(window)) return match;
-      strippedAttrClasses++;
-      return '';
-    });
+  if (/data-[a-z0-9-]+=/i.test(next) && /className|\bcn\s*\(|clsx\s*\(/.test(next)) {
+    // Adjacent literals can shift match boundaries, so repeat until stable.
+    for (let pass = 0; pass < 5; pass++) {
+      const before = next;
+      next = next.replace(DATA_ATTR_CLASS_LITERAL, () => {
+        strippedAttrClasses++;
+        return '';
+      });
+      if (next === before) break;
+    }
 
     // `cn(  )` / `cn('a', )` cleanup after removals.
     next = next.replace(/,\s*\)/g, ')').replace(/\(\s*,/g, '(');

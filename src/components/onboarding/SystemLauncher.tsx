@@ -3768,53 +3768,38 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
       if (unresolvedAfterCompletion.length > 0) {
-        launchReliabilityMode = 'lane-b-degraded';
+        // Pass 3 — Lane-B-only recovery. Targeted retries are the ONLY recovery
+        // path; there is no canonical/minimal/seed scaffold backfill. A page
+        // Lane B could not author is a hard, user-visible launch failure.
+        launchReliabilityMode = 'lane-b-blocked';
         const completionReasons = laneBCompletionDiagnostics
           .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
           .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
           .join(' | ');
-        // Backfill from the wizard's own seed snapshot so every selected page
-        // still exists, themed and routed, instead of blocking the launch.
-        // Pass 4 — the completion loop degrades to a STAGE 4b RE-COMPILE of the
-        // page (its baseline body from the compile artifact), never to an
-        // isolated authoring call and never to a missing file.
-        const backfilled: string[] = [];
-        const withoutStage4bBaseline: string[] = [];
-        for (const path of unresolvedAfterCompletion) {
+        const registeredPages = Object.values(siteBundleSnapshot.pageRegistry.pages) as Array<{
+          filePath?: string;
+          name?: string;
+          title?: string;
+          slug?: string;
+        }>;
+        const missingPageNames = unresolvedAfterCompletion.map((path) => {
           const normalized = path.startsWith('/') ? path : `/${path}`;
-          const seedSource = siteBundleSnapshot.vfsFiles[normalized]
-            ?? siteBundleSnapshot.vfsFiles[path];
-          if (typeof seedSource === 'string' && seedSource.trim()) {
-            aiSourcedFiles[normalized] = seedSource;
-            backfilled.push(normalized);
-          } else {
-            withoutStage4bBaseline.push(normalized);
-          }
-        }
-        if (withoutStage4bBaseline.length > 0) {
-          // A registered page with no Stage 4b body means the compile artifact
-          // itself is incomplete — surface it instead of sealing a hole.
-          console.error('[SystemLauncher] Registered pages missing a Stage 4b baseline body', {
-            paths: withoutStage4bBaseline,
+          const page = registeredPages.find((candidate) => {
+            const candidatePath = candidate.filePath
+              ? (candidate.filePath.startsWith('/') ? candidate.filePath : `/${candidate.filePath}`)
+              : null;
+            return candidatePath === normalized;
           });
-          run.degrade(
-            'enrich',
-            'enrich.pages_missing_baseline',
-            `${withoutStage4bBaseline.length} page(s) have no Stage 4b baseline to fall back to.`,
-            withoutStage4bBaseline.join(', '),
-          );
-        }
-        run.degrade(
-          'enrich',
-          'enrich.pages_from_seed',
-          `${backfilled.length || unresolvedAfterCompletion.length} page(s) use your wizard template content instead of AI copy.`,
-          completionReasons,
+          return page?.name || page?.title || page?.slug || normalized.split('/').pop()?.replace(/\.tsx$/, '') || normalized;
+        });
+        console.error('[SystemLauncher] Lane B could not generate registered pages', {
+          paths: unresolvedAfterCompletion,
+          reasons: completionReasons,
+        });
+        throw new Error(
+          `Lane B could not generate: ${missingPageNames.join(', ')}. ` +
+            'Retry generation or deselect this page. Scaffold placeholders are disabled.',
         );
-        wizardGenerationGaps.completedFromScaffold = true;
-        wizardGenerationGaps.scaffoldFilledPaths = [
-          ...(wizardGenerationGaps.scaffoldFilledPaths || []),
-          ...backfilled,
-        ];
       }
 
       const presentationAssessment = assessWizardPagePresentations({

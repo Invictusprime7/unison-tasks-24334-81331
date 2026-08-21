@@ -10,10 +10,6 @@ import { GENERATED_UI_FOUNDATION_VERSION } from '@/platform/core/generatedUiFoun
 import { getCompositionsBySystemType } from '@/sections/templates';
 import { getVariantById, getVariantsForSection } from '@/sections/variants';
 import { buildTemplateLayoutContract } from '@/services/templateLayoutContract';
-import {
-  compileWizardInteractionManifest,
-  createBaselineInteractionManifest,
-} from '@/services/wizardInteractionEnrichment';
 
 function wizardSelections() {
   const style = THEME_PRESETS.find((preset) => preset.id === 'organic');
@@ -240,7 +236,7 @@ describe('wizard pipeline ownership invariants', () => {
       },
     }, 'wizard-launch');
 
-    expect(committed.siteBundleSnapshot.meta.interactionManifest ?? null).toBeNull();
+    expect('interactionManifest' in committed.siteBundleSnapshot.meta).toBe(false);
   });
 
 

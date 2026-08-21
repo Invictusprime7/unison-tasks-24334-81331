@@ -17,6 +17,7 @@ import { runPreflightRepair } from './aiSitePreflightRepair';
 import { preflightNavWiring } from './preflightNavWiring';
 import { closeRequiredIndustryIntents } from './requiredIntentClosure';
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
+import { rewriteLucideIconLocalImports } from '@/utils/sandpackFilePrep';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
@@ -63,6 +64,15 @@ export function runFullPreflight(
       console.warn('[runFullPreflight] stripped canonical token overrides', { tokens, attrs });
       files = guarded;
     }
+  }
+
+  // 0b) Icon authority: AI often imports lucide icons as local sibling modules
+  // (`./components/CalendarPlus`). Point them at lucide-react before any gate
+  // treats them as a missing local module.
+  {
+    const iconFixed: Record<string, string> = { ...files };
+    rewriteLucideIconLocalImports(iconFixed);
+    files = iconFixed;
   }
 
   // 1) Early syntax repair

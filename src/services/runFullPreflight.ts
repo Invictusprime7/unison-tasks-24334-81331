@@ -16,6 +16,7 @@ import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles
 import { runPreflightRepair } from './aiSitePreflightRepair';
 import { preflightNavWiring } from './preflightNavWiring';
 import { closeRequiredIndustryIntents } from './requiredIntentClosure';
+import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
@@ -41,8 +42,30 @@ export function runFullPreflight(
   const { siteBundleSnapshot = null, industry, brand } = options;
   const ctx = { industry, brand };
 
-  // 1) Early syntax repair
+  // 0) Theme authority: strip AI-authored redefinitions of Stage 4b's canonical
+  // design tokens (and DOM attributes smuggled into className). Left in place
+  // they are self-referential and blank out every themed utility on the page.
   let files = inputFiles;
+  {
+    const guarded: Record<string, string> = { ...files };
+    let tokens = 0;
+    let attrs = 0;
+    for (const [path, src] of Object.entries(guarded)) {
+      if (typeof src !== 'string' || !/\.(tsx|jsx)$/.test(path)) continue;
+      const result = stripCanonicalTokenOverrides(src);
+      if (result.code !== src) {
+        guarded[path] = result.code;
+        tokens += result.strippedTokens;
+        attrs += result.strippedAttrClasses;
+      }
+    }
+    if (tokens > 0 || attrs > 0) {
+      console.warn('[runFullPreflight] stripped canonical token overrides', { tokens, attrs });
+      files = guarded;
+    }
+  }
+
+  // 1) Early syntax repair
   let earlyRepair: 'ok' | 'skipped' | 'failed' = 'skipped';
   try {
     const r = runPreflightRepair(files, { context: ctx });

@@ -307,38 +307,3 @@ export function PageChromeFooter() {
 export default PageChromeHeader;
 `;
 }
-
-/**
- * Wrap a chrome-less page body so the shipped page renders exactly one
- * navigation landmark and one footer. The original body keeps its own file so
- * its relative imports (section modules, companion modules) stay resolvable.
- */
-export function buildPageChromeWrapper(
-  bodyModuleSpecifier: string,
-  options: { withHeader: boolean; withFooter: boolean },
-): string {
-  const imports = [
-    options.withHeader ? 'PageChromeHeader' : null,
-    options.withFooter ? 'PageChromeFooter' : null,
-  ].filter(Boolean).join(', ');
-
-  return `import React from 'react';
-import PageBody from '${bodyModuleSpecifier}';
-import { ${imports} } from '@/components/PageChrome';
-
-/**
- * Chrome backfill wrapper — the authored page body did not render site
- * navigation and/or a footer, so the canonical pipeline supplies the missing
- * landmark(s) deterministically from the PageRegistry.
- */
-export default function Page() {
-  return (
-    <>
-      ${options.withHeader ? '<PageChromeHeader />' : ''}
-      <PageBody />
-      ${options.withFooter ? '<PageChromeFooter />' : ''}
-    </>
-  );
-}
-`;
-}

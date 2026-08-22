@@ -6163,6 +6163,16 @@ export function prepareSandpackFiles(
   // actual files and merge them into the VFS instead of treating the JSON
   // string as source code.
   // ═══════════════════════════════════════════════════════════════════════════
+  // Legacy chrome-split artifacts (`/src/pages/HomeBody.tsx`) are no longer
+  // produced: one page = one file. Strip any that survive in cached drafts so
+  // they can never re-enter the bundle as a phantom route module.
+  const legacyBodyModules = Object.keys(files).filter((p) => /Body\.(tsx|jsx)$/.test(p));
+  if (legacyBodyModules.length > 0) {
+    const pruned = { ...files };
+    for (const p of legacyBodyModules) delete pruned[p];
+    files = pruned;
+  }
+
   let resolvedFiles = files;
   const fileKeys = Object.keys(files);
 

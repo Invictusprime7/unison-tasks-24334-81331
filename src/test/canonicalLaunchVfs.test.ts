@@ -467,10 +467,10 @@ describe("buildCanonicalLaunchArtifacts", () => {
     })).toThrow(/refusing to persist quarantine scaffolds.*Unterminated JSX contents/);
   });
 
-  it('refuses to persist a Wizard VFS with an unresolved JSX import contract', () => {
+  it('repairs an unresolved JSX import contract instead of blocking persistence', () => {
     const snapshot = createSnapshot();
 
-    expect(() => buildCanonicalLaunchArtifacts({
+    const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         '/src/pages/Home.tsx': [
           "import { MissingHero, MissingCaption } from '../components/HeroParts';",
@@ -483,7 +483,11 @@ describe("buildCanonicalLaunchArtifacts", () => {
       compiledPlayground: { vfsFiles: snapshot.vfsFiles },
       themePresetId: 'modern',
       strictPreflight: true,
-    })).toThrow(/Wizard runtime preflight failed before persistence:.*Home\.tsx imports JSX component "MissingHero".*HeroTitle, HeroCopy/i);
+    });
+
+    // Preview prep synthesizes the missing exports, so the launch persists
+    // instead of dead-ending after "Finalizing preview".
+    expect(artifacts.files['/src/pages/Home.tsx']).toContain('MissingHero');
   });
 
   it('restores the canonical RevealGroup facade for legacy relative page imports', () => {

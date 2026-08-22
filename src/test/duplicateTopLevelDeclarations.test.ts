@@ -61,4 +61,35 @@ describe('import vs declaration collisions', () => {
     const code = "import { Card } from './ui';\nconst Home = 1;\n";
     expect(dedupeTopLevelDeclarations(code)).toBe(code);
   });
+
+  it('removes a colliding icon from a multiline named import', () => {
+    const code = [
+      'import {',
+      '  ArrowRight,',
+      '  Home,',
+      '  ShoppingBag',
+      "} from 'lucide-react';",
+      '',
+      'const Home: React.FC = () => <main />;',
+      'export default Home;',
+    ].join('\n');
+
+    const out = dedupeTopLevelDeclarations(code);
+    expect(out).toContain("import { ArrowRight, ShoppingBag } from 'lucide-react';");
+    expect(out).not.toMatch(/\{[^}]*\bHome\b[^}]*\}\s+from\s+['"]lucide-react/);
+    expect(out).toContain('const Home: React.FC');
+  });
+
+  it('removes a multiline default import that collides with the page declaration', () => {
+    const code = [
+      'import Home, {',
+      '  ArrowRight',
+      "} from './Home';",
+      'const Home = () => <main />;',
+    ].join('\n');
+
+    const out = dedupeTopLevelDeclarations(code);
+    expect(out).toContain("import { ArrowRight } from './Home';");
+    expect(out).toContain('const Home =');
+  });
 });

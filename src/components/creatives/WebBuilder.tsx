@@ -2652,7 +2652,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           !routeCarriesHydratedRevision
           && computeBuilderVfsSignature(currentFiles) !== computeBuilderVfsSignature(files)
         ) {
-          importBuilderFiles(files, { entryPoint: launchEntryPoint });
+          // Replace, never merge: a committed revision is a complete file set.
+          // Merging leaks the previously opened project's modules into this one
+          // and leaves the router importing pages this revision never authored.
+          importBuilderFiles(files, { entryPoint: launchEntryPoint, replace: true });
         }
         setHydratedRevision(revision);
         setCurrentRevisionId(revision.id);
@@ -2746,10 +2749,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         setRuntimeProjectionRevisionId(hydratedRevision.id);
       })
       .catch((error) => {
-        if (!cancelled) {
-          setCanonicalHydrationError(error instanceof Error ? error.message : String(error));
-          console.warn('[WebBuilder] project runtime projection load failed:', error);
-        }
+        if (cancelled) return;
+        // Never dead-end the builder on a projection read: the committed
+        // revision is already hydrated, so fall back to snapshot defaults and
+        // let Sandpack compile immediately.
+        console.warn('[WebBuilder] project runtime projection load failed:', error);
+        setActivePublishedRevisionId(null);
+        setActivePagePath(resolveProjectActivePagePath(revisionSnapshot, null));
+        setRuntimeProjectionRevisionId(hydratedRevision.id);
       });
     return () => { cancelled = true; };
   }, [hydratedRevision]);
@@ -6294,11 +6301,16 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       && !builderRuntimeContext?.workspaceId
       ? 'Canonical revision is missing its persisted workspace runtime identity.'
       : null);
+  // Autosaved / recovered projects already carry a complete VFS locally. Once
+  // those files exist there is nothing to wait for: render the builder and let
+  // Sandpack compile while canonical revision metadata resolves in background.
+  const hasLocalVfsFiles = Object.keys(virtualFS.getSandpackFiles()).length > 0;
   const canonicalHydrationPending = hasCanonicalIdentity
     && !canonicalRuntimeError
+    && !hasLocalVfsFiles
     && (!hydratedRevision || runtimeProjectionRevisionId !== hydratedRevision.id);
 
-  if (canonicalRuntimeError && emptyProjectDraft) {
+  if (canonicalRuntimeError && emptyProjectDraft && !hasLocalVfsFiles) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] px-6 text-zinc-100">
         <div className="w-full max-w-md border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
@@ -6322,7 +6334,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     );
   }
 
-  if (canonicalRuntimeError) {
+  if (canonicalRuntimeError && !hasLocalVfsFiles) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] px-6 text-zinc-100">
         <div className="w-full max-w-md border border-red-900/70 bg-zinc-950 p-6 shadow-2xl">

@@ -25,6 +25,7 @@ import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair, runPreflightRepairSteps } from './aiSitePreflightRepair';
+import { runCompileSafeAcceptance, summarizeCompileDiagnostics } from './compileSafeGate';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';

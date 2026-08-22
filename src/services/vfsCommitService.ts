@@ -349,6 +349,23 @@ export async function commitMutation(
     preflight.stages.finalRepair !== 'failed';
   log('preflight', previewOk ? 'info' : 'warn', 'preflight stages', preflight.stages);
 
+  // Compile-safe acceptance provenance: which lane/stage produced which defect.
+  if (preflight.compileDiagnostics.length > 0) {
+    log(
+      'compileSafe',
+      preflight.stages.compileSafe.status === 'accepted' ? 'info' : 'warn',
+      `compile-safe ${preflight.stages.compileSafe.status}: ${preflight.stages.compileSafe.summary}`,
+      preflight.compileDiagnostics.slice(0, 25).map((d) => ({
+        path: d.pagePath,
+        lane: d.sourceLane,
+        stage: d.validationStage,
+        code: d.diagnosticCode,
+        severity: d.severity,
+        line: d.line,
+      })),
+    );
+  }
+
   const gate = canonicalResult?.gate ?? null;
 
   // Move 4: capability readiness adapter. When a CompiledContract is

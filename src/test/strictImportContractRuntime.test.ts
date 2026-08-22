@@ -42,6 +42,32 @@ describe('strict import-contract runtime', () => {
     expect(result).toEqual(preparedFiles);
   });
 
+  it('threads aesthetic through the worker and isolates differently styled cache entries', async () => {
+    const files = { '/App.tsx': 'export default function App(){ return null; }' };
+    const requests: Array<{ requestId: string; aesthetic?: string | null }> = [];
+    const workerFactory = vi.fn(() => {
+      const worker = {
+        onmessage: null as ((event: MessageEvent) => void) | null,
+        onerror: null as ((event: ErrorEvent) => void) | null,
+        postMessage: vi.fn((request: { requestId: string; aesthetic?: string | null }) => {
+          requests.push(request);
+          queueMicrotask(() => worker.onmessage?.({
+            data: { requestId: request.requestId, ok: true, files: { '/App.tsx': request.aesthetic || 'none' } },
+          } as MessageEvent));
+        }),
+        terminate: vi.fn(),
+      };
+      return worker;
+    });
+
+    const editorial = await runPrepareSandpackFilesOffThread({ files, aesthetic: 'editorial', workerFactory });
+    const organic = await runPrepareSandpackFilesOffThread({ files, aesthetic: 'organic', workerFactory });
+
+    expect(requests.map((request) => request.aesthetic)).toEqual(['editorial', 'organic']);
+    expect(editorial['/App.tsx']).toBe('editorial');
+    expect(organic['/App.tsx']).toBe('organic');
+  });
+
   it('resolves when the worker reports no violations', async () => {
     const terminate = vi.fn();
     const worker = {

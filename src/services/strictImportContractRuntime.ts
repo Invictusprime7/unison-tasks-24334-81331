@@ -19,6 +19,7 @@ export interface StrictImportContractWorkerRequest {
   files: Record<string, string>;
   entryPoint?: string;
   themePresetId?: string | null;
+  aesthetic?: string | null;
 }
 
 export type StrictImportContractWorkerResponse =
@@ -53,6 +54,7 @@ export interface RunPrepareSandpackFilesOffThreadOptions {
   files: Record<string, string>;
   entryPoint?: string;
   themePresetId?: string | null;
+  aesthetic?: string | null;
   signal?: AbortSignal;
   workerFactory?: () => StrictImportContractWorkerLike;
   fallbackCompute?: (
@@ -141,8 +143,13 @@ function hashFilesRecord(files: Record<string, string>): string {
   return (h >>> 0).toString(36);
 }
 
-function cacheKeyFor(files: Record<string, string>, entryPoint: string | undefined, themePresetId: string | null | undefined): string {
-  return `${hashFilesRecord(files)}::${entryPoint || ''}::${themePresetId || ''}`;
+function cacheKeyFor(
+  files: Record<string, string>,
+  entryPoint: string | undefined,
+  themePresetId: string | null | undefined,
+  aesthetic: string | null | undefined,
+): string {
+  return `${hashFilesRecord(files)}::${entryPoint || ''}::${themePresetId || ''}::${aesthetic || ''}`;
 }
 
 function storeInCache(key: string, files: Record<string, string>): void {
@@ -286,14 +293,16 @@ export async function runPrepareSandpackFilesOffThread({
   files,
   entryPoint,
   themePresetId,
+  aesthetic,
   signal,
   workerFactory = defaultWorkerFactory,
   fallbackCompute = (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => prepareSandpackFiles(fallbackFiles, {
     entryPoint: fallbackEntryPoint,
     themePresetId: fallbackThemePresetId,
+    aesthetic: aesthetic || undefined,
   }),
 }: RunPrepareSandpackFilesOffThreadOptions): Promise<Record<string, string>> {
-  const cacheKey = cacheKeyFor(files, entryPoint, themePresetId);
+  const cacheKey = cacheKeyFor(files, entryPoint, themePresetId, aesthetic);
   const cached = preparedFilesCache.get(cacheKey);
   if (cached) return { ...cached };
   let computation = preparedFilesInFlight.get(cacheKey);
@@ -310,6 +319,7 @@ export async function runPrepareSandpackFilesOffThread({
           files,
           entryPoint,
           themePresetId,
+          aesthetic,
         });
         storeInCache(cacheKey, result);
         return result;

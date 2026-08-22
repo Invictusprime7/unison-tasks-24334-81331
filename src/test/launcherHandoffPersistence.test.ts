@@ -94,6 +94,32 @@ describe("launcher handoff persistence", () => {
     expect(navigationState.snapshotVfsCompacted).toBe(true);
   });
 
+  it('preserves and canonicalizes Sandpack page paths and root companion modules', () => {
+    const navigationState = buildLauncherNavigationState({
+      siteBundleSnapshot: {
+        snapshotId: 'snap_sandpack_paths',
+        pageRegistry: {
+          pages: {
+            home: { filePath: '/src/pages/Home.tsx', path: '/', isHome: true },
+          },
+        },
+        vfsFiles: {
+          '/App.tsx': "import Home from './pages/Home'; export default Home;",
+          '/pages/Home.tsx': "import { helper } from '../site-runtime'; export default function Home(){ return <main>{helper}</main>; }",
+          '/site-runtime.ts': "export const helper = 'ready';",
+          'components/Hero.tsx': 'export default function Hero(){ return <section />; }',
+        },
+      },
+    });
+
+    const files = navigationState.vfsFiles as Record<string, string>;
+    expect(files['/src/App.tsx']).toContain("./pages/Home");
+    expect(files['/src/pages/Home.tsx']).toContain('function Home');
+    expect(files['/src/components/Hero.tsx']).toContain('function Hero');
+    expect(files['/site-runtime.ts']).toContain("helper = 'ready'");
+    expect(navigationState.snapshotVfsCompacted).toBe(true);
+  });
+
   it('builds one compact payload for both navigation and recovery', () => {
     const routeState = {
       fromLauncher: true,

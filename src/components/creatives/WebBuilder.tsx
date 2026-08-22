@@ -386,6 +386,8 @@ interface WebBuilderRouteState {
   /** Durable structured WizardSeed from launcher; threaded into every AIBuilderPanel turn. */
   wizardSeed?: Record<string, unknown>;
   fromLauncher?: boolean;
+  /** Compact handoff stores snapshot files once in vfsFiles. */
+  snapshotVfsCompacted?: boolean;
   /** Durable revision id persisted by VFSCommitService (Move 2/3). When present,
    *  WebBuilder hydrates files/snapshot from `site_revisions` rather than relying
    *  solely on sessionStorage/launch context. */

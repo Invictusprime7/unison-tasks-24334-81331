@@ -4221,7 +4221,24 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const canonicalVfsFiles = Object.keys(result.vfsFiles).length > 0
         ? result.vfsFiles
         : wiredVfsFiles;
-      const canonicalSiteBundleSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;
+      const committedSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;
+      // commitMutation may repair/normalize files after producing its reviewed
+      // snapshot. The handoff is one atomic artifact: its snapshot metadata and
+      // executable VFS must describe the same revision or compact persistence
+      // can discard a newly repaired registered page.
+      const canonicalSiteBundleSnapshot = committedSnapshot
+        ? {
+            ...committedSnapshot,
+            vfsFiles: { ...canonicalVfsFiles },
+            routerFile: {
+              ...committedSnapshot.routerFile,
+              content:
+                canonicalVfsFiles[committedSnapshot.routerFile?.path]
+                || committedSnapshot.routerFile?.content
+                || '',
+            },
+          }
+        : committedSnapshot;
       const canonicalRuntimeManifest = result.runtimeManifest ?? pipelineManifest;
       if (!(launchArtifacts.entryPoint in canonicalVfsFiles)) {
         run.degrade(

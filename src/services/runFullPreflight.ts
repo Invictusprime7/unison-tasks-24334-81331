@@ -18,11 +18,21 @@ import { preflightNavWiring } from './preflightNavWiring';
 import { closeRequiredIndustryIntents } from './requiredIntentClosure';
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
 import { injectMissingLucideIcons, rewriteLucideIconLocalImports } from '@/utils/sandpackFilePrep';
+import {
+  runCompileSafeAcceptance,
+  summarizeCompileDiagnostics,
+  type CompileDiagnostic,
+  type CompileSafeOptions,
+} from './compileSafeGate';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
   industry?: string;
   brand?: string;
+  /** Lane attribution for compile-safe diagnostics. */
+  sourceLane?: CompileSafeOptions['sourceLane'];
+  /** Set false to skip the compile-safe acceptance gate (diagnostics only). */
+  compileSafe?: boolean;
 }
 
 export interface RunFullPreflightResult {
@@ -33,7 +43,15 @@ export interface RunFullPreflightResult {
     forbiddenStrip: { stripped: number; forbidden: string[] };
     requiredIntentClosure: { injected: string[]; missing: string[] };
     finalRepair: 'ok' | 'skipped' | 'failed';
+    compileSafe: {
+      status: 'accepted' | 'blocked' | 'skipped' | 'failed';
+      repaired: string[];
+      blockingCount: number;
+      summary: string;
+    };
   };
+  /** Structured compile diagnostics for failure provenance / AI repair. */
+  compileDiagnostics: CompileDiagnostic[];
 }
 
 export function runFullPreflight(
@@ -153,6 +171,49 @@ export function runFullPreflight(
     finalRepair = 'failed';
   }
 
+  // 6) Compile-safe acceptance boundary. Deterministic, bundle-wide, and the
+  // last thing that runs before the candidate file set is allowed to become
+  // canonical runtime state. It normalizes imports, closes React hook imports,
+  // validates every dependency against the Sandpack manifest, and resolves
+  // every relative import against the *candidate* bundle (not the committed
+  // VFS) so same-transaction modules resolve correctly.
+  let compileSafe: RunFullPreflightResult['stages']['compileSafe'] = {
+    status: 'skipped',
+    repaired: [],
+    blockingCount: 0,
+    summary: 'skipped',
+  };
+  let compileDiagnostics: CompileDiagnostic[] = [];
+  if (options.compileSafe !== false) {
+    try {
+      const gate = runCompileSafeAcceptance(files, {
+        sourceLane: options.sourceLane ?? 'unknown',
+        pipelineStage: 'acceptance',
+      });
+      files = gate.files;
+      compileDiagnostics = gate.diagnostics;
+      compileSafe = {
+        status: gate.accepted ? 'accepted' : 'blocked',
+        repaired: gate.repaired,
+        blockingCount: gate.blocking.length,
+        summary: summarizeCompileDiagnostics(gate.diagnostics),
+      };
+      if (!gate.accepted) {
+        console.warn('[runFullPreflight] compile-safe gate blocked', {
+          blocking: gate.blocking.map((d) => ({
+            path: d.pagePath,
+            code: d.diagnosticCode,
+            stage: d.validationStage,
+            line: d.line,
+          })),
+        });
+      }
+    } catch (e) {
+      console.warn('[runFullPreflight] compile-safe gate failed', e);
+      compileSafe = { status: 'failed', repaired: [], blockingCount: 0, summary: 'gate threw' };
+    }
+  }
+
   return {
     files,
     stages: {
@@ -164,6 +225,8 @@ export function runFullPreflight(
         missing: requiredIntentClosure.missing,
       },
       finalRepair,
+      compileSafe,
     },
+    compileDiagnostics,
   };
 }

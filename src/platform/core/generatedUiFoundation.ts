@@ -843,7 +843,7 @@ const KNOWN_NAMED_IMPORT_REDIRECTS: ReadonlyArray<{
   { from: '@/unison/ui/text-input', to: '@/unison/ui/form-fields', exports: ['Input', 'TextInput'] },
   { from: '@/unison/ui/textarea', to: '@/unison/ui/form-fields', exports: ['Textarea', 'TextArea'] },
   { from: '@/unison/ui/text-area', to: '@/unison/ui/form-fields', exports: ['Textarea', 'TextArea'] },
-  { from: '@/unison/ui/select', to: '@/unison/ui/form-fields', exports: ['Select'] },
+  { from: '@/unison/ui/select', to: '@/unison/ui/form-fields', exports: ['Select', 'SelectTrigger', 'SelectValue', 'SelectContent', 'SelectGroup', 'SelectLabel', 'SelectSeparator', 'SelectItem'] },
   { from: '@/unison/ui/checkbox', to: '@/unison/ui/form-fields', exports: ['Checkbox'] },
   { from: '@/unison/ui/label', to: '@/unison/ui/form-fields', exports: ['FieldLabel', 'Label', 'FormLabel'] },
   // `@/unison/ui/motion` is the curated Reveal/Stagger recipe facade; raw

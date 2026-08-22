@@ -4154,7 +4154,7 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
   for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
 
-    const namedImportRegex = /import\s+\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    const namedImportRegex = /import\s+\{([^{}]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{([^}]*)\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let content = originalContent;
 
@@ -4274,7 +4274,7 @@ function assertLocalJsxImportContracts(sandpackFiles: Record<string, string>): v
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (!/\.(tsx|jsx)$/.test(filePath)) continue;
 
-    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([^{}]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let namedMatch: RegExpExecArray | null;
     while ((namedMatch = namedImportRegex.exec(content)) !== null) {
       const targetPath = resolveRelativeModuleTarget(filePath, namedMatch[2], existingPaths);

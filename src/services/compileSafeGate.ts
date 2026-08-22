@@ -28,7 +28,7 @@
  *   - Never rename generated components.
  */
 
-import { isSandpackAllowedImport } from '@/utils/sandpackDependencies';
+import { SANDPACK_ALLOWED_IMPORTS, isSandpackAllowedImport } from '@/utils/sandpackDependencies';
 import { parseGeneratedSource } from './aiSitePreflightRepair';
 
 // ────────────────────────────────────────────────────────────── diagnostics
@@ -650,7 +650,8 @@ export async function acceptGeneratedBundle(
 
   if (!options.repair) return { ...result, attempts: 0 };
 
-  const dependencyList = [...new Set(Object.keys(inputFiles).length ? [] : [])];
+  // The Sandpack manifest is the only truth an AI repair may import from.
+  const dependencyList = [...SANDPACK_ALLOWED_IMPORTS].sort();
 
   while (!result.accepted && attempt < maxAttempts) {
     attempt += 1;

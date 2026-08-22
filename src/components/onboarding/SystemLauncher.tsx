@@ -3793,39 +3793,87 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
       if (unresolvedAfterCompletion.length > 0) {
-        // Pass 3 — Lane-B-only recovery. Targeted retries are the ONLY recovery
-        // path; there is no canonical/minimal/seed scaffold backfill. A page
-        // Lane B could not author is a hard, user-visible launch failure.
-        launchReliabilityMode = 'lane-b-blocked';
+        // Pass 3 — Lane-B-only recovery exhausted. Per the Launch Run
+        // never-fail contract, this DEGRADES instead of aborting the journey:
+        //  • if Stage 4b already composed a canonical body for the path, that
+        //    body stays (it is the wizard's own industry/template composition,
+        //    NOT a minimal preset),
+        //  • otherwise the page is dropped from the registry so the router
+        //    never points at a file that does not exist.
+        // Either way the run reaches handoff and the builder opens.
+        launchReliabilityMode = 'lane-b-degraded';
         const completionReasons = laneBCompletionDiagnostics
           .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
           .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
           .join(' | ');
-        const registeredPages = Object.values(siteBundleSnapshot.pageRegistry.pages) as Array<{
+        const registryPages = siteBundleSnapshot.pageRegistry.pages as Record<string, {
           filePath?: string;
           name?: string;
           title?: string;
           slug?: string;
+          isHome?: boolean;
         }>;
-        const missingPageNames = unresolvedAfterCompletion.map((path) => {
-          const normalized = path.startsWith('/') ? path : `/${path}`;
-          const page = registeredPages.find((candidate) => {
-            const candidatePath = candidate.filePath
-              ? (candidate.filePath.startsWith('/') ? candidate.filePath : `/${candidate.filePath}`)
-              : null;
-            return candidatePath === normalized;
-          });
-          return page?.name || page?.title || page?.slug || normalized.split('/').pop()?.replace(/\.tsx$/, '') || normalized;
-        });
-        console.error('[SystemLauncher] Lane B could not generate registered pages', {
-          paths: unresolvedAfterCompletion,
+        const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
+        const keptFromCanonical: string[] = [];
+        const droppedPages: string[] = [];
+
+        for (const rawPath of unresolvedAfterCompletion) {
+          const normalized = normalizePath(rawPath);
+          const canonicalBody = siteBundleSnapshot.vfsFiles[normalized]
+            || siteBundleSnapshot.vfsFiles[normalized.replace(/^\//, '')];
+          const entry = Object.entries(registryPages).find(([, candidate]) => (
+            candidate.filePath ? normalizePath(candidate.filePath) === normalized : false
+          ));
+
+          if (canonicalBody) {
+            keptFromCanonical.push(normalized);
+            continue;
+          }
+
+          if (entry && !entry[1].isHome && entry[0] !== siteBundleSnapshot.pageRegistry.homePageId) {
+            delete registryPages[entry[0]];
+            droppedPages.push(entry[1].name || entry[1].title || entry[1].slug || normalized);
+          } else {
+            // Home with no canonical body is the only unrecoverable case.
+            launchReliabilityMode = 'lane-b-blocked';
+            console.error('[SystemLauncher] Lane B could not generate the home page and no canonical body exists', {
+              path: normalized,
+              reasons: completionReasons,
+            });
+            throw new Error(
+              'Lane B could not generate the home page. Retry generation. Scaffold placeholders are disabled.',
+            );
+          }
+        }
+
+        siteBundleSnapshot.pageRegistry.version += 1;
+        wizardGenerationGaps.scaffoldFilledPaths = [
+          ...(wizardGenerationGaps.scaffoldFilledPaths || []),
+          ...keptFromCanonical,
+        ];
+
+        console.warn('[SystemLauncher] Lane B page completion degraded (launch continues)', {
+          keptFromCanonical,
+          droppedPages,
           reasons: completionReasons,
         });
-        throw new Error(
-          `Lane B could not generate: ${missingPageNames.join(', ')}. ` +
-            'Retry generation or deselect this page. Scaffold placeholders are disabled.',
-        );
+
+        if (keptFromCanonical.length > 0) {
+          run.degrade(
+            'enrich',
+            'enrich.lane_b_page_canonical_body',
+            `AI copy unavailable for ${keptFromCanonical.length} page(s); the wizard composition was kept. Regenerate any page anytime.`,
+          );
+        }
+        if (droppedPages.length > 0) {
+          run.degrade(
+            'enrich',
+            'enrich.lane_b_page_dropped',
+            `Could not generate: ${droppedPages.join(', ')}. The site launched without ${droppedPages.length === 1 ? 'this page' : 'these pages'}; add ${droppedPages.length === 1 ? 'it' : 'them'} again from the builder.`,
+          );
+        }
       }
+
 
       const presentationAssessment = assessWizardPagePresentations({
         aiFiles: aiSourcedFiles,

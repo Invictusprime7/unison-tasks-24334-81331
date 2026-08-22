@@ -4154,7 +4154,7 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
   for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
 
-    const namedImportRegex = /import\s+\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    const namedImportRegex = /import\s+\{([^{}]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{([^}]*)\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let content = originalContent;
 
@@ -4274,7 +4274,7 @@ function assertLocalJsxImportContracts(sandpackFiles: Record<string, string>): v
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (!/\.(tsx|jsx)$/.test(filePath)) continue;
 
-    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([^{}]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let namedMatch: RegExpExecArray | null;
     while ((namedMatch = namedImportRegex.exec(content)) !== null) {
       const targetPath = resolveRelativeModuleTarget(filePath, namedMatch[2], existingPaths);
@@ -6163,6 +6163,24 @@ export function prepareSandpackFiles(
   // actual files and merge them into the VFS instead of treating the JSON
   // string as source code.
   // ═══════════════════════════════════════════════════════════════════════════
+  // Legacy chrome-split artifacts (`/src/pages/HomeBody.tsx`) are no longer
+  // produced: one page = one file. Strip any that survive in cached drafts so
+  // they can never re-enter the bundle as a phantom route module.
+  const legacyBodyModules = Object.keys(files).filter((p) => /Body\.(tsx|jsx)$/.test(p));
+  if (legacyBodyModules.length > 0) {
+    const pruned = { ...files };
+    for (const bodyPath of legacyBodyModules) {
+      const pagePath = bodyPath.replace(/Body\.(tsx|jsx)$/, '.$1');
+      const wrapper = pruned[pagePath];
+      // Collapse the wrapper back into a single page module.
+      if (typeof wrapper === 'string' && /from\s+['"]\.\/[A-Za-z0-9_]+Body['"]/.test(wrapper)) {
+        pruned[pagePath] = pruned[bodyPath];
+      }
+      delete pruned[bodyPath];
+    }
+    files = pruned;
+  }
+
   let resolvedFiles = files;
   const fileKeys = Object.keys(files);
 

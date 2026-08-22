@@ -42,7 +42,6 @@ import {
   WIZARD_FOOTER_PATH,
   WIZARD_NAVBAR_PATH,
   buildPageChromeModule,
-  buildPageChromeWrapper,
   countPageChromeLandmarks,
   isCanonicalWizardSharedChromePath,
 } from './wizardSharedChrome';
@@ -547,6 +546,53 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   removePathVariants(merged, WIZARD_NAVBAR_PATH);
   removePathVariants(merged, WIZARD_FOOTER_PATH);
 
+  // ── One page = one file ────────────────────────────────────────────────
+  // Legacy snapshots split chrome-less pages into `<Page>Body.tsx` plus a
+  // wrapper. That split produced duplicate identifiers and phantom route-shaped
+  // modules, so any surviving body module is purged here.
+  for (const path of Object.keys(merged)) {
+    if (/Body\.(tsx|jsx)$/.test(path)) delete merged[path];
+  }
+
+  // ── Chrome invariant: exactly one navbar + one footer per registered page ──
+  // Chrome authority remains the page body. When Lane B ships a page without a
+  // nav and/or a footer, the ROUTER supplies the missing landmark for that route
+  // only — no extra page module is ever created.
+  merged[PAGE_CHROME_PATH] = buildPageChromeModule(snapshot.pageRegistry, snapshot.businessName);
+
+  const chromeByRoute: Record<string, { header: boolean; footer: boolean }> = {};
+  const chromeBackfilledPages: string[] = [];
+  const duplicateChromePages: string[] = [];
+
+  for (const page of Object.values(snapshot.pageRegistry.pages)) {
+    const pageEntry = page as { filePath?: string; path?: string };
+    const filePath = pageEntry.filePath;
+    if (!filePath) continue;
+    const normalized = filePath.startsWith('/') ? filePath : `/${filePath}`;
+    const source = merged[normalized] || merged[filePath] || '';
+    if (!source) continue;
+
+    // Repair colliding top-level bindings in the page file itself so the
+    // canonical snapshot is valid before it ever reaches Sandpack.
+    const repaired = dedupeTopLevelDeclarations(source);
+    if (repaired !== source) merged[normalized] = repaired;
+
+    const { navbars, footers } = countPageChromeLandmarks(repaired);
+    if (navbars > 1 || footers > 1) duplicateChromePages.push(normalized);
+    if (navbars > 0 && footers > 0) continue;
+
+    const routeKey = pageEntry.path || '/';
+    chromeByRoute[routeKey] = { header: navbars === 0, footer: footers === 0 };
+    chromeBackfilledPages.push(normalized);
+  }
+
+  if (chromeBackfilledPages.length > 0) {
+    console.warn('[canonicalLaunchVfs] Router-level chrome backfill', chromeBackfilledPages);
+  }
+  if (duplicateChromePages.length > 0) {
+    console.warn('[canonicalLaunchVfs] Page bodies render duplicate chrome', duplicateChromePages);
+  }
+
   // Ensure a canonical router exists at /src/App.tsx. Without this the
   // preview's Sandpack bundle has no entry composition and renders blank.
   // We regenerate from the page registry whenever:
@@ -556,7 +602,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const generatedRouter = generateCanonicalRouter(
     snapshot.pageRegistry,
     snapshot.businessName,
-    { withSharedChrome: false },
+    { withSharedChrome: false, chromeByRoute },
   );
   if (generatedRouter) {
     merged['/src/App.tsx'] = generatedRouter;
@@ -576,46 +622,19 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     );
   }
 
-  // ── Chrome invariant: exactly one navbar + one footer per registered page ──
-  // Zero = an unreachable page (the regression users see as "no header/footer
-  // ever ships"); the pipeline backfills deterministic chrome derived from the
-  // PageRegistry rather than shipping the page bare. More than one is logged so
-  // the duplicate-chrome regression stays visible.
-  merged[PAGE_CHROME_PATH] = buildPageChromeModule(snapshot.pageRegistry, snapshot.businessName);
-
-  const chromeBackfilledPages: string[] = [];
-  const duplicateChromePages: string[] = [];
-
+  // ── Route integrity: one registered page = one VFS file = one route ───────
+  const seenRoutes = new Set<string>();
   for (const page of Object.values(snapshot.pageRegistry.pages)) {
-    const filePath = (page as { filePath?: string }).filePath;
-    if (!filePath) continue;
-    const normalized = filePath.startsWith('/') ? filePath : `/${filePath}`;
-    const source = merged[normalized] || merged[filePath] || '';
-    if (!source) continue;
-
-    const { navbars, footers } = countPageChromeLandmarks(source);
-    if (navbars > 1 || footers > 1) duplicateChromePages.push(normalized);
-    if (navbars > 0 && footers > 0) continue;
-
-    const baseName = normalized.split('/').pop()?.replace(/\.(tsx|jsx)$/i, '') || 'Page';
-    const bodyPath = normalized.replace(/\.(tsx|jsx)$/i, (ext) => `Body${ext}`);
-    // Body modules must already be valid before persistence. In particular,
-    // icon libraries can contribute a `Home` import that collides with the
-    // authored `const Home` page declaration. Repair here instead of relying
-    // on a preview-only transform that leaves the canonical snapshot broken.
-    merged[bodyPath] = dedupeTopLevelDeclarations(source);
-    merged[normalized] = buildPageChromeWrapper(`./${baseName}Body`, {
-      withHeader: navbars === 0,
-      withFooter: footers === 0,
-    });
-    chromeBackfilledPages.push(normalized);
-  }
-
-  if (chromeBackfilledPages.length > 0) {
-    console.warn('[canonicalLaunchVfs] Backfilled missing page chrome', chromeBackfilledPages);
-  }
-  if (duplicateChromePages.length > 0) {
-    console.warn('[canonicalLaunchVfs] Page bodies render duplicate chrome', duplicateChromePages);
+    const entry = page as { path?: string };
+    const routePath = entry.path || '/';
+    if (seenRoutes.has(routePath)) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `Duplicate route "${routePath}" in the page registry; refusing to emit an ambiguous router.`,
+        { recoverableByRelaunch: true },
+      );
+    }
+    seenRoutes.add(routePath);
   }
 
   return merged;

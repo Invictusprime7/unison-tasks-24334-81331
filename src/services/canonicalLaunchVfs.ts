@@ -16,7 +16,11 @@ import {
 } from '@/services/generatedSiteRuntimeManifest';
 import type { CapabilityId } from '@/platform/core/capabilityRegistry';
 import { resolveLauncherEntryPoint } from '@/utils/launcherPayload';
-import { normalizeLauncherFiles, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import {
+  dedupeTopLevelDeclarations,
+  normalizeLauncherFiles,
+  prepareSandpackFiles,
+} from '@/utils/sandpackFilePrep';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 import { preflightNavWiring } from './preflightNavWiring';
@@ -595,7 +599,11 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
     const baseName = normalized.split('/').pop()?.replace(/\.(tsx|jsx)$/i, '') || 'Page';
     const bodyPath = normalized.replace(/\.(tsx|jsx)$/i, (ext) => `Body${ext}`);
-    merged[bodyPath] = source;
+    // Body modules must already be valid before persistence. In particular,
+    // icon libraries can contribute a `Home` import that collides with the
+    // authored `const Home` page declaration. Repair here instead of relying
+    // on a preview-only transform that leaves the canonical snapshot broken.
+    merged[bodyPath] = dedupeTopLevelDeclarations(source);
     merged[normalized] = buildPageChromeWrapper(`./${baseName}Body`, {
       withHeader: navbars === 0,
       withFooter: footers === 0,

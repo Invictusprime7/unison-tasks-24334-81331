@@ -5092,46 +5092,44 @@ export function dedupeTopLevelDeclarations(code: string): string {
   // real duplicate. The local declaration is authoritative — drop the colliding
   // import binding (and the whole statement when nothing else is bound).
   const declaredNames = new Set(occurrences.keys());
-  if (declaredNames.size > 0) {
-    const importRe = /^import\s+([\s\S]*?)\s+from\s+(['"][^'"]+['"])\s*;?\s*$/;
-    for (let i = 0; i < lines.length; i++) {
-      const m = importRe.exec(lines[i]);
-      if (!m) continue;
-      const clause = m[1];
-      const namedMatch = clause.match(/\{([\s\S]*?)\}/);
-      const defaultPart = clause.replace(/\{[\s\S]*?\}/, '').replace(/,\s*$/, '').trim();
+  let result = changed ? lines.join('\n') : code;
+  if (declaredNames.size === 0) return result;
 
-      const keptNamed = (namedMatch?.[1] ?? '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .filter((spec) => {
-          const local = spec.split(/\s+as\s+/i).pop()!.trim();
-          return !declaredNames.has(local);
-        });
-      const namedChanged = namedMatch
-        ? keptNamed.length !== namedMatch[1].split(',').map((s) => s.trim()).filter(Boolean).length
-        : false;
+  // Match the complete import statement rather than one line. Generated icon
+  // imports are commonly formatted across several lines, and `Home` is both a
+  // valid lucide icon and the conventional page component name:
+  //   import { ArrowRight, Home } from 'lucide-react';
+  //   const Home: React.FC = ...
+  // Babel rejects the module before any later runtime repair can execute.
+  const importRe = /(^|\n)([ \t]*import\s+(?!type\b)([\s\S]*?)\s+from\s+(['"][^'"]+['"])\s*;?)(?=\s*(?:\n|$))/g;
+  result = result.replace(importRe, (statement, prefix: string, _full: string, clause: string, source: string) => {
+    const namedMatch = clause.match(/\{([\s\S]*?)\}/);
+    const originalNamed = (namedMatch?.[1] ?? '').split(',').map((spec) => spec.trim()).filter(Boolean);
+    const keptNamed = originalNamed.filter((spec) => {
+      const parts = spec.split(/\s+as\s+/i);
+      const local = parts[parts.length - 1]?.trim() ?? '';
+      return !declaredNames.has(local);
+    });
+    const namedChanged = keptNamed.length !== originalNamed.length;
 
-      const defaultLocal = /^\*\s+as\s+/.test(defaultPart)
-        ? defaultPart.replace(/^\*\s+as\s+/, '').trim()
-        : defaultPart;
-      const dropDefault = Boolean(defaultLocal) && declaredNames.has(defaultLocal);
+    const defaultPart = clause.replace(/\{[\s\S]*?\}/, '').replace(/,\s*$/, '').trim();
+    const defaultLocal = /^\*\s+as\s+/.test(defaultPart)
+      ? defaultPart.replace(/^\*\s+as\s+/, '').trim()
+      : defaultPart;
+    const dropDefault = Boolean(defaultLocal) && declaredNames.has(defaultLocal);
 
-      if (!namedChanged && !dropDefault) continue;
+    if (!namedChanged && !dropDefault) return statement;
 
-      const parts: string[] = [];
-      if (defaultPart && !dropDefault) parts.push(defaultPart);
-      if (keptNamed.length > 0) parts.push(`{ ${keptNamed.join(', ')} }`);
+    changed = true;
+    const parts: string[] = [];
+    if (defaultPart && !dropDefault) parts.push(defaultPart);
+    if (keptNamed.length > 0) parts.push(`{ ${keptNamed.join(', ')} }`);
+    return parts.length > 0
+      ? `${prefix}import ${parts.join(', ')} from ${source};`
+      : `${prefix}import ${source};`;
+  });
 
-      lines[i] = parts.length > 0
-        ? `import ${parts.join(', ')} from ${m[2]};`
-        : `import ${m[2]};`;
-      changed = true;
-    }
-  }
-
-  return changed ? lines.join('\n') : code;
+  return changed ? result : code;
 }
 
 

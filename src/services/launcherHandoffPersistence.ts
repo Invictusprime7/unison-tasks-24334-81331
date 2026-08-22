@@ -48,11 +48,24 @@ function compactCanonicalMetadata(content: string): string {
   }
 }
 
+function normalizeCompactVfsPath(path: string): string {
+  const absolute = path.startsWith('/') ? path : `/${path}`;
+
+  if (/^\/(App|main|index)\.(tsx|jsx|ts|js)$/.test(absolute) || absolute === '/index.css') {
+    return `/src${absolute}`;
+  }
+  if (/^\/(pages|components|styles)\//.test(absolute)) {
+    return `/src${absolute}`;
+  }
+  return absolute;
+}
+
 function compactVfsFiles(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const out: Record<string, string> = {};
-  for (const [path, content] of Object.entries(value as Record<string, unknown>)) {
+  for (const [rawPath, content] of Object.entries(value as Record<string, unknown>)) {
     if (typeof content !== 'string') continue;
+    const path = normalizeCompactVfsPath(rawPath);
     if (path.startsWith('/.unison/')) {
       if (COMPACT_UNISON_METADATA_PATHS.has(path)) {
         out[path] = path === '/.unison/site-bundle-snapshot.json'
@@ -61,7 +74,16 @@ function compactVfsFiles(value: unknown): Record<string, string> | undefined {
       }
       continue;
     }
-    if (/^\/(src|public)\//.test(path) || /^\/(index\.html|package\.json|tsconfig\.json|vite\.config\.ts|tailwind\.config\.ts|postcss\.config\.js)$/.test(path)) {
+    // A completed launch can contain canonical /src files as well as the
+    // Sandpack overlay's root-level companion modules. Preserve both: dropping
+    // the latter creates unresolved imports, while normalizing /pages and
+    // /components prevents the PageRegistry from losing its registered route
+    // during the compact Launcher -> Builder handoff.
+    if (
+      /^\/(src|public)\//.test(path) ||
+      /^\/[^/]+\.(tsx?|jsx?|css|json|svg|png|jpe?g|gif|webp|avif|woff2?|ttf|otf)$/.test(path) ||
+      /^\/(index\.html|package\.json|tsconfig\.json|vite\.config\.ts|tailwind\.config\.ts|postcss\.config\.js)$/.test(path)
+    ) {
       out[path] = content;
     }
   }

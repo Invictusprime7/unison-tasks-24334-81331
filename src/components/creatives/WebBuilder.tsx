@@ -2746,10 +2746,14 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         setRuntimeProjectionRevisionId(hydratedRevision.id);
       })
       .catch((error) => {
-        if (!cancelled) {
-          setCanonicalHydrationError(error instanceof Error ? error.message : String(error));
-          console.warn('[WebBuilder] project runtime projection load failed:', error);
-        }
+        if (cancelled) return;
+        // Never dead-end the builder on a projection read: the committed
+        // revision is already hydrated, so fall back to snapshot defaults and
+        // let Sandpack compile immediately.
+        console.warn('[WebBuilder] project runtime projection load failed:', error);
+        setActivePublishedRevisionId(null);
+        setActivePagePath(resolveProjectActivePagePath(revisionSnapshot, null));
+        setRuntimeProjectionRevisionId(hydratedRevision.id);
       });
     return () => { cancelled = true; };
   }, [hydratedRevision]);

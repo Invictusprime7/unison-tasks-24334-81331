@@ -5437,7 +5437,13 @@ export function processCode(code: string, filePath: string): string {
   }
 
   // ── Auto-inject missing lucide icon references ────────────────────────
-  code = injectMissingLucideIcons(code);
+  // Defensive: a stale worker chunk (or any future refactor) must never be able
+  // to halt the whole preview compile over icon repair.
+  try {
+    code = injectMissingLucideIcons(code);
+  } catch (iconErr) {
+    console.warn('[sandpackFilePrep] lucide icon injection skipped', iconErr);
+  }
 
 
   // ── Safe framer-motion imports ─────────────────────────────────────────

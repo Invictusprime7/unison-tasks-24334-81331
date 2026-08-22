@@ -18,11 +18,21 @@ import { preflightNavWiring } from './preflightNavWiring';
 import { closeRequiredIndustryIntents } from './requiredIntentClosure';
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
 import { injectMissingLucideIcons, rewriteLucideIconLocalImports } from '@/utils/sandpackFilePrep';
+import {
+  runCompileSafeAcceptance,
+  summarizeCompileDiagnostics,
+  type CompileDiagnostic,
+  type CompileSafeOptions,
+} from './compileSafeGate';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
   industry?: string;
   brand?: string;
+  /** Lane attribution for compile-safe diagnostics. */
+  sourceLane?: CompileSafeOptions['sourceLane'];
+  /** Set false to skip the compile-safe acceptance gate (diagnostics only). */
+  compileSafe?: boolean;
 }
 
 export interface RunFullPreflightResult {
@@ -33,7 +43,15 @@ export interface RunFullPreflightResult {
     forbiddenStrip: { stripped: number; forbidden: string[] };
     requiredIntentClosure: { injected: string[]; missing: string[] };
     finalRepair: 'ok' | 'skipped' | 'failed';
+    compileSafe: {
+      status: 'accepted' | 'blocked' | 'skipped' | 'failed';
+      repaired: string[];
+      blockingCount: number;
+      summary: string;
+    };
   };
+  /** Structured compile diagnostics for failure provenance / AI repair. */
+  compileDiagnostics: CompileDiagnostic[];
 }
 
 export function runFullPreflight(

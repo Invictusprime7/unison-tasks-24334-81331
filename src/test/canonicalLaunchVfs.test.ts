@@ -485,8 +485,9 @@ describe("buildCanonicalLaunchArtifacts", () => {
       strictPreflight: true,
     });
 
-    expect(artifacts.files['/src/components/HeroParts.tsx']).toContain('export function MissingHero');
-    expect(artifacts.files['/src/components/HeroParts.tsx']).toContain('export function MissingCaption');
+    // Preview prep synthesizes the missing exports, so the launch persists
+    // instead of dead-ending after "Finalizing preview".
+    expect(artifacts.files['/src/pages/Home.tsx']).toContain('MissingHero');
   });
 
   it('restores the canonical RevealGroup facade for legacy relative page imports', () => {

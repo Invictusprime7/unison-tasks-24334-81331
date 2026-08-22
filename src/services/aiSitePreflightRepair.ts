@@ -132,6 +132,25 @@ export function clearPreflightParseCache(): void {
   parseCache.clear();
 }
 
+/**
+ * Canonical parse validation shared with the compile-safe acceptance gate.
+ * Same parser, same options as the preview compile step, so a file that
+ * passes here cannot fail to parse in Sandpack.
+ */
+export function parseGeneratedSource(
+  source: string,
+): { ok: true } | { ok: false; error: string; line?: number; column?: number } {
+  const result = tryParse(source);
+  if (result.ok === true) return { ok: true };
+  const position = /\((\d+):(\d+)\)/.exec(result.error);
+  return {
+    ok: false,
+    error: result.error,
+    line: position ? Number(position[1]) : undefined,
+    column: position ? Number(position[2]) : undefined,
+  };
+}
+
 
 // ──────────────────────────────────────────────────────────── repair passes
 

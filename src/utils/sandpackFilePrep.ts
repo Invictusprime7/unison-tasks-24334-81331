@@ -5132,6 +5132,69 @@ export function dedupeTopLevelDeclarations(code: string): string {
   return changed ? result : code;
 }
 
+const LUCIDE_FALLBACK_DECL = `const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`;
+
+/**
+ * AI-authored pages frequently reference lucide icons (e.g. `<Icon icon={CalendarPlus} />`)
+ * without importing them — and the duplicate-declaration deduper can also strip a colliding
+ * import binding. Detect icon-named identifiers that have no declaration in the file and
+ * inject safe namespace lookups with a fallback glyph.
+ */
+export function injectMissingLucideIcons(code: string): string {
+  if (typeof code !== 'string' || !code) return code;
+
+  // Identifiers used in the body (declaration lines removed to avoid self-matching).
+  const bodyWithoutDecls = code.replace(/^(?:import\s+.*|const\s+\w+\s*=).*$/gm, '');
+  const usedIdentifiers = new Set<string>();
+  const identRe = /\b([A-Z][a-zA-Z0-9]+)\b/g;
+  let idMatch: RegExpExecArray | null;
+  while ((idMatch = identRe.exec(bodyWithoutDecls)) !== null) {
+    usedIdentifiers.add(idMatch[1]);
+  }
+
+  // Icons passed through prop expressions (`icon={X}`, `Icon={X}`, `as={X}`) can live on a
+  // line that the crude declaration filter above removed — scan the raw source for those too.
+  const propRe = /\b(?:icon|Icon|as|leftIcon|rightIcon|startIcon|endIcon)\s*=\s*\{\s*([A-Z][a-zA-Z0-9]+)\s*\}/g;
+  let propMatch: RegExpExecArray | null;
+  while ((propMatch = propRe.exec(code)) !== null) {
+    usedIdentifiers.add(propMatch[1]);
+  }
+
+  const missingIcons: string[] = [];
+  for (const name of usedIdentifiers) {
+    if (!isLucideIconName(name)) continue;
+    // Skip anything already declared (import, const/let/var, function, class).
+    const declRe = new RegExp(
+      `(?:import\\s+[^;]*\\b${name}\\b|(?:const|let|var)\\s+${name}\\s*=|function\\s+${name}\\b|class\\s+${name}\\b)`,
+      'm',
+    );
+    if (!declRe.test(code)) missingIcons.push(name);
+  }
+
+  if (missingIcons.length === 0) return code;
+
+  const injections: string[] = [];
+  if (!code.includes("import * as __LucideIcons from 'lucide-react'")) {
+    injections.push(`import * as __LucideIcons from 'lucide-react';`);
+  }
+  // The fallback must be declared above every lookup line, otherwise TDZ crashes.
+  if (!code.includes('const __LucideFallback =')) {
+    injections.push(LUCIDE_FALLBACK_DECL);
+  }
+  for (const name of missingIcons) {
+    injections.push(`const ${name} = __LucideIcons['${name}'] || __LucideFallback;`);
+  }
+
+  const fallbackDeclMatch = code.match(/^const __LucideFallback\s*=.*$/m);
+  if (fallbackDeclMatch?.index !== undefined) {
+    const fallbackLineEnd = code.indexOf('\n', fallbackDeclMatch.index);
+    const insertAt = fallbackLineEnd === -1 ? code.length : fallbackLineEnd + 1;
+    return code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
+  }
+  const insertAt = findSafeImportInsertionPoint(code);
+  return code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
+}
+
 
 /**
  * Process code to strip/transform imports that Sandpack can't resolve.
@@ -5374,85 +5437,8 @@ export function processCode(code: string, filePath: string): string {
   }
 
   // ── Auto-inject missing lucide icon references ────────────────────────
-  // AI sometimes uses lucide icon names (e.g. `icon: Database`) without
-  // importing them. Detect PascalCase identifiers that look like lucide
-  // icons but have no declaration, and inject safe proxy declarations.
-  const COMMON_LUCIDE_ICONS = new Set([
-    'Activity','AlertCircle','AlertTriangle','Archive','ArrowDown','ArrowLeft',
-    'ArrowRight','ArrowUp','Award','BarChart','Bell','Bookmark','Box','Briefcase',
-    'Calendar','Camera','Check','CheckCircle','ChevronDown','ChevronLeft',
-    'ChevronRight','ChevronUp','Circle','Clock','Cloud','Code','Coffee',
-    'Cpu','CreditCard','Database','Download','Edit','ExternalLink','Eye',
-    'EyeOff','Facebook','File','FileText','Film','Filter','Flag','Folder',
-    'Gift','Github','Globe','Grid','Hash','Heart','HelpCircle','Home',
-    'Image','Inbox','Info','Instagram','Key','Layers','Layout','Link',
-    'List','Loader','Lock','LogIn','LogOut','Mail','Map','MapPin','Menu',
-    'MessageCircle','MessageSquare','Mic','Monitor','Moon','MoreHorizontal',
-    'MoreVertical','Move','Music','Navigation','Package','Paperclip','Pause',
-    'PenTool','Phone','PieChart','Play','Plus','Pocket','Power','Printer',
-    'Radio','RefreshCw','Repeat','RotateCw','Rss','Save','Search','Send',
-    'Server','Settings','Share','Shield','ShoppingBag','ShoppingCart','Sidebar',
-    'Slash','Sliders','Smartphone','Speaker','Square','Star','Sun','Sunrise',
-    'Sunset','Tablet','Tag','Target','Terminal','ThumbsDown','ThumbsUp',
-    'ToggleLeft','ToggleRight','Tool','Trash','TrendingDown','TrendingUp',
-    'Triangle','Truck','Tv','Twitter','Type','Umbrella','Underline','Unlock',
-    'Upload','User','UserCheck','UserPlus','UserX','Users','Video','Voicemail',
-    'Volume','Watch','Wifi','Wind','X','XCircle','Youtube','Zap','ZapOff',
-    'Rocket','Sparkles','Wand','Bot','Brain','Lightbulb','Flame','Crown',
-    'Gem','HandHeart','Headphones','Languages','Laugh','PaintBucket','Palette',
-    'Puzzle','Receipt','Scale','ScrollText','Shrub','Wrench',
-  ]);
+  code = injectMissingLucideIcons(code);
 
-  // Find all PascalCase identifiers used in the body (outside imports/declarations)
-  const bodyWithoutDecls = code.replace(/^(?:import\s+.*|const\s+\w+\s*=).*$/gm, '');
-  const usedIdentifiers = new Set<string>();
-  const identRe = /\b([A-Z][a-zA-Z0-9]+)\b/g;
-  let idMatch: RegExpExecArray | null;
-  while ((idMatch = identRe.exec(bodyWithoutDecls)) !== null) {
-    usedIdentifiers.add(idMatch[1]);
-  }
-
-  // Check which are missing declarations
-  const missingIcons: string[] = [];
-  for (const name of usedIdentifiers) {
-    if (!COMMON_LUCIDE_ICONS.has(name)) continue;
-    // Check if already declared (import, const, function, class)
-    const declRe = new RegExp(`(?:import\\s+.*\\b${name}\\b|const\\s+${name}\\s*=|function\\s+${name}\\b|class\\s+${name}\\b)`, 'm');
-    if (!declRe.test(code)) {
-      missingIcons.push(name);
-    }
-  }
-
-  if (missingIcons.length > 0) {
-    // Inject lucide proxy declarations for missing icons
-    const hasLucideNamespace = code.includes("import * as __LucideIcons from 'lucide-react'");
-    const hasFallbackDecl = code.includes('const __LucideFallback =');
-    const injections: string[] = [];
-    if (!hasLucideNamespace) {
-      injections.push(`import * as __LucideIcons from 'lucide-react';`);
-    }
-    // Always ensure fallback is declared BEFORE lookup lines we emit, even if
-    // the namespace import already exists — otherwise lookups TDZ-crash on
-    // `__LucideFallback`.
-    if (!hasFallbackDecl) {
-      injections.push(`const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`);
-    }
-    for (const name of missingIcons) {
-      injections.push(`const ${name} = __LucideIcons['${name}'] || __LucideFallback;`);
-    }
-    // Insert after the fallback declaration when it already exists; otherwise
-    // insert after the last import. This preserves the invariant that every
-    // `const Icon = ... || __LucideFallback` line appears below the fallback.
-    const fallbackDeclMatch = code.match(/^const __LucideFallback\s*=.*$/m);
-    if (fallbackDeclMatch?.index !== undefined) {
-      const fallbackLineEnd = code.indexOf('\n', fallbackDeclMatch.index);
-      const insertAt = fallbackLineEnd === -1 ? code.length : fallbackLineEnd + 1;
-      code = code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
-    } else {
-      const insertAt = findSafeImportInsertionPoint(code);
-      code = code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
-    }
-  }
 
   // ── Safe framer-motion imports ─────────────────────────────────────────
   // The AI frequently imports { motion, AnimatePresence } from 'framer-motion'.

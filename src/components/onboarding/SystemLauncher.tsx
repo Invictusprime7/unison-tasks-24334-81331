@@ -8,16 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight,
@@ -41,7 +31,6 @@ import { StyleTokenCard } from "./StyleTokenCard";
 
 import { TemplateLivePreview } from "./TemplateLivePreview";
 import { WizardTopAction } from "./WizardTopAction";
-import { LaunchReviewSummary } from "./LaunchReviewSummary";
 import { BusinessSelector } from "@/components/business/BusinessSelector";
 
 import { themePresetToThemeTokens } from "./themePresetToTokens";
@@ -187,16 +176,6 @@ interface SystemLauncherProps {
    * owners don't retype the identity they just entered post-signup.
    */
   prefill?: SystemLauncherPrefill | null;
-}
-
-interface LaunchPreviewConfirmation {
-  businessName: string;
-  siteName: string;
-  fileCount: number;
-  pagePaths: string[];
-  businessId: string;
-  siteId: string;
-  files: Record<string, string>;
 }
 
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
@@ -1505,8 +1484,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [launchStatus, setLaunchStatus] = useState("");
   // Inline, recoverable launch failure. The wizard never toasts errors.
   const [launchError, setLaunchError] = useState<string | null>(null);
-  const [launchPreviewConfirmation, setLaunchPreviewConfirmation] = useState<LaunchPreviewConfirmation | null>(null);
-  const launchConfirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const activeLaunchRunRef = useRef<LaunchRun | null>(null);
   // Business Profile selected in the wizard header. When set, the project
   // is stamped into this business; when null we fall back to
@@ -1542,20 +1519,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     youtube: "",
   });
 
-  const requestLaunchConfirmation = useCallback((preview: LaunchPreviewConfirmation) => (
-    new Promise<boolean>((resolve) => {
-      launchConfirmationResolverRef.current = resolve;
-      setLaunchPreviewConfirmation(preview);
-    })
-  ), []);
-
-  const resolveLaunchConfirmation = useCallback((confirmed: boolean) => {
-    const resolve = launchConfirmationResolverRef.current;
-    launchConfirmationResolverRef.current = null;
-    setLaunchPreviewConfirmation(null);
-    resolve?.(confirmed);
-  }, []);
-
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
 
   useEffect(() => {
@@ -1565,10 +1528,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     }
     activeLaunchRunRef.current?.cancel();
     activeLaunchRunRef.current = null;
-    const resolve = launchConfirmationResolverRef.current;
-    launchConfirmationResolverRef.current = null;
-    setLaunchPreviewConfirmation(null);
-    resolve?.(false);
   }, [open, fetchDesignProfile]);
 
   // Milestone 1 — prefill wizard identity from BusinessProfileGate handoff.
@@ -1692,7 +1651,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   };
 
   const handleLaunch = async () => {
-    if (isLaunching || launchPreviewConfirmation) return;
+    if (isLaunching) return;
     if (!open) return;
     if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
@@ -4406,7 +4365,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       <Dialog
         open={open}
         onOpenChange={(isOpen) => {
-          if (!isOpen) resolveLaunchConfirmation(false);
           onOpenChange(isOpen);
           if (!isOpen) resetState();
         }}
@@ -5170,44 +5128,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         </DialogContent>
       </Dialog>
 
-      <AlertDialog
-        open={Boolean(launchPreviewConfirmation)}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) resolveLaunchConfirmation(false);
-        }}
-      >
-        <AlertDialogContent className="max-w-6xl border-white/10 bg-[#07080F] text-white shadow-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Review Generated Site</AlertDialogTitle>
-            <AlertDialogDescription className="text-white/55">
-              {launchPreviewConfirmation?.siteName} will create its Unison workspace, live data contracts, and initial revision only after confirmation.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {launchPreviewConfirmation && (
-            <LaunchReviewSummary
-              siteName={launchPreviewConfirmation.siteName}
-              brandName={launchPreviewConfirmation.businessName}
-              fileCount={launchPreviewConfirmation.fileCount}
-              pagePaths={launchPreviewConfirmation.pagePaths}
-              files={launchPreviewConfirmation.files}
-            />
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              className="border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
-              onClick={() => resolveLaunchConfirmation(false)}
-            >
-              Keep Editing
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
-              onClick={() => resolveLaunchConfirmation(true)}
-            >
-              Confirm Site Launch
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 };

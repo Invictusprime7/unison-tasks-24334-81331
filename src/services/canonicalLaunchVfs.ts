@@ -851,6 +851,36 @@ function* buildCanonicalLaunchArtifactSteps(
   mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
   mergedFiles[PUBLISHED_ACTION_RUNTIME_PATH] = PUBLISHED_ACTION_RUNTIME_MODULE;
 
+  // ── Compile-safe acceptance (pre-seal) ─────────────────────────────────
+  // Lane B repair turns re-enter this assembly, so the merged candidate
+  // bundle — not just the first-pass output — is what gets validated here.
+  // Deterministic repairs (import merging, React hook closure, unused
+  // hallucinated imports) are applied in place; anything the gate cannot
+  // safely repair is reported with lane/stage provenance.
+  yield;
+  try {
+    const compileSafe = runCompileSafeAcceptance(mergedFiles, {
+      sourceLane: 'lane-b',
+      pipelineStage: 'generation',
+    });
+    Object.assign(mergedFiles, compileSafe.files);
+    if (compileSafe.repaired.length > 0 || compileSafe.blocking.length > 0) {
+      console.warn('[canonicalLaunchVfs] compile-safe acceptance', {
+        repaired: compileSafe.repaired.length,
+        summary: summarizeCompileDiagnostics(compileSafe.diagnostics),
+        blocking: compileSafe.blocking.slice(0, 10).map((d) => ({
+          path: d.pagePath,
+          code: d.diagnosticCode,
+          stage: d.validationStage,
+          line: d.line,
+        })),
+      });
+    }
+  } catch (error) {
+    console.warn('[canonicalLaunchVfs] compile-safe acceptance failed; continuing', error);
+  }
+
+
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
   const appContext = buildRuntimeAppContext(
     input,

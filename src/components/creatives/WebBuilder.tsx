@@ -175,6 +175,7 @@ import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegist
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
 import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot, markLiveEditedVfsPaths, clearLiveEditedVfsPaths } from '@/services/snapshotProjector';
+import { repairSnapshotPageCoverageLocally, repairSnapshotPageCoverageFromRevisions } from '@/services/snapshotPageCoverageRepair';
 import { createVfsHandoffSignature } from '@/services/vfsHandoffSignature';
 import { isPreviewPipelineError } from '@/services/previewPipelineError';
 import { ThemeSeedError } from '@/platform/core/themeSeedAssert';

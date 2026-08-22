@@ -172,12 +172,27 @@ export function hasNonEmptyVfsFiles(files?: Record<string, string>): boolean {
  * vfsFiles map. Later states override earlier ones for every field except
  * vfsFiles, where the most recent non-empty snapshot wins.
  */
-export function mergeRouteStatePreservingFiles<T extends { vfsFiles?: Record<string, string> }>(
+export function mergeRouteStatePreservingFiles<T extends {
+  vfsFiles?: Record<string, string>;
+  siteBundleSnapshot?: unknown;
+}>(
   ...states: Array<T | null | undefined>
 ): T | null {
   const present = states.filter(Boolean) as T[];
   if (present.length === 0) return null;
   const merged = Object.assign({}, ...present) as T;
+
+  // Snapshot metadata and executable files are one sealed revision. If the
+  // winning snapshot-bearing state also carries files, keep that pair atomic
+  // instead of selecting VFS independently from another recovery source.
+  for (let i = present.length - 1; i >= 0; i--) {
+    if (present[i].siteBundleSnapshot && hasNonEmptyVfsFiles(present[i].vfsFiles)) {
+      merged.siteBundleSnapshot = present[i].siteBundleSnapshot;
+      merged.vfsFiles = present[i].vfsFiles;
+      return merged;
+    }
+  }
+
   for (let i = present.length - 1; i >= 0; i--) {
     if (hasNonEmptyVfsFiles(present[i].vfsFiles)) {
       merged.vfsFiles = present[i].vfsFiles;

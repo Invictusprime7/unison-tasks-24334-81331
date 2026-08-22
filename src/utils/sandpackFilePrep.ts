@@ -6169,7 +6169,15 @@ export function prepareSandpackFiles(
   const legacyBodyModules = Object.keys(files).filter((p) => /Body\.(tsx|jsx)$/.test(p));
   if (legacyBodyModules.length > 0) {
     const pruned = { ...files };
-    for (const p of legacyBodyModules) delete pruned[p];
+    for (const bodyPath of legacyBodyModules) {
+      const pagePath = bodyPath.replace(/Body\.(tsx|jsx)$/, '.$1');
+      const wrapper = pruned[pagePath];
+      // Collapse the wrapper back into a single page module.
+      if (typeof wrapper === 'string' && /from\s+['"]\.\/[A-Za-z0-9_]+Body['"]/.test(wrapper)) {
+        pruned[pagePath] = pruned[bodyPath];
+      }
+      delete pruned[bodyPath];
+    }
     files = pruned;
   }
 

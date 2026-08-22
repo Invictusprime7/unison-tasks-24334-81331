@@ -149,6 +149,7 @@ export async function launchStateToSandpackFilesAsync(
     files,
     entryPoint,
     themePresetId: resolution.themePresetId,
+    aesthetic: launchState.aesthetic,
     signal: options.signal,
     fallbackCompute: (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => prepareSandpackFiles(fallbackFiles, {
       entryPoint: fallbackEntryPoint,

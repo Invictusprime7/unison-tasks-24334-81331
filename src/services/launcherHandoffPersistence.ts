@@ -100,6 +100,32 @@ function readSnapshotVfs(value: unknown): Record<string, string> | undefined {
     : undefined;
 }
 
+function normalizeExpectedPagePath(path: string): string {
+  const absolute = path.startsWith('/') ? path : `/${path}`;
+  return /^\/(pages|components|styles)\//.test(absolute) ? `/src${absolute}` : absolute;
+}
+
+function snapshotVfsCoversRegisteredPages(snapshot: unknown, files: Record<string, string>): boolean {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return true;
+  const pageRegistry = (snapshot as { pageRegistry?: unknown }).pageRegistry;
+  if (!pageRegistry || typeof pageRegistry !== 'object' || Array.isArray(pageRegistry)) return true;
+  const pages = (pageRegistry as { pages?: unknown }).pages;
+  if (!pages || typeof pages !== 'object' || Array.isArray(pages)) return true;
+
+  const normalizedFiles = new Map(
+    Object.entries(files).map(([path, content]) => [normalizeCompactVfsPath(path), content]),
+  );
+
+  return Object.values(pages as Record<string, unknown>).every((page) => {
+    if (!page || typeof page !== 'object' || Array.isArray(page)) return true;
+    const filePath = (page as { filePath?: unknown }).filePath;
+    if (typeof filePath !== 'string' || !filePath.trim()) return true;
+    const normalized = normalizeExpectedPagePath(filePath);
+    const source = normalizedFiles.get(normalized);
+    return typeof source === 'string' && source.trim().length > 0;
+  });
+}
+
 function upsertJsonFile(files: Record<string, string>, path: string, value: unknown) {
   if (files[path] || value === undefined || value === null) return;
   try {
@@ -126,8 +152,16 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // outer route VFS here allowed a template preset to outlive the snapshot
   // after session-storage recovery.
   const snapshotVfs = readSnapshotVfs(routeState.siteBundleSnapshot);
-  const hasSnapshotVfs = !!snapshotVfs && Object.keys(snapshotVfs).length > 0;
-  const compactFiles = compactVfsFiles(hasSnapshotVfs ? snapshotVfs : routeState.vfsFiles) || {};
+  const hasCompleteSnapshotVfs = Boolean(
+    snapshotVfs
+    && Object.keys(snapshotVfs).length > 0
+    && snapshotVfsCoversRegisteredPages(routeState.siteBundleSnapshot, snapshotVfs),
+  );
+  // A commit can return a newer canonical VFS alongside snapshot metadata that
+  // still carries its pre-commit file map. Never compact from that stale map:
+  // doing so drops registered pages precisely during Wizard -> Builder handoff.
+  const sourceFiles = hasCompleteSnapshotVfs ? snapshotVfs : routeState.vfsFiles;
+  const compactFiles = compactVfsFiles(sourceFiles) || {};
   upsertJsonFile(compactFiles, '/.unison/runtime-manifest.json', routeState.runtimeManifest);
   upsertJsonFile(compactFiles, '/.unison/canonical-playground.json', routeState.canonicalPlayground || routeState.materializedPlayground);
   upsertJsonFile(compactFiles, '/.unison/wizard-seed.json', routeState.wizardSeed);
@@ -157,7 +191,7 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
     runtimeManifest: routeState.runtimeManifest,
     vfsFiles: compactFiles,
     siteBundleSnapshot: snapshot,
-    snapshotVfsCompacted: hasSnapshotVfs,
+    snapshotVfsCompacted: Object.keys(compactFiles).length > 0,
     canonicalPlayground: routeState.canonicalPlayground,
     materializedPlayground: hasDurableWizardFiles ? routeState.materializedPlayground : undefined,
     compiledPlayground,

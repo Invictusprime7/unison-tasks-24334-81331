@@ -392,7 +392,9 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).not.toContain("'commit.revision_pending'");
     expect(launcherSource).toContain('publishLaunchDegradations(run.snapshot().degradations)');
     expect(launcherSource).toContain('const canonicalVfsFiles = Object.keys(result.vfsFiles).length > 0');
-    expect(launcherSource).toContain('const canonicalSiteBundleSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;');
+    expect(launcherSource).toContain('const committedSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;');
+    expect(launcherSource).toContain('const canonicalSiteBundleSnapshot = committedSnapshot');
+    expect(launcherSource).toContain('vfsFiles: { ...canonicalVfsFiles }');
     expect(launcherSource).toContain('const canonicalRuntimeManifest = result.runtimeManifest ?? pipelineManifest;');
     expect(launcherSource).toContain('vfsFiles: canonicalVfsFiles');
     expect(launcherSource).toContain('siteBundleSnapshot: canonicalSiteBundleSnapshot');

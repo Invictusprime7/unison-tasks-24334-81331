@@ -94,6 +94,32 @@ describe("launcher handoff persistence", () => {
     expect(navigationState.snapshotVfsCompacted).toBe(true);
   });
 
+  it('uses the committed outer VFS when snapshot files omit a registered page', () => {
+    const navigationState = buildLauncherNavigationState({
+      vfsFiles: {
+        '/src/App.tsx': "import Home from './pages/Home'; export default Home;",
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Committed home</main>; }',
+        '/src/index.css': ':root { --primary: 25 80% 45%; }',
+      },
+      siteBundleSnapshot: {
+        snapshotId: 'snap_stale_files',
+        pageRegistry: {
+          pages: {
+            home: { filePath: '/src/pages/Home.tsx', path: '/', isHome: true },
+          },
+        },
+        vfsFiles: {
+          '/src/App.tsx': "import Home from './pages/Home'; export default Home;",
+          '/src/index.css': ':root { --primary: 25 80% 45%; }',
+        },
+      },
+    });
+
+    const files = navigationState.vfsFiles as Record<string, string>;
+    expect(files['/src/pages/Home.tsx']).toContain('Committed home');
+    expect(navigationState.snapshotVfsCompacted).toBe(true);
+  });
+
   it('preserves and canonicalizes Sandpack page paths and root companion modules', () => {
     const navigationState = buildLauncherNavigationState({
       siteBundleSnapshot: {

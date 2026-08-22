@@ -3,6 +3,9 @@ import { VFSProvider } from "@/contexts/VFSContext";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LaunchDegradationNote } from "@/components/builder/LaunchDegradationNote";
+import { clearLauncherHandoff } from "@/services/launcherHandoffPersistence";
+
+
 
 
 const WEB_BUILDER_MODULE_RETRY_KEY = "unison:web-builder-module-retry";

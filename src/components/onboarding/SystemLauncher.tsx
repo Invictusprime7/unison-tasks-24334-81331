@@ -3954,6 +3954,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const intentBindingsFile = buildIntentBindingsFile(materializedPlayground);
       const intentSurfacesFile = buildIntentSurfacesFile(materializedPlayground);
 
+      // Close the manually-managed Lane B stage before preflight begins. The
+      // previous flow left `activeStage` pinned to enrich even after all page
+      // groups had settled, so the progress UI could remain at its last
+      // "0/n page groups" message throughout finalization and handoff.
+      run.markStage(
+        'enrich',
+        launchReliabilityMode === 'ai' ? 'done' : 'degraded',
+      );
       setLaunchStatus('Finalizing preview…');
       await yieldToBrowser();
       const launchArtifactInput = {

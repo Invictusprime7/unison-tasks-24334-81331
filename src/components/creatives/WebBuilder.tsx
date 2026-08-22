@@ -643,6 +643,9 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const draftPersistencePromiseRef = useRef<Promise<string | null> | null>(null);
 
   const importedRouteStateRef = useRef<string | null>(null);
+  // Guards the durable (site_revisions) page-coverage repair so a broken draft
+  // triggers at most one recovery scan per handoff signature.
+  const pageCoverageRepairRef = useRef<string | null>(null);
 
   // The builder is independently usable for blank and restored projects.
   // Opening the launcher here creates a modal backdrop over every direct

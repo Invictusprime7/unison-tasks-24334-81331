@@ -6298,8 +6298,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       && !builderRuntimeContext?.workspaceId
       ? 'Canonical revision is missing its persisted workspace runtime identity.'
       : null);
+  // Autosaved / recovered projects already carry a complete VFS locally. Once
+  // those files exist there is nothing to wait for: render the builder and let
+  // Sandpack compile while canonical revision metadata resolves in background.
+  const hasLocalVfsFiles = Object.keys(virtualFS.getSandpackFiles()).length > 0;
   const canonicalHydrationPending = hasCanonicalIdentity
     && !canonicalRuntimeError
+    && !hasLocalVfsFiles
     && (!hydratedRevision || runtimeProjectionRevisionId !== hydratedRevision.id);
 
   if (canonicalRuntimeError && emptyProjectDraft) {

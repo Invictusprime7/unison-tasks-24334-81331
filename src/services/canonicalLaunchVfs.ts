@@ -34,8 +34,11 @@ import {
 
 import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {
+  PAGE_CHROME_PATH,
   WIZARD_FOOTER_PATH,
   WIZARD_NAVBAR_PATH,
+  buildPageChromeModule,
+  buildPageChromeWrapper,
   countPageChromeLandmarks,
   isCanonicalWizardSharedChromePath,
 } from './wizardSharedChrome';

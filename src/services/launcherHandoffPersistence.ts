@@ -106,18 +106,23 @@ function normalizeExpectedPagePath(path: string): string {
 }
 
 function snapshotVfsCoversRegisteredPages(snapshot: unknown, files: Record<string, string>): boolean {
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return false;
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return true;
   const pageRegistry = (snapshot as { pageRegistry?: unknown }).pageRegistry;
-  if (!pageRegistry || typeof pageRegistry !== 'object' || Array.isArray(pageRegistry)) return false;
+  if (!pageRegistry || typeof pageRegistry !== 'object' || Array.isArray(pageRegistry)) return true;
   const pages = (pageRegistry as { pages?: unknown }).pages;
-  if (!pages || typeof pages !== 'object' || Array.isArray(pages)) return false;
+  if (!pages || typeof pages !== 'object' || Array.isArray(pages)) return true;
+
+  const normalizedFiles = new Map(
+    Object.entries(files).map(([path, content]) => [normalizeCompactVfsPath(path), content]),
+  );
 
   return Object.values(pages as Record<string, unknown>).every((page) => {
     if (!page || typeof page !== 'object' || Array.isArray(page)) return true;
     const filePath = (page as { filePath?: unknown }).filePath;
     if (typeof filePath !== 'string' || !filePath.trim()) return true;
     const normalized = normalizeExpectedPagePath(filePath);
-    return typeof files[normalized] === 'string' && files[normalized].trim().length > 0;
+    const source = normalizedFiles.get(normalized);
+    return typeof source === 'string' && source.trim().length > 0;
   });
 }
 

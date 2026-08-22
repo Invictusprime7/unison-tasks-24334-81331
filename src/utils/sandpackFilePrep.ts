@@ -5084,8 +5084,56 @@ export function dedupeTopLevelDeclarations(code: string): string {
     });
   }
 
+  // ── Import-vs-declaration collisions ────────────────────────────────────
+  // A merged page body frequently ends up importing the very component it also
+  // declares (`import Home from './Home'` + `const Home: React.FC = ...`), or a
+  // chrome wrapper's body copy retains the wrapper's import. Babel reports the
+  // *declaration* line as "already been declared", so the earlier import is the
+  // real duplicate. The local declaration is authoritative — drop the colliding
+  // import binding (and the whole statement when nothing else is bound).
+  const declaredNames = new Set(occurrences.keys());
+  if (declaredNames.size > 0) {
+    const importRe = /^import\s+([\s\S]*?)\s+from\s+(['"][^'"]+['"])\s*;?\s*$/;
+    for (let i = 0; i < lines.length; i++) {
+      const m = importRe.exec(lines[i]);
+      if (!m) continue;
+      const clause = m[1];
+      const namedMatch = clause.match(/\{([\s\S]*?)\}/);
+      const defaultPart = clause.replace(/\{[\s\S]*?\}/, '').replace(/,\s*$/, '').trim();
+
+      const keptNamed = (namedMatch?.[1] ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .filter((spec) => {
+          const local = spec.split(/\s+as\s+/i).pop()!.trim();
+          return !declaredNames.has(local);
+        });
+      const namedChanged = namedMatch
+        ? keptNamed.length !== namedMatch[1].split(',').map((s) => s.trim()).filter(Boolean).length
+        : false;
+
+      const defaultLocal = /^\*\s+as\s+/.test(defaultPart)
+        ? defaultPart.replace(/^\*\s+as\s+/, '').trim()
+        : defaultPart;
+      const dropDefault = Boolean(defaultLocal) && declaredNames.has(defaultLocal);
+
+      if (!namedChanged && !dropDefault) continue;
+
+      const parts: string[] = [];
+      if (defaultPart && !dropDefault) parts.push(defaultPart);
+      if (keptNamed.length > 0) parts.push(`{ ${keptNamed.join(', ')} }`);
+
+      lines[i] = parts.length > 0
+        ? `import ${parts.join(', ')} from ${m[2]};`
+        : `import ${m[2]};`;
+      changed = true;
+    }
+  }
+
   return changed ? lines.join('\n') : code;
 }
+
 
 /**
  * Process code to strip/transform imports that Sandpack can't resolve.

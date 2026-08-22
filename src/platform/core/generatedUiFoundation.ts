@@ -518,8 +518,92 @@ export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<H
   return <textarea className={cn('flex min-h-28 w-full rounded-[var(--ut-control-radius)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
 }
 
-export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={cn('flex h-10 w-full rounded-[var(--ut-control-radius)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
+// Shadcn-style composition parts. They carry structure only — the native
+// <select> below reads their descendants, so pages can use either API.
+export function SelectTrigger({ children }: { children?: React.ReactNode; className?: string }) {
+  return <>{children}</>;
+}
+
+export function SelectValue({ placeholder }: { placeholder?: React.ReactNode; className?: string }) {
+  return <>{placeholder ?? null}</>;
+}
+
+export function SelectContent({ children }: { children?: React.ReactNode; className?: string }) {
+  return <>{children}</>;
+}
+
+export function SelectGroup({ children }: { children?: React.ReactNode; className?: string }) {
+  return <>{children}</>;
+}
+
+export function SelectLabel({ children }: { children?: React.ReactNode; className?: string }) {
+  return <>{children}</>;
+}
+
+export function SelectSeparator() {
+  return null;
+}
+
+export function SelectItem({ children }: { value?: string; children?: React.ReactNode; className?: string }) {
+  return <>{children}</>;
+}
+
+type CollectedSelectItem = { value: string; label: React.ReactNode };
+
+function collectSelectItems(nodes: React.ReactNode, out: CollectedSelectItem[] = []): CollectedSelectItem[] {
+  React.Children.forEach(nodes, (child) => {
+    if (!React.isValidElement(child)) return;
+    const childProps = (child.props || {}) as { value?: string; children?: React.ReactNode };
+    if (child.type === SelectItem) {
+      out.push({ value: String(childProps.value ?? ''), label: childProps.children });
+      return;
+    }
+    if (childProps.children) collectSelectItems(childProps.children, out);
+  });
+  return out;
+}
+
+function findSelectPlaceholder(nodes: React.ReactNode): React.ReactNode {
+  let placeholder: React.ReactNode = null;
+  React.Children.forEach(nodes, (child) => {
+    if (placeholder || !React.isValidElement(child)) return;
+    const childProps = (child.props || {}) as { placeholder?: React.ReactNode; children?: React.ReactNode };
+    if (child.type === SelectValue) {
+      placeholder = childProps.placeholder ?? null;
+      return;
+    }
+    if (childProps.children) placeholder = findSelectPlaceholder(childProps.children);
+  });
+  return placeholder;
+}
+
+type GeneratedSelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
+  onValueChange?: (value: string) => void;
+};
+
+export function Select({ className, children, onChange, onValueChange, ...props }: GeneratedSelectProps) {
+  const items = collectSelectItems(children);
+  const placeholder = findSelectPlaceholder(children);
+  const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    onChange?.(event);
+    onValueChange?.(event.target.value);
+  };
+  return (
+    <select
+      className={cn('flex h-10 w-full rounded-[var(--ut-control-radius)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)}
+      onChange={handleChange}
+      {...props}
+    >
+      {items.length > 0 ? (
+        <>
+          {placeholder ? <option value="">{placeholder}</option> : null}
+          {items.map((item, index) => (
+            <option key={item.value + '-' + index} value={item.value}>{item.label}</option>
+          ))}
+        </>
+      ) : children}
+    </select>
+  );
 }
 
 export function Checkbox({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {

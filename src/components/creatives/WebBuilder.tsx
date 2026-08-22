@@ -5024,6 +5024,62 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       let wizardResolution = resolveSnapshot(vfsFiles, navState as any);
       vfsFiles = projectSnapshotVfsFiles(vfsFiles, wizardResolution);
       wizardResolution = resolveSnapshot(vfsFiles, navState as any);
+
+      // Repair pass 1 (sync): older drafts can carry a registered page whose
+      // source only exists under a flattened/cased path variant or inside the
+      // snapshot's own vfsFiles. Recover it before the guard runs.
+      const localRepair = repairSnapshotPageCoverageLocally(
+        vfsFiles,
+        (navState as any)?.siteBundleSnapshot ?? wizardResolution.snapshot,
+      );
+      if (localRepair.changed) {
+        console.warn('[WebBuilder] Repaired registered pages from handoff variants:', localRepair.repaired);
+        vfsFiles = localRepair.files;
+        wizardResolution = resolveSnapshot(vfsFiles, navState as any);
+      }
+
+      if (localRepair.stillMissing.length > 0) {
+        // Repair pass 2 (durable): pull the missing page source out of the
+        // draft's revision history instead of stranding the project behind the
+        // minimal-fallback guard.
+        if (pageCoverageRepairRef.current !== navStateSignature) {
+          pageCoverageRepairRef.current = navStateSignature;
+          const snapshotForRepair = (navState as any)?.siteBundleSnapshot ?? wizardResolution.snapshot;
+          const repairFiles = vfsFiles;
+          void (async () => {
+            try {
+              const durable = await repairSnapshotPageCoverageFromRevisions({
+                files: repairFiles,
+                snapshot: snapshotForRepair,
+                projectId: (navState as any)?.projectId ?? resolvedProjectId ?? null,
+                draftId: (navState as any)?.draftId ?? currentDraftId ?? null,
+              });
+              if (durable.changed && durable.stillMissing.length === 0) {
+                importedRouteStateRef.current = null;
+                replaceProjectFiles(durable.files, {
+                  activePath: selectEditableEntryPath(durable.files, normalizedEntryPoint || launchEntryPoint)
+                    || launchEntryPoint,
+                });
+                toast.success('Draft repaired', {
+                  description: `Recovered ${durable.repaired.length} page(s) from your revision history.`,
+                });
+              } else {
+                toast.error('This draft is missing generated pages', {
+                  description: `No saved revision still contains ${durable.stillMissing.join(', ')}. Re-run the System Launcher to regenerate.`,
+                });
+              }
+            } catch (repairError) {
+              console.error('[WebBuilder] Page-coverage repair failed:', repairError);
+            }
+          })();
+        }
+        toast('Repairing draft…', {
+          description: `Looking for ${localRepair.stillMissing.join(', ')} in your revision history.`,
+        });
+        importedRouteStateRef.current = navStateSignature;
+        return;
+      }
+
       assertNoMinimalFallbackPreview(vfsFiles, wizardResolution, 'Launcher handoff import');
       if (wizardResolution.isWizardDraft && !vfsFiles['/src/index.css']) {
         throw new Error('[WebBuilder] Launcher handoff is missing injected /src/index.css from SiteBundleSnapshot; refusing preview CSS fallback.');

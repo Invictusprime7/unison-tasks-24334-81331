@@ -369,7 +369,7 @@ export default function Services({ props }: { props: any }) {
  <section data-ut-variant="services:card-grid" className="ut-section bg-background">
       <div className={shellClass}>
         {intro}
-        <div className="ut-grid grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className={'ut-grid grid gap-6 ' + (items.length <= 1 ? 'max-w-2xl mx-auto' : items.length === 2 ? 'sm:grid-cols-2' : items.length === 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-3')}>
           {items.map((item: any, index: number) => (
             <div key={index} className={cardClass + ' p-8'}>
               {item.image && <img src={item.image} alt={item.title || ''} className="mb-5 aspect-[4/3] w-full rounded-[var(--radius)] object-cover" />}

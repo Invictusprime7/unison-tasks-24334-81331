@@ -47,7 +47,7 @@ describe('import vs declaration collisions', () => {
   it('drops a default import that collides with a local declaration', () => {
     const code = [
       "import Home from './Home';",
-      "import { Card, Home as HomeAlias } from './ui';",
+      "import { Card, Home } from './ui';",
       'const Home: React.FC = () => null;',
       'export default Home;',
     ].join('\n');

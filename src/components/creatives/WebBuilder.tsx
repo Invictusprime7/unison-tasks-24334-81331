@@ -6310,7 +6310,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     && !hasLocalVfsFiles
     && (!hydratedRevision || runtimeProjectionRevisionId !== hydratedRevision.id);
 
-  if (canonicalRuntimeError && emptyProjectDraft) {
+  if (canonicalRuntimeError && emptyProjectDraft && !hasLocalVfsFiles) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] px-6 text-zinc-100">
         <div className="w-full max-w-md border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
@@ -6334,7 +6334,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     );
   }
 
-  if (canonicalRuntimeError) {
+  if (canonicalRuntimeError && !hasLocalVfsFiles) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] px-6 text-zinc-100">
         <div className="w-full max-w-md border border-red-900/70 bg-zinc-950 p-6 shadow-2xl">

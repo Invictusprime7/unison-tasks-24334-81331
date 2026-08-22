@@ -24,8 +24,19 @@ interface RouteEntry {
   isHome: boolean;
 }
 
+export interface RouteChromeNeed {
+  header: boolean;
+  footer: boolean;
+}
+
 interface CanonicalRouterOptions {
   withSharedChrome?: boolean;
+  /**
+   * Per-route chrome backfill. Keyed by route path ("/", "/about"). Only the
+   * listed routes are wrapped with the canonical PageChrome landmarks, so pages
+   * that author their own navbar/footer can never render two of either.
+   */
+  chromeByRoute?: Record<string, RouteChromeNeed>;
 }
 
 // ============================================================================

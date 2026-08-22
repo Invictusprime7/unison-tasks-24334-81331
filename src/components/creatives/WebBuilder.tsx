@@ -2652,7 +2652,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           !routeCarriesHydratedRevision
           && computeBuilderVfsSignature(currentFiles) !== computeBuilderVfsSignature(files)
         ) {
-          importBuilderFiles(files, { entryPoint: launchEntryPoint });
+          // Replace, never merge: a committed revision is a complete file set.
+          // Merging leaks the previously opened project's modules into this one
+          // and leaves the router importing pages this revision never authored.
+          importBuilderFiles(files, { entryPoint: launchEntryPoint, replace: true });
         }
         setHydratedRevision(revision);
         setCurrentRevisionId(revision.id);

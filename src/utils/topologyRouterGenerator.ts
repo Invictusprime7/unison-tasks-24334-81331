@@ -186,19 +186,32 @@ function buildRouterCode(
   const imports = uniqueRoutes.map(r =>
     `import ${r.componentName} from '${r.importPath}';`
   ).join('\n');
-  const sharedChromeImports = options.withSharedChrome
-    ? "import SiteNavbar from './sections/SiteNavbar.tsx';\nimport SiteFooter from './sections/SiteFooter.tsx';"
-    : '';
+  const chromeByRoute = options.chromeByRoute || {};
+  const needsPageChrome = Object.values(chromeByRoute).some((need) => need.header || need.footer);
+  const sharedChromeImports = [
+    options.withSharedChrome
+      ? "import SiteNavbar from './sections/SiteNavbar.tsx';\nimport SiteFooter from './sections/SiteFooter.tsx';"
+      : '',
+    needsPageChrome
+      ? "import { PageChromeHeader, PageChromeFooter } from './components/PageChrome.tsx';"
+      : '',
+  ].filter(Boolean).join('\n');
+
+  const renderElement = (r: RouteEntry, routeKey: string): string => {
+    const need = chromeByRoute[routeKey] || chromeByRoute[r.route];
+    if (!need || (!need.header && !need.footer)) return `<${r.componentName} />`;
+    return `<>${need.header ? '<PageChromeHeader />' : ''}<${r.componentName} />${need.footer ? '<PageChromeFooter />' : ''}</>`;
+  };
 
   const routeElements: string[] = [];
 
   // Home route always gets "/"
-  routeElements.push(`        <Route path="/" element={<${homeRoute.componentName} />} />`);
+  routeElements.push(`        <Route path="/" element={${renderElement(homeRoute, homeRoute.route)}} />`);
 
   // Non-home routes
   for (const r of uniqueRoutes) {
     if (r === homeRoute || r.isHome) continue;
-    routeElements.push(`        <Route path="${r.route}" element={<${r.componentName} />} />`);
+    routeElements.push(`        <Route path="${r.route}" element={${renderElement(r, r.route)}} />`);
   }
 
   // Add catch-all

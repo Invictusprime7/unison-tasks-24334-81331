@@ -36,6 +36,7 @@ import {
   type ResolvedPageComposition,
 } from '@/platform/core/resolvedComposition';
 import type { WizardDesignIntervention, WizardMotionRecipe } from '@/services/wizardDesignIntervention';
+import { applyMediaToSections } from '@/platform/core/mediaResolver';
 import { getLayoutForVariantId, getVariantById } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';
 import { clampVariantToPack, resolveArtDirectionPack, resolveHeroPresentation } from '@/sections/variants';
@@ -1427,6 +1428,29 @@ function applyDesignVariants(
   };
 }
 
+/**
+ * Canonical media authority — every image-capable section ships with real,
+ * high-resolution imagery derived from the sealed generation seed. Author or
+ * template supplied URLs always win; this only fills the empty slots that used
+ * to render as text-only voids.
+ */
+function withResolvedMedia(
+  template: TemplateComposition,
+  pageFilePath: string,
+  designIntervention?: DesignInterventionSlice,
+): TemplateComposition {
+  const seed = designIntervention?.seed;
+  if (!seed) return template;
+  return {
+    ...template,
+    sections: applyMediaToSections(template.sections as never[], {
+      seed,
+      industry: designIntervention?.industry,
+      pageScope: pageFilePath,
+    }) as typeof template.sections,
+  };
+}
+
 function motionRecipesBySection(
   designIntervention?: DesignInterventionSlice,
 ): Partial<Record<string, WizardMotionRecipe>> {
@@ -1563,7 +1587,11 @@ export function resolvePageComposition(
   pageFilePath: string,
   options?: { designIntervention?: DesignInterventionSlice },
 ): ResolvedPageComposition {
-  const projected = applyDesignVariants(template, options?.designIntervention);
+  const projected = withResolvedMedia(
+    applyDesignVariants(template, options?.designIntervention),
+    pageFilePath,
+    options?.designIntervention,
+  );
   const sections = resolveSnapshotSectionLayouts(projected);
   const motion = motionRecipesBySection(options?.designIntervention);
 
@@ -1610,7 +1638,11 @@ export function compositionToReactFileSet(
     designIntervention?: DesignInterventionSlice;
   },
 ): Record<string, string> {
-  const projectedTemplate = applyDesignVariants(template, options?.designIntervention);
+  const projectedTemplate = withResolvedMedia(
+    applyDesignVariants(template, options?.designIntervention),
+    pageFilePath,
+    options?.designIntervention,
+  );
   const sectionMap = sectionMapModule(projectedTemplate, pageFilePath);
   const sectionMapImport = `./${sectionMap.path.split('/').pop()?.replace(/\.ts$/, '')}`;
   const files: Record<string, string> = {

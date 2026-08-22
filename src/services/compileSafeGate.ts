@@ -516,7 +516,7 @@ export function runCompileSafeAcceptance(
   for (const [path, source] of Object.entries(files)) {
     if (typeof source !== 'string' || !isCodeFile(path)) continue;
     const result = parseGeneratedSource(source);
-    if (!result.ok) {
+    if (result.ok === false) {
       diag(path, 'parse', 'PARSE_ERROR', result.error, 'error', {
         line: result.line,
         column: result.column,

@@ -17,7 +17,7 @@ import { runPreflightRepair } from './aiSitePreflightRepair';
 import { preflightNavWiring } from './preflightNavWiring';
 import { closeRequiredIndustryIntents } from './requiredIntentClosure';
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
-import { rewriteLucideIconLocalImports } from '@/utils/sandpackFilePrep';
+import { injectMissingLucideIcons, rewriteLucideIconLocalImports } from '@/utils/sandpackFilePrep';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;

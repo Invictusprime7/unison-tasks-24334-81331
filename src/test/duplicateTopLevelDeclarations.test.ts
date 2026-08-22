@@ -42,3 +42,23 @@ describe('dedupeTopLevelDeclarations', () => {
     expect(out).toContain('const Home__dup1 = 1;');
   });
 });
+
+describe('import vs declaration collisions', () => {
+  it('drops a default import that collides with a local declaration', () => {
+    const code = [
+      "import Home from './Home';",
+      "import { Card, Home } from './ui';",
+      'const Home: React.FC = () => null;',
+      'export default Home;',
+    ].join('\n');
+    const out = dedupeTopLevelDeclarations(code);
+    expect(out).toContain("import './Home';");
+    expect(out).toContain("import { Card } from './ui';");
+    expect(out).toContain('const Home: React.FC');
+  });
+
+  it('leaves non-colliding imports untouched', () => {
+    const code = "import { Card } from './ui';\nconst Home = 1;\n";
+    expect(dedupeTopLevelDeclarations(code)).toBe(code);
+  });
+});

@@ -6649,6 +6649,7 @@ export function prepareSandpackFiles(
   }
 
   repairLocalImportContracts(sandpackFiles);
+  synthesizeMissingJsxExports(sandpackFiles);
   assertLocalJsxImportContracts(sandpackFiles);
 
 
@@ -6687,6 +6688,7 @@ export function prepareSandpackFiles(
   // possible. Reconcile again, then fail with the exact file/symbol pair before
   // React receives an undefined JSX element type.
   repairLocalImportContracts(sandpackFiles);
+  synthesizeMissingJsxExports(sandpackFiles);
   assertLocalJsxImportContracts(sandpackFiles);
 
   // ── CLEANUP: Remove unused imports from VFS files ──

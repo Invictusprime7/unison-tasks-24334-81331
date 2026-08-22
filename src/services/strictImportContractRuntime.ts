@@ -251,13 +251,7 @@ export async function runStrictImportContractCheck({
   themePresetId,
   signal,
   workerFactory,
-  fallbackCheck = (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => {
-    prepareSandpackFiles(fallbackFiles, {
-      entryPoint: fallbackEntryPoint,
-      themePresetId: fallbackThemePresetId,
-      strict: true,
-    });
-  },
+  fallbackCheck,
 }: RunStrictImportContractCheckOptions): Promise<void> {
   await runPrepareSandpackFilesOffThread({
     files,
@@ -266,8 +260,17 @@ export async function runStrictImportContractCheck({
     signal,
     workerFactory,
     fallbackCompute: (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => {
-      fallbackCheck(fallbackFiles, fallbackEntryPoint, fallbackThemePresetId);
-      return fallbackFiles;
+      fallbackCheck?.(fallbackFiles, fallbackEntryPoint, fallbackThemePresetId);
+      // The result is shared with the Builder's immediately-following preview
+      // compile. Cache the actual Sandpack overlay, never the raw /src VFS.
+      // Returning fallbackFiles here poisoned the shared cache whenever module
+      // workers were blocked, so Preview received unresolved /src modules and
+      // rendered nothing after an otherwise successful Wizard finalization.
+      return prepareSandpackFiles(fallbackFiles, {
+        entryPoint: fallbackEntryPoint,
+        themePresetId: fallbackThemePresetId,
+        strict: true,
+      });
     },
   });
 }

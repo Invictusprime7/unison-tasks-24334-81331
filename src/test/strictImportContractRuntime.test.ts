@@ -87,6 +87,10 @@ describe('strict import-contract runtime', () => {
 
   it('falls back to the main thread (and still enforces the check) when the worker cannot start', async () => {
     const fallbackCheck = vi.fn();
+    const files = {
+      '/src/App.tsx': 'export default function App(){ return <main>Fallback compile</main>; }',
+      '/src/index.css': '@tailwind base; @tailwind components; @tailwind utilities;',
+    };
     const worker = {
       onmessage: null as ((event: MessageEvent) => void) | null,
       onerror: null as ((event: ErrorEvent) => void) | null,
@@ -100,14 +104,27 @@ describe('strict import-contract runtime', () => {
     };
 
     await runStrictImportContractCheck({
-      files: { '/App.tsx': 'x' },
-      entryPoint: '/App.tsx',
+      files,
+      entryPoint: '/src/App.tsx',
       themePresetId: 'modern',
       workerFactory: () => worker,
       fallbackCheck,
     });
 
-    expect(fallbackCheck).toHaveBeenCalledWith({ '/App.tsx': 'x' }, '/App.tsx', 'modern');
+    expect(fallbackCheck).toHaveBeenCalledWith(files, '/src/App.tsx', 'modern');
+
+    const previewWorkerFactory = vi.fn(() => worker);
+    const cachedPreview = await runPrepareSandpackFilesOffThread({
+      files,
+      entryPoint: '/src/App.tsx',
+      themePresetId: 'modern',
+      workerFactory: previewWorkerFactory,
+    });
+
+    expect(previewWorkerFactory).not.toHaveBeenCalled();
+    expect(cachedPreview['/App.tsx']).toContain('Fallback compile');
+    expect(cachedPreview['/index.tsx']).toBeDefined();
+    expect(cachedPreview['/src/App.tsx']).toBeUndefined();
   });
 
   it('terminates the worker and rejects when the caller aborts before it responds', async () => {

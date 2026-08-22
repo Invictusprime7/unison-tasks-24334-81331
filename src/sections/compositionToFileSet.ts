@@ -1063,7 +1063,7 @@ export default function Features({ props }: { props: any }) {
             {subheadline && <p className="font-body text-lg text-muted-foreground">{subheadline}</p>}
           </div>
         )}
-        <div className={'grid gap-10 ' + (iconLeft ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+        <div className={'grid gap-10 ' + (iconLeft || items.length === 2 ? 'sm:grid-cols-2' : items.length === 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : items.length <= 1 ? 'max-w-2xl' : 'sm:grid-cols-2 lg:grid-cols-3')}>
           {items.map((item: any, index: number) => (
             <div key={index} className={iconLeft ? 'flex gap-4' : (centered ? 'text-center' : '')}>
               <div className={'mb-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius)] bg-primary/10 font-heading text-base font-semibold text-primary ' + (centered ? 'mx-auto' : '')}>

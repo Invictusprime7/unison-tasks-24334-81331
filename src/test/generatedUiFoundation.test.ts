@@ -552,16 +552,16 @@ export default function Gallery(){ const image: StaticImageData | string = '/gal
     expect(prepared['/unison/ui.tsx']).toBeUndefined();
   });
 
-  it('surfaces the exact Contact import/export incompatibility before an undefined JSX render', () => {
-    expect(() => prepareSandpackFiles({
+  it('repairs a Contact import/export incompatibility instead of failing the launch', () => {
+    const prepared = prepareSandpackFiles({
       ...foundation.files,
       '/src/App.tsx': "import Contact from './pages/Contact'; export default function App(){ return <Contact />; }",
       '/src/pages/Contact.tsx': "import { ContactCard } from '../components/ContactParts'; export default function Contact(){ return <ContactCard />; }",
       '/src/components/ContactParts.tsx': 'export function Address(){ return <address />; } export function Hours(){ return <aside />; }',
       '/src/index.css': ':root { --primary: 0 0% 10%; }',
-    }, { strict: true, entryPoint: '/src/App.tsx' })).toThrow(
-      /Contact\.tsx imports JSX component "ContactCard".*does not export it.*Address, Hours/i,
-    );
+    }, { strict: true, entryPoint: '/src/App.tsx' });
+
+    expect(prepared['/components/ContactParts.tsx']).toContain('export function ContactCard');
   });
 
   it('never splices the Lucide icon fallback shim into a dangling incomplete import statement', async () => {

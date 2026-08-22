@@ -4034,21 +4034,31 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           yieldToHost: yieldToBrowser,
           signal,
         });
-        await runStrictImportContractCheck({
-          files: artifacts.files,
-          entryPoint: artifacts.entryPoint,
-          themePresetId: resolvedPreset.id,
-          signal,
-        });
+        // The compile-safe acceptance gate inside canonical artifact assembly is
+        // authoritative. This additional Sandpack check is diagnostic only: it
+        // must never strand a completed launch before the Builder handoff.
+        try {
+          await runStrictImportContractCheck({
+            files: artifacts.files,
+            entryPoint: artifacts.entryPoint,
+            themePresetId: resolvedPreset.id,
+            signal,
+          });
+        } catch (strictImportError) {
+          launchReliabilityMode = 'lane-b-degraded';
+          run.degrade(
+            'preflight',
+            'preflight.sandpack_import_check',
+            'The site opened with import diagnostics available in the builder.',
+            strictImportError instanceof Error ? strictImportError.message : String(strictImportError),
+          );
+          console.warn('[SystemLauncher] Sandpack import diagnostics did not block handoff', strictImportError);
+        }
         return artifacts;
       }, {
         timeoutMs: 240_000,
-        // NO FALLBACK BY DESIGN. The launch artifact set has exactly one
-        // author: Stage 4b (deterministic scaffold + sealed art direction)
-        // merged with Lane B (AI-authored page bodies). A seed-recovery
-        // fallback would constitute a second, competing wizard pipeline that
-        // silently reverts AI-authored pages. If preflight stalls, the stage
-        // throws and the launch surfaces the real failure instead.
+        // Artifact assembly remains canonical and has no competing scaffold
+        // fallback. Sandpack diagnostics above are intentionally non-blocking.
       });
       // Seal diagnostics: registered pages that reached the sealed revision
       // without a file body. The launch still opens, but the gap is recorded.
@@ -4154,28 +4164,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         );
       }
 
-      setLaunchStatus('Review the generated site before creating its live data workspace.');
-      // Generation is complete. The confirmation dialog is an intentional
-      // user decision, not an active loading state.
-      setIsLaunching(false);
-      setLaunchStatus('');
-      const confirmed = await requestLaunchConfirmation({
-        businessName: brand,
-        siteName: `${brand} Site`,
-        fileCount: Object.keys(wiredVfsFiles).length,
-        pagePaths: Object.keys(wiredVfsFiles)
-          .filter((path) => /^\/?src\/pages\/.+\.tsx$/i.test(path))
-          .sort(),
-        businessId: provisionedBusinessId,
-        siteId: launchIds.siteId,
-        files: wiredVfsFiles,
-      });
-      if (!confirmed) {
-        toast.info('Launch cancelled. No site data was created.');
-        return;
-      }
-
-      setIsLaunching(true);
+      // Launch is a single action. A second review confirmation here used to
+      // suspend handleLaunch on an unresolved Promise and made the completed
+      // pipeline appear frozen instead of opening the Web Builder.
       setLaunchStatus('Creating the site workspace and live data contracts…');
       run.markStage('commit', 'active');
       // A builder handoff is only valid after the complete canonical identity

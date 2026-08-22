@@ -350,7 +350,7 @@ export async function commitMutation(
   log('preflight', previewOk ? 'info' : 'warn', 'preflight stages', preflight.stages);
 
   // Compile-safe acceptance provenance: which lane/stage produced which defect.
-  if (preflight.compileDiagnostics.length > 0) {
+  if ((preflight.compileDiagnostics?.length ?? 0) > 0) {
     log(
       'compileSafe',
       preflight.stages.compileSafe.status === 'accepted' ? 'info' : 'warn',

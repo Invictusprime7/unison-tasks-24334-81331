@@ -72,8 +72,16 @@ export function runFullPreflight(
   {
     const iconFixed: Record<string, string> = { ...files };
     rewriteLucideIconLocalImports(iconFixed);
+    // Icons referenced but never imported (`<Icon icon={CalendarPlus} />`) are a
+    // hard runtime crash in Sandpack. Repair before the snapshot is sealed.
+    for (const [path, src] of Object.entries(iconFixed)) {
+      if (typeof src !== 'string' || !/\.(tsx|jsx)$/.test(path)) continue;
+      const repaired = injectMissingLucideIcons(src);
+      if (repaired !== src) iconFixed[path] = repaired;
+    }
     files = iconFixed;
   }
+
 
   // 1) Early syntax repair
   let earlyRepair: 'ok' | 'skipped' | 'failed' = 'skipped';

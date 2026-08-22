@@ -34,8 +34,11 @@ import {
 
 import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import {
+  PAGE_CHROME_PATH,
   WIZARD_FOOTER_PATH,
   WIZARD_NAVBAR_PATH,
+  buildPageChromeModule,
+  buildPageChromeWrapper,
   countPageChromeLandmarks,
   isCanonicalWizardSharedChromePath,
 } from './wizardSharedChrome';
@@ -569,18 +572,40 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     );
   }
 
-  // Page bodies own chrome, so each registered page must render exactly one
-  // navigation landmark and one footer. Zero = unreachable page, more than one
-  // = the duplicate-chrome regression this authority exists to prevent.
-  const duplicateChromePages = Object.values(snapshot.pageRegistry.pages)
-    .map((page) => (page as { filePath?: string }).filePath)
-    .filter((filePath): filePath is string => Boolean(filePath))
-    .filter((filePath) => {
-      const source = merged[filePath.startsWith('/') ? filePath : `/${filePath}`] || merged[filePath] || '';
-      if (!source) return false;
-      return countPageChromeLandmarks(source).navbars > 1
-        || countPageChromeLandmarks(source).footers > 1;
+  // ── Chrome invariant: exactly one navbar + one footer per registered page ──
+  // Zero = an unreachable page (the regression users see as "no header/footer
+  // ever ships"); the pipeline backfills deterministic chrome derived from the
+  // PageRegistry rather than shipping the page bare. More than one is logged so
+  // the duplicate-chrome regression stays visible.
+  merged[PAGE_CHROME_PATH] = buildPageChromeModule(snapshot.pageRegistry, snapshot.businessName);
+
+  const chromeBackfilledPages: string[] = [];
+  const duplicateChromePages: string[] = [];
+
+  for (const page of Object.values(snapshot.pageRegistry.pages)) {
+    const filePath = (page as { filePath?: string }).filePath;
+    if (!filePath) continue;
+    const normalized = filePath.startsWith('/') ? filePath : `/${filePath}`;
+    const source = merged[normalized] || merged[filePath] || '';
+    if (!source) continue;
+
+    const { navbars, footers } = countPageChromeLandmarks(source);
+    if (navbars > 1 || footers > 1) duplicateChromePages.push(normalized);
+    if (navbars > 0 && footers > 0) continue;
+
+    const baseName = normalized.split('/').pop()?.replace(/\.(tsx|jsx)$/i, '') || 'Page';
+    const bodyPath = normalized.replace(/\.(tsx|jsx)$/i, (ext) => `Body${ext}`);
+    merged[bodyPath] = source;
+    merged[normalized] = buildPageChromeWrapper(`./${baseName}Body`, {
+      withHeader: navbars === 0,
+      withFooter: footers === 0,
     });
+    chromeBackfilledPages.push(normalized);
+  }
+
+  if (chromeBackfilledPages.length > 0) {
+    console.warn('[canonicalLaunchVfs] Backfilled missing page chrome', chromeBackfilledPages);
+  }
   if (duplicateChromePages.length > 0) {
     console.warn('[canonicalLaunchVfs] Page bodies render duplicate chrome', duplicateChromePages);
   }

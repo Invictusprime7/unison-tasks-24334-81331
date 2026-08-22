@@ -4267,7 +4267,59 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
   }
 }
 
+/**
+ * Last-resort export reconciliation.
+ *
+ * Lane B occasionally imports a JSX component name a local module does not
+ * export (e.g. shadcn-style `SelectTrigger` from the generated form-fields
+ * foundation). Rather than hard-failing the whole wizard launch, append a
+ * permissive passthrough component to the target module so the contract holds
+ * and the page still renders.
+ */
+function synthesizeMissingJsxExports(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+
+    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([^{}]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    let namedMatch: RegExpExecArray | null;
+    while ((namedMatch = namedImportRegex.exec(content)) !== null) {
+      const targetPath = resolveRelativeModuleTarget(filePath, namedMatch[2], existingPaths);
+      if (!targetPath || !/\.(tsx|jsx)$/.test(targetPath)) continue;
+      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
+      if (moduleExports.hasStarReExport) continue;
+
+      const additions: string[] = [];
+      for (const part of namedMatch[1].split(',').map((item) => item.trim()).filter(Boolean)) {
+        const [imported, localAlias] = part.split(/\s+as\s+/).map((item) => item.trim());
+        const local = localAlias || imported;
+        if (!/^[A-Z]\w*$/.test(imported)) continue;
+        if (!new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)) continue;
+        if (moduleExports.named.has(imported)) continue;
+        moduleExports.named.add(imported);
+        additions.push(
+          `export function ${imported}(props: any) {\n` +
+          `  const { children, asChild: _asChild, ...rest } = props || {};\n` +
+          `  return <div {...rest}>{children}</div>;\n` +
+          `}`,
+        );
+      }
+
+      if (additions.length > 0) {
+        console.warn(
+          `[sandpackFilePrep] Synthesized passthrough exports in ${targetPath}:`,
+          additions.length,
+        );
+        sandpackFiles[targetPath] =
+          `${sandpackFiles[targetPath]}\n\n// Auto-synthesized passthrough exports (import contract repair)\n${additions.join('\n\n')}\n`;
+      }
+    }
+  }
+}
+
 function assertLocalJsxImportContracts(sandpackFiles: Record<string, string>): void {
+
   const existingPaths = new Set(Object.keys(sandpackFiles));
   const violations: Array<{ filePath: string; message: string }> = [];
 

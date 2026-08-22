@@ -3,6 +3,9 @@ import { VFSProvider } from "@/contexts/VFSContext";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LaunchDegradationNote } from "@/components/builder/LaunchDegradationNote";
+import { clearLauncherHandoff } from "@/services/launcherHandoffPersistence";
+
+
 
 
 const WEB_BUILDER_MODULE_RETRY_KEY = "unison:web-builder-module-retry";
@@ -29,11 +32,11 @@ const WebBuilder = lazy(async (): Promise<{ default: WebBuilderModule["WebBuilde
 // and allows recovery without navigating away
 class VFSErrorBoundary extends Component<
   { children: ReactNode },
-  { hasError: boolean; error: Error | null }
+  { hasError: boolean; error: Error | null; resetKey: number; attempts: number }
 > {
   constructor(props: { children: ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, resetKey: 0, attempts: 0 };
   }
 
   static getDerivedStateFromError(error: Error) {
@@ -44,6 +47,30 @@ class VFSErrorBoundary extends Component<
     console.error("[VFS] Render error:", error, info.componentStack);
     console.error("[VFS] Error stack:", error.stack);
   }
+
+  private handleRetry = () => {
+    // Most mount crashes here are deterministic (a stale launcher handoff that
+    // fails projection). Clearing boundary state alone re-throws instantly and
+    // looks like a dead button, so drop the poisoned handoff and remount the
+    // whole subtree; escalate to a hard reload if it fails again.
+    try {
+      clearLauncherHandoff();
+    } catch (clearError) {
+      console.warn("[VFS] Failed to clear launcher handoff before retry:", clearError);
+    }
+
+    if (this.state.attempts >= 1) {
+      window.location.reload();
+      return;
+    }
+
+    this.setState((prev) => ({
+      hasError: false,
+      error: null,
+      resetKey: prev.resetKey + 1,
+      attempts: prev.attempts + 1,
+    }));
+  };
 
   render() {
     if (this.state.hasError) {
@@ -61,13 +88,9 @@ class VFSErrorBoundary extends Component<
               </pre>
             )}
             <div className="flex gap-2 justify-center">
-              <Button
-                onClick={() => this.setState({ hasError: false, error: null })}
-                variant="outline"
-                size="sm"
-              >
+              <Button onClick={this.handleRetry} variant="outline" size="sm">
                 <RefreshCw className="h-4 w-4 mr-2" />
-                Retry
+                {this.state.attempts >= 1 ? "Reload builder" : "Retry"}
               </Button>
               <Button
                 onClick={() => window.location.href = "/creatives"}
@@ -81,9 +104,10 @@ class VFSErrorBoundary extends Component<
         </div>
       );
     }
-    return this.props.children;
+    return <div key={this.state.resetKey} className="contents">{this.props.children}</div>;
   }
 }
+
 
 const WebBuilderPage = () => (
   <VFSErrorBoundary>

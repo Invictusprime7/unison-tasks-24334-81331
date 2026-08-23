@@ -30,14 +30,55 @@ import {
 import { parseGeneratedSource } from './aiSitePreflightRepair';
 import { supabase } from '@/integrations/supabase/client';
 import { extractCleanCode } from '@/utils/aiCodeCleaner';
+import { synthesizeCompanionModule } from './companionModuleSynthesis';
 
 export interface ModuleClosureRepairResult {
   files: Record<string, string>;
-  /** `file → specifier` rewrites applied. */
+  /** `file → specifier` rewrites applied (ladder rung 1: resolve). */
   rewritten: string[];
-  /** Dead imports removed. */
+  /** Modules restored from the canonical snapshot (rung 2: recover). */
+  recovered: string[];
+  /** Modules deterministically synthesized from usage (rung 3: synthesize). */
+  synthesized: string[];
+  /** Dead imports removed (rung 4: drop). */
   dropped: string[];
   remaining: UnresolvedLocalImport[];
+}
+
+export interface ModuleClosureRepairOptions {
+  /**
+   * Canonical (Stage 4b composed) bodies keyed by VFS path. Rung 2 restores a
+   * missing module from here before anything is synthesized or dropped.
+   */
+  canonicalFiles?: Record<string, string>;
+  /** Set false to disable deterministic usage-derived synthesis (rung 3). */
+  synthesize?: boolean;
+}
+
+const MODULE_EXTENSION_CANDIDATES = ['', '.tsx', '.ts', '.jsx', '.js', '/index.tsx', '/index.ts'];
+
+/** Absolute path a relative specifier points at, without extension resolution. */
+function absoluteSpecifierPath(importerPath: string, specifier: string): string {
+  return normalizeVfsPath(`${dirOf(importerPath)}/${specifier}`);
+}
+
+function findCanonicalBody(
+  canonicalFiles: Record<string, string> | undefined,
+  absolutePath: string,
+): { path: string; content: string } | null {
+  if (!canonicalFiles) return null;
+  const normalized: Record<string, string> = {};
+  for (const [path, content] of Object.entries(canonicalFiles)) {
+    if (typeof content === 'string') normalized[normalizeVfsPath(path)] = content;
+  }
+  for (const suffix of MODULE_EXTENSION_CANDIDATES) {
+    const candidate = `${absolutePath}${suffix}`;
+    const content = normalized[candidate];
+    if (typeof content === 'string' && content.trim().length > 0) {
+      return { path: candidate, content };
+    }
+  }
+  return null;
 }
 
 function dirOf(path: string): string {

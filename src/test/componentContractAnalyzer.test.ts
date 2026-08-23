@@ -32,6 +32,16 @@ describe('component contract analyzer', () => {
     expect(result.diagnostics).toEqual([]);
   });
 
+  it('accepts opaque package facade re-exports without inventing local shims', () => {
+    const result = analyzeComponentContracts({
+      '/pages/Home.tsx': "import * as Dialog from '../ui/dialog';\nexport default function Home(){ return <Dialog.Root />; }",
+      '/ui/dialog.ts': "export * from '@radix-ui/react-dialog';",
+    }, { repair: true });
+
+    expect(result.repaired).toEqual([]);
+    expect(result.diagnostics).toEqual([]);
+  });
+
   it('checks namespace JSX members', () => {
     const result = analyzeComponentContracts({
       '/pages/Home.tsx': "import * as UI from '../components/ui';\nexport default function Home(){ return <UI.Card />; }",

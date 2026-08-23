@@ -62,8 +62,6 @@ function isLocalSpecifier(specifier: string): boolean {
 function hasDefaultExport(source: string): boolean {
   if (/export\s+default\b/.test(source)) return true;
   if (/export\s*\{[^}]*\bdefault\b[^}]*\}/.test(source)) return true;
-  // Re-exports may forward a default from elsewhere; treat as satisfied.
-  if (/export\s+\*\s+from/.test(source)) return true;
   if (/module\.exports\s*=/.test(source)) return true;
   return false;
 }

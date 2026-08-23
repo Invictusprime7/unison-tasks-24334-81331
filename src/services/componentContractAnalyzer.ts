@@ -121,12 +121,20 @@ function resolveExport(
   const paths = new Set(Object.keys(files));
   for (const forwarded of info.reExports.filter((item) => item.exported === exportName)) {
     const next = resolveCandidateModule(targetPath, forwarded.source, paths);
+    // Package re-exports are opaque to the VFS graph but are real runtime
+    // values (Radix/Lucide/framer facades rely on this pattern).
+    if (!next && !forwarded.source.startsWith('.') && !forwarded.source.startsWith('/') && !forwarded.source.startsWith('@/')) {
+      return { found: true, renderable: true, available };
+    }
     if (!next) continue;
     const result = resolveExport(files, next, forwarded.imported, seen);
     if (result.found) return { ...result, available };
   }
   for (const sourcePath of info.starSources) {
     const next = resolveCandidateModule(targetPath, sourcePath, paths);
+    if (!next && !sourcePath.startsWith('.') && !sourcePath.startsWith('/') && !sourcePath.startsWith('@/')) {
+      return { found: true, renderable: true, available };
+    }
     if (!next) continue;
     const result = resolveExport(files, next, exportName, seen);
     if (result.found) return { ...result, available };

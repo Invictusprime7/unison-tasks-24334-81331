@@ -85,9 +85,18 @@ export interface CompileSafeResult {
 const CODE_FILE = /\.(tsx|jsx|ts|js|mjs|cjs)$/;
 const JSX_FILE = /\.(tsx|jsx)$/;
 
+// Build/tooling files ship inside the exported project but are NEVER part of
+// the Sandpack runtime bundle. They legitimately import node-only tooling
+// ('vite', '@vitejs/plugin-react-swc', 'path', 'tailwindcss', ...), so running
+// the runtime dependency/module contract over them produced permanent
+// UNSUPPORTED_DEPENDENCY blockers that rejected otherwise valid bundles.
+const TOOLING_FILE =
+  /(^|\/)(vite|vitest|tailwind|postcss|eslint|next|rollup|jest|babel)\.config\.[cm]?[jt]s$/i;
+
 function isCodeFile(path: string): boolean {
-  return CODE_FILE.test(path);
+  return CODE_FILE.test(path) && !TOOLING_FILE.test(path);
 }
+
 
 function escapeRe(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

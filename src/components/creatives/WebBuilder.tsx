@@ -6845,6 +6845,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                 businessDataContext={businessDataContext}
                 systemsBuildContext={systemsBuildContextFromState}
                 wizardSeed={wizardSeedFromState}
+                siteBundleSnapshot={(hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? (effectiveRouteState?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null}
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
@@ -6859,7 +6860,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   // Mirrors the System Launcher pipeline so AI Builder chat
                   // edits cannot crash preview, ship un-stamped nav links, or
                   // leak intents disallowed by the active industry profile.
-                  const snapshotForPreflight = (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null;
+                  const snapshotForPreflight =
+                  (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null)
+                  ?? (effectiveRouteState?.siteBundleSnapshot as SiteBundleSnapshot | null)
+                  ?? null;
                   const beforeFiles = virtualFS.getSandpackFiles();
                   const canonicalFiles = canonicalizeAIFilePaths(rawFiles, beforeFiles);
                   const preflight = runFullPreflight(canonicalFiles, {
@@ -7330,6 +7334,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               businessDataContext={businessDataContext}
               systemsBuildContext={systemsBuildContextFromState}
                 wizardSeed={wizardSeedFromState}
+              siteBundleSnapshot={(hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? (effectiveRouteState?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null}
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
@@ -7338,7 +7343,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               layoutOps={layoutOpsForAI}
               onApproveCapabilityPlan={approveCapabilityPlanFromPanel}
               onApplyToVFS={async (rawFiles, applyMeta) => {
-                const snapshotForPreflight = (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null;
+                const snapshotForPreflight =
+                  (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null)
+                  ?? (effectiveRouteState?.siteBundleSnapshot as SiteBundleSnapshot | null)
+                  ?? null;
                 const beforeFiles = virtualFS.getSandpackFiles();
                 const canonicalFiles = canonicalizeAIFilePaths(rawFiles, beforeFiles);
                 const files = runFullPreflight(canonicalFiles, {

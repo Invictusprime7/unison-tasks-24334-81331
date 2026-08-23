@@ -31,6 +31,8 @@ interface Props {
   message: ConversationMessage;
   onViewEdits?: (edits: VFSEdit[]) => void;
   onRetryError?: (error: IframeError) => void;
+  /** Open an AI-edited file in the code editor. */
+  onOpenFile?: (path: string) => void;
 }
 
 function formatTime(date: Date): string {
@@ -161,40 +163,163 @@ const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
   );
 };
 
-// ── File Edit List ─────────────────────────────────────────────
-const FileEditList: React.FC<{ edits: VFSEdit[]; onViewEdits?: (e: VFSEdit[]) => void }> = ({ edits, onViewEdits }) => (
-  <div className="mt-3 pt-3 border-t border-border/50">
-    <Button
-      size="sm"
-      variant="outline"
-      onClick={() => onViewEdits?.(edits)}
-      className="gap-2 text-xs h-7"
-    >
-      <Eye className="w-3 h-3" />
-      View {edits.length} file{edits.length > 1 ? 's' : ''} changed
-      <ExternalLink className="w-3 h-3" />
-    </Button>
-    <div className="mt-2 space-y-0.5">
-      {edits.map((edit, i) => (
-        <div key={i} className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
-          <div className={cn(
-            "w-1.5 h-1.5 rounded-full",
-            edit.type === 'create' && "bg-green-500",
-            edit.type === 'modify' && "bg-primary",
-            edit.type === 'delete' && "bg-destructive"
-          )} />
-          <span className="truncate">{edit.path}</span>
-          {edit.linesChanged && (
-            <span className="text-muted-foreground/40 ml-auto flex-shrink-0">+{edit.linesChanged}</span>
+// ── Live AI File Cards ─────────────────────────────────────────
+const STATUS_STYLES: Record<string, { label: string; className: string }> = {
+  applied: { label: 'Applied', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  held: { label: 'Held for review', className: 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+  rejected: { label: 'Not applied', className: 'border-destructive/30 bg-destructive/10 text-destructive' },
+  pending: { label: 'Pending', className: 'border-border/80 bg-background text-muted-foreground' },
+};
+
+/** Minimal line diff — good enough for reviewing an AI patch inline. */
+function buildLineDiff(before: string, after: string): Array<{ kind: 'add' | 'remove' | 'same'; text: string }> {
+  const a = before.split('\n');
+  const b = after.split('\n');
+  const removed = new Set(a);
+  const added = new Set(b);
+  const rows: Array<{ kind: 'add' | 'remove' | 'same'; text: string }> = [];
+  a.forEach((line) => {
+    if (!added.has(line)) rows.push({ kind: 'remove', text: line });
+  });
+  b.forEach((line) => {
+    rows.push({ kind: removed.has(line) ? 'same' : 'add', text: line });
+  });
+  return rows;
+}
+
+const AIFileCard: React.FC<{ edit: VFSEdit; streaming?: boolean; onOpenFile?: (path: string) => void }> = ({
+  edit,
+  streaming,
+  onOpenFile,
+}) => {
+  const [open, setOpen] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const status = STATUS_STYLES[edit.status ?? 'pending'] ?? STATUS_STYLES.pending;
+  const body = edit.contents ?? edit.preview ?? '';
+  const canDiff = Boolean(edit.contents && edit.previousContents);
+  const diffRows = showDiff && canDiff ? buildLineDiff(edit.previousContents!, edit.contents!) : null;
+
+  const handleCopy = () => {
+    if (!body) return;
+    navigator.clipboard.writeText(body);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
+  return (
+    <div className="rounded-xl border border-border/70 bg-background/80 overflow-hidden">
+      <div className="flex items-center gap-2 px-2.5 py-1.5">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {open ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
+          <span
+            className={cn(
+              'h-1.5 w-1.5 shrink-0 rounded-full',
+              edit.type === 'create' && 'bg-emerald-500',
+              edit.type === 'modify' && 'bg-primary',
+              edit.type === 'delete' && 'bg-destructive',
+            )}
+          />
+          <span className="truncate font-mono text-foreground/90">{edit.path}</span>
+          {streaming ? (
+            <Loader2 className="w-3 h-3 shrink-0 animate-spin text-muted-foreground" />
+          ) : (
+            edit.linesChanged !== undefined && (
+              <span className="shrink-0 text-[10px] text-muted-foreground/70">{edit.linesChanged} lines</span>
+            )
           )}
+        </button>
+        <span className={cn('shrink-0 rounded-md border px-1.5 py-0.5 text-[10px]', status.className)}>
+          {streaming ? 'Writing…' : status.label}
+        </span>
+      </div>
+
+      {edit.statusReason && (
+        <p className="px-2.5 pb-1.5 text-[10px] text-muted-foreground">{edit.statusReason}</p>
+      )}
+
+      {open && (
+        <div className="border-t border-border/60">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+            {canDiff && (
+              <Button size="sm" variant="ghost" className="h-6 gap-1 px-2 text-[10px]" onClick={() => setShowDiff((v) => !v)}>
+                {showDiff ? 'View file' : 'View diff'}
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" className="h-6 gap-1 px-2 text-[10px]" onClick={handleCopy}>
+              {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              Copy
+            </Button>
+            {onOpenFile && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 gap-1 px-2 text-[10px]"
+                onClick={() => onOpenFile(edit.path)}
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open in code
+              </Button>
+            )}
+          </div>
+          <pre className="max-h-72 overflow-auto border-t border-border/60 bg-muted/20 p-2.5 text-[10.5px] font-mono leading-relaxed">
+            {diffRows
+              ? diffRows.map((row, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'whitespace-pre-wrap',
+                      row.kind === 'add' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                      row.kind === 'remove' && 'bg-destructive/10 text-destructive',
+                      row.kind === 'same' && 'text-muted-foreground',
+                    )}
+                  >
+                    {row.kind === 'add' ? '+ ' : row.kind === 'remove' ? '- ' : '  '}
+                    {row.text}
+                  </div>
+                ))
+              : <code className="whitespace-pre-wrap text-muted-foreground">{body || '(no content captured)'}</code>}
+          </pre>
         </div>
+      )}
+    </div>
+  );
+};
+
+// ── File Edit List ─────────────────────────────────────────────
+const FileEditList: React.FC<{
+  edits: VFSEdit[];
+  streaming?: boolean;
+  onViewEdits?: (e: VFSEdit[]) => void;
+  onOpenFile?: (path: string) => void;
+}> = ({ edits, streaming, onViewEdits, onOpenFile }) => (
+  <div className="mt-3 pt-3 border-t border-border/50">
+    <div className="mb-2 flex items-center gap-2">
+      <FileCode className="w-3 h-3 text-muted-foreground" />
+      <span className="text-[11px] font-medium text-foreground/90">
+        {edits.length} file{edits.length > 1 ? 's' : ''} {streaming ? 'being written' : 'changed'}
+      </span>
+      {onViewEdits && (
+        <Button size="sm" variant="ghost" className="ml-auto h-6 gap-1 px-2 text-[10px]" onClick={() => onViewEdits(edits)}>
+          <Eye className="w-3 h-3" />
+          Open in preview
+        </Button>
+      )}
+    </div>
+    <div className="space-y-1.5">
+      {edits.map((edit, i) => (
+        <AIFileCard key={`${edit.path}-${i}`} edit={edit} streaming={streaming} onOpenFile={onOpenFile} />
       ))}
     </div>
   </div>
 );
 
 // ── Main Message Component ─────────────────────────────────────
-export const AIConversationMessage: React.FC<Props> = ({ message, onViewEdits, onRetryError }) => {
+export const AIConversationMessage: React.FC<Props> = ({ message, onViewEdits, onRetryError, onOpenFile }) => {
   const [copied, setCopied] = useState(false);
 
   const compactMode =
@@ -373,7 +498,12 @@ export const AIConversationMessage: React.FC<Props> = ({ message, onViewEdits, o
 
             {/* File edits */}
             {message.edits && message.edits.length > 0 && (
-              <FileEditList edits={message.edits} onViewEdits={onViewEdits} />
+              <FileEditList
+                edits={message.edits}
+                streaming={message.isStreaming}
+                onViewEdits={onViewEdits}
+                onOpenFile={onOpenFile}
+              />
             )}
 
             {/* Error retry */}

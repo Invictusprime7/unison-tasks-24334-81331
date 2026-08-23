@@ -34,6 +34,8 @@ import type { ThemeTokens } from '@/sections/types';
 import type { CompiledContract } from './contractCompiler';
 import { PreviewGate, PublishGate, type GateVerdict } from './gates';
 import type { WizardMergeContext } from '@/services/wizardMergeContext';
+import { projectSurgicalCommit } from './surgicalProjection';
+import type { SiteBundleSnapshot } from './canonicalPipeline';
 
 // ============================================================================
 // Commit Source — every legal caller MUST identify itself.
@@ -43,10 +45,13 @@ export type CommitSource =
   | 'wizard-launch'        // Wizard Launcher → first build
   | 'ai-builder'           // Lane B AI assistant patch
   | 'playground-edit'      // User-driven Creator Playground edit
+  | 'surgical-edit'        // File-only AI patch projected onto an existing snapshot
   | 'republish'            // Republish without structural change
   | 'system-restore';      // Restore from snapshot / undo
 
 export interface CommitInput {
+  /** Existing snapshot — required for source === 'surgical-edit'. */
+  siteBundleSnapshot?: SiteBundleSnapshot | null;
   /** Wizard selections — required for source === 'wizard-launch'. */
   selections?: WizardSelections;
   /** Updated playground — required for every other source. */
@@ -109,7 +114,9 @@ export function commitToPipeline(
     result =
       source === 'wizard-launch'
         ? runWizardLaunch(input)
-        : runRecompile(input);
+        : source === 'surgical-edit'
+          ? runSurgicalEdit(input)
+          : runRecompile(input);
   } finally {
     endCommitContext();
   }
@@ -152,6 +159,21 @@ function runWizardLaunch(input: CommitInput): CanonicalPipelineResult {
     input.existingVfsFiles ?? {},
     input.mergeContext,
   );
+}
+
+function runSurgicalEdit(input: CommitInput): CanonicalPipelineResult {
+  if (!input.siteBundleSnapshot) {
+    throw new Error(
+      "[commitToPipeline] source 'surgical-edit' requires `siteBundleSnapshot`.",
+    );
+  }
+  return projectSurgicalCommit({
+    siteBundleSnapshot: input.siteBundleSnapshot,
+    vfsFiles: input.existingVfsFiles ?? {},
+    playground: input.playground,
+    businessName: input.businessName,
+    industry: input.industry,
+  });
 }
 
 function runRecompile(input: CommitInput): CanonicalPipelineResult {

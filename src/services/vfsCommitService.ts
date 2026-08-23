@@ -380,10 +380,9 @@ export async function commitMutation(
     );
   }
 
-  // Gate 1/8: a fatal compile diagnostic (unparseable page, snapshot topology
-  // pointing at a module that does not exist in the candidate bundle) must
-  // never become canonical runtime state. Recoverable import/dependency
-  // warnings stay non-blocking — the repair layers already own those.
+  // Gate 1/8: no unresolved compile error may become canonical runtime state.
+  // Repair layers have already run; anything still marked as an error here
+  // would fail in the exact candidate filesystem mounted by Sandpack.
   const previewOk =
     preflight.stages.earlyRepair !== 'failed' &&
     preflight.stages.finalRepair !== 'failed' &&

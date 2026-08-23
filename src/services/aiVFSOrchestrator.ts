@@ -21,6 +21,7 @@ import { vfsSnapshotManager } from '@/services/vfsSnapshotManager';
 import { getGraphSummaryForAI } from '@/services/importGraphAnalyzer';
 import { isUnisonProtectedPath } from '@/services/unisonCanonicalRegistry';
 import { detectSlotBindingViolations } from '@/services/aiBindingTool';
+import { normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
 
 // ============================================================================
 // AI typo repair
@@ -146,15 +147,19 @@ export function canonicalizeAIFilePaths(
   const canonical: Record<string, string> = {};
 
   for (const [rawPath, content] of Object.entries(aiFiles)) {
-    const normalized = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+    const normalized = normalizeCanonicalVfsPath(rawPath);
     const candidates = normalized.startsWith('/src/')
       ? [normalized, normalized.replace(/^\/src\//, '/')]
-      : [normalized, `/src${normalized}`];
+      : [normalized];
     const matchedPath = candidates.find((candidate) => (
       Object.prototype.hasOwnProperty.call(currentFiles, candidate)
       || Object.prototype.hasOwnProperty.call(currentFiles, candidate.slice(1))
     ));
 
+    // New AI-authored modules must enter the same canonical `/src` namespace
+    // as existing files. Previously only edits to existing aliases were
+    // promoted, so `/components/Foo.tsx` could be written successfully while
+    // `/src/pages/Page.tsx` imported a module the preview could never see.
     canonical[matchedPath || normalized] = content;
   }
 

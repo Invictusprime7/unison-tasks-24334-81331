@@ -845,16 +845,10 @@ export function validateBundleTopology(
 }
 
 /**
- * Fatal = the artifact cannot execute at all (parse failure, missing route
- * target, missing registered page file). Import/dependency warnings are
- * recoverable by the existing repair layers and must not hard-reject a commit.
+ * Every unresolved error is fatal at the canonical commit boundary. Repair
+ * layers run before this predicate; allowing a surviving module/export/import
+ * error to persist only defers the same failure to Sandpack.
  */
 export function hasFatalCompileErrors(diagnostics: CompileDiagnostic[]): boolean {
-  return diagnostics.some(
-    (d) =>
-      d.severity === 'error' &&
-      (d.diagnosticCode === 'PARSE_ERROR' ||
-        d.diagnosticCode === 'MISSING_TOPOLOGY_FILE' ||
-        d.diagnosticCode === 'MISSING_ROUTE_TARGET'),
-  );
+  return diagnostics.some((diagnostic) => diagnostic.severity === 'error' && !diagnostic.resolved);
 }

@@ -213,7 +213,42 @@ export function repairUnresolvedLocalImports(
     }
 
 
-    // 2. Dead-import removal — nothing the page renders depends on it.
+    const absolutePath = absoluteSpecifierPath(item.filePath, item.importPath);
+
+    // 2. Recover — the canonical Stage 4b snapshot still holds this body.
+    const canonical = findCanonicalBody(options.canonicalFiles, absolutePath);
+    if (canonical) {
+      const writePath = /\.(tsx|jsx|ts|js)$/i.test(canonical.path)
+        ? canonical.path
+        : `${canonical.path}.tsx`;
+      files[writePath] = canonical.content;
+      recovered.push(`${item.filePath} → "${item.importPath}" ⇐ ${writePath}`);
+      continue;
+    }
+
+    // 3. Synthesize — derive a real module from how the importer uses it.
+    if (options.synthesize !== false) {
+      const targetPath = /\.(tsx|jsx|ts|js)$/i.test(absolutePath)
+        ? absolutePath
+        : `${absolutePath}.tsx`;
+      const module = synthesizeCompanionModule({
+        importerPath: item.filePath,
+        importerSource: source,
+        specifier: item.importPath,
+        targetPath,
+      });
+      if (module) {
+        const parsed = parseGeneratedSource(module.content);
+        if (parsed.ok) {
+          files[module.path] = module.content;
+          synthesized.push(module.path);
+          continue;
+        }
+        console.warn('[moduleClosureRepair] synthesized module failed to parse', module.path);
+      }
+    }
+
+    // 4. Dead-import removal — nothing the page renders depends on it.
     let next = source;
     let removedAll = true;
     for (const statement of statements) {

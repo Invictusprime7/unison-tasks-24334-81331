@@ -547,10 +547,17 @@ export function runCompileSafeAcceptance(
     if (typeof source !== 'string' || !isCodeFile(path)) continue;
     const result = parseGeneratedSource(source);
     if (result.ok === false) {
-      diag(path, 'parse', 'PARSE_ERROR', result.error, 'error', {
-        line: result.line,
-        column: result.column,
-      });
+      // Provenance: Babel reports duplicate module-scope declarations as a
+      // generic parse failure. Re-code it so diagnostics say what is wrong.
+      const duplicate = /Identifier '([^']+)' has already been declared/.exec(result.error);
+      diag(
+        path,
+        'parse',
+        duplicate ? 'DUPLICATE_DECLARATION' : 'PARSE_ERROR',
+        duplicate ? `'${duplicate[1]}' is declared more than once at module scope` : result.error,
+        'error',
+        { line: result.line, column: result.column },
+      );
       continue;
     }
     // Duplicate `function`/`var` declarations parse fine but silently shadow a

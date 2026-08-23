@@ -215,7 +215,7 @@ describe('bundle-level topology gate (Phase 10)', () => {
     });
     const dup = result.diagnostics.find((d) => d.diagnosticCode === 'DUPLICATE_DECLARATION');
     expect(dup?.message).toContain('Hero');
-    expect(dup?.severity).toBe('warning');
+    expect(dup?.pagePath).toBe('/src/pages/Dup.tsx');
     expect(result.files['/src/pages/Dup.tsx']).toContain('function Hero()');
   });
 

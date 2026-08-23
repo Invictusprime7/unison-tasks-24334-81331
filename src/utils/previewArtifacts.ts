@@ -194,6 +194,12 @@ function finishPreviewArtifacts(
   assertSnapshotPreviewFileCoverage(sourceFiles, sandpackFiles, finalPreviewResolution, 'Preview artifact coverage gate');
   assertSnapshotPreviewRouteReachability(sandpackFiles, finalPreviewResolution, 'Preview artifact route gate');
 
+  // Phase 11 — preview smoke gate. Last deterministic boot check before
+  // Sandpack mounts the bundle, so a module-resolution / route-component /
+  // top-level-throw defect surfaces as a pipeline error with provenance
+  // instead of an opaque Sandpack runtime crash.
+  assertPreviewSmokeSafe(sandpackFiles, 'Preview smoke gate');
+
   // Resolve dependencies from Sandpack's actual entry graph. Snapshot-owned
   // VFS facades may expose many optional libraries, but an unreferenced
   // facade must never force Sandpack to fetch its package.

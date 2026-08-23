@@ -6,6 +6,7 @@ import { runPrepareSandpackFilesOffThread } from '@/services/strictImportContrac
 import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
+import { assertPreviewSmokeSafe } from '@/services/previewSmokeGate';
 import {
   assertNoMinimalFallbackPreview,
   assertSnapshotPreviewFileCoverage,

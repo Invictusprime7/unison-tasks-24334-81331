@@ -139,6 +139,13 @@ export interface BuildCanonicalLaunchArtifactsInput {
    * scaffold cannot silently fill missing Lane B output.
    */
   allowCanonicalPageFallback?: boolean;
+  /**
+   * Explicit per-path exceptions to `allowCanonicalPageFallback:false`. The
+   * launcher's degraded Lane B path decides that a specific page keeps its
+   * canonical (Stage 4b composed, non-minimal) body; without this allowlist the
+   * merge deletes that body and the router imports a module that never exists.
+   */
+  canonicalPageFallbackPaths?: readonly string[];
   /** Throw if internal preflight has to quarantine generated code. */
   strictPreflight?: boolean;
   /** Validated identity produced once by the Wizard and consumed by the seal. */

@@ -35,6 +35,7 @@ import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundatio
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
 import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
 import { restorePublishedRuntimeModule } from '@/services/publishedRuntimeModule';
+import { repairUnresolvedLocalImports } from '@/services/moduleClosureRepair';
 
 const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
 
@@ -3880,7 +3881,59 @@ function escapeRegExp(s: string): string {
  * Otherwise drop the offending import so downstream synthesis inserts a
  * placeholder rather than crashing render.
  */
-function rewriteSelfReferencingImports(sandpackFiles: Record<string, string>): void {
+/**
+ * Strip nested <Router> hosts from every VFS module.
+ *
+ * DEFAULT_INDEX (always installed at /index.tsx) wraps <App /> in a
+ * __RouterGuard that mounts the single canonical <HashRouter>. Any additional
+ * BrowserRouter/HashRouter/MemoryRouter inside App.tsx or a page component
+ * either throws ("You cannot render a <Router> inside another <Router>") or
+ * silently desyncs from `hashchange`. <Routes>/<Route>/<Link>/<Navigate> are
+ * preserved so multi-page navigation keeps working inside the guard's router.
+ *
+ * Exported so the shared preflight tail can run it BEFORE the compile-safe
+ * gate — the validated bundle must be the bundle that compiles.
+ */
+export function stripNestedRouterHosts(sandpackFiles: Record<string, string>): void {
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (typeof content !== 'string') continue;
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+    if (filePath === '/index.tsx' || filePath === '/index.jsx') continue;
+    if (
+      filePath === '/hooks-shim.ts' ||
+      filePath === '/lib-utils-shim.ts' ||
+      filePath === '/ui-shim.tsx'
+    ) continue;
+
+    const aliasMatch = content.match(/(?:BrowserRouter|HashRouter|MemoryRouter)\s+as\s+(\w+)/);
+    const routerAlias = aliasMatch ? aliasMatch[1] : null;
+
+    const routerTags = ['BrowserRouter', 'HashRouter', 'MemoryRouter'];
+    if (routerAlias && !routerTags.includes(routerAlias)) routerTags.push(routerAlias);
+    const routerTagPattern = routerTags.join('|');
+    const tagRegex = new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, '');
+    if (!tagRegex.test(content)) continue;
+
+    const fixed = content
+      .replace(
+        /import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g,
+        (match) => {
+          const keepTokens = ['Routes', 'Route', 'Link', 'Navigate', 'useNavigate', 'useLocation', 'useParams', 'NavLink', 'Outlet'];
+          const otherImports = match.match(new RegExp(`\\b(?:${keepTokens.join('|')})\\b`, 'g'));
+          if (otherImports && otherImports.length > 0) {
+            return `import { ${Array.from(new Set(otherImports)).join(', ')} } from 'react-router-dom';\n`;
+          }
+          return '';
+        },
+      )
+      .replace(new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, 'g'), '')
+      .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
+
+    if (fixed !== content) sandpackFiles[filePath] = fixed;
+  }
+}
+
+export function rewriteSelfReferencingImports(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
   const importRegex = /^(\s*import\s+[\s\S]+?\s+from\s+['"])(\.\.?\/[^'"]+)(['"];?)/gm;
 
@@ -3938,7 +3991,7 @@ function toRelativeFromDir(fromDir: string, toPath: string): string {
  * This ensures `generateMissingComponents` (which only scans import statements)
  * will then synthesize the actual component file.
  */
-function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): void {
+export function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
 
   for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
@@ -4150,7 +4203,7 @@ function computeModuleExports(content: string): {
   return { hasDefault, named, primaryName, hasStarReExport };
 }
 
-function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
+export function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
 
   for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
@@ -4278,7 +4331,7 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
  * permissive passthrough component to the target module so the contract holds
  * and the page still renders.
  */
-function synthesizeMissingJsxExports(sandpackFiles: Record<string, string>): void {
+export function synthesizeMissingJsxExports(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
@@ -6574,54 +6627,8 @@ export function prepareSandpackFiles(
 
 
   // ── SAFETY: Strip Router wrappers from ALL VFS files ──
-  // DEFAULT_INDEX (always installed at /index.tsx) wraps <App /> in a
-  // __RouterGuard that mounts a single canonical <HashRouter>. Any additional
-  // <BrowserRouter>/<HashRouter>/<MemoryRouter> inside App.tsx or page
-  // components creates a nested-router situation. In React Router v6 the
-  // inner router either throws ("You cannot render a <Router> inside another
-  // <Router>") or silently desyncs from `hashchange` — clicks update the URL
-  // but routes never re-render and the preview-nav-bridge appears
-  // "disconnected" (matches the wizard-handoff regression). Strip routers from
-  // EVERY *.tsx/*.jsx file so the RouterGuard is the sole router host.
-  // <Routes>/<Route>/<Link>/<Navigate> are preserved so the canonical wizard
-  // App.tsx — `<HashRouter><Routes>…</Routes></HashRouter>` — becomes
-  // `<Routes>…</Routes>` inside the guard's router and multi-page navigation
-  // (plus the INTENT_TRIGGER → navigateToBuilderPage round-trip) works again.
-  for (const [filePath, content] of Object.entries(sandpackFiles)) {
-    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
-    if (filePath === '/index.tsx' || filePath === '/index.jsx') continue;
-    if (filePath === '/hooks-shim.ts' || filePath === '/lib-utils-shim.ts' || filePath === '/ui-shim.tsx') continue;
+  stripNestedRouterHosts(sandpackFiles);
 
-    // Detect aliased router imports like `BrowserRouter as Router`
-    const aliasMatch = content.match(/(?:BrowserRouter|HashRouter|MemoryRouter)\s+as\s+(\w+)/);
-    const routerAlias = aliasMatch ? aliasMatch[1] : null;
-
-    // Build list of all Router-like tag names to strip
-    const routerTags = ['BrowserRouter', 'HashRouter', 'MemoryRouter'];
-    if (routerAlias && !routerTags.includes(routerAlias)) {
-      routerTags.push(routerAlias);
-    }
-    const routerTagPattern = routerTags.join('|');
-    const tagRegex = new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, '');
-
-    if (tagRegex.test(content)) {
-      const fixed = content
-        .replace(/import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g, (match) => {
-          // Keep non-Router imports from the same line
-          const keepTokens = ['Routes', 'Route', 'Link', 'Navigate', 'useNavigate', 'useLocation', 'useParams', 'NavLink', 'Outlet'];
-          const otherImports = match.match(new RegExp(`\\b(?:${keepTokens.join('|')})\\b`, 'g'));
-          if (otherImports && otherImports.length > 0) {
-            return `import { ${Array.from(new Set(otherImports)).join(', ')} } from 'react-router-dom';\n`;
-          }
-          return '';
-        })
-        .replace(new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, 'g'), '')
-        .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
-      if (fixed !== content) {
-        sandpackFiles[filePath] = fixed;
-      }
-    }
-  }
 
   // ── REWRITE self-referencing relative imports ──
   // AI often writes `import Services from './Services'` inside
@@ -6633,16 +6640,30 @@ export function prepareSandpackFiles(
   // ── AUTO-INJECT imports for JSX-used but un-imported components ──
   autoInjectMissingJsxImports(sandpackFiles);
 
-  // Missing relative imports must surface as preview diagnostics. Do not
-  // synthesize fallback/template components into wizard-generated sites.
-  // EXCEPTION: the in-builder AI Builder commonly writes a file that
-  // references a sibling module before creating it. To prevent
-  // "Could not find module" crashes from killing the preview, we synthesize
-  // a minimal `() => null` placeholder (NOT a fake chip). Authors see the
-  // empty slot and replace it on the next turn.
   // Unresolved local imports that are actually lucide icons become real
   // lucide-react imports instead of killing the wizard preview.
   rewriteLucideIconLocalImports(sandpackFiles);
+
+  // Single unresolved-module ladder (resolve → recover → synthesize → drop).
+  // This is the SAME policy the launch/commit preflight tail runs, so prep can
+  // no longer invent a competing answer for a defect the pipeline already had
+  // an opinion about. Anything the ladder resolves is idempotent here.
+  try {
+    const ladder = repairUnresolvedLocalImports(sandpackFiles);
+    if (
+      ladder.rewritten.length ||
+      ladder.recovered.length ||
+      ladder.synthesized.length ||
+      ladder.dropped.length
+    ) {
+      for (const key of Object.keys(sandpackFiles)) {
+        if (!(key in ladder.files)) delete sandpackFiles[key];
+      }
+      Object.assign(sandpackFiles, ladder.files);
+    }
+  } catch (e) {
+    console.warn('[sandpackFilePrep] module closure ladder failed', e);
+  }
 
   synthesizeMissingLocalImports(
     sandpackFiles,
@@ -6653,6 +6674,7 @@ export function prepareSandpackFiles(
       sharedModules: buildCanonicalWizardChromeModules(),
     },
   );
+
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (/\.(tsx?|jsx?)$/.test(filePath)) {

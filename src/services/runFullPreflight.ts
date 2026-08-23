@@ -17,7 +17,15 @@ import { runPreflightRepair } from './aiSitePreflightRepair';
 import { preflightNavWiring } from './preflightNavWiring';
 import { closeRequiredIndustryIntents } from './requiredIntentClosure';
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
-import { injectMissingLucideIcons, rewriteLucideIconLocalImports } from '@/utils/sandpackFilePrep';
+import {
+  injectMissingLucideIcons,
+  rewriteLucideIconLocalImports,
+  stripNestedRouterHosts,
+  rewriteSelfReferencingImports,
+  autoInjectMissingJsxImports,
+  repairLocalImportContracts,
+  synthesizeMissingJsxExports,
+} from '@/utils/sandpackFilePrep';
 import {
   runCompileSafeAcceptance,
   summarizeCompileDiagnostics,
@@ -75,6 +83,8 @@ export interface RunFullPreflightResult {
     forbiddenStrip: { stripped: number; forbidden: string[] };
     requiredIntentClosure: { injected: string[]; missing: string[] };
     finalRepair: 'ok' | 'skipped' | 'failed';
+    /** Structural module-shape repairs, moved out of Sandpack prep. */
+    structuralRepair: StageOutcome;
     /** Single unresolved-module ladder (resolve → recover → synthesize → drop). */
     moduleClosure: ModuleClosureStageReport;
     compileSafe: CompileSafeStageReport;
@@ -97,6 +107,8 @@ export interface ClosureAndCompileSafeOptions {
 
 export interface ClosureAndCompileSafeResult {
   files: Record<string, string>;
+  /** Structural repairs that used to run AFTER every gate, inside Sandpack prep. */
+  structuralRepair: StageOutcome;
   moduleClosure: ModuleClosureStageReport;
   compileSafe: CompileSafeStageReport;
   bundleTopology: BundleTopologyStageReport;
@@ -104,8 +116,42 @@ export interface ClosureAndCompileSafeResult {
 }
 
 /**
- * The shared tail of every repair pipeline: the unresolved-module ladder, the
- * compile-safe acceptance boundary and bundle topology validation.
+ * Structural module-shape repairs (router hosts, self-imports, JSX imports,
+ * icon imports, passthrough exports).
+ *
+ * These used to live at the very end of `sandpackFilePrep`, i.e. AFTER every
+ * validation gate — so the compiled bundle was not the bundle that had been
+ * validated. They now run here, before the ladder and the compile-safe gate.
+ * Every pass is idempotent, so prep re-running them is a no-op.
+ */
+function runStructuralRepairs(input: Record<string, string>): {
+  files: Record<string, string>;
+  changed: boolean;
+} {
+  const files: Record<string, string> = { ...input };
+  stripNestedRouterHosts(files);
+  rewriteSelfReferencingImports(files);
+  rewriteLucideIconLocalImports(files);
+  for (const [path, src] of Object.entries(files)) {
+    if (typeof src !== 'string' || !/\.(tsx|jsx)$/.test(path)) continue;
+    const repaired = injectMissingLucideIcons(src);
+    if (repaired !== src) files[path] = repaired;
+  }
+  autoInjectMissingJsxImports(files);
+  repairLocalImportContracts(files);
+  synthesizeMissingJsxExports(files);
+
+  const inputKeys = Object.keys(input);
+  const changed =
+    Object.keys(files).length !== inputKeys.length ||
+    inputKeys.some((k) => files[k] !== input[k]);
+  return { files, changed };
+}
+
+/**
+ * The shared tail of every repair pipeline: structural repairs, the
+ * unresolved-module ladder, the compile-safe acceptance boundary and bundle
+ * topology validation.
  *
  * This is exported so the launch path (canonicalLaunchVfs) and the commit path
  * (runFullPreflight) execute the SAME closure policy in the SAME order instead
@@ -119,6 +165,19 @@ export function runModuleClosureAndCompileSafe(
 
   const canonicalFiles =
     options.canonicalFiles ?? options.siteBundleSnapshot?.vfsFiles ?? undefined;
+
+  let structuralRepair: StageOutcome = 'declined';
+  try {
+    const structural = runStructuralRepairs(files);
+    if (structural.changed) {
+      files = structural.files;
+      structuralRepair = 'applied';
+    }
+  } catch (e) {
+    console.warn('[preflight] structural repairs failed', e);
+    structuralRepair = 'failed';
+  }
+
 
   let moduleClosure: ModuleClosureStageReport = {
     status: 'declined',
@@ -209,7 +268,14 @@ export function runModuleClosureAndCompileSafe(
     }
   }
 
-  return { files, moduleClosure, compileSafe, bundleTopology, compileDiagnostics };
+  return {
+    files,
+    structuralRepair,
+    moduleClosure,
+    compileSafe,
+    bundleTopology,
+    compileDiagnostics,
+  };
 }
 
 export function runFullPreflight(
@@ -339,7 +405,7 @@ export function runFullPreflight(
     canonicalFiles: options.canonicalFiles,
   });
   files = tail.files;
-  const { moduleClosure, compileSafe, bundleTopology } = tail;
+  const { structuralRepair, moduleClosure, compileSafe, bundleTopology } = tail;
   const compileDiagnostics = tail.compileDiagnostics;
 
   return {
@@ -353,6 +419,7 @@ export function runFullPreflight(
         missing: requiredIntentClosure.missing,
       },
       finalRepair,
+      structuralRepair,
       moduleClosure,
       compileSafe,
       bundleTopology,

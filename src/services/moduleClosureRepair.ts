@@ -272,7 +272,14 @@ export function repairUnresolvedLocalImports(
     }
   }
 
-  return { files, rewritten, dropped, remaining: findUnresolvedLocalImports(files) };
+  return {
+    files,
+    rewritten,
+    recovered,
+    synthesized,
+    dropped,
+    remaining: findUnresolvedLocalImports(files),
+  };
 }
 
 // ───────────────────────────────────────────── bounded AI closure repair

@@ -4013,12 +4013,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             signal,
           });
         } catch (strictImportError) {
-          run.fail(
-            'preflight',
-            'preflight.sandpack_import_check',
-            'Generated site module closure failed before Builder handoff.',
-            strictImportError instanceof Error ? strictImportError.message : String(strictImportError),
-          );
           throw strictImportError;
         }
         return artifacts;

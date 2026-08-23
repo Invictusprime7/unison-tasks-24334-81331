@@ -365,8 +365,14 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
-  options: { allowCanonicalPageFallback?: boolean } = {},
+  options: {
+    allowCanonicalPageFallback?: boolean;
+    canonicalPageFallbackPaths?: readonly string[];
+  } = {},
 ): Record<string, string> {
+  const canonicalFallbackAllowlist = new Set(
+    (options.canonicalPageFallbackPaths || []).map((path) => (path.startsWith('/') ? path : `/${path}`)),
+  );
   generatedFiles = normalizeCanonicalVfsFiles(generatedFiles);
   canonicalFiles = normalizeCanonicalVfsFiles(canonicalFiles);
   const registryPages = Object.values(snapshot.pageRegistry.pages);

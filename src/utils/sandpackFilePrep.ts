@@ -3880,7 +3880,59 @@ function escapeRegExp(s: string): string {
  * Otherwise drop the offending import so downstream synthesis inserts a
  * placeholder rather than crashing render.
  */
-function rewriteSelfReferencingImports(sandpackFiles: Record<string, string>): void {
+/**
+ * Strip nested <Router> hosts from every VFS module.
+ *
+ * DEFAULT_INDEX (always installed at /index.tsx) wraps <App /> in a
+ * __RouterGuard that mounts the single canonical <HashRouter>. Any additional
+ * BrowserRouter/HashRouter/MemoryRouter inside App.tsx or a page component
+ * either throws ("You cannot render a <Router> inside another <Router>") or
+ * silently desyncs from `hashchange`. <Routes>/<Route>/<Link>/<Navigate> are
+ * preserved so multi-page navigation keeps working inside the guard's router.
+ *
+ * Exported so the shared preflight tail can run it BEFORE the compile-safe
+ * gate — the validated bundle must be the bundle that compiles.
+ */
+export function stripNestedRouterHosts(sandpackFiles: Record<string, string>): void {
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (typeof content !== 'string') continue;
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+    if (filePath === '/index.tsx' || filePath === '/index.jsx') continue;
+    if (
+      filePath === '/hooks-shim.ts' ||
+      filePath === '/lib-utils-shim.ts' ||
+      filePath === '/ui-shim.tsx'
+    ) continue;
+
+    const aliasMatch = content.match(/(?:BrowserRouter|HashRouter|MemoryRouter)\s+as\s+(\w+)/);
+    const routerAlias = aliasMatch ? aliasMatch[1] : null;
+
+    const routerTags = ['BrowserRouter', 'HashRouter', 'MemoryRouter'];
+    if (routerAlias && !routerTags.includes(routerAlias)) routerTags.push(routerAlias);
+    const routerTagPattern = routerTags.join('|');
+    const tagRegex = new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, '');
+    if (!tagRegex.test(content)) continue;
+
+    const fixed = content
+      .replace(
+        /import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g,
+        (match) => {
+          const keepTokens = ['Routes', 'Route', 'Link', 'Navigate', 'useNavigate', 'useLocation', 'useParams', 'NavLink', 'Outlet'];
+          const otherImports = match.match(new RegExp(`\\b(?:${keepTokens.join('|')})\\b`, 'g'));
+          if (otherImports && otherImports.length > 0) {
+            return `import { ${Array.from(new Set(otherImports)).join(', ')} } from 'react-router-dom';\n`;
+          }
+          return '';
+        },
+      )
+      .replace(new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, 'g'), '')
+      .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
+
+    if (fixed !== content) sandpackFiles[filePath] = fixed;
+  }
+}
+
+export function rewriteSelfReferencingImports(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
   const importRegex = /^(\s*import\s+[\s\S]+?\s+from\s+['"])(\.\.?\/[^'"]+)(['"];?)/gm;
 

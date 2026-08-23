@@ -153,7 +153,7 @@ export function runPreviewSmokeGate(
 
       const resolved = resolveCandidateModule(current, specifier, paths);
       if (!resolved) {
-        const routeLike = looksLikeRouteHost(current);
+        const routeLike = looksLikeRouteHost(current) && looksLikeRouteTarget(specifier);
         diagnostics.push({
           path: current,
           code: routeLike ? 'MISSING_ROUTE_COMPONENT' : 'UNRESOLVED_MODULE',

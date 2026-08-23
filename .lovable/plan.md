@@ -1,53 +1,81 @@
-# Expand module acceptance instead of blocking the Wizard build
+# Repair-layer audit and de-conflict (before expanding acceptance)
 
-## The idea, and where I agree
+Agreed — expanding acceptance on top of the current stack would add a sixth opinion to a defect that already has five. The audit below is from reading the actual call sites; the conflicts are real, not hypothetical.
 
-You're right that the current posture is inverted. Today the pipeline can *detect* a missing companion module in three places, but the only system allowed to make the bundle whole is a hard stop:
+## What the audit found
 
-- `repairUnresolvedLocalImports` (in `src/services/moduleClosureRepair.ts`) fixes only two cases: the module exists under a different specifier (path-variant rewrite), or the import is dead code (drop it).
-- `repairModuleClosureWithAI` asks the AI to inline the missing component, but only for page files, bounded to 2 attempts, and it fails whenever the AI call times out — which is exactly what the last launch log shows.
-- `synthesizeMissingLocalImports` (in `src/utils/sandpackFilePrep.ts`) can restore a small allowlist — theme module, icon module, known shared modules, type-only imports — and for everything else, when the draft is a wizard draft, it throws `refusing to synthesize an empty component`.
+### 1. Two orchestrators that are supposed to be the same, and aren't
 
-So the gap is not detection and not policy. It is that there is no deterministic way to *produce* a valid module for a genuinely missing dependency, so the pipeline has nothing to do but halt.
+`src/services/runFullPreflight.ts` runs 7 ordered stages (token guard, icon authority, early syntax repair, nav wiring, forbidden-intent strip, required-intent closure, final repair, module closure, compile-safe, bundle topology). Its header comment says the order "must match canonicalLaunchVfs".
 
-Where I'd push back on "accept everything": synthesizing an empty component was banned for a good reason — a silently blank section looks like a successful launch while the page is visually broken. The fix is to make synthesis *faithful and visible*, not to remove the gate.
+It does not match. The launch path in `src/services/canonicalLaunchVfs.ts` (around lines 920-960) runs only two of those stages inline — module-closure repair, then compile-safe acceptance — and never calls `runFullPreflight`. So a wizard launch and a builder commit apply different repair sets to the same kind of file.
 
-## What to build
+### 2. The same repair runs 2-3 times in different places
 
-### 1. Deterministic companion synthesis (the main change)
+- Canonical token stripping: `runFullPreflight` stage 0 and again inside `sandpackFilePrep` (~line 5270).
+- Lucide icon repair: `runFullPreflight` stage 0b and again in `sandpackFilePrep` (~lines 5497 and 6645).
+- Module-closure repair: `runFullPreflight` stage 5b, `canonicalLaunchVfs` line 929, the AI wrapper `repairModuleClosureWithAI`, plus separate calls in `SystemLauncher.tsx` (4122) and `useTemplateFiles.ts` (269).
+- Compile-safe acceptance: `runFullPreflight` stage 6, `canonicalLaunchVfs` line 943, and the internal retry loop in `acceptGeneratedBundle`.
 
-Add a synthesis stage to `moduleClosureRepair.ts` that runs after path-variant recovery and dead-import removal, and before the AI attempt. For each unresolved specifier it reads the importing file and derives the module from actual usage:
+Repeating an idempotent pass is only wasteful; repeating a *lossy* pass (drop, strip, prune) compounds.
 
-- which bindings are imported (default, named, namespace) and how each is used in JSX;
-- the props passed at every call site, including `children`;
-- whether the usage is a component, a data constant, or a plain function.
+### 3. Five different policies for one defect: "module X does not resolve"
 
-From that it emits a real, typed module that renders its children and its known text/image props inside canonical Unison markup — not an empty shell. Non-component exports get a typed empty-safe value.
+| Layer | What it does |
+|---|---|
+| `moduleClosureRepair` step 1 | Rewrites the specifier to a path-variant match |
+| `moduleClosureRepair` step 2 | Deletes the import if the binding looks unused |
+| `moduleClosureRepair` AI stage | Asks the AI to inline the component |
+| `aiSitePreflightRepair` | Replaces the file with a quarantine component |
+| `canonicalLaunchVfs` (added last turn) | Prunes the page from the registry and router |
+| `sandpackFilePrep` | Synthesizes a placeholder for builder drafts, throws for wizard drafts |
 
-Every synthesized module is stamped (`// @unison-synthesized`) and reported into the launch journey, so a synthesized section shows up as a completion gap in the review summary instead of passing as authored work.
+Whichever runs first wins, and they disagree. A page can be dropped by one layer, then pruned by another, then still throw in prep because a third layer re-added the import.
 
-### 2. Route targets get recovered, not pruned
+### 4. Failures are swallowed, so a skipped repair looks like a clean one
 
-The failure in the current launch log is a route module (`./pages/Booking.tsx`), not a leaf component. That case should try, in order:
+Nearly every stage in `runFullPreflight` and `canonicalLaunchVfs` is wrapped in `try/catch` that logs a warning and continues with the previous file set. A stage that throws is indistinguishable downstream from a stage that had nothing to do. `canonicalLaunchVfs` also merges results with `Object.assign`, so a partially-applied repair silently overwrites a good file.
 
-1. path variants of the same page (already exists);
-2. the canonical Stage 4b body for that page from the snapshot (`vfsFiles` / `/.unison/compositions/...`) — the launcher already knows these as `keptFromCanonical`;
-3. composition-driven regeneration from the page's composition JSON;
-4. synthesis from the page registry entry (title, slug, sections) using the site's chrome and tokens.
+### 5. The compiled bundle is not the bundle that was validated
 
-Only if all four fail does the route get pruned from the registry, which is the behavior added last turn.
+`sandpackFilePrep` keeps mutating after every gate has passed: it strips nested routers, rewrites self-referencing imports, auto-injects JSX imports, synthesizes missing exports, and adds default exports. Those mutations can reintroduce exactly the class of defect the gates just cleared, and nothing re-validates afterward.
 
-### 3. Move the gate to the end, keep it strict
+## The plan
 
-`synthesizeMissingLocalImports` keeps `failOnMissingImport` for wizard drafts, but it stops being the first responder: closure repair + synthesis run before it at every boundary (launch commit, saved-draft hydration, AI apply). If anything still fails to resolve at that point it's a real defect and should still halt — by then it means synthesis itself could not produce a module, which is worth surfacing.
+### Step 1 — Single repair pipeline, one owner
 
-### 4. Make degradation legible
+Make `runFullPreflight` the only orchestrator. `canonicalLaunchVfs` calls it instead of hand-rolling closure + compile-safe; `SystemLauncher` and `useTemplateFiles` stop invoking module-closure repair directly and consume the pipeline result. Every stage becomes idempotent and re-runnable, and the pipeline returns a structured report of what each stage did.
 
-Surface synthesized/recovered modules in the launch review summary and in the builder's file tree, with a one-click "regenerate this page/section". Accepting more should never mean hiding what was accepted.
+### Step 2 — One policy table for unresolved modules
+
+Replace the five competing behaviors with one ordered ladder, applied in exactly one place:
+
+```text
+1. resolve   — specifier drift / casing / directory  (existing, keep)
+2. recover   — canonical Stage 4b body or composition JSON for the page
+3. synthesize— usage-derived module (only where a body is impossible)
+4. drop      — import is provably dead
+5. prune     — non-home route with no possible module
+6. halt      — nothing above applied
+```
+
+Later steps may only run when every earlier step declined. Quarantine stays for parse failures only, not for missing modules.
+
+### Step 3 — Stages report instead of swallowing
+
+Each stage returns `applied | declined | failed` with the paths it touched. `failed` is surfaced in the launch journey and can block commit; it can no longer masquerade as `nothing to do`.
+
+### Step 4 — `sandpackFilePrep` becomes projection-only
+
+Move its repair behaviors (router stripping, self-import rewrite, JSX import injection, export synthesis, icon rewriting) into the single pipeline so they run before validation. What remains in prep is the `/src` → root overlay flattening plus the final assertions.
+
+### Step 5 — Only then, expand acceptance
+
+With one ladder in place, add deterministic usage-derived synthesis (step 3 above): read the importing file's JSX usage and emit a real typed module that renders its children and known props, stamped `// @unison-synthesized` and reported as a completion gap — instead of an empty component or a hard stop.
 
 ## Technical notes
 
-- New: `src/services/companionModuleSynthesis.ts` (usage extraction + module emission), used by `moduleClosureRepair.ts`.
-- Edited: `src/services/moduleClosureRepair.ts` (synthesis stage, route-target recovery ladder), `src/utils/sandpackFilePrep.ts` (gate stays, runs last), `src/components/onboarding/SystemLauncher.tsx` and `src/hooks/useTemplateFiles.ts` (run repair before compile at both boundaries; report synthesized paths).
-- Tests: missing leaf component with props/children, namespace import, non-component export, missing route page recovered from canonical body, recovery from composition JSON, and a case where synthesis is impossible and the gate still throws.
-- Invariants kept: SiteBundleSnapshot stays canonical truth; no minimal/fallback preset bodies; synthesized output is always visible in the journey, never silent.
+- Edited: `src/services/runFullPreflight.ts` (owner + stage reports), `src/services/canonicalLaunchVfs.ts` (delegate, drop inline stages, keep pruning as ladder step 5), `src/services/moduleClosureRepair.ts` (implement the ladder), `src/utils/sandpackFilePrep.ts` (strip repairs, keep projection + assertions), `src/components/onboarding/SystemLauncher.tsx` and `src/hooks/useTemplateFiles.ts` (consume the pipeline).
+- New: `src/services/companionModuleSynthesis.ts` for step 5.
+- Tests: pipeline idempotence (running twice changes nothing), each ladder rung in isolation, ladder ordering (a recoverable page is never dropped or pruned), stage-failure propagation, and the existing wizard VFS / preview smoke suites unchanged.
+- Invariants kept: SiteBundleSnapshot stays canonical truth; no minimal/fallback preset bodies; Lane A → Lane B → Stage 4b authority unchanged.

@@ -22,9 +22,11 @@
 
 import {
   findUnresolvedLocalImports,
+  isLaneAAuthorityPath,
   normalizeVfsPath,
   type UnresolvedLocalImport,
 } from './laneBCompanionModules';
+
 import { parseGeneratedSource } from './aiSitePreflightRepair';
 import { supabase } from '@/integrations/supabase/client';
 import { extractCleanCode } from '@/utils/aiCodeCleaner';

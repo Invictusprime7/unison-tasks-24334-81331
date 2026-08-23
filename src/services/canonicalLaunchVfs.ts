@@ -139,6 +139,13 @@ export interface BuildCanonicalLaunchArtifactsInput {
    * scaffold cannot silently fill missing Lane B output.
    */
   allowCanonicalPageFallback?: boolean;
+  /**
+   * Explicit per-path exceptions to `allowCanonicalPageFallback:false`. The
+   * launcher's degraded Lane B path decides that a specific page keeps its
+   * canonical (Stage 4b composed, non-minimal) body; without this allowlist the
+   * merge deletes that body and the router imports a module that never exists.
+   */
+  canonicalPageFallbackPaths?: readonly string[];
   /** Throw if internal preflight has to quarantine generated code. */
   strictPreflight?: boolean;
   /** Validated identity produced once by the Wizard and consumed by the seal. */
@@ -358,8 +365,14 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
-  options: { allowCanonicalPageFallback?: boolean } = {},
+  options: {
+    allowCanonicalPageFallback?: boolean;
+    canonicalPageFallbackPaths?: readonly string[];
+  } = {},
 ): Record<string, string> {
+  const canonicalFallbackAllowlist = new Set(
+    (options.canonicalPageFallbackPaths || []).map((path) => (path.startsWith('/') ? path : `/${path}`)),
+  );
   generatedFiles = normalizeCanonicalVfsFiles(generatedFiles);
   canonicalFiles = normalizeCanonicalVfsFiles(canonicalFiles);
   const registryPages = Object.values(snapshot.pageRegistry.pages);
@@ -526,7 +539,12 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     // Canonical page fallback is a DEGRADED path only. Wizard final merges pass
     // allowCanonicalPageFallback:false so a missing Lane B page surfaces as an
     // incomplete launch instead of being masked by a Stage 4b scaffold body.
-    if (options.allowCanonicalPageFallback !== false && canonicalPage && !isMinimalPreviewFallbackSource(canonicalPage)) {
+    if (
+      (options.allowCanonicalPageFallback !== false
+        || canonicalFallbackAllowlist.has(normalizedPagePath))
+      && canonicalPage
+      && !isMinimalPreviewFallbackSource(canonicalPage)
+    ) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = canonicalPage;
       continue;
@@ -535,6 +553,26 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     removePathVariants(merged, page.filePath);
   }
 
+  // ── Registry ⇄ VFS closure ───────────────────────────────────────────────
+  // The router is generated from the page registry, so a registered page with
+  // no surviving module makes /src/App.tsx import a file that will never exist
+  // and halts the preview at Sandpack prep. Prune those routes here so
+  // registry, router and VFS stay closed. Home is never pruned: its absence is
+  // an unrecoverable launch that upstream gates must report.
+  const unroutablePages: string[] = [];
+  for (const [pageId, page] of Object.entries(snapshot.pageRegistry.pages)) {
+    const entry = page as { filePath?: string; isHome?: boolean };
+    if (!entry.filePath) continue;
+    const normalized = normalizePath(entry.filePath);
+    if (typeof merged[normalized] === 'string') continue;
+    if (Boolean(entry.isHome) || pageId === snapshot.pageRegistry.homePageId) continue;
+    delete snapshot.pageRegistry.pages[pageId];
+    unroutablePages.push(normalized);
+  }
+  if (unroutablePages.length > 0) {
+    snapshot.pageRegistry.version += 1;
+    console.warn('[canonicalLaunchVfs] Pruned registered pages with no module', unroutablePages);
+  }
 
   // ── Single chrome authority: the page body ──────────────────────────────
   // Navigation and footer are composition sections resolved from the wizard
@@ -841,6 +879,7 @@ function* buildCanonicalLaunchArtifactSteps(
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
         allowCanonicalPageFallback: input.allowCanonicalPageFallback,
+        canonicalPageFallbackPaths: input.canonicalPageFallbackPaths,
         // Lane B owns registered page bodies. Snapshot topology owns the
         // registry/router/bindings and Stage 4b owns /src/index.css.
       })

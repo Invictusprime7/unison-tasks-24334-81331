@@ -3118,6 +3118,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           });
         }
       }
+      // Pages the degraded Lane B path explicitly keeps from the canonical
+      // (Stage 4b composed) snapshot body. The final merge runs with
+      // allowCanonicalPageFallback:false, so these paths must be allowlisted or
+      // the router will import a module the merge deleted.
+      const canonicalPageFallbackPaths: string[] = [];
       const wizardGenerationGaps: {
         aiError?: string;
         payloadIssue?: typeof lastPayloadIssue;
@@ -3807,6 +3812,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         }
 
         siteBundleSnapshot.pageRegistry.version += 1;
+        canonicalPageFallbackPaths.push(...keptFromCanonical);
         wizardGenerationGaps.scaffoldFilledPaths = [
           ...(wizardGenerationGaps.scaffoldFilledPaths || []),
           ...keptFromCanonical,
@@ -3991,6 +3997,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         businessRuntime,
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
+        canonicalPageFallbackPaths,
         // The strict JSX-import-contract check runs separately, off the
         // main thread (see runStrictImportContractCheck below) — the
         // generator's own inline check has no yield points and can freeze

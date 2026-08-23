@@ -178,6 +178,36 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(strict["/src/pages/Home.tsx"]).toBeUndefined();
   });
 
+  it("keeps allowlisted canonical bodies and prunes registered pages with no module", () => {
+    const snapshot = createSnapshot();
+    const aboutPage = createBuilderPage("page_about", "About", "/about", "about", {
+      filePath: "/src/pages/About.tsx",
+    });
+    const bookingPage = createBuilderPage("page_booking", "Booking", "/booking", "booking", {
+      filePath: "/src/pages/Booking.tsx",
+    });
+    snapshot.pageRegistry.pages[aboutPage.pageId] = aboutPage;
+    snapshot.pageRegistry.pages[bookingPage.pageId] = bookingPage;
+    snapshot.vfsFiles["/src/pages/About.tsx"] =
+      "export default function About(){ return <main>Canonical About</main>; }";
+
+    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
+      { "/src/pages/Home.tsx": "export default function Home(){ return <main>Lane B home</main>; }" },
+      snapshot.vfsFiles,
+      snapshot,
+      {
+        allowCanonicalPageFallback: false,
+        canonicalPageFallbackPaths: ["/src/pages/About.tsx"],
+      },
+    );
+
+    expect(merged["/src/pages/About.tsx"]).toContain("Canonical About");
+    expect(merged["/src/pages/Booking.tsx"]).toBeUndefined();
+    expect(snapshot.pageRegistry.pages[bookingPage.pageId]).toBeUndefined();
+    expect(merged["/src/App.tsx"]).not.toContain("./pages/Booking");
+    expect(merged["/src/App.tsx"]).toContain("./pages/About");
+  });
+
   it("uses LaunchState VFS when the builder preview mounts before VFS import", () => {
     const launchState = createLaunchState({
       systemType: "agency",

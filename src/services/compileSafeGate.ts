@@ -448,7 +448,23 @@ function moduleExportsOf(source: string): { named: Set<string>; hasStar: boolean
   return { named, hasStar, hasDefault };
 }
 
-// ──────────────────────────────────────────────────────────── the gate
+// ─────────────────────────────────────── duplicate declaration detection
+
+const TOP_LEVEL_DECL_RE =
+  /^(?:export\s+default\s+|export\s+)?(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/;
+
+/** Names declared more than once at module scope (parse-legal shadowing). */
+export function detectDuplicateTopLevelDeclarations(code: string): string[] {
+  const counts = new Map<string, number>();
+  for (const line of code.split('\n')) {
+    const match = TOP_LEVEL_DECL_RE.exec(line);
+    if (!match) continue;
+    counts.set(match[1], (counts.get(match[1]) ?? 0) + 1);
+  }
+  return [...counts.entries()].filter(([, n]) => n > 1).map(([name]) => name);
+}
+
+
 
 /**
  * Run the full deterministic acceptance sequence over a candidate file set.

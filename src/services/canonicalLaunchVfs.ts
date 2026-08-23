@@ -885,6 +885,7 @@ function* buildCanonicalLaunchArtifactSteps(
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
         allowCanonicalPageFallback: input.allowCanonicalPageFallback,
+        canonicalPageFallbackPaths: input.canonicalPageFallbackPaths,
         // Lane B owns registered page bodies. Snapshot topology owns the
         // registry/router/bindings and Stage 4b owns /src/index.css.
       })

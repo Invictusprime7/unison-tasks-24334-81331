@@ -860,6 +860,19 @@ function* buildCanonicalLaunchArtifactSteps(
   // safely repair is reported with lane/stage provenance.
   yield;
   try {
+    const closure = repairUnresolvedLocalImports(mergedFiles);
+    if (closure.rewritten.length > 0 || closure.dropped.length > 0) {
+      Object.assign(mergedFiles, closure.files);
+      console.log('[canonicalLaunchVfs] module closure repaired', {
+        rewritten: closure.rewritten,
+        dropped: closure.dropped,
+        remaining: closure.remaining.length,
+      });
+    }
+  } catch (error) {
+    console.warn('[canonicalLaunchVfs] module closure repair failed; continuing', error);
+  }
+
     const compileSafe = runCompileSafeAcceptance(mergedFiles, {
       sourceLane: 'lane-b',
       pipelineStage: 'generation',

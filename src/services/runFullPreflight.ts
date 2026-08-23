@@ -83,6 +83,8 @@ export interface RunFullPreflightResult {
     forbiddenStrip: { stripped: number; forbidden: string[] };
     requiredIntentClosure: { injected: string[]; missing: string[] };
     finalRepair: 'ok' | 'skipped' | 'failed';
+    /** Structural module-shape repairs, moved out of Sandpack prep. */
+    structuralRepair: StageOutcome;
     /** Single unresolved-module ladder (resolve → recover → synthesize → drop). */
     moduleClosure: ModuleClosureStageReport;
     compileSafe: CompileSafeStageReport;

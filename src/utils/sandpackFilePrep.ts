@@ -34,6 +34,7 @@ import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
 import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
+import { restorePublishedRuntimeModule } from '@/services/publishedRuntimeModule';
 
 const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
 
@@ -5844,7 +5845,9 @@ export function normalizeLauncherFiles(
   }
 
   const out: Record<string, string> = {};
-  const canonicalResolvedFiles = normalizeCanonicalVfsFiles(resolvedFiles);
+  const canonicalResolvedFiles = restorePublishedRuntimeModule(
+    normalizeCanonicalVfsFiles(resolvedFiles),
+  );
 
   // Normalize all paths to have leading slash
   for (const [normalized, content] of Object.entries(canonicalResolvedFiles)) {
@@ -6214,7 +6217,7 @@ export function prepareSandpackFiles(
     files = pruned;
   }
 
-  let resolvedFiles = files;
+  let resolvedFiles = restorePublishedRuntimeModule(normalizeCanonicalVfsFiles(files));
   const fileKeys = Object.keys(files);
 
   // Case 1: The entire VFS has a single file whose content is a JSON files wrapper

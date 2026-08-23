@@ -1,7 +1,58 @@
 import { describe, expect, it } from 'vitest';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import {
+  PUBLISHED_RUNTIME_METADATA_PATH,
+  PUBLISHED_RUNTIME_MODULE_PATH,
+} from '@/services/publishedRuntimeModule';
 
 describe('wizard VFS integrity', () => {
+  it('restores the published runtime module from its persisted contract before strict import closure', () => {
+    const runtime = {
+      version: '1.0',
+      runtimeVersion: '1.0',
+      siteId: 'site-runtime-recovery',
+      businessId: 'business-runtime-recovery',
+      projectId: 'project-runtime-recovery',
+      snapshotId: 'snap-runtime-recovery',
+      endpoint: 'https://runtime.example/read',
+      runtimeEndpoint: 'https://runtime.example/runtime',
+      formEndpoint: 'https://runtime.example/forms',
+      controllerEndpoints: {},
+    };
+    const prepared = prepareSandpackFiles({
+      '/src/App.tsx': "import { useSectionData } from './components/catalogHydration'; export default function App() { useSectionData('featured'); return <main>Catalog</main>; }",
+      '/src/components/catalogHydration.ts': "import { PUBLISHED_RUNTIME_CONFIG } from '../unison/publishedRuntime'; export const useSectionData = (_id: string) => PUBLISHED_RUNTIME_CONFIG.siteId;",
+      '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
+      '/.unison/site-bundle-snapshot.json': JSON.stringify({
+        snapshotId: 'snap-runtime-recovery',
+        pageRegistry: { pages: {} },
+        vfsFiles: {},
+        meta: { source: 'wizard' },
+      }),
+      [PUBLISHED_RUNTIME_METADATA_PATH]: JSON.stringify(runtime),
+    });
+
+    expect(prepared['/unison/publishedRuntime.ts']).toContain('PUBLISHED_RUNTIME_CONFIG');
+    expect(prepared['/unison/publishedRuntime.ts']).toContain('site-runtime-recovery');
+    expect(prepared[PUBLISHED_RUNTIME_MODULE_PATH]).toBeUndefined();
+  });
+
+  it('still fails closed when both the published runtime module and contract are missing', () => {
+    expect(() => prepareSandpackFiles({
+      '/src/App.tsx': "import { useSectionData } from './components/catalogHydration'; export default function App() { useSectionData('featured'); return <main>Catalog</main>; }",
+      '/src/components/catalogHydration.ts': "import { PUBLISHED_RUNTIME_CONFIG } from '../unison/publishedRuntime'; export const useSectionData = (_id: string) => PUBLISHED_RUNTIME_CONFIG.siteId;",
+      '/src/index.css': ':root { --primary: 221 83% 53%; }',
+      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
+      '/.unison/site-bundle-snapshot.json': JSON.stringify({
+        snapshotId: 'snap-runtime-missing',
+        pageRegistry: { pages: {} },
+        vfsFiles: {},
+        meta: { source: 'wizard' },
+      }),
+    })).toThrow(/missing local module.*publishedRuntime/i);
+  });
+
   it('restores canonical shared wizard chrome instead of synthesizing empty modules', () => {
     const files = {
       '/src/App.tsx': [

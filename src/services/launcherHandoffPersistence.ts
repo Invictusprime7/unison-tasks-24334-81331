@@ -1,6 +1,10 @@
 import type { LaunchState } from '@/types/launchState';
 import { findUnresolvedLocalImports, describeUnresolvedImports } from '@/services/laneBCompanionModules';
 import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
+import {
+  PUBLISHED_RUNTIME_METADATA_PATH,
+  restorePublishedRuntimeModule,
+} from '@/services/publishedRuntimeModule';
 
 const LAUNCHER_HANDOFF_KEY = 'unison.systemLauncher.pendingHandoff.v1';
 const HANDOFF_TTL_MS = 30 * 60 * 1000;
@@ -15,6 +19,7 @@ const COMPACT_UNISON_METADATA_PATHS = new Set([
   '/.unison/setup-snapshot.json',
   '/.unison/intent-bindings.json',
   '/.unison/intent-surfaces.json',
+  PUBLISHED_RUNTIME_METADATA_PATH,
 ]);
 
 export interface LauncherHandoffSnapshot {
@@ -150,7 +155,7 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // still carries its pre-commit file map. Never compact from that stale map:
   // doing so drops registered pages precisely during Wizard -> Builder handoff.
   const sourceFiles = hasCompleteSnapshotVfs ? snapshotVfs : routeState.vfsFiles;
-  const compactFiles = compactVfsFiles(sourceFiles) || {};
+  const compactFiles = restorePublishedRuntimeModule(compactVfsFiles(sourceFiles) || {});
   const unresolved = findUnresolvedLocalImports(compactFiles);
   if (unresolved.length > 0) {
     throw new Error(

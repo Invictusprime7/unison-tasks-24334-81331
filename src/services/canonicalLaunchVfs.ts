@@ -61,6 +61,18 @@ import {
   PUBLISHED_ACTION_RUNTIME_MODULE,
   PUBLISHED_ACTION_RUNTIME_PATH,
 } from '@/sections/publishedActionRuntimeModule';
+import {
+  buildPublishedRuntimeModule,
+  PUBLISHED_RUNTIME_METADATA_PATH,
+  PUBLISHED_RUNTIME_MODULE_PATH,
+  type PublishedRuntimeConfig,
+} from '@/services/publishedRuntimeModule';
+
+export {
+  buildPublishedRuntimeModule,
+  PUBLISHED_RUNTIME_MODULE_PATH,
+  type PublishedRuntimeConfig,
+} from '@/services/publishedRuntimeModule';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
   appContext: '/.unison/app-context.json',
@@ -68,30 +80,16 @@ export const CANONICAL_METADATA_FILE_PATHS = {
   siteBundleSnapshot: '/.unison/site-bundle-snapshot.json',
   canonicalPlayground: '/.unison/canonical-playground.json',
   wizardRuntime: '/.unison/wizard-runtime.json',
-  publishedRuntime: '/.unison/published-runtime.json',
+  publishedRuntime: PUBLISHED_RUNTIME_METADATA_PATH,
   generatedSiteRuntime: '/.unison/generated-site-runtime.json',
 } as const;
 
-export const PUBLISHED_RUNTIME_MODULE_PATH = '/src/unison/publishedRuntime.ts';
 export const GENERATED_SITE_RUNTIME_MANIFEST_MODULE_PATH = '/src/unison/generatedSiteRuntimeManifest.ts';
 
 const LEGACY_REVEAL_GROUP_IMPORT = /\bimport\s+(?:type\s+)?[^;\n]+?\s+from\s+['"](\.?\.?\/(?:[^'"]*\/)?components\/RevealGroup)['"];?/g;
 const LEGACY_REVEAL_GROUP_MODULE = `export { RevealGroup } from '../../unison/ui/motion';
 export { RevealGroup as default } from '../../unison/ui/motion';
 `;
-
-export interface PublishedRuntimeConfig {
-  version: '1.0';
-  runtimeVersion: '1.0';
-  siteId: string | null;
-  businessId: string | null;
-  projectId: string | null;
-  snapshotId: string | null;
-  endpoint: string | null;
-  runtimeEndpoint: string | null;
-  formEndpoint: string | null;
-  controllerEndpoints: Record<string, string>;
-}
 
 const DEFAULT_PUBLIC_SUPABASE_URL = 'https://nfrdomdvyrbwuokathtw.supabase.co';
 
@@ -198,10 +196,6 @@ export function buildPublishedRuntimeConfig(
         }
       : {},
   };
-}
-
-export function buildPublishedRuntimeModule(config: PublishedRuntimeConfig): string {
-  return `export const PUBLISHED_RUNTIME_CONFIG = ${JSON.stringify(config, null, 2)} as const;\n`;
 }
 
 export function buildGeneratedSiteRuntimeManifestModule(manifest: GeneratedSiteRuntimeManifest): string {
@@ -855,6 +849,11 @@ function* buildCanonicalLaunchArtifactSteps(
   mergedFiles[BUSINESS_PROFILE_HYDRATION_PATH] = BUSINESS_PROFILE_HYDRATION_MODULE;
   mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
   mergedFiles[PUBLISHED_ACTION_RUNTIME_PATH] = PUBLISHED_ACTION_RUNTIME_MODULE;
+  // Runtime consumers and their generated contract module enter the candidate
+  // transaction together. This lets compile-safe import closure validate the
+  // exact artifact that will later be sealed and handed to Sandpack.
+  const publishedRuntime = buildPublishedRuntimeConfig(input);
+  mergedFiles[PUBLISHED_RUNTIME_MODULE_PATH] = buildPublishedRuntimeModule(publishedRuntime);
 
   // ── Compile-safe acceptance (pre-seal) ─────────────────────────────────
   // Lane B repair turns re-enter this assembly, so the merged candidate
@@ -913,8 +912,6 @@ function* buildCanonicalLaunchArtifactSteps(
     presetId: appContext.themePresetId || resolvedThemePresetId,
     cssPath: '/src/index.css',
   };
-  const publishedRuntime = buildPublishedRuntimeConfig(input);
-  mergedFiles[PUBLISHED_RUNTIME_MODULE_PATH] = buildPublishedRuntimeModule(publishedRuntime);
   const runtimeSnapshotSeed = input.siteBundleSnapshot
     ? { ...input.siteBundleSnapshot, appContext }
     : undefined;

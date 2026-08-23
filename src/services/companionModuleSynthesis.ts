@@ -114,9 +114,6 @@ function componentBody(displayName: string, props: string[], withChildren: boole
   const bodyProp = props.find((p) => BODY_PROP_KEYS.includes(p));
   const rest = props.filter((p) => p !== textProp && p !== bodyProp && p !== 'children' && p !== 'className');
 
-  const lines: string[] = [];
-  lines.push(`      {${textProp ? `props.${textProp} ?? ` : ''}undefined ? null : null}`);
-
   const rendered: string[] = [];
   if (textProp) {
     rendered.push(

@@ -140,9 +140,21 @@ describe('ProjectRuntimeEnvelope', () => {
     })).toThrow(InvalidProjectRuntimeEnvelopeError);
   });
 
-  it('rejects missing persisted navigation instead of selecting a fallback', () => {
-    expect(() => resolveProjectActivePagePath(snapshot(), null))
-      .toThrow('missing persisted active page path');
+  it('recovers missing persisted navigation from the canonical router', () => {
+    expect(resolveProjectActivePagePath(snapshot(), null)).toBe('/src/App.tsx');
+  });
+
+  it('prefers the registered home page when recovering missing navigation', () => {
+    const persistedSnapshot = snapshot();
+    persistedSnapshot.pageRegistry = {
+      homePageId: 'home',
+      routes: [],
+      pages: {
+        home: { pageId: 'home', isHome: true, filePath: '/src/pages/Home.tsx', path: '/', navOrder: 0 },
+      },
+    } as unknown as SiteBundleSnapshot['pageRegistry'];
+    persistedSnapshot.vfsFiles['/src/pages/Home.tsx'] = 'export default function Home(){ return null; }';
+    expect(resolveProjectActivePagePath(persistedSnapshot, null)).toBe('/src/pages/Home.tsx');
   });
 
   it('rejects stale persisted navigation instead of selecting a fallback', () => {

@@ -1,4 +1,6 @@
 import type { LaunchState } from '@/types/launchState';
+import { findUnresolvedLocalImports, describeUnresolvedImports } from '@/services/laneBCompanionModules';
+import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
 
 const LAUNCHER_HANDOFF_KEY = 'unison.systemLauncher.pendingHandoff.v1';
 const HANDOFF_TTL_MS = 30 * 60 * 1000;
@@ -48,24 +50,15 @@ function compactCanonicalMetadata(content: string): string {
   }
 }
 
-function normalizeCompactVfsPath(path: string): string {
-  const absolute = path.startsWith('/') ? path : `/${path}`;
-
-  if (/^\/(App|main|index)\.(tsx|jsx|ts|js)$/.test(absolute) || absolute === '/index.css') {
-    return `/src${absolute}`;
-  }
-  if (/^\/(pages|components|styles)\//.test(absolute)) {
-    return `/src${absolute}`;
-  }
-  return absolute;
-}
-
 function compactVfsFiles(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const stringFiles = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+  const canonicalFiles = normalizeCanonicalVfsFiles(stringFiles);
   const out: Record<string, string> = {};
-  for (const [rawPath, content] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof content !== 'string') continue;
-    const path = normalizeCompactVfsPath(rawPath);
+  for (const [path, content] of Object.entries(canonicalFiles)) {
     if (path.startsWith('/.unison/')) {
       if (COMPACT_UNISON_METADATA_PATHS.has(path)) {
         out[path] = path === '/.unison/site-bundle-snapshot.json'
@@ -74,11 +67,8 @@ function compactVfsFiles(value: unknown): Record<string, string> | undefined {
       }
       continue;
     }
-    // A completed launch can contain canonical /src files as well as the
-    // Sandpack overlay's root-level companion modules. Preserve both: dropping
-    // the latter creates unresolved imports, while normalizing /pages and
-    // /components prevents the PageRegistry from losing its registered route
-    // during the compact Launcher -> Builder handoff.
+    // Source modules have already been promoted to canonical /src paths. Keep
+    // every source/public file; Sandpack flattening happens only at compile.
     if (
       /^\/(src|public)\//.test(path) ||
       /^\/[^/]+\.(tsx?|jsx?|css|json|svg|png|jpe?g|gif|webp|avif|woff2?|ttf|otf)$/.test(path) ||
@@ -101,8 +91,7 @@ function readSnapshotVfs(value: unknown): Record<string, string> | undefined {
 }
 
 function normalizeExpectedPagePath(path: string): string {
-  const absolute = path.startsWith('/') ? path : `/${path}`;
-  return /^\/(pages|components|styles)\//.test(absolute) ? `/src${absolute}` : absolute;
+  return normalizeCanonicalVfsPath(path);
 }
 
 function snapshotVfsCoversRegisteredPages(snapshot: unknown, files: Record<string, string>): boolean {
@@ -113,7 +102,7 @@ function snapshotVfsCoversRegisteredPages(snapshot: unknown, files: Record<strin
   if (!pages || typeof pages !== 'object' || Array.isArray(pages)) return true;
 
   const normalizedFiles = new Map(
-    Object.entries(files).map(([path, content]) => [normalizeCompactVfsPath(path), content]),
+    Object.entries(files).map(([path, content]) => [normalizeCanonicalVfsPath(path), content]),
   );
 
   return Object.values(pages as Record<string, unknown>).every((page) => {
@@ -162,6 +151,12 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // doing so drops registered pages precisely during Wizard -> Builder handoff.
   const sourceFiles = hasCompleteSnapshotVfs ? snapshotVfs : routeState.vfsFiles;
   const compactFiles = compactVfsFiles(sourceFiles) || {};
+  const unresolved = findUnresolvedLocalImports(compactFiles);
+  if (unresolved.length > 0) {
+    throw new Error(
+      `[LauncherHandoff] canonical handoff has unresolved local imports: ${describeUnresolvedImports(unresolved)}`,
+    );
+  }
   upsertJsonFile(compactFiles, '/.unison/runtime-manifest.json', routeState.runtimeManifest);
   upsertJsonFile(compactFiles, '/.unison/canonical-playground.json', routeState.canonicalPlayground || routeState.materializedPlayground);
   upsertJsonFile(compactFiles, '/.unison/wizard-seed.json', routeState.wizardSeed);

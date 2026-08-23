@@ -21,6 +21,7 @@ import {
   normalizeLauncherFiles,
   prepareSandpackFiles,
 } from '@/utils/sandpackFilePrep';
+import { normalizeCanonicalVfsFiles } from '@/utils/canonicalVfsPath';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 import { preflightNavWiring } from './preflightNavWiring';
@@ -365,6 +366,8 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   snapshot: SiteBundleSnapshot,
   options: { allowCanonicalPageFallback?: boolean } = {},
 ): Record<string, string> {
+  generatedFiles = normalizeCanonicalVfsFiles(generatedFiles);
+  canonicalFiles = normalizeCanonicalVfsFiles(canonicalFiles);
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
   const pathVariants = (path: string): string[] => {

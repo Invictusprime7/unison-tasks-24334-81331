@@ -6217,7 +6217,7 @@ export function prepareSandpackFiles(
     files = pruned;
   }
 
-  let resolvedFiles = restorePublishedRuntimeModule(normalizeCanonicalVfsFiles(files));
+  let resolvedFiles = restorePublishedRuntimeModule(files);
   const fileKeys = Object.keys(files);
 
   // Case 1: The entire VFS has a single file whose content is a JSON files wrapper

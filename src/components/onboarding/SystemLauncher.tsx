@@ -3812,6 +3812,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         }
 
         siteBundleSnapshot.pageRegistry.version += 1;
+        canonicalPageFallbackPaths.push(...keptFromCanonical);
         wizardGenerationGaps.scaffoldFilledPaths = [
           ...(wizardGenerationGaps.scaffoldFilledPaths || []),
           ...keptFromCanonical,

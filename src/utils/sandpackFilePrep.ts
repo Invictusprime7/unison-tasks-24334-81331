@@ -4370,8 +4370,35 @@ export function synthesizeMissingJsxExports(sandpackFiles: Record<string, string
           `${sandpackFiles[targetPath]}\n\n// Auto-synthesized passthrough exports (import contract repair)\n${additions.join('\n\n')}\n`;
       }
     }
+
+    // Default-imported JSX companions: when the target module never declared a
+    // default export (empty/synthesized companion), append a passthrough
+    // default so the import contract holds instead of halting the pipeline.
+    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{[^}]*\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    let defaultMatch: RegExpExecArray | null;
+    while ((defaultMatch = defaultImportRegex.exec(content)) !== null) {
+      const local = defaultMatch[1];
+      if (!new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)) continue;
+      const targetPath = resolveRelativeModuleTarget(filePath, defaultMatch[2], existingPaths);
+      if (!targetPath || !/\.(tsx|jsx)$/.test(targetPath)) continue;
+      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
+      if (moduleExports.hasDefault || moduleExports.hasStarReExport) continue;
+
+      // Prefer re-exporting a same-named component the module already declares.
+      const reuse = moduleExports.named.has(local) ? local : null;
+      const body = reuse
+        ? `export default ${reuse};`
+        : `export default function ${local}(props: any) {\n` +
+          `  const { children, asChild: _asChild, ...rest } = props || {};\n` +
+          `  return <div {...rest}>{children}</div>;\n` +
+          `}`;
+      console.warn(`[sandpackFilePrep] Synthesized default export in ${targetPath} for "${local}"`);
+      sandpackFiles[targetPath] =
+        `${sandpackFiles[targetPath] ?? ''}\n\n// Auto-synthesized default export (import contract repair)\n${body}\n`;
+    }
   }
 }
+
 
 function assertLocalJsxImportContracts(sandpackFiles: Record<string, string>): void {
 

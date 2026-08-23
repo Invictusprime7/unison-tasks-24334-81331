@@ -752,3 +752,102 @@ export function summarizeCompileDiagnostics(diagnostics: CompileDiagnostic[]): s
   }
   return [...counts.entries()].map(([code, n]) => `${code}×${n}`).join(', ');
 }
+
+// ─────────────────────────────────── Phase 10: bundle-level topology gate
+
+export interface BundleTopologySnapshotLike {
+  pageRegistry?: {
+    homePageId?: string;
+    pages?: Record<string, { pageId?: string; filePath?: string; slug?: string }>;
+  } | null;
+  routerFile?: { path?: string } | null;
+}
+
+/**
+ * Validate that the *candidate bundle* actually contains every file the
+ * snapshot topology claims to route to. File-level validation cannot see this
+ * class of defect: each page compiles, but the router points at a module that
+ * was never generated, so Sandpack is the first system to notice.
+ *
+ * Deterministic and read-only — it never rewrites topology or drops pages.
+ */
+export function validateBundleTopology(
+  files: Record<string, string>,
+  snapshot: BundleTopologySnapshotLike | null | undefined,
+  options: CompileSafeOptions = {},
+): CompileDiagnostic[] {
+  if (!snapshot) return [];
+  const diagnostics: CompileDiagnostic[] = [];
+  const candidatePaths = new Set(Object.keys(files));
+  const push = (
+    pagePath: string,
+    diagnosticCode: CompileDiagnosticCode,
+    message: string,
+  ) => {
+    diagnostics.push({
+      pagePath,
+      pipelineStage: options.pipelineStage ?? 'acceptance',
+      sourceLane: options.sourceLane ?? 'unknown',
+      validationStage: 'bundle-topology',
+      diagnosticCode,
+      severity: 'error',
+      message,
+      repairAttempt: options.repairAttempt ?? 0,
+      resolved: false,
+    });
+  };
+
+  const has = (path: string): boolean =>
+    candidatePaths.has(path) ||
+    candidatePaths.has(path.startsWith('/src/') ? path.slice(4) : `/src${path}`);
+
+  const pages = Object.values(snapshot.pageRegistry?.pages ?? {});
+  for (const page of pages) {
+    const filePath = page?.filePath;
+    if (!filePath) continue;
+    if (!has(filePath)) {
+      push(
+        filePath,
+        'MISSING_TOPOLOGY_FILE',
+        `page registry entry '${page.slug ?? page.pageId ?? filePath}' has no file in the candidate bundle`,
+      );
+    }
+  }
+
+  const routerPath = snapshot.routerFile?.path;
+  if (routerPath && !has(routerPath)) {
+    push(routerPath, 'MISSING_TOPOLOGY_FILE', 'router file is missing from the candidate bundle');
+  }
+
+  // Route targets referenced by the router must resolve inside the bundle.
+  const routerSource = routerPath
+    ? files[routerPath] ?? files[`/src${routerPath}`] ?? files[routerPath.replace(/^\/src/, '')]
+    : files['/src/App.tsx'] ?? files['/App.tsx'];
+  const routerHost = routerPath ?? '/src/App.tsx';
+  if (typeof routerSource === 'string') {
+    for (const imp of parseImportStatements(routerSource)) {
+      const spec = imp.source;
+      if (!(spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('@/'))) continue;
+      if (!resolveCandidateModule(routerHost, spec, candidatePaths)) {
+        push(routerHost, 'MISSING_ROUTE_TARGET', `route module '${spec}' is not in the candidate bundle`);
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+/**
+ * Fatal = the artifact cannot execute at all (parse failure, missing route
+ * target, missing registered page file). Import/dependency warnings are
+ * recoverable by the existing repair layers and must not hard-reject a commit.
+ */
+export function hasFatalCompileErrors(diagnostics: CompileDiagnostic[]): boolean {
+  return diagnostics.some(
+    (d) =>
+      d.severity === 'error' &&
+      (d.diagnosticCode === 'PARSE_ERROR' ||
+        d.diagnosticCode === 'MISSING_TOPOLOGY_FILE' ||
+        d.diagnosticCode === 'MISSING_ROUTE_TARGET'),
+  );
+}

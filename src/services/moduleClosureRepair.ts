@@ -286,7 +286,7 @@ export function repairUnresolvedLocalImports(
 
 const REPAIR_CONTRACT = `Repair the implementation defect without redesigning, simplifying, flattening, or replacing the generated page. Preserve visual composition, sections, content hierarchy, responsive behavior, animation intent, component boundaries, semantic metadata (data-ut-*, data-unison-*, ids) and all copy.`;
 
-export interface AIModuleClosureOptions {
+export interface AIModuleClosureOptions extends ModuleClosureRepairOptions {
   maxAttempts?: number;
   signal?: AbortSignal;
 }

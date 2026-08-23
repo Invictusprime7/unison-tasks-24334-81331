@@ -855,12 +855,36 @@ function* buildCanonicalLaunchArtifactSteps(
   const publishedRuntime = buildPublishedRuntimeConfig(input);
   mergedFiles[PUBLISHED_RUNTIME_MODULE_PATH] = buildPublishedRuntimeModule(publishedRuntime);
 
+  const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
+  const appContext = buildRuntimeAppContext(
+    input,
+    entryPoint,
+    input.siteBundleSnapshot,
+    resolvedThemePresetId || undefined,
+  );
+  appContext.themeInjection = {
+    version: '1.0',
+    stage: '4b',
+    presetId: appContext.themePresetId || resolvedThemePresetId,
+    cssPath: '/src/index.css',
+  };
+  const runtimeSnapshotSeed = input.siteBundleSnapshot
+    ? { ...input.siteBundleSnapshot, appContext }
+    : undefined;
+  const generatedSiteRuntimeManifest = compileGeneratedSiteRuntimeManifest({
+    siteId: input.siteId,
+    snapshot: runtimeSnapshotSeed,
+    enabledCapabilities: input.enabledCapabilities,
+  });
+  mergedFiles[GENERATED_SITE_RUNTIME_MANIFEST_MODULE_PATH] = buildGeneratedSiteRuntimeManifestModule(
+    generatedSiteRuntimeManifest,
+  );
+
   // ── Compile-safe acceptance (pre-seal) ─────────────────────────────────
-  // Lane B repair turns re-enter this assembly, so the merged candidate
-  // bundle — not just the first-pass output — is what gets validated here.
-  // Deterministic repairs (import merging, React hook closure, unused
-  // hallucinated imports) are applied in place; anything the gate cannot
-  // safely repair is reported with lane/stage provenance.
+  // Validate the complete transaction, including every deterministic runtime
+  // consumer and generated module. Running this before those modules existed
+  // let canonical code enter the snapshot with an apparently unresolved
+  // import, leaving Sandpack as the first authoritative closure check.
   yield;
   try {
     const closure = repairUnresolvedLocalImports(mergedFiles);
@@ -898,31 +922,6 @@ function* buildCanonicalLaunchArtifactSteps(
     console.warn('[canonicalLaunchVfs] compile-safe acceptance failed; continuing', error);
   }
 
-
-  const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
-  const appContext = buildRuntimeAppContext(
-    input,
-    entryPoint,
-    input.siteBundleSnapshot,
-    resolvedThemePresetId || undefined,
-  );
-  appContext.themeInjection = {
-    version: '1.0',
-    stage: '4b',
-    presetId: appContext.themePresetId || resolvedThemePresetId,
-    cssPath: '/src/index.css',
-  };
-  const runtimeSnapshotSeed = input.siteBundleSnapshot
-    ? { ...input.siteBundleSnapshot, appContext }
-    : undefined;
-  const generatedSiteRuntimeManifest = compileGeneratedSiteRuntimeManifest({
-    siteId: input.siteId,
-    snapshot: runtimeSnapshotSeed,
-    enabledCapabilities: input.enabledCapabilities,
-  });
-  mergedFiles[GENERATED_SITE_RUNTIME_MANIFEST_MODULE_PATH] = buildGeneratedSiteRuntimeManifestModule(
-    generatedSiteRuntimeManifest,
-  );
   const canonicalPlayground = buildCanonicalPlayground(runtimeSnapshotSeed, input.canonicalPlayground);
   const metadataFiles = Object.values(CANONICAL_METADATA_FILE_PATHS);
   const sessionKey = buildSessionKey(appContext, entryPoint);

@@ -24,6 +24,7 @@ import {
   type CompileDiagnostic,
   type CompileSafeOptions,
 } from './compileSafeGate';
+import { repairUnresolvedLocalImports } from './moduleClosureRepair';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
@@ -171,6 +172,24 @@ export function runFullPreflight(
     finalRepair = 'failed';
   }
 
+  // 5b) Deterministic module-closure repair. Recoverable specifier drift
+  // (wrong directory / casing) and dead imports are fixed before the
+  // compile-safe gate runs, so they never reach Sandpack prep — which refuses
+  // to synthesize placeholder modules for generated drafts.
+  try {
+    const closure = repairUnresolvedLocalImports(files);
+    if (closure.rewritten.length > 0 || closure.dropped.length > 0) {
+      files = closure.files;
+      console.log('[runFullPreflight] module closure repaired', {
+        rewritten: closure.rewritten,
+        dropped: closure.dropped,
+        remaining: closure.remaining.length,
+      });
+    }
+  } catch (e) {
+    console.warn('[runFullPreflight] module closure repair failed', e);
+  }
+
   // 6) Compile-safe acceptance boundary. Deterministic, bundle-wide, and the
   // last thing that runs before the candidate file set is allowed to become
   // canonical runtime state. It normalizes imports, closes React hook imports,
@@ -184,6 +203,7 @@ export function runFullPreflight(
     summary: 'skipped',
   };
   let compileDiagnostics: CompileDiagnostic[] = [];
+
   if (options.compileSafe !== false) {
     try {
       const gate = runCompileSafeAcceptance(files, {

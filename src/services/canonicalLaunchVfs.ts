@@ -26,6 +26,7 @@ import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from '.
 import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair, runPreflightRepairSteps } from './aiSitePreflightRepair';
 import { runCompileSafeAcceptance, summarizeCompileDiagnostics } from './compileSafeGate';
+import { repairUnresolvedLocalImports } from './moduleClosureRepair';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
@@ -859,6 +860,20 @@ function* buildCanonicalLaunchArtifactSteps(
   // hallucinated imports) are applied in place; anything the gate cannot
   // safely repair is reported with lane/stage provenance.
   yield;
+  try {
+    const closure = repairUnresolvedLocalImports(mergedFiles);
+    if (closure.rewritten.length > 0 || closure.dropped.length > 0) {
+      Object.assign(mergedFiles, closure.files);
+      console.log('[canonicalLaunchVfs] module closure repaired', {
+        rewritten: closure.rewritten,
+        dropped: closure.dropped,
+        remaining: closure.remaining.length,
+      });
+    }
+  } catch (error) {
+    console.warn('[canonicalLaunchVfs] module closure repair failed; continuing', error);
+  }
+
   try {
     const compileSafe = runCompileSafeAcceptance(mergedFiles, {
       sourceLane: 'lane-b',

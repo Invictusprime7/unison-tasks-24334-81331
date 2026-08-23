@@ -35,6 +35,7 @@ import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundatio
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
 import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
 import { restorePublishedRuntimeModule } from '@/services/publishedRuntimeModule';
+import { repairUnresolvedLocalImports } from '@/services/moduleClosureRepair';
 
 const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
 

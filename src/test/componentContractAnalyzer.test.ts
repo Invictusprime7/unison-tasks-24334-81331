@@ -4,7 +4,7 @@ import { analyzeComponentContracts } from '@/services/componentContractAnalyzer'
 describe('component contract analyzer', () => {
   it('repairs a default JSX import from a named-only component module', () => {
     const result = analyzeComponentContracts({
-      '/src/pages/Gallery.tsx': "import GalleryItem from './components/GalleryItem'; export default function Gallery(){ return <GalleryItem />; }",
+      '/src/pages/Gallery.tsx': "import GalleryItem from './components/GalleryItem';\nexport default function Gallery(){ return <GalleryItem />; }",
       '/src/pages/components/GalleryItem.tsx': 'export function GalleryItem(){ return <article />; }',
     }, { repair: true });
 
@@ -14,7 +14,7 @@ describe('component contract analyzer', () => {
 
   it('repairs an aliased missing named JSX export', () => {
     const result = analyzeComponentContracts({
-      '/pages/Home.tsx': "import { Card as FeatureCard } from '../components/ui'; export default function Home(){ return <FeatureCard />; }",
+      '/pages/Home.tsx': "import { Card as FeatureCard } from '../components/ui';\nexport default function Home(){ return <FeatureCard />; }",
       '/components/ui.tsx': 'export const Button = () => <button />;',
     }, { repair: true });
 
@@ -24,7 +24,7 @@ describe('component contract analyzer', () => {
 
   it('follows barrel re-exports', () => {
     const result = analyzeComponentContracts({
-      '/pages/Home.tsx': "import { Hero } from '../components'; export default function Home(){ return <Hero />; }",
+      '/pages/Home.tsx': "import { Hero } from '../components';\nexport default function Home(){ return <Hero />; }",
       '/components/index.ts': "export { Hero } from './Hero';",
       '/components/Hero.tsx': 'export function Hero(){ return <section />; }',
     });
@@ -34,7 +34,7 @@ describe('component contract analyzer', () => {
 
   it('checks namespace JSX members', () => {
     const result = analyzeComponentContracts({
-      '/pages/Home.tsx': "import * as UI from '../components/ui'; export default function Home(){ return <UI.Card />; }",
+      '/pages/Home.tsx': "import * as UI from '../components/ui';\nexport default function Home(){ return <UI.Card />; }",
       '/components/ui.tsx': 'export const Button = () => <button />;',
     });
 
@@ -43,7 +43,7 @@ describe('component contract analyzer', () => {
 
   it('ignores type-only imports', () => {
     const result = analyzeComponentContracts({
-      '/pages/Home.tsx': "import type { Hero } from '../components/types'; export default function Home(){ return <main />; }",
+      '/pages/Home.tsx': "import type { Hero } from '../components/types';\nexport default function Home(){ return <main />; }",
       '/components/types.ts': 'export interface Hero { title: string }',
     });
     expect(result.diagnostics).toEqual([]);
@@ -51,7 +51,7 @@ describe('component contract analyzer', () => {
 
   it('rejects a non-renderable exported value used as JSX', () => {
     const result = analyzeComponentContracts({
-      '/pages/Home.tsx': "import { Hero } from '../components/Hero'; export default function Home(){ return <Hero />; }",
+      '/pages/Home.tsx': "import { Hero } from '../components/Hero';\nexport default function Home(){ return <Hero />; }",
       '/components/Hero.tsx': 'export const Hero = undefined;',
     });
     expect(result.diagnostics[0]?.code).toBe('NON_RENDERABLE_COMPONENT_EXPORT');

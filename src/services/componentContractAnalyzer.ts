@@ -89,12 +89,13 @@ function hasRenderableDeclaration(source: string, name: string): boolean {
   if (name === 'default') return true;
   const escaped = escapeRe(name);
   if (new RegExp(`(?:function|class)\\s+${escaped}\\b`).test(source)) return true;
-  const initializer = source.match(new RegExp(`(?:const|let|var)\\s+${escaped}\\s*=\\s*([^;\\n]+)`))?.[1]?.trim();
+  const initializer = source.match(new RegExp(`(?:const|let|var)\\s+${escaped}(?:\\s*:[^=;\\n]+)?\\s*=\\s*([^;\\n]+)`))?.[1]?.trim();
   if (!initializer) return false;
+  if (/^(?:undefined|null|false|true|['"`]|-?\d|\[|\{)/.test(initializer)) return false;
   return /^(?:React\.)?(?:memo|forwardRef|lazy)\s*\(/.test(initializer) ||
     /^(?:async\s*)?\([^)]*\)\s*=>/.test(initializer) ||
     /^(?:async\s+)?[A-Za-z_$][\w$]*\s*=>/.test(initializer) ||
-    /^[A-Z][A-Za-z0-9_$]*$/.test(initializer);
+    /^[A-Z][A-Za-z0-9_$]*(?:\.|\b)/.test(initializer);
 }
 
 function resolveExport(

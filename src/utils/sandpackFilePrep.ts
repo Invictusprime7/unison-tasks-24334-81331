@@ -6574,54 +6574,8 @@ export function prepareSandpackFiles(
 
 
   // ── SAFETY: Strip Router wrappers from ALL VFS files ──
-  // DEFAULT_INDEX (always installed at /index.tsx) wraps <App /> in a
-  // __RouterGuard that mounts a single canonical <HashRouter>. Any additional
-  // <BrowserRouter>/<HashRouter>/<MemoryRouter> inside App.tsx or page
-  // components creates a nested-router situation. In React Router v6 the
-  // inner router either throws ("You cannot render a <Router> inside another
-  // <Router>") or silently desyncs from `hashchange` — clicks update the URL
-  // but routes never re-render and the preview-nav-bridge appears
-  // "disconnected" (matches the wizard-handoff regression). Strip routers from
-  // EVERY *.tsx/*.jsx file so the RouterGuard is the sole router host.
-  // <Routes>/<Route>/<Link>/<Navigate> are preserved so the canonical wizard
-  // App.tsx — `<HashRouter><Routes>…</Routes></HashRouter>` — becomes
-  // `<Routes>…</Routes>` inside the guard's router and multi-page navigation
-  // (plus the INTENT_TRIGGER → navigateToBuilderPage round-trip) works again.
-  for (const [filePath, content] of Object.entries(sandpackFiles)) {
-    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
-    if (filePath === '/index.tsx' || filePath === '/index.jsx') continue;
-    if (filePath === '/hooks-shim.ts' || filePath === '/lib-utils-shim.ts' || filePath === '/ui-shim.tsx') continue;
+  stripNestedRouterHosts(sandpackFiles);
 
-    // Detect aliased router imports like `BrowserRouter as Router`
-    const aliasMatch = content.match(/(?:BrowserRouter|HashRouter|MemoryRouter)\s+as\s+(\w+)/);
-    const routerAlias = aliasMatch ? aliasMatch[1] : null;
-
-    // Build list of all Router-like tag names to strip
-    const routerTags = ['BrowserRouter', 'HashRouter', 'MemoryRouter'];
-    if (routerAlias && !routerTags.includes(routerAlias)) {
-      routerTags.push(routerAlias);
-    }
-    const routerTagPattern = routerTags.join('|');
-    const tagRegex = new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, '');
-
-    if (tagRegex.test(content)) {
-      const fixed = content
-        .replace(/import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g, (match) => {
-          // Keep non-Router imports from the same line
-          const keepTokens = ['Routes', 'Route', 'Link', 'Navigate', 'useNavigate', 'useLocation', 'useParams', 'NavLink', 'Outlet'];
-          const otherImports = match.match(new RegExp(`\\b(?:${keepTokens.join('|')})\\b`, 'g'));
-          if (otherImports && otherImports.length > 0) {
-            return `import { ${Array.from(new Set(otherImports)).join(', ')} } from 'react-router-dom';\n`;
-          }
-          return '';
-        })
-        .replace(new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, 'g'), '')
-        .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
-      if (fixed !== content) {
-        sandpackFiles[filePath] = fixed;
-      }
-    }
-  }
 
   // ── REWRITE self-referencing relative imports ──
   // AI often writes `import Services from './Services'` inside

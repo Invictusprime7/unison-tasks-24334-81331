@@ -152,7 +152,7 @@ describe('ProjectRuntimeEnvelope', () => {
       pages: {
         home: { pageId: 'home', isHome: true, filePath: '/src/pages/Home.tsx', path: '/', navOrder: 0 },
       },
-    } as SiteBundleSnapshot['pageRegistry'];
+    } as unknown as SiteBundleSnapshot['pageRegistry'];
     persistedSnapshot.vfsFiles['/src/pages/Home.tsx'] = 'export default function Home(){ return null; }';
     expect(resolveProjectActivePagePath(persistedSnapshot, null)).toBe('/src/pages/Home.tsx');
   });

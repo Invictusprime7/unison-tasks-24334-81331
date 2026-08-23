@@ -33,6 +33,7 @@ import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedCh
 import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
+import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
 
 const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
 
@@ -5754,8 +5755,6 @@ export function processCode(code: string, filePath: string): string {
  * Normalize raw launcher/wizard VFS files before handing off to the Web Builder.
  * Ensures consistent paths, entry files, and CSS tokens.
  */
-import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
-
 const normalizeLauncherPath = normalizeCanonicalVfsPath;
 
 function isBootstrapSourceEntry(path?: string | null): boolean {

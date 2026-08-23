@@ -21,6 +21,7 @@ import {
   normalizeLauncherFiles,
   prepareSandpackFiles,
 } from '@/utils/sandpackFilePrep';
+import { normalizeCanonicalVfsFiles } from '@/utils/canonicalVfsPath';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
 import { preflightNavWiring } from './preflightNavWiring';

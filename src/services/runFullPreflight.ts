@@ -35,6 +35,11 @@ export interface RunFullPreflightOptions {
   sourceLane?: CompileSafeOptions['sourceLane'];
   /** Set false to skip the compile-safe acceptance gate (diagnostics only). */
   compileSafe?: boolean;
+  /**
+   * Canonical Stage 4b bodies for ladder rung 2 (recover). Defaults to the
+   * snapshot's own vfsFiles when a snapshot is supplied.
+   */
+  canonicalFiles?: Record<string, string>;
 }
 
 /** Stage outcome. `failed` can never masquerade as "nothing to do". */

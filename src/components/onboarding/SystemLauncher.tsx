@@ -4128,8 +4128,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           const snapshotVfs = launchArtifacts.siteBundleSnapshot?.vfsFiles as
             | Record<string, string>
             | undefined;
-          for (const [path, content] of Object.entries(closure.files)) {
-            if (wiredVfsFiles[path] === content) continue;
+          for (const [path, value] of Object.entries(closure.files)) {
+            const content = value as string;
+            if (typeof content !== 'string' || wiredVfsFiles[path] === content) continue;
             wiredVfsFiles[path] = content;
             if (snapshotVfs && path in snapshotVfs) snapshotVfs[path] = content;
           }

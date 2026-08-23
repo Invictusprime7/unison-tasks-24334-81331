@@ -6,10 +6,12 @@
  * actions remain blocked until their approved runtime adapters are installed.
  */
 
+import { PUBLISHED_RUNTIME_IMPORT_SPECIFIER } from '@/services/publishedRuntimeModule';
+
 export const PUBLISHED_ACTION_RUNTIME_PATH = '/src/components/publishedActionRuntime.ts';
 
 export const PUBLISHED_ACTION_RUNTIME_MODULE = `import { useEffect } from 'react';
-import { PUBLISHED_RUNTIME_CONFIG } from '@/unison/publishedRuntime';
+import { PUBLISHED_RUNTIME_CONFIG } from '${PUBLISHED_RUNTIME_IMPORT_SPECIFIER}';
 import { GENERATED_SITE_RUNTIME_MANIFEST } from '@/unison/generatedSiteRuntimeManifest';
 
 const FORM_INTENT_TARGETS: Record<string, string[]> = {

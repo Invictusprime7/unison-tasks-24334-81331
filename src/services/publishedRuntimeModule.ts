@@ -9,6 +9,9 @@
 
 export const PUBLISHED_RUNTIME_METADATA_PATH = '/.unison/published-runtime.json';
 export const PUBLISHED_RUNTIME_MODULE_PATH = '/src/unison/publishedRuntime.ts';
+export const PUBLISHED_RUNTIME_IMPORT_SPECIFIER = `@/${PUBLISHED_RUNTIME_MODULE_PATH
+  .replace(/^\/src\//, '')
+  .replace(/\.[^.]+$/, '')}`;
 
 export interface PublishedRuntimeConfig {
   version: '1.0';

@@ -25,6 +25,7 @@ import { createCanonicalComponentInstance } from '@/services/canonicalComponentR
 import { resolveComponentRuntimeContract } from '@/services/componentRuntimeContract';
 import { compileGeneratedSiteRuntimeManifest } from '@/services/generatedSiteRuntimeManifest';
 import { getIntentDef } from '@/platform/core/intentSurfaceRegistry';
+import { PUBLISHED_RUNTIME_IMPORT_SPECIFIER } from '@/services/publishedRuntimeModule';
 
 function createSnapshot(): SiteBundleSnapshot {
   const pageRegistry = createEmptyPageRegistry();
@@ -148,6 +149,7 @@ describe('launch business runtime persistence', () => {
       siteBundleSnapshot: createSnapshot(),
     }))).toContain('PUBLISHED_RUNTIME_CONFIG');
     expect(PUBLISHED_RUNTIME_MODULE_PATH).toBe('/src/unison/publishedRuntime.ts');
+    expect(PUBLISHED_RUNTIME_IMPORT_SPECIFIER).toBe('@/unison/publishedRuntime');
     expect(buildGeneratedSiteRuntimeManifestModule(compileGeneratedSiteRuntimeManifest({
       siteId: 'site-1',
       snapshot: createSnapshot(),
@@ -157,6 +159,14 @@ describe('launch business runtime persistence', () => {
   });
 
   it('keeps Builder hydration while adding the standalone public runtime path', () => {
+    for (const runtimeConsumer of [
+      CATALOG_HYDRATION_MODULE,
+      BUSINESS_PROFILE_HYDRATION_MODULE,
+      FORM_RUNTIME_MODULE,
+      PUBLISHED_ACTION_RUNTIME_MODULE,
+    ]) {
+      expect(runtimeConsumer).toContain(`from '${PUBLISHED_RUNTIME_IMPORT_SPECIFIER}'`);
+    }
     expect(CATALOG_HYDRATION_MODULE).toContain('CATALOG_HYDRATE_REQUEST');
     expect(CATALOG_HYDRATION_MODULE).toContain("from '@/unison/publishedRuntime'");
     expect(CATALOG_HYDRATION_MODULE).toContain("operation: 'read'");

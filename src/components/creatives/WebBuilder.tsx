@@ -7334,6 +7334,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               businessDataContext={businessDataContext}
               systemsBuildContext={systemsBuildContextFromState}
                 wizardSeed={wizardSeedFromState}
+              siteBundleSnapshot={(hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? (effectiveRouteState?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null}
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}

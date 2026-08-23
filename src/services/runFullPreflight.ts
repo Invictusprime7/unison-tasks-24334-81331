@@ -17,7 +17,15 @@ import { runPreflightRepair } from './aiSitePreflightRepair';
 import { preflightNavWiring } from './preflightNavWiring';
 import { closeRequiredIndustryIntents } from './requiredIntentClosure';
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
-import { injectMissingLucideIcons, rewriteLucideIconLocalImports } from '@/utils/sandpackFilePrep';
+import {
+  injectMissingLucideIcons,
+  rewriteLucideIconLocalImports,
+  stripNestedRouterHosts,
+  rewriteSelfReferencingImports,
+  autoInjectMissingJsxImports,
+  repairLocalImportContracts,
+  synthesizeMissingJsxExports,
+} from '@/utils/sandpackFilePrep';
 import {
   runCompileSafeAcceptance,
   summarizeCompileDiagnostics,

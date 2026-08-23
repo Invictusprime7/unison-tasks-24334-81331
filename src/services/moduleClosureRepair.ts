@@ -301,7 +301,10 @@ export async function repairModuleClosureWithAI(
   options: AIModuleClosureOptions = {},
 ): Promise<ModuleClosureRepairResult & { attempts: number }> {
   const maxAttempts = Math.max(1, Math.min(3, options.maxAttempts ?? 2));
-  const deterministic = repairUnresolvedLocalImports(inputFiles);
+  const deterministic = repairUnresolvedLocalImports(inputFiles, {
+    canonicalFiles: options.canonicalFiles,
+    synthesize: options.synthesize,
+  });
   const files = { ...deterministic.files };
   const repairedPaths: string[] = [];
   let attempts = 0;

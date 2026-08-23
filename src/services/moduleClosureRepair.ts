@@ -130,11 +130,19 @@ function localsOf(statement: string): string[] {
 }
 
 /**
- * Deterministic pass. Rewrites recoverable specifiers and removes dead imports.
- * Never invents a module and never touches JSX.
+ * The single deterministic ladder for "module X does not resolve".
+ *
+ *   1. resolve    — specifier drift (wrong directory / casing / extension)
+ *   2. recover    — restore the canonical Stage 4b body for that module
+ *   3. synthesize — usage-derived module (only for bindings actually used)
+ *   4. drop       — the import is provably dead
+ *
+ * Later rungs run only when every earlier rung declined. Pruning (rung 5) and
+ * halting (rung 6) stay with the callers that own routing and compilation.
  */
 export function repairUnresolvedLocalImports(
   inputFiles: Record<string, string>,
+  options: ModuleClosureRepairOptions = {},
 ): ModuleClosureRepairResult {
   const files: Record<string, string> = {};
   for (const [path, content] of Object.entries(inputFiles || {})) {
@@ -142,10 +150,14 @@ export function repairUnresolvedLocalImports(
   }
 
   const rewritten: string[] = [];
+  const recovered: string[] = [];
+  const synthesized: string[] = [];
   const dropped: string[] = [];
 
   const unresolved = findUnresolvedLocalImports(files);
-  if (unresolved.length === 0) return { files, rewritten, dropped, remaining: [] };
+  if (unresolved.length === 0) {
+    return { files, rewritten, recovered, synthesized, dropped, remaining: [] };
+  }
 
   // basename (lowercased) → real module paths
   const byBase = new Map<string, string[]>();

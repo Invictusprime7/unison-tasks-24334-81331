@@ -21,6 +21,7 @@ import { injectMissingLucideIcons, rewriteLucideIconLocalImports } from '@/utils
 import {
   runCompileSafeAcceptance,
   summarizeCompileDiagnostics,
+  validateBundleTopology,
   type CompileDiagnostic,
   type CompileSafeOptions,
 } from './compileSafeGate';
@@ -49,6 +50,11 @@ export interface RunFullPreflightResult {
       repaired: string[];
       blockingCount: number;
       summary: string;
+    };
+    /** Phase 10 — snapshot topology vs. candidate bundle. */
+    bundleTopology: {
+      status: 'accepted' | 'blocked' | 'skipped' | 'failed';
+      missing: string[];
     };
   };
   /** Structured compile diagnostics for failure provenance / AI repair. */
@@ -234,6 +240,32 @@ export function runFullPreflight(
     }
   }
 
+  // 7) Phase 10 — bundle-level topology validation. Individual files can all
+  // compile while the snapshot routes to a module that was never generated.
+  let bundleTopology: RunFullPreflightResult['stages']['bundleTopology'] = {
+    status: 'skipped',
+    missing: [],
+  };
+  if (options.compileSafe !== false && siteBundleSnapshot) {
+    try {
+      const topologyDiagnostics = validateBundleTopology(files, siteBundleSnapshot, {
+        sourceLane: options.sourceLane ?? 'unknown',
+        pipelineStage: 'acceptance',
+      });
+      compileDiagnostics = [...compileDiagnostics, ...topologyDiagnostics];
+      bundleTopology = {
+        status: topologyDiagnostics.length === 0 ? 'accepted' : 'blocked',
+        missing: topologyDiagnostics.map((d) => d.pagePath),
+      };
+      if (topologyDiagnostics.length > 0) {
+        console.warn('[runFullPreflight] bundle topology blocked', bundleTopology.missing);
+      }
+    } catch (e) {
+      console.warn('[runFullPreflight] bundle topology check failed', e);
+      bundleTopology = { status: 'failed', missing: [] };
+    }
+  }
+
   return {
     files,
     stages: {
@@ -246,7 +278,9 @@ export function runFullPreflight(
       },
       finalRepair,
       compileSafe,
+      bundleTopology,
     },
     compileDiagnostics,
+
   };
 }

@@ -5,6 +5,8 @@ import {
   normalizeGeneratedImports,
   resolveCandidateModule,
   runCompileSafeAcceptance,
+  validateBundleTopology,
+  hasFatalCompileErrors,
 } from '@/services/compileSafeGate';
 
 describe('compile-safe acceptance gate', () => {
@@ -156,5 +158,71 @@ describe('compile-safe acceptance gate', () => {
 
     expect(result.blocking).toEqual([]);
     expect(result.accepted).toBe(true);
+  });
+});
+
+describe('bundle-level topology gate (Phase 10)', () => {
+  it('blocks a snapshot page whose file is absent from the candidate bundle', () => {
+    const diagnostics = validateBundleTopology(
+      { '/src/pages/Home.tsx': 'export default function Home() { return <main>H</main>; }' },
+      {
+        pageRegistry: {
+          homePageId: 'home',
+          pages: {
+            home: { pageId: 'home', slug: 'home', filePath: '/src/pages/Home.tsx' },
+            about: { pageId: 'about', slug: 'about', filePath: '/src/pages/About.tsx' },
+          },
+        },
+      },
+    );
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].diagnosticCode).toBe('MISSING_TOPOLOGY_FILE');
+    expect(diagnostics[0].pagePath).toBe('/src/pages/About.tsx');
+    expect(diagnostics[0].validationStage).toBe('bundle-topology');
+  });
+
+  it('blocks a router route target that was never generated', () => {
+    const diagnostics = validateBundleTopology(
+      {
+        '/src/App.tsx': "import Home from './pages/Home.tsx';\nimport About from './pages/About.tsx';\nexport default function App() { return <Home />; }",
+        '/src/pages/Home.tsx': 'export default function Home() { return <main>H</main>; }',
+      },
+      { routerFile: { path: '/src/App.tsx' }, pageRegistry: { pages: {} } },
+    );
+    expect(diagnostics.map((d) => d.diagnosticCode)).toContain('MISSING_ROUTE_TARGET');
+  });
+
+  it('accepts a complete topology and treats warnings as non-fatal', () => {
+    const files = {
+      '/src/App.tsx': "import Home from './pages/Home.tsx';\nexport default function App() { return <Home />; }",
+      '/src/pages/Home.tsx': 'export default function Home() { return <main>H</main>; }',
+    };
+    const diagnostics = validateBundleTopology(files, {
+      routerFile: { path: '/src/App.tsx' },
+      pageRegistry: { homePageId: 'home', pages: { home: { pageId: 'home', filePath: '/src/pages/Home.tsx' } } },
+    });
+    expect(diagnostics).toEqual([]);
+    expect(hasFatalCompileErrors(runCompileSafeAcceptance(files).diagnostics)).toBe(false);
+  });
+
+  it('flags duplicate module-scope declarations without rewriting them', () => {
+    const result = runCompileSafeAcceptance({
+      '/src/pages/Dup.tsx': [
+        'function Hero() { return <div>a</div>; }',
+        'function Hero() { return <div>b</div>; }',
+        'export default function Dup() { return <Hero />; }',
+      ].join('\n'),
+    });
+    const dup = result.diagnostics.find((d) => d.diagnosticCode === 'DUPLICATE_DECLARATION');
+    expect(dup?.message).toContain('Hero');
+    expect(dup?.pagePath).toBe('/src/pages/Dup.tsx');
+    expect(result.files['/src/pages/Dup.tsx']).toContain('function Hero()');
+  });
+
+  it('treats a parse failure as fatal for commit acceptance', () => {
+    const result = runCompileSafeAcceptance({
+      '/src/pages/Broken.tsx': 'export default function Broken() { return <div>; }',
+    });
+    expect(hasFatalCompileErrors(result.diagnostics)).toBe(true);
   });
 });

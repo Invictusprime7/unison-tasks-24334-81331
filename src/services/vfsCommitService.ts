@@ -36,6 +36,7 @@ import type { PlaygroundState } from '@/platform/core/playground';
 import type { CompiledContract } from '@/platform/core/contractCompiler';
 import type { ThemeTokens } from '@/sections/types';
 import { PreviewGate, PublishGate, type GateVerdict } from '@/platform/core/gates';
+import { hasFatalCompileErrors } from './compileSafeGate';
 import { runFullPreflight } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
 import { evaluateElementReadiness, type ElementReadinessReport } from '@/services/elementReadinessEvaluator';
@@ -379,9 +380,14 @@ export async function commitMutation(
     );
   }
 
+  // Gate 1/8: a fatal compile diagnostic (unparseable page, snapshot topology
+  // pointing at a module that does not exist in the candidate bundle) must
+  // never become canonical runtime state. Recoverable import/dependency
+  // warnings stay non-blocking — the repair layers already own those.
   const previewOk =
     preflight.stages.earlyRepair !== 'failed' &&
-    preflight.stages.finalRepair !== 'failed';
+    preflight.stages.finalRepair !== 'failed' &&
+    !hasFatalCompileErrors(preflight.compileDiagnostics ?? []);
   log('preflight', previewOk ? 'info' : 'warn', 'preflight stages', preflight.stages);
 
   // Compile-safe acceptance provenance: which lane/stage produced which defect.
@@ -511,7 +517,8 @@ export async function commitMutation(
     }
     const previewOk2 =
       preflight.stages.earlyRepair !== 'failed' &&
-      preflight.stages.finalRepair !== 'failed';
+      preflight.stages.finalRepair !== 'failed' &&
+      !hasFatalCompileErrors(preflight.compileDiagnostics ?? []);
     const readinessOk2 =
       (!gate || gate.previewReady) &&
       (!previewVerdict || previewVerdict.ok) &&

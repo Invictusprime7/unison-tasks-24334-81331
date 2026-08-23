@@ -553,6 +553,32 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     removePathVariants(merged, page.filePath);
   }
 
+  // ── Registry ⇄ VFS closure ───────────────────────────────────────────────
+  // The router is generated from the page registry, so a registered page with
+  // no surviving module makes /src/App.tsx import a file that will never exist
+  // and halts the preview at Sandpack prep. Prune those routes here (home is
+  // unrecoverable and still throws) so registry, router and VFS stay closed.
+  const unroutablePages: string[] = [];
+  for (const [pageId, page] of Object.entries(snapshot.pageRegistry.pages)) {
+    const entry = page as { filePath?: string; isHome?: boolean; name?: string; slug?: string };
+    if (!entry.filePath) continue;
+    const normalized = normalizePath(entry.filePath);
+    if (typeof merged[normalized] === 'string') continue;
+    const isHome = Boolean(entry.isHome) || pageId === snapshot.pageRegistry.homePageId;
+    if (isHome) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `SiteBundleSnapshot home page "${normalized}" has no module after merge; refusing to emit a router with an unresolved route.`,
+        { recoverableByRelaunch: true },
+      );
+    }
+    delete snapshot.pageRegistry.pages[pageId];
+    unroutablePages.push(normalized);
+  }
+  if (unroutablePages.length > 0) {
+    snapshot.pageRegistry.version += 1;
+    console.warn('[canonicalLaunchVfs] Pruned registered pages with no module', unroutablePages);
+  }
 
   // ── Single chrome authority: the page body ──────────────────────────────
   // Navigation and footer are composition sections resolved from the wizard

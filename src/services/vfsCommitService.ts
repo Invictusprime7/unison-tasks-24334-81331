@@ -29,6 +29,7 @@ import {
   type CommitResult as CanonicalCommitResult,
   type CommitSource as CanonicalCommitSource,
 } from '@/platform/core/commitToPipeline';
+import { isSurgicalPatch } from '@/platform/core/surgicalProjection';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import type { RuntimeManifest } from '@/platform/core/runtimeManifest';
 import type { PlaygroundState } from '@/platform/core/playground';

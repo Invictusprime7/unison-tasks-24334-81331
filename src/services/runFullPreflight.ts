@@ -324,93 +324,18 @@ export function runFullPreflight(
     finalRepair = 'failed';
   }
 
-  // 5b) Deterministic module-closure repair. Recoverable specifier drift
-  // (wrong directory / casing) and dead imports are fixed before the
-  // compile-safe gate runs, so they never reach Sandpack prep — which refuses
-  // to synthesize placeholder modules for generated drafts.
-  try {
-    const closure = repairUnresolvedLocalImports(files);
-    if (closure.rewritten.length > 0 || closure.dropped.length > 0) {
-      files = closure.files;
-      console.log('[runFullPreflight] module closure repaired', {
-        rewritten: closure.rewritten,
-        dropped: closure.dropped,
-        remaining: closure.remaining.length,
-      });
-    }
-  } catch (e) {
-    console.warn('[runFullPreflight] module closure repair failed', e);
-  }
-
-  // 6) Compile-safe acceptance boundary. Deterministic, bundle-wide, and the
-  // last thing that runs before the candidate file set is allowed to become
-  // canonical runtime state. It normalizes imports, closes React hook imports,
-  // validates every dependency against the Sandpack manifest, and resolves
-  // every relative import against the *candidate* bundle (not the committed
-  // VFS) so same-transaction modules resolve correctly.
-  let compileSafe: RunFullPreflightResult['stages']['compileSafe'] = {
-    status: 'skipped',
-    repaired: [],
-    blockingCount: 0,
-    summary: 'skipped',
-  };
-  let compileDiagnostics: CompileDiagnostic[] = [];
-
-  if (options.compileSafe !== false) {
-    try {
-      const gate = runCompileSafeAcceptance(files, {
-        sourceLane: options.sourceLane ?? 'unknown',
-        pipelineStage: 'acceptance',
-      });
-      files = gate.files;
-      compileDiagnostics = gate.diagnostics;
-      compileSafe = {
-        status: gate.accepted ? 'accepted' : 'blocked',
-        repaired: gate.repaired,
-        blockingCount: gate.blocking.length,
-        summary: summarizeCompileDiagnostics(gate.diagnostics),
-      };
-      if (!gate.accepted) {
-        console.warn('[runFullPreflight] compile-safe gate blocked', {
-          blocking: gate.blocking.map((d) => ({
-            path: d.pagePath,
-            code: d.diagnosticCode,
-            stage: d.validationStage,
-            line: d.line,
-          })),
-        });
-      }
-    } catch (e) {
-      console.warn('[runFullPreflight] compile-safe gate failed', e);
-      compileSafe = { status: 'failed', repaired: [], blockingCount: 0, summary: 'gate threw' };
-    }
-  }
-
-  // 7) Phase 10 — bundle-level topology validation. Individual files can all
-  // compile while the snapshot routes to a module that was never generated.
-  let bundleTopology: RunFullPreflightResult['stages']['bundleTopology'] = {
-    status: 'skipped',
-    missing: [],
-  };
-  if (options.compileSafe !== false && siteBundleSnapshot) {
-    try {
-      const topologyDiagnostics = validateBundleTopology(files, siteBundleSnapshot, {
-        sourceLane: options.sourceLane ?? 'unknown',
-        pipelineStage: 'acceptance',
-      });
-      compileDiagnostics = [...compileDiagnostics, ...topologyDiagnostics];
-      bundleTopology = {
-        status: topologyDiagnostics.length === 0 ? 'accepted' : 'blocked',
-        missing: topologyDiagnostics.map((d) => d.pagePath),
-      };
-      if (topologyDiagnostics.length > 0) {
-        console.warn('[runFullPreflight] bundle topology blocked', bundleTopology.missing);
-      }
-    } catch (e) {
-      console.warn('[runFullPreflight] bundle topology check failed', e);
-      bundleTopology = { status: 'failed', missing: [] };
-    }
-  }
+  // 5b–7) Shared tail: unresolved-module ladder → compile-safe acceptance →
+  // bundle topology. Identical code path as the launch pipeline.
+  const tail = runModuleClosureAndCompileSafe(files, {
+    siteBundleSnapshot,
+    sourceLane: options.sourceLane,
+    pipelineStage: 'acceptance',
+    compileSafe: options.compileSafe,
+    canonicalFiles: options.canonicalFiles,
+  });
+  files = tail.files;
+  const { moduleClosure, compileSafe, bundleTopology } = tail;
+  const compileDiagnostics = tail.compileDiagnostics;
 
   return {
     files,

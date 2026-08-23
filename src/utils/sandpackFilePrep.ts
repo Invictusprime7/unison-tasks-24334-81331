@@ -6639,16 +6639,30 @@ export function prepareSandpackFiles(
   // ── AUTO-INJECT imports for JSX-used but un-imported components ──
   autoInjectMissingJsxImports(sandpackFiles);
 
-  // Missing relative imports must surface as preview diagnostics. Do not
-  // synthesize fallback/template components into wizard-generated sites.
-  // EXCEPTION: the in-builder AI Builder commonly writes a file that
-  // references a sibling module before creating it. To prevent
-  // "Could not find module" crashes from killing the preview, we synthesize
-  // a minimal `() => null` placeholder (NOT a fake chip). Authors see the
-  // empty slot and replace it on the next turn.
   // Unresolved local imports that are actually lucide icons become real
   // lucide-react imports instead of killing the wizard preview.
   rewriteLucideIconLocalImports(sandpackFiles);
+
+  // Single unresolved-module ladder (resolve → recover → synthesize → drop).
+  // This is the SAME policy the launch/commit preflight tail runs, so prep can
+  // no longer invent a competing answer for a defect the pipeline already had
+  // an opinion about. Anything the ladder resolves is idempotent here.
+  try {
+    const ladder = repairUnresolvedLocalImports(sandpackFiles);
+    if (
+      ladder.rewritten.length ||
+      ladder.recovered.length ||
+      ladder.synthesized.length ||
+      ladder.dropped.length
+    ) {
+      for (const key of Object.keys(sandpackFiles)) {
+        if (!(key in ladder.files)) delete sandpackFiles[key];
+      }
+      Object.assign(sandpackFiles, ladder.files);
+    }
+  } catch (e) {
+    console.warn('[sandpackFilePrep] module closure ladder failed', e);
+  }
 
   synthesizeMissingLocalImports(
     sandpackFiles,
@@ -6659,6 +6673,7 @@ export function prepareSandpackFiles(
       sharedModules: buildCanonicalWizardChromeModules(),
     },
   );
+
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (/\.(tsx?|jsx?)$/.test(filePath)) {

@@ -266,7 +266,14 @@ export function runModuleClosureAndCompileSafe(
     }
   }
 
-  return { files, moduleClosure, compileSafe, bundleTopology, compileDiagnostics };
+  return {
+    files,
+    structuralRepair,
+    moduleClosure,
+    compileSafe,
+    bundleTopology,
+    compileDiagnostics,
+  };
 }
 
 export function runFullPreflight(

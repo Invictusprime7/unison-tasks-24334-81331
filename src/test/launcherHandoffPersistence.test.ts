@@ -7,6 +7,8 @@ import {
   persistLauncherHandoff,
   readLauncherHandoff,
 } from "@/services/launcherHandoffPersistence";
+import { findUnresolvedLocalImports } from '@/services/laneBCompanionModules';
+import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 
 describe("launcher handoff persistence", () => {
   beforeEach(() => {
@@ -162,6 +164,44 @@ describe("launcher handoff persistence", () => {
     expect(files['/src/hooks/useCart.ts']).toContain('useCart');
     expect(files['/src/data/catalog.json']).toBe('{}');
     expect(files['/lib/format.ts']).toBeUndefined();
+    expect(findUnresolvedLocalImports(files)).toEqual([]);
+
+    const previewFiles = prepareSandpackFiles(files);
+    expect(previewFiles['/pages/Home.tsx']).toContain("../lib/format");
+    expect(previewFiles['/lib/format.ts']).toContain('format');
+    expect(previewFiles['/hooks/useCart.ts']).toContain('useCart');
+  });
+
+  it('uses the same canonical artifact for persisted recovery and immediate preview', () => {
+    const routeState = {
+      fromLauncher: true,
+      vfsFiles: {
+        '/App.tsx': "import Home from './pages/Home'; export default Home;",
+        '/pages/Home.tsx': "import Card from '../components/Card'; export default function Home(){ return <Card />; }",
+        '/components/Card.tsx': 'export default function Card(){ return <article>Ready</article>; }',
+      },
+      siteBundleSnapshot: {
+        snapshotId: 'snap_exact_handoff',
+        pageRegistry: {
+          homePageId: 'home',
+          pages: {
+            home: { filePath: '/src/pages/Home.tsx', path: '/', isHome: true },
+          },
+        },
+        vfsFiles: {
+          '/App.tsx': "import Home from './pages/Home'; export default Home;",
+          '/pages/Home.tsx': "import Card from '../components/Card'; export default function Home(){ return <Card />; }",
+          '/components/Card.tsx': 'export default function Card(){ return <article>Ready</article>; }',
+        },
+      },
+    };
+
+    const immediate = persistAndBuildLauncherHandoff({ routeState });
+    const persisted = readLauncherHandoff()?.routeState;
+    expect(persisted).toEqual(immediate);
+    const files = immediate.vfsFiles as Record<string, string>;
+    expect(findUnresolvedLocalImports(files)).toEqual([]);
+    expect(files['/src/components/Card.tsx']).toContain('Ready');
   });
 
   it('rejects conflicting source files that collapse to the same canonical path', () => {

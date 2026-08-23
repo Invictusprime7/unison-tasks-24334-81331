@@ -539,7 +539,12 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     // Canonical page fallback is a DEGRADED path only. Wizard final merges pass
     // allowCanonicalPageFallback:false so a missing Lane B page surfaces as an
     // incomplete launch instead of being masked by a Stage 4b scaffold body.
-    if (options.allowCanonicalPageFallback !== false && canonicalPage && !isMinimalPreviewFallbackSource(canonicalPage)) {
+    if (
+      (options.allowCanonicalPageFallback !== false
+        || canonicalFallbackAllowlist.has(normalizedPagePath))
+      && canonicalPage
+      && !isMinimalPreviewFallbackSource(canonicalPage)
+    ) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = canonicalPage;
       continue;

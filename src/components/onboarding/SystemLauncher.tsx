@@ -149,6 +149,7 @@ import {
   findUnresolvedLocalImports,
   describeUnresolvedImports,
 } from '@/services/laneBCompanionModules';
+import { repairModuleClosureWithAI } from '@/services/moduleClosureRepair';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
@@ -4104,25 +4105,59 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // `buildCanonicalLaunchArtifacts` owns final preflight after merging the
       // snapshot VFS and returns the exact validated files represented by the
       // cloned SiteBundleSnapshot. This launcher only appends metadata files.
-      const wiredVfsFiles = preWiredVfsFiles;
+      const wiredVfsFiles: Record<string, string> = { ...preWiredVfsFiles };
 
       // Close the local-import contract BEFORE the artifact is sealed. Preview
       // prep refuses to synthesize placeholders for wizard drafts, so a page
       // importing an unauthored companion would otherwise surface as a
       // PreviewPipelineError after handoff (preview falls back to scaffold).
-      const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);
-      if (preSealUnresolvedImports.length > 0) {
-        launchReliabilityMode = 'lane-b-degraded';
-        for (const item of preSealUnresolvedImports.slice(0, 3)) {
-          run.degrade(
-            'preflight',
-            'lane_b.unresolved_module',
-            `${item.filePath.split('/').pop()} references a module that was not generated ("${item.importPath}") — regenerate that page from the AI panel.`,
-            describeUnresolvedImports(preSealUnresolvedImports),
-          );
+      //
+      // Repair sequence: deterministic path-variant + dead-import recovery
+      // first, then one bounded AI repair pass whose output is only accepted
+      // when the deterministic parser and closure check both pass.
+      if (findUnresolvedLocalImports(wiredVfsFiles).length > 0) {
+        setLaunchStatus('Closing the module contract for generated pages…');
+        let closure: Awaited<ReturnType<typeof repairModuleClosureWithAI>> | null = null;
+        try {
+          closure = await repairModuleClosureWithAI(wiredVfsFiles, { maxAttempts: 2 });
+        } catch (error) {
+          console.warn('[SystemLauncher] module closure repair failed', error);
         }
-        console.warn('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
+
+        if (closure) {
+          const snapshotVfs = launchArtifacts.siteBundleSnapshot?.vfsFiles as
+            | Record<string, string>
+            | undefined;
+          for (const [path, value] of Object.entries(closure.files)) {
+            const content = value as string;
+            if (typeof content !== 'string' || wiredVfsFiles[path] === content) continue;
+            wiredVfsFiles[path] = content;
+            if (snapshotVfs && path in snapshotVfs) snapshotVfs[path] = content;
+          }
+          if (closure.rewritten.length || closure.dropped.length) {
+            console.log('[SystemLauncher] module closure repaired', {
+              rewritten: closure.rewritten,
+              dropped: closure.dropped,
+              attempts: closure.attempts,
+            });
+          }
+        }
+
+        const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);
+        if (preSealUnresolvedImports.length > 0) {
+          launchReliabilityMode = 'lane-b-degraded';
+          for (const item of preSealUnresolvedImports.slice(0, 3)) {
+            run.degrade(
+              'preflight',
+              'lane_b.unresolved_module',
+              `${item.filePath.split('/').pop()} references a module that was not generated ("${item.importPath}") — regenerate that page from the AI panel.`,
+              describeUnresolvedImports(preSealUnresolvedImports),
+            );
+          }
+          console.warn('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
+        }
       }
+
 
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {

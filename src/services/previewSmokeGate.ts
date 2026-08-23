@@ -24,12 +24,14 @@
 
 import { parseImportStatements, resolveCandidateModule } from './compileSafeGate';
 import { PreviewPipelineError } from './previewPipelineError';
+import { analyzeComponentContracts } from './componentContractAnalyzer';
 
 export type PreviewSmokeCode =
   | 'MISSING_ENTRY'
   | 'UNRESOLVED_MODULE'
   | 'MISSING_ROUTE_COMPONENT'
   | 'MISSING_DEFAULT_EXPORT'
+  | 'INVALID_JSX_COMPONENT_CONTRACT'
   | 'TOP_LEVEL_THROW';
 
 export interface PreviewSmokeDiagnostic {
@@ -60,8 +62,6 @@ function isLocalSpecifier(specifier: string): boolean {
 function hasDefaultExport(source: string): boolean {
   if (/export\s+default\b/.test(source)) return true;
   if (/export\s*\{[^}]*\bdefault\b[^}]*\}/.test(source)) return true;
-  // Re-exports may forward a default from elsewhere; treat as satisfied.
-  if (/export\s+\*\s+from/.test(source)) return true;
   if (/module\.exports\s*=/.test(source)) return true;
   return false;
 }
@@ -188,6 +188,18 @@ export function runPreviewSmokeGate(
         queue.push(resolved);
       }
     }
+  }
+
+  const reachableSet = new Set(reachable);
+  const componentContracts = analyzeComponentContracts(files, { importerPaths: reachableSet });
+  for (const contract of componentContracts.diagnostics) {
+    diagnostics.push({
+      path: contract.importerPath,
+      code: 'INVALID_JSX_COMPONENT_CONTRACT',
+      message: contract.message,
+      specifier: contract.specifier,
+      severity: 'error',
+    });
   }
 
   const blocking = diagnostics.filter((d) => d.severity === 'error');

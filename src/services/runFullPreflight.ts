@@ -34,6 +34,7 @@ import {
   type CompileSafeOptions,
 } from './compileSafeGate';
 import { repairUnresolvedLocalImports } from './moduleClosureRepair';
+import { analyzeComponentContracts } from './componentContractAnalyzer';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
@@ -110,6 +111,11 @@ export interface ClosureAndCompileSafeResult {
   /** Structural repairs that used to run AFTER every gate, inside Sandpack prep. */
   structuralRepair: StageOutcome;
   moduleClosure: ModuleClosureStageReport;
+  componentContracts: {
+    status: StageOutcome;
+    repaired: string[];
+    remaining: string[];
+  };
   compileSafe: CompileSafeStageReport;
   bundleTopology: BundleTopologyStageReport;
   compileDiagnostics: CompileDiagnostic[];
@@ -209,6 +215,24 @@ export function runModuleClosureAndCompileSafe(
     moduleClosure = { ...moduleClosure, status: 'failed' };
   }
 
+  let componentContracts: ClosureAndCompileSafeResult['componentContracts'] = {
+    status: 'declined',
+    repaired: [],
+    remaining: [],
+  };
+  try {
+    const contracts = analyzeComponentContracts(files, { repair: true });
+    files = contracts.files;
+    componentContracts = {
+      status: contracts.repaired.length > 0 ? 'applied' : 'declined',
+      repaired: contracts.repaired,
+      remaining: contracts.diagnostics.map((diagnostic) => diagnostic.message),
+    };
+  } catch (error) {
+    console.warn('[preflight] component-contract repair failed', error);
+    componentContracts = { status: 'failed', repaired: [], remaining: [] };
+  }
+
   let compileSafe: CompileSafeStageReport = {
     status: 'skipped',
     repaired: [],
@@ -225,11 +249,26 @@ export function runModuleClosureAndCompileSafe(
       });
       files = gate.files;
       compileDiagnostics = gate.diagnostics;
+      const contractDiagnostics = analyzeComponentContracts(files).diagnostics;
+      for (const diagnostic of contractDiagnostics) {
+        compileDiagnostics.push({
+          pagePath: diagnostic.importerPath,
+          pipelineStage: options.pipelineStage ?? 'acceptance',
+          sourceLane: options.sourceLane ?? 'unknown',
+          validationStage: 'export-contract',
+          diagnosticCode: 'INVALID_JSX_COMPONENT_CONTRACT',
+          severity: 'error',
+          message: diagnostic.message,
+          repairAttempt: 0,
+          resolved: false,
+        });
+      }
+      const blockingCount = gate.blocking.length + contractDiagnostics.length;
       compileSafe = {
-        status: gate.accepted ? 'accepted' : 'blocked',
+        status: gate.accepted && contractDiagnostics.length === 0 ? 'accepted' : 'blocked',
         repaired: gate.repaired,
-        blockingCount: gate.blocking.length,
-        summary: summarizeCompileDiagnostics(gate.diagnostics),
+        blockingCount,
+        summary: summarizeCompileDiagnostics(compileDiagnostics),
       };
       if (!gate.accepted) {
         console.warn('[preflight] compile-safe gate blocked', {
@@ -272,6 +311,7 @@ export function runModuleClosureAndCompileSafe(
     files,
     structuralRepair,
     moduleClosure,
+    componentContracts,
     compileSafe,
     bundleTopology,
     compileDiagnostics,

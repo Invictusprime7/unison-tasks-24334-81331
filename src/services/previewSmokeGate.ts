@@ -24,12 +24,14 @@
 
 import { parseImportStatements, resolveCandidateModule } from './compileSafeGate';
 import { PreviewPipelineError } from './previewPipelineError';
+import { analyzeComponentContracts } from './componentContractAnalyzer';
 
 export type PreviewSmokeCode =
   | 'MISSING_ENTRY'
   | 'UNRESOLVED_MODULE'
   | 'MISSING_ROUTE_COMPONENT'
   | 'MISSING_DEFAULT_EXPORT'
+  | 'INVALID_JSX_COMPONENT_CONTRACT'
   | 'TOP_LEVEL_THROW';
 
 export interface PreviewSmokeDiagnostic {
@@ -188,6 +190,18 @@ export function runPreviewSmokeGate(
         queue.push(resolved);
       }
     }
+  }
+
+  const reachableSet = new Set(reachable);
+  const componentContracts = analyzeComponentContracts(files, { importerPaths: reachableSet });
+  for (const contract of componentContracts.diagnostics) {
+    diagnostics.push({
+      path: contract.importerPath,
+      code: 'INVALID_JSX_COMPONENT_CONTRACT',
+      message: contract.message,
+      specifier: contract.specifier,
+      severity: 'error',
+    });
   }
 
   const blocking = diagnostics.filter((d) => d.severity === 'error');

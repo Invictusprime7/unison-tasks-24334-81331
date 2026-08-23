@@ -78,6 +78,16 @@ describe('preview smoke gate (Phase 11)', () => {
     expect(result.blocking.map((d) => d.code)).toContain('MISSING_DEFAULT_EXPORT');
   });
 
+  it('flags a missing named component export in the reachable graph', () => {
+    const result = runPreviewSmokeGate(
+      bundle({
+        '/App.tsx': "import { Hero } from './components/Hero';\nexport default function App() { return <Hero />; }",
+        '/components/Hero.tsx': 'export const Banner = () => <section />;',
+      }),
+    );
+    expect(result.blocking.map((d) => d.code)).toContain('INVALID_JSX_COMPONENT_CONTRACT');
+  });
+
   it('flags a top-level throw that would crash the bundle on import', () => {
     const result = runPreviewSmokeGate(
       bundle({

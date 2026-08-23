@@ -30,14 +30,55 @@ import {
 import { parseGeneratedSource } from './aiSitePreflightRepair';
 import { supabase } from '@/integrations/supabase/client';
 import { extractCleanCode } from '@/utils/aiCodeCleaner';
+import { synthesizeCompanionModule } from './companionModuleSynthesis';
 
 export interface ModuleClosureRepairResult {
   files: Record<string, string>;
-  /** `file → specifier` rewrites applied. */
+  /** `file → specifier` rewrites applied (ladder rung 1: resolve). */
   rewritten: string[];
-  /** Dead imports removed. */
+  /** Modules restored from the canonical snapshot (rung 2: recover). */
+  recovered: string[];
+  /** Modules deterministically synthesized from usage (rung 3: synthesize). */
+  synthesized: string[];
+  /** Dead imports removed (rung 4: drop). */
   dropped: string[];
   remaining: UnresolvedLocalImport[];
+}
+
+export interface ModuleClosureRepairOptions {
+  /**
+   * Canonical (Stage 4b composed) bodies keyed by VFS path. Rung 2 restores a
+   * missing module from here before anything is synthesized or dropped.
+   */
+  canonicalFiles?: Record<string, string>;
+  /** Set false to disable deterministic usage-derived synthesis (rung 3). */
+  synthesize?: boolean;
+}
+
+const MODULE_EXTENSION_CANDIDATES = ['', '.tsx', '.ts', '.jsx', '.js', '/index.tsx', '/index.ts'];
+
+/** Absolute path a relative specifier points at, without extension resolution. */
+function absoluteSpecifierPath(importerPath: string, specifier: string): string {
+  return normalizeVfsPath(`${dirOf(importerPath)}/${specifier}`);
+}
+
+function findCanonicalBody(
+  canonicalFiles: Record<string, string> | undefined,
+  absolutePath: string,
+): { path: string; content: string } | null {
+  if (!canonicalFiles) return null;
+  const normalized: Record<string, string> = {};
+  for (const [path, content] of Object.entries(canonicalFiles)) {
+    if (typeof content === 'string') normalized[normalizeVfsPath(path)] = content;
+  }
+  for (const suffix of MODULE_EXTENSION_CANDIDATES) {
+    const candidate = `${absolutePath}${suffix}`;
+    const content = normalized[candidate];
+    if (typeof content === 'string' && content.trim().length > 0) {
+      return { path: candidate, content };
+    }
+  }
+  return null;
 }
 
 function dirOf(path: string): string {
@@ -89,11 +130,19 @@ function localsOf(statement: string): string[] {
 }
 
 /**
- * Deterministic pass. Rewrites recoverable specifiers and removes dead imports.
- * Never invents a module and never touches JSX.
+ * The single deterministic ladder for "module X does not resolve".
+ *
+ *   1. resolve    — specifier drift (wrong directory / casing / extension)
+ *   2. recover    — restore the canonical Stage 4b body for that module
+ *   3. synthesize — usage-derived module (only for bindings actually used)
+ *   4. drop       — the import is provably dead
+ *
+ * Later rungs run only when every earlier rung declined. Pruning (rung 5) and
+ * halting (rung 6) stay with the callers that own routing and compilation.
  */
 export function repairUnresolvedLocalImports(
   inputFiles: Record<string, string>,
+  options: ModuleClosureRepairOptions = {},
 ): ModuleClosureRepairResult {
   const files: Record<string, string> = {};
   for (const [path, content] of Object.entries(inputFiles || {})) {
@@ -101,10 +150,14 @@ export function repairUnresolvedLocalImports(
   }
 
   const rewritten: string[] = [];
+  const recovered: string[] = [];
+  const synthesized: string[] = [];
   const dropped: string[] = [];
 
   const unresolved = findUnresolvedLocalImports(files);
-  if (unresolved.length === 0) return { files, rewritten, dropped, remaining: [] };
+  if (unresolved.length === 0) {
+    return { files, rewritten, recovered, synthesized, dropped, remaining: [] };
+  }
 
   // basename (lowercased) → real module paths
   const byBase = new Map<string, string[]>();
@@ -160,7 +213,42 @@ export function repairUnresolvedLocalImports(
     }
 
 
-    // 2. Dead-import removal — nothing the page renders depends on it.
+    const absolutePath = absoluteSpecifierPath(item.filePath, item.importPath);
+
+    // 2. Recover — the canonical Stage 4b snapshot still holds this body.
+    const canonical = findCanonicalBody(options.canonicalFiles, absolutePath);
+    if (canonical) {
+      const writePath = /\.(tsx|jsx|ts|js)$/i.test(canonical.path)
+        ? canonical.path
+        : `${canonical.path}.tsx`;
+      files[writePath] = canonical.content;
+      recovered.push(`${item.filePath} → "${item.importPath}" ⇐ ${writePath}`);
+      continue;
+    }
+
+    // 3. Synthesize — derive a real module from how the importer uses it.
+    if (options.synthesize !== false) {
+      const targetPath = /\.(tsx|jsx|ts|js)$/i.test(absolutePath)
+        ? absolutePath
+        : `${absolutePath}.tsx`;
+      const module = synthesizeCompanionModule({
+        importerPath: item.filePath,
+        importerSource: source,
+        specifier: item.importPath,
+        targetPath,
+      });
+      if (module) {
+        const parsed = parseGeneratedSource(module.content);
+        if (parsed.ok) {
+          files[module.path] = module.content;
+          synthesized.push(module.path);
+          continue;
+        }
+        console.warn('[moduleClosureRepair] synthesized module failed to parse', module.path);
+      }
+    }
+
+    // 4. Dead-import removal — nothing the page renders depends on it.
     let next = source;
     let removedAll = true;
     for (const statement of statements) {
@@ -184,14 +272,21 @@ export function repairUnresolvedLocalImports(
     }
   }
 
-  return { files, rewritten, dropped, remaining: findUnresolvedLocalImports(files) };
+  return {
+    files,
+    rewritten,
+    recovered,
+    synthesized,
+    dropped,
+    remaining: findUnresolvedLocalImports(files),
+  };
 }
 
 // ───────────────────────────────────────────── bounded AI closure repair
 
 const REPAIR_CONTRACT = `Repair the implementation defect without redesigning, simplifying, flattening, or replacing the generated page. Preserve visual composition, sections, content hierarchy, responsive behavior, animation intent, component boundaries, semantic metadata (data-ut-*, data-unison-*, ids) and all copy.`;
 
-export interface AIModuleClosureOptions {
+export interface AIModuleClosureOptions extends ModuleClosureRepairOptions {
   maxAttempts?: number;
   signal?: AbortSignal;
 }
@@ -206,7 +301,10 @@ export async function repairModuleClosureWithAI(
   options: AIModuleClosureOptions = {},
 ): Promise<ModuleClosureRepairResult & { attempts: number }> {
   const maxAttempts = Math.max(1, Math.min(3, options.maxAttempts ?? 2));
-  const deterministic = repairUnresolvedLocalImports(inputFiles);
+  const deterministic = repairUnresolvedLocalImports(inputFiles, {
+    canonicalFiles: options.canonicalFiles,
+    synthesize: options.synthesize,
+  });
   const files = { ...deterministic.files };
   const repairedPaths: string[] = [];
   let attempts = 0;
@@ -284,6 +382,8 @@ export async function repairModuleClosureWithAI(
   return {
     files,
     rewritten: [...deterministic.rewritten, ...repairedPaths.map((p) => `${p} (ai-repair)`)],
+    recovered: deterministic.recovered,
+    synthesized: deterministic.synthesized,
     dropped: deterministic.dropped,
     remaining,
     attempts,

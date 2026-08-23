@@ -28,6 +28,7 @@ import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair, runPreflightRepairSteps } from './aiSitePreflightRepair';
 import { runCompileSafeAcceptance, summarizeCompileDiagnostics } from './compileSafeGate';
 import { repairUnresolvedLocalImports } from './moduleClosureRepair';
+import { runModuleClosureAndCompileSafe } from './runFullPreflight';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
@@ -925,40 +926,25 @@ function* buildCanonicalLaunchArtifactSteps(
   // let canonical code enter the snapshot with an apparently unresolved
   // import, leaving Sandpack as the first authoritative closure check.
   yield;
-  try {
-    const closure = repairUnresolvedLocalImports(mergedFiles);
-    if (closure.rewritten.length > 0 || closure.dropped.length > 0) {
-      Object.assign(mergedFiles, closure.files);
-      console.log('[canonicalLaunchVfs] module closure repaired', {
-        rewritten: closure.rewritten,
-        dropped: closure.dropped,
-        remaining: closure.remaining.length,
-      });
-    }
-  } catch (error) {
-    console.warn('[canonicalLaunchVfs] module closure repair failed; continuing', error);
-  }
-
-  try {
-    const compileSafe = runCompileSafeAcceptance(mergedFiles, {
+  {
+    // Single shared tail — identical ladder + gates as the commit path.
+    // Replacing the whole map (instead of Object.assign) keeps dropped or
+    // rewritten modules from resurrecting as stale entries.
+    const tail = runModuleClosureAndCompileSafe(mergedFiles, {
+      siteBundleSnapshot: input.siteBundleSnapshot,
+      canonicalFiles,
       sourceLane: 'lane-b',
       pipelineStage: 'generation',
     });
-    Object.assign(mergedFiles, compileSafe.files);
-    if (compileSafe.repaired.length > 0 || compileSafe.blocking.length > 0) {
-      console.warn('[canonicalLaunchVfs] compile-safe acceptance', {
-        repaired: compileSafe.repaired.length,
-        summary: summarizeCompileDiagnostics(compileSafe.diagnostics),
-        blocking: compileSafe.blocking.slice(0, 10).map((d) => ({
-          path: d.pagePath,
-          code: d.diagnosticCode,
-          stage: d.validationStage,
-          line: d.line,
-        })),
+    for (const key of Object.keys(mergedFiles)) delete mergedFiles[key];
+    Object.assign(mergedFiles, tail.files);
+    if (tail.moduleClosure.status !== 'declined' || tail.compileSafe.status !== 'accepted') {
+      console.warn('[canonicalLaunchVfs] preflight tail', {
+        moduleClosure: tail.moduleClosure,
+        compileSafe: tail.compileSafe,
+        bundleTopology: tail.bundleTopology,
       });
     }
-  } catch (error) {
-    console.warn('[canonicalLaunchVfs] compile-safe acceptance failed; continuing', error);
   }
 
   const canonicalPlayground = buildCanonicalPlayground(runtimeSnapshotSeed, input.canonicalPlayground);

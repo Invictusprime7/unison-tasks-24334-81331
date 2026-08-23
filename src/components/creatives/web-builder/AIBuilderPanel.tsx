@@ -55,6 +55,8 @@ const supabase = supabaseClient as any;
 import { toast } from 'sonner';
 import type { BusinessSystemType } from '@/data/templates/types';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
+import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
+import { renderSnapshotContextForPrompt } from '@/utils/snapshotAIContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { buildComponentBehaviorMap, formatBehaviorMapForPrompt } from '@/services/aiVFSOrchestrator';
@@ -457,6 +459,8 @@ interface AIBuilderPanelProps {
   uiFoundation?: GeneratedUiManifest | null;
   /** Snapshot-owned deterministic layout, interaction, and motion choices. */
   designIntervention?: WizardDesignIntervention | null;
+  /** Sealed SiteBundleSnapshot for the active draft — makes surgical edits snapshot-aware. */
+  siteBundleSnapshot?: SiteBundleSnapshot | null;
   /** Current VFS file list + dependency summary for AI awareness */
   vfsContext?: string | null;
   /** Full VFS file map for component-level site analysis */
@@ -552,6 +556,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   wizardSeed,
   uiFoundation,
   designIntervention,
+  siteBundleSnapshot,
   vfsContext,
   vfsFiles,
   onApplyToVFS,
@@ -1226,8 +1231,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         return lines.length > 1 ? lines.join('\n') : '';
       })();
 
+      // Snapshot runtime contract — the wizard-generated site the AI is editing.
+      const snapshotContextBlock = renderSnapshotContextForPrompt(siteBundleSnapshot);
+
       // Build rich context block for full-generation requests
       const contextLines: string[] = [];
+      if (snapshotContextBlock) contextLines.push(`\n${snapshotContextBlock}`);
       if (systemType) contextLines.push(`Business type: ${systemType}`);
       if (templateName) contextLines.push(`Template: ${templateName}`);
       if (userDesignProfile) {

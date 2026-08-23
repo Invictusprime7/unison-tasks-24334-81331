@@ -163,7 +163,8 @@ export function runPreviewSmokeGate(
       if (
         typeof target === 'string' &&
         CODE_FILE.test(resolved) &&
-        imported.defaultImport &&
+        Boolean(imported.defaultName) &&
+        !imported.typeOnly &&
         !hasDefaultExport(target)
       ) {
         diagnostics.push({

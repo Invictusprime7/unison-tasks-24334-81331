@@ -3118,6 +3118,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           });
         }
       }
+      // Pages the degraded Lane B path explicitly keeps from the canonical
+      // (Stage 4b composed) snapshot body. The final merge runs with
+      // allowCanonicalPageFallback:false, so these paths must be allowlisted or
+      // the router will import a module the merge deleted.
+      const canonicalPageFallbackPaths: string[] = [];
       const wizardGenerationGaps: {
         aiError?: string;
         payloadIssue?: typeof lastPayloadIssue;

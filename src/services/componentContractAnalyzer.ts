@@ -90,12 +90,12 @@ function hasRenderableDeclaration(source: string, name: string): boolean {
   const escaped = escapeRe(name);
   if (new RegExp(`(?:function|class)\\s+${escaped}\\b`).test(source)) return true;
   const initializer = source.match(new RegExp(`(?:const|let|var)\\s+${escaped}(?:\\s*:[^=;\\n]+)?\\s*=\\s*([^;\\n]+)`))?.[1]?.trim();
-  if (!initializer) return false;
+  // A value export may be produced by a wrapper, HOC, imported alias, or
+  // factory that static analysis cannot prove. Reject only values that are
+  // unambiguously invalid React element types; leave opaque values to runtime.
+  if (!initializer) return true;
   if (/^(?:undefined|null|false|true|['"`]|-?\d|\[|\{)/.test(initializer)) return false;
-  return /^(?:React\.)?(?:memo|forwardRef|lazy)\s*\(/.test(initializer) ||
-    /^(?:async\s*)?\([^)]*\)\s*=>/.test(initializer) ||
-    /^(?:async\s+)?[A-Za-z_$][\w$]*\s*=>/.test(initializer) ||
-    /^[A-Z][A-Za-z0-9_$]*(?:\.|\b)/.test(initializer);
+  return true;
 }
 
 function resolveExport(

@@ -21,6 +21,7 @@ import { injectMissingLucideIcons, rewriteLucideIconLocalImports } from '@/utils
 import {
   runCompileSafeAcceptance,
   summarizeCompileDiagnostics,
+  validateBundleTopology,
   type CompileDiagnostic,
   type CompileSafeOptions,
 } from './compileSafeGate';
@@ -49,6 +50,11 @@ export interface RunFullPreflightResult {
       repaired: string[];
       blockingCount: number;
       summary: string;
+    };
+    /** Phase 10 — snapshot topology vs. candidate bundle. */
+    bundleTopology: {
+      status: 'accepted' | 'blocked' | 'skipped' | 'failed';
+      missing: string[];
     };
   };
   /** Structured compile diagnostics for failure provenance / AI repair. */

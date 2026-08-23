@@ -277,13 +277,48 @@ export async function commitMutation(
   if (reviewedArtifact) {
     log('canonical', 'info', 'accepted exact user-reviewed wizard artifact; regeneration skipped');
   } else {
+    // Classification, not a bypass: a file-only patch that touches paths the
+    // snapshot already registers is projected onto that snapshot instead of
+    // re-running Stage 4b (which needs wizard-grade inputs and throws when
+    // they drifted on a Lane A/Lane B generated draft).
+    const snapshotForCanonical =
+      presentationSnapshot ?? (input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined) ?? null;
+    const changedPaths = patch.fileOps.map((op) => op.path);
+    const surgical =
+      input.source === 'ai-builder'
+      && !patch.presentationOps?.length
+      && isSurgicalPatch(snapshotForCanonical, changedPaths);
+    const canonicalSource: CanonicalCommitSource = surgical ? 'surgical-edit' : toCanonicalSource(input.source);
+    if (surgical) {
+      log('canonical', 'info', 'routing patch through surgical-edit projection (no regeneration)', changedPaths);
+    }
+    let canonicalError: unknown = null;
     try {
       canonicalResult = commitToPipeline(
-        buildCanonicalInput(input, workingFiles, presentationSnapshot),
-        toCanonicalSource(input.source),
+        buildCanonicalInput(input, workingFiles, snapshotForCanonical),
+        canonicalSource,
       );
     } catch (err) {
-      log('canonical', 'error', 'canonical pipeline threw', String(err));
+      canonicalError = err;
+      if (surgical && input.current.playground) {
+        // Surgical projection refused (structural drift) — fall back to the
+        // regenerating path once before rejecting the patch.
+        log('canonical', 'warn', 'surgical projection refused; retrying via playground recompile', String(err));
+        try {
+          canonicalResult = commitToPipeline(
+            buildCanonicalInput(input, workingFiles, snapshotForCanonical),
+            toCanonicalSource(input.source),
+          );
+          canonicalError = null;
+        } catch (retryErr) {
+          canonicalError = retryErr;
+        }
+      }
+    }
+    if (canonicalError) {
+      const err = canonicalError;
+      const detail = err instanceof Error ? err.message : String(err);
+      log('canonical', 'error', 'canonical pipeline threw', detail);
       return finalize({
         input,
         status: 'rejected',
@@ -296,13 +331,13 @@ export async function commitMutation(
         publishBlockers: [{
           source: 'preview',
           code: 'canonical-pipeline-threw',
-          message: 'Canonical pipeline failed; nothing safe to publish',
+          message: detail || 'Canonical pipeline failed; nothing safe to publish',
         }],
         vfsHash: await hashVfsFiles(workingFiles),
         backendOpsApplied: [],
         diagnostics,
         parentRevisionId: input.identity.revisionId || null,
-        rejectMessage: 'canonical pipeline threw — see diagnostics',
+        rejectMessage: detail || 'canonical pipeline threw — see diagnostics',
       });
     }
   }
@@ -702,6 +737,7 @@ function buildCanonicalInput(
     industry: input.options?.industry,
     selectedTemplateId:
       input.options?.selectedTemplateId ?? snapshot?.meta?.templateId ?? sealed.templateId ?? undefined,
+    siteBundleSnapshot: snapshot ?? null,
     selectedThemeId: input.options?.selectedThemeId ?? themePresetId,
     themePresetId,
     themeTokens: input.options?.themeTokens ?? snapshot?.themeTokens,

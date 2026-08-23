@@ -97,6 +97,13 @@ function looksLikeRouteHost(path: string): boolean {
   return /\/App\.(t|j)sx?$/.test(path) || /\/pages\//.test(path);
 }
 
+/** A route target is a component module (PascalCase basename or /pages/ path). */
+function looksLikeRouteTarget(specifier: string): boolean {
+  if (/\/pages?\//.test(specifier)) return true;
+  const base = specifier.split('/').pop() ?? '';
+  return /^[A-Z][A-Za-z0-9]*(\.(t|j)sx?)?$/.test(base);
+}
+
 /**
  * Statically boot-check the compiled preview bundle.
  * Read-only: the returned file map is the input, untouched.

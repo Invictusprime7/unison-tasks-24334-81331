@@ -123,6 +123,25 @@ describe('wizard VFS integrity', () => {
     expect(() => prepareSandpackFiles(files)).toThrow(/missing local module.*MissingPortfolioGrid/i);
   });
 
+  it('rejects conflicting canonical and root aliases instead of overwriting by iteration order', () => {
+    expect(() => prepareSandpackFiles({
+      '/src/App.tsx': 'export default function App() { return <main>Canonical app</main>; }',
+      '/App.tsx': 'export default function App() { return <main>Shadow app</main>; }',
+      '/src/index.css': ':root { --primary: 221 83% 53%; }',
+    })).toThrow(/both map to Sandpack module "\/App\.tsx"/i);
+  });
+
+  it('deduplicates identical canonical and root aliases safely', () => {
+    const app = 'export default function App() { return <main>Same app</main>; }';
+    const prepared = prepareSandpackFiles({
+      '/src/App.tsx': app,
+      '/App.tsx': app,
+      '/src/index.css': ':root { --primary: 221 83% 53%; }',
+    });
+
+    expect(prepared['/App.tsx']).toContain('Same app');
+  });
+
   it('rejects unbound JSX components before the runtime can render placeholder labels', () => {
     const files = {
       '/src/App.tsx': 'export default function App() { return <main><MissingPortfolioGrid /></main>; }',

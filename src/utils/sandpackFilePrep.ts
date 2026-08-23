@@ -6293,6 +6293,7 @@ export function prepareSandpackFiles(
   let hasIndex = false;
   let hasCSS = false;
   const componentFilePaths: string[] = [];
+  const sandpackSourcePaths = new Map<string, string>();
 
   console.log('[sandpackFilePrep] Input VFS files:', Object.keys(finalFiles));
 
@@ -6393,7 +6394,26 @@ export function prepareSandpackFiles(
     processedContent = processCode(processedContent, normalizedPath);
     processedContent = repairBrokenImageUrls(processedContent);
     processedContent = injectPreviewNavBridge(processedContent, normalizedPath);
+
+    const existingSourcePath = sandpackSourcePaths.get(normalizedPath);
+    const existingContent = sandpackFiles[normalizedPath];
+    if (
+      existingSourcePath !== undefined &&
+      existingSourcePath !== path &&
+      existingContent !== processedContent
+    ) {
+      throw new PreviewPipelineError(
+        'prep',
+        `Canonical VFS paths "${existingSourcePath}" and "${path}" both map to Sandpack module "${normalizedPath}"; refusing an order-dependent overwrite.`,
+        {
+          blockedFiles: [existingSourcePath, path],
+          recoverableByRelaunch: true,
+        },
+      );
+    }
+
     sandpackFiles[normalizedPath] = processedContent;
+    sandpackSourcePaths.set(normalizedPath, path);
 
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && normalizedPath !== '/hooks-shim.ts' && !/(^|\/)unison\//i.test(normalizedPath)) {
       componentFilePaths.push(normalizedPath);

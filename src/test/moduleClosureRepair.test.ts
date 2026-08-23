@@ -36,3 +36,31 @@ describe('repairUnresolvedLocalImports', () => {
     expect(result.remaining[0].importPath).toBe('./components/BookingForm');
   });
 });
+
+describe('module-closure repair keeps Sandpack resolution intact', () => {
+  it('never rewires a nested companion import onto a route page of the same name', () => {
+    const files = {
+      '/src/pages/Gallery.tsx': [
+        "import GalleryCategory from './components/GalleryCategory';",
+        'export default function Gallery() { return <main><GalleryCategory /></main>; }',
+      ].join('\n'),
+    };
+    const result = repairUnresolvedLocalImports(files);
+    expect(result.files['/src/pages/Gallery.tsx']).toContain("'./components/GalleryCategory'");
+    expect(result.rewritten).toEqual([]);
+    expect(result.remaining).toHaveLength(1);
+  });
+
+  it('still recovers a companion that exists under a drifted directory', () => {
+    const files = {
+      '/src/pages/Gallery.tsx': [
+        "import GalleryCategory from './components/GalleryCategory';",
+        'export default function Gallery() { return <main><GalleryCategory /></main>; }',
+      ].join('\n'),
+      '/src/components/GalleryCategory.tsx': 'export default function GalleryCategory() { return <div />; }',
+    };
+    const result = repairUnresolvedLocalImports(files);
+    expect(result.remaining).toEqual([]);
+    expect(result.files['/src/pages/Gallery.tsx']).toContain("'../components/GalleryCategory'");
+  });
+});

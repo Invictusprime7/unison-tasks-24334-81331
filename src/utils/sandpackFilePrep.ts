@@ -3990,7 +3990,7 @@ function toRelativeFromDir(fromDir: string, toPath: string): string {
  * This ensures `generateMissingComponents` (which only scans import statements)
  * will then synthesize the actual component file.
  */
-function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): void {
+export function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
 
   for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
@@ -4202,7 +4202,7 @@ function computeModuleExports(content: string): {
   return { hasDefault, named, primaryName, hasStarReExport };
 }
 
-function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
+export function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
 
   for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
@@ -4330,7 +4330,7 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
  * permissive passthrough component to the target module so the contract holds
  * and the page still renders.
  */
-function synthesizeMissingJsxExports(sandpackFiles: Record<string, string>): void {
+export function synthesizeMissingJsxExports(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
 
   for (const [filePath, content] of Object.entries(sandpackFiles)) {

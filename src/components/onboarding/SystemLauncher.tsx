@@ -3997,10 +3997,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
         canonicalPageFallbackPaths,
-        // The strict JSX-import-contract check runs separately, off the
-        // main thread (see runStrictImportContractCheck below) — the
-        // generator's own inline check has no yield points and can freeze
-        // the tab for as long as it takes on drifted/oversized AI content.
+        // The shared preflight tail below owns structural repair, module
+        // closure and compile-safe acceptance. Sandpack projection is deferred
+        // to Preview so launch never compiles the same artifact twice.
         strictPreflight: false,
       };
       const launchArtifacts = await run.stage('preflight', async (signal) => {

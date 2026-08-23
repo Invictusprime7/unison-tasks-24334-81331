@@ -41,14 +41,15 @@ describe('repairUnresolvedLocalImports', () => {
     expect(result.files['/components/GalleryCategory.tsx']).toBeUndefined();
   });
 
-  it('leaves a genuinely missing, used module for the AI repair pass', () => {
+  it('synthesizes a genuinely missing, used module before the AI repair pass', () => {
     const files = {
       '/pages/Booking.tsx':
         `import BookingForm from './components/BookingForm';\nexport default function Booking(){return <BookingForm />;}\n`,
     };
     const result = repairUnresolvedLocalImports(files);
-    expect(result.remaining).toHaveLength(1);
-    expect(result.remaining[0].importPath).toBe('./components/BookingForm');
+    expect(result.remaining).toHaveLength(0);
+    expect(result.synthesized).toEqual(['/src/pages/components/BookingForm.tsx']);
+    expect(result.files['/src/pages/components/BookingForm.tsx']).toContain('export default BookingForm');
   });
 });
 
@@ -63,7 +64,8 @@ describe('module-closure repair keeps Sandpack resolution intact', () => {
     const result = repairUnresolvedLocalImports(files);
     expect(result.files['/src/pages/Gallery.tsx']).toContain("'./components/GalleryCategory'");
     expect(result.rewritten).toEqual([]);
-    expect(result.remaining).toHaveLength(1);
+    expect(result.remaining).toHaveLength(0);
+    expect(result.synthesized).toEqual(['/src/pages/components/GalleryCategory.tsx']);
   });
 
   it('still recovers a companion that exists under a drifted directory', () => {

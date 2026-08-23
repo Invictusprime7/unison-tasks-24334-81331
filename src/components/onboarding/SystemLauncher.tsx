@@ -74,7 +74,6 @@ import {
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
 import { runWizardStage4b } from "@/services/wizardStage4bRuntime";
-import { runStrictImportContractCheck } from "@/services/strictImportContractRuntime";
 import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { preflightNavWiring } from "@/services/preflightNavWiring";
@@ -3998,10 +3997,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
         canonicalPageFallbackPaths,
-        // The strict JSX-import-contract check runs separately, off the
-        // main thread (see runStrictImportContractCheck below) — the
-        // generator's own inline check has no yield points and can freeze
-        // the tab for as long as it takes on drifted/oversized AI content.
+        // The shared preflight tail below owns structural repair, module
+        // closure and compile-safe acceptance. Sandpack projection is deferred
+        // to Preview so launch never compiles the same artifact twice.
         strictPreflight: false,
       };
       const launchArtifacts = await run.stage('preflight', async (signal) => {
@@ -4009,18 +4007,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           yieldToHost: yieldToBrowser,
           signal,
         });
-        // This checks the exact final filesystem that the Builder will mount.
-        // Never hand off a Wizard artifact whose local module graph is open:
-        // the Builder cannot repair a module that was never persisted.
-        try {
-          await runStrictImportContractCheck({
-            files: artifacts.files,
-            entryPoint: artifacts.entryPoint,
-            themePresetId: resolvedPreset.id,
-            signal,
-          });
-        } catch (strictImportError) {
-          throw strictImportError;
+        // Canonical artifact assembly already runs the shared structural-repair
+        // → module-closure → compile-safe tail. Re-running the full Sandpack
+        // projection here duplicated that work in a worker and could hold the
+        // wizard at “Finalizing preview…” until its 180–240 second watchdog.
+        // Keep this boundary projection-free and assert only the invariant the
+        // handoff needs: every local module in the persisted artifact resolves.
+        const unresolved = findUnresolvedLocalImports(artifacts.files);
+        if (unresolved.length > 0) {
+          throw new Error(
+            `[WizardPreflight] canonical artifact has unresolved local imports: ${describeUnresolvedImports(unresolved)}`,
+          );
         }
         return artifacts;
       }, {

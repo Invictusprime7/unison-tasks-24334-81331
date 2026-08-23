@@ -121,19 +121,42 @@ export function repairUnresolvedLocalImports(
     if (statements.length === 0) continue;
 
     // 1. Path-variant recovery — the module exists somewhere in the bundle.
-    const matches = byBase.get(baseNameOf(item.importPath).toLowerCase()) || [];
-    const target =
-      matches.find((p) => dirOf(p) === dirOf(normalizeVfsPath(`${dirOf(item.filePath)}/${item.importPath}`))) ||
-      matches.find((p) => p.startsWith(`${dirOf(item.filePath)}/`)) ||
-      matches[0];
+    //
+    // This must stay conservative: matching on basename alone lets
+    // `./components/Gallery` resolve onto the ROUTE page `/src/pages/Gallery.tsx`,
+    // which rewires the bundle into self-imports and breaks Sandpack module
+    // resolution for the whole site. A candidate is only accepted when the
+    // specifier's full tail (`components/Gallery`) matches the candidate path,
+    // or when a single-segment specifier has exactly one basename match that is
+    // not the importing file itself.
+    const specTail = item.importPath
+      .replace(/^(?:\.\.?\/)+/, '')
+      .replace(/\.(tsx|jsx|ts|js)$/i, '')
+      .toLowerCase();
+    const isNestedSpecifier = specTail.includes('/');
+    const matches = (byBase.get(baseNameOf(item.importPath).toLowerCase()) || []).filter(
+      (p) => p !== item.filePath && !isLaneAAuthorityPath(p),
+    );
+    const withoutExt = (p: string) => p.replace(/\.(tsx|jsx|ts|js)$/i, '').toLowerCase();
+    const tailMatches = matches.filter(
+      (p) => withoutExt(p) === `/${specTail}` || withoutExt(p).endsWith(`/${specTail}`),
+    );
+    const target = isNestedSpecifier
+      ? tailMatches.find(
+          (p) => dirOf(p) === dirOf(normalizeVfsPath(`${dirOf(item.filePath)}/${item.importPath}`)),
+        ) ||
+        tailMatches.find((p) => p.startsWith(`${dirOf(item.filePath)}/`)) ||
+        tailMatches[0]
+      : tailMatches[0] || (matches.length === 1 ? matches[0] : undefined);
 
-    if (target && target !== item.filePath) {
+    if (target) {
       const spec = relativeSpecifier(item.filePath, target);
       files[item.filePath] = source.split(`'${item.importPath}'`).join(`'${spec}'`)
         .split(`"${item.importPath}"`).join(`"${spec}"`);
       rewritten.push(`${item.filePath} → "${item.importPath}" ⇒ "${spec}"`);
       continue;
     }
+
 
     // 2. Dead-import removal — nothing the page renders depends on it.
     let next = source;

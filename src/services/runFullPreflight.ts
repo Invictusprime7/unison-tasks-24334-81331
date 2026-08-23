@@ -24,6 +24,7 @@ import {
   type CompileDiagnostic,
   type CompileSafeOptions,
 } from './compileSafeGate';
+import { repairUnresolvedLocalImports } from './moduleClosureRepair';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;

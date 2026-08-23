@@ -28,6 +28,7 @@ import { preflightNavWiring } from './preflightNavWiring';
 import { runPreflightRepair, runPreflightRepairSteps } from './aiSitePreflightRepair';
 import { runCompileSafeAcceptance, summarizeCompileDiagnostics } from './compileSafeGate';
 import { repairUnresolvedLocalImports } from './moduleClosureRepair';
+import { runModuleClosureAndCompileSafe } from './runFullPreflight';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
 import { PreviewPipelineError } from './previewPipelineError';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';

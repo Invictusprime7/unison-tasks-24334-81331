@@ -5754,19 +5754,9 @@ export function processCode(code: string, filePath: string): string {
  * Normalize raw launcher/wizard VFS files before handing off to the Web Builder.
  * Ensures consistent paths, entry files, and CSS tokens.
  */
-function normalizeLauncherPath(path: string): string {
-  const normalized = path.startsWith('/') ? path : `/${path}`;
+import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
 
-  if (/^\/(App|main|index)\.(tsx|jsx|ts|js)$/.test(normalized) || normalized === '/index.css') {
-    return `/src${normalized}`;
-  }
-
-  if (/^\/(pages|components|styles)\//.test(normalized)) {
-    return `/src${normalized}`;
-  }
-
-  return normalized;
-}
+const normalizeLauncherPath = normalizeCanonicalVfsPath;
 
 function isBootstrapSourceEntry(path?: string | null): boolean {
   return !!path && /\/(main|index)\.(tsx|jsx|ts|js)$/.test(path);
@@ -5855,10 +5845,10 @@ export function normalizeLauncherFiles(
   }
 
   const out: Record<string, string> = {};
+  const canonicalResolvedFiles = normalizeCanonicalVfsFiles(resolvedFiles);
 
   // Normalize all paths to have leading slash
-  for (const [path, content] of Object.entries(resolvedFiles)) {
-    const normalized = normalizeLauncherPath(path);
+  for (const [normalized, content] of Object.entries(canonicalResolvedFiles)) {
     // Sanitize image URLs and enforce contrast in all files
     let sanitized = content;
     if (/\.(tsx?|jsx?|css)$/.test(normalized)) {

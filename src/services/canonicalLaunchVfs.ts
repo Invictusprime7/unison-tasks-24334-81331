@@ -365,6 +365,8 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   snapshot: SiteBundleSnapshot,
   options: { allowCanonicalPageFallback?: boolean } = {},
 ): Record<string, string> {
+  generatedFiles = normalizeCanonicalVfsFiles(generatedFiles);
+  canonicalFiles = normalizeCanonicalVfsFiles(canonicalFiles);
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
   const pathVariants = (path: string): string[] => {

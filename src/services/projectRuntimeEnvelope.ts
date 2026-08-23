@@ -73,13 +73,27 @@ export function resolveProjectActivePagePath(
   snapshot: SiteBundleSnapshot,
   requestedPath?: string | null,
 ): string {
-  if (!requestedPath?.trim()) {
-    throw new Error('[ProjectRuntimeEnvelope] missing persisted active page path');
-  }
-  if (!(requestedPath in snapshot.vfsFiles)) {
+  if (requestedPath?.trim()) {
+    if (requestedPath in snapshot.vfsFiles) return requestedPath;
     throw new Error('[ProjectRuntimeEnvelope] persisted active page path is not present in snapshot.vfsFiles');
   }
-  return requestedPath;
+
+  const pages = Object.values(snapshot.pageRegistry?.pages ?? {});
+  const homePage = pages.find((page) => page.pageId === snapshot.pageRegistry?.homePageId)
+    ?? pages.find((page) => page.isHome);
+  const candidates = [
+    homePage?.filePath,
+    snapshot.routerFile?.path,
+    ...pages.map((page) => page.filePath),
+    '/src/App.tsx',
+  ];
+  const recovered = candidates.find(
+    (path): path is string => typeof path === 'string' && Boolean(snapshot.vfsFiles[path]),
+  );
+  if (!recovered) {
+    throw new Error('[ProjectRuntimeEnvelope] snapshot has no renderable active page path');
+  }
+  return recovered;
 }
 
 /** Build the runtime spine only from a persisted revision and tenant identity. */

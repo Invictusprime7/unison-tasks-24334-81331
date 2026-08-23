@@ -83,6 +83,7 @@ describe('compile-safe acceptance gate', () => {
     expect(diagnostic.validationStage).toBe('module-resolution');
     expect(diagnostic.sourceLane).toBe('lane-b');
     expect(diagnostic.pagePath).toBe('/src/pages/Home.tsx');
+    expect(hasFatalCompileErrors(result.diagnostics)).toBe(true);
   });
 
   it('accepts a bundle whose imports resolve within the candidate set', () => {
@@ -223,6 +224,18 @@ describe('bundle-level topology gate (Phase 10)', () => {
     const result = runCompileSafeAcceptance({
       '/src/pages/Broken.tsx': 'export default function Broken() { return <div>; }',
     });
+    expect(hasFatalCompileErrors(result.diagnostics)).toBe(true);
+  });
+
+  it('treats every surviving compile error as fatal after repair', () => {
+    const result = runCompileSafeAcceptance({
+      '/src/pages/Gallery.tsx': [
+        "import GalleryCategory from './components/GalleryCategory';",
+        'export default function Gallery() { return <GalleryCategory />; }',
+      ].join('\n'),
+    });
+
+    expect(result.diagnostics.map((diagnostic) => diagnostic.diagnosticCode)).toContain('UNRESOLVED_MODULE');
     expect(hasFatalCompileErrors(result.diagnostics)).toBe(true);
   });
 });

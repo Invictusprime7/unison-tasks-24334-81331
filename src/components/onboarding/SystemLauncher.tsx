@@ -4002,9 +4002,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           yieldToHost: yieldToBrowser,
           signal,
         });
-        // The compile-safe acceptance gate inside canonical artifact assembly is
-        // authoritative. This additional Sandpack check is diagnostic only: it
-        // must never strand a completed launch before the Builder handoff.
+        // This checks the exact final filesystem that the Builder will mount.
+        // Never hand off a Wizard artifact whose local module graph is open:
+        // the Builder cannot repair a module that was never persisted.
         try {
           await runStrictImportContractCheck({
             files: artifacts.files,
@@ -4013,14 +4013,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             signal,
           });
         } catch (strictImportError) {
-          launchReliabilityMode = 'lane-b-degraded';
-          run.degrade(
-            'preflight',
-            'preflight.sandpack_import_check',
-            'The site opened with import diagnostics available in the builder.',
-            strictImportError instanceof Error ? strictImportError.message : String(strictImportError),
-          );
-          console.warn('[SystemLauncher] Sandpack import diagnostics did not block handoff', strictImportError);
+          throw strictImportError;
         }
         return artifacts;
       }, {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { applyAIBuilderFiles } from '@/services/aiBuilderApply';
-import { applyAIOutputToVFS } from '@/services/aiVFSOrchestrator';
+import { applyAIOutputToVFS, canonicalizeAIFilePaths } from '@/services/aiVFSOrchestrator';
 import { clearLiveEditedVfsPaths, markLiveEditedVfsPaths } from '@/services/snapshotProjector';
 import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
@@ -93,6 +93,17 @@ describe('applyAIBuilderFiles', () => {
 
     const preview = buildPreviewArtifacts({ sourceFiles: files });
     expect(Object.values(preview.sandpackFiles).join('\n')).toContain('After aliased AI edit');
+  });
+
+  it('promotes new AI component aliases into the canonical source namespace', () => {
+    const files = canonicalizeAIFilePaths({
+      '/components/GalleryCategory.tsx': 'export default function GalleryCategory(){ return <section />; }',
+    }, {
+      '/src/pages/Gallery.tsx': "import GalleryCategory from '../components/GalleryCategory';",
+    });
+
+    expect(files['/src/components/GalleryCategory.tsx']).toContain('GalleryCategory');
+    expect(files['/components/GalleryCategory.tsx']).toBeUndefined();
   });
 
   it('keeps theme and section image edits visible over an older generated-site snapshot', () => {

@@ -1897,7 +1897,11 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         }
       }
 
+      // Per-turn apply outcome, surfaced on each file card in the chat.
+      let editApplyStatus: { status: VFSEdit['status']; reason?: string } = { status: 'pending' };
+
       // Handle multi-file output — prefer orchestrator, fall back to legacy callback
+
       if (multiFileOutput) {
         liveStep('validating', `Multi-file output: ${Object.keys(multiFileOutput).length} files detected`, Object.keys(multiFileOutput).join(', '));
         console.log('[AIBuilderPanel] Multi-file output detected:', Object.keys(multiFileOutput));

@@ -47,6 +47,19 @@ So in-builder AI edits stay snapshot-aware, the AI context sent with each reques
 5. AI context (`aiVFSOrchestrator` / builder request envelope) — include snapshot meta + registered page contents + token contract.
 6. Tests — surgical edit to an existing page succeeds with no `themeTokens` present; a page-adding patch still routes to recompile; snapshot page coverage holds after a surgical commit.
 
+## Live, viewable AI-edited files in the AI Builder chrome
+
+Today the chat only lists paths behind a "View N files changed" button that hands off elsewhere. Make the edited files inspectable inline, as they are written:
+
+- **Inline file cards** in `AIConversationMessage.tsx`: each edited path expands in place to a read-only, syntax-highlighted view of the file's new contents, with a diff toggle (before/after) sourced from the pre-patch VFS copy.
+- **Streaming state**: while the AI is still writing a file, the card shows a live "writing…" state with the partial contents already received, so nothing is hidden until the run finishes.
+- **Status per file**: each card shows whether that file was applied, pending review, or rejected by the commit gate — with the gate's actual reason attached to the rejected file, not just a global toast.
+- **Jump-to actions**: "Open in Code" (focus the path in the editor) and "Open in Preview" (navigate the Sandpack route that renders it).
+- **Rejected runs stay inspectable**: when the commit gate blocks a patch, the proposed files remain viewable in the chat so you can read what the AI produced instead of losing it.
+
+This is presentation only — it reads the patch/VFS data the apply path already carries and does not change commit behavior.
+
 ## Out of scope
 
 No change to the wizard pipeline, Lane B authoring, the chrome authority rules, or the Sandpack compile path.
+

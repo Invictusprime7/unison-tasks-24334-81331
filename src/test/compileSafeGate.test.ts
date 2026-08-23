@@ -141,4 +141,20 @@ describe('compile-safe acceptance gate', () => {
     expect(accepted.accepted).toBe(true);
     expect(accepted.files['/src/pages/Home.tsx']).toContain('ok');
   });
+
+  it('does not run runtime dependency checks over build tooling config files', () => {
+    const result = runCompileSafeAcceptance({
+      '/vite.config.ts': [
+        "import { defineConfig } from 'vite';",
+        "import react from '@vitejs/plugin-react-swc';",
+        "import path from 'path';",
+        'export default defineConfig({ plugins: [react()], resolve: { alias: { "@": path.resolve("./src") } } });',
+      ].join('\n'),
+      '/tailwind.config.ts': "import animate from 'tailwindcss-animate';\nexport default { plugins: [animate] };",
+      '/src/pages/Home.tsx': 'export default function Home() { return <main>Home</main>; }',
+    });
+
+    expect(result.blocking).toEqual([]);
+    expect(result.accepted).toBe(true);
+  });
 });

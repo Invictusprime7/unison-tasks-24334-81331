@@ -6,6 +6,7 @@ import { runPrepareSandpackFilesOffThread } from '@/services/strictImportContrac
 import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
+import { assertPreviewSmokeSafe } from '@/services/previewSmokeGate';
 import {
   assertNoMinimalFallbackPreview,
   assertSnapshotPreviewFileCoverage,
@@ -193,6 +194,12 @@ function finishPreviewArtifacts(
   assertNoMinimalFallbackPreview(sandpackFiles, finalPreviewResolution, 'Preview artifact integrity gate');
   assertSnapshotPreviewFileCoverage(sourceFiles, sandpackFiles, finalPreviewResolution, 'Preview artifact coverage gate');
   assertSnapshotPreviewRouteReachability(sandpackFiles, finalPreviewResolution, 'Preview artifact route gate');
+
+  // Phase 11 — preview smoke gate. Last deterministic boot check before
+  // Sandpack mounts the bundle, so a module-resolution / route-component /
+  // top-level-throw defect surfaces as a pipeline error with provenance
+  // instead of an opaque Sandpack runtime crash.
+  assertPreviewSmokeSafe(sandpackFiles, 'Preview smoke gate');
 
   // Resolve dependencies from Sandpack's actual entry graph. Snapshot-owned
   // VFS facades may expose many optional libraries, but an unreferenced

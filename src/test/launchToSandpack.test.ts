@@ -116,7 +116,7 @@ describe("launchStateToSandpackFiles", () => {
 
     expect(() => buildPreviewArtifacts({
       sourceFiles: { '/.unison/site-bundle-snapshot.json': JSON.stringify(snapshot) },
-    })).toThrow(/refusing to drop either generated file/);
+    })).toThrow(/refusing an order-dependent overwrite/);
   });
 
   it("merges the lightweight preview runtime with final artifact imports while preserving themePresetId CSS", () => {

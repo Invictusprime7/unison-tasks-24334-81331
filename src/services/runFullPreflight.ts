@@ -348,6 +348,7 @@ export function runFullPreflight(
         missing: requiredIntentClosure.missing,
       },
       finalRepair,
+      moduleClosure,
       compileSafe,
       bundleTopology,
     },

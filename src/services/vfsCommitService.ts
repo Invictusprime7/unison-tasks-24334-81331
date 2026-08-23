@@ -316,8 +316,7 @@ export async function commitMutation(
       }
     }
     if (canonicalError) {
-      const err = canonicalError;
-      const detail = err instanceof Error ? err.message : String(err);
+      const detail = canonicalError instanceof Error ? canonicalError.message : String(canonicalError);
       log('canonical', 'error', 'canonical pipeline threw', detail);
       return finalize({
         input,

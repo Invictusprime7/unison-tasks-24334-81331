@@ -3997,6 +3997,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         businessRuntime,
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
+        canonicalPageFallbackPaths,
         // The strict JSX-import-contract check runs separately, off the
         // main thread (see runStrictImportContractCheck below) — the
         // generator's own inline check has no yield points and can freeze

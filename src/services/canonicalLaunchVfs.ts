@@ -873,6 +873,7 @@ function* buildCanonicalLaunchArtifactSteps(
     console.warn('[canonicalLaunchVfs] module closure repair failed; continuing', error);
   }
 
+  try {
     const compileSafe = runCompileSafeAcceptance(mergedFiles, {
       sourceLane: 'lane-b',
       pipelineStage: 'generation',

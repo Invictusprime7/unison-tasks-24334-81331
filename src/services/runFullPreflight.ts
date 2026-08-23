@@ -405,7 +405,7 @@ export function runFullPreflight(
     canonicalFiles: options.canonicalFiles,
   });
   files = tail.files;
-  const { moduleClosure, compileSafe, bundleTopology } = tail;
+  const { structuralRepair, moduleClosure, compileSafe, bundleTopology } = tail;
   const compileDiagnostics = tail.compileDiagnostics;
 
   return {
@@ -419,6 +419,7 @@ export function runFullPreflight(
         missing: requiredIntentClosure.missing,
       },
       finalRepair,
+      structuralRepair,
       moduleClosure,
       compileSafe,
       bundleTopology,

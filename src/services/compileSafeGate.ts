@@ -39,7 +39,8 @@ export type CompileValidationStage =
   | 'react-runtime'
   | 'dependency-resolution'
   | 'module-resolution'
-  | 'export-contract';
+  | 'export-contract'
+  | 'bundle-topology';
 
 export type CompileDiagnosticCode =
   | 'PARSE_ERROR'
@@ -47,7 +48,11 @@ export type CompileDiagnosticCode =
   | 'MISSING_HOOK_IMPORT'
   | 'UNSUPPORTED_DEPENDENCY'
   | 'UNRESOLVED_MODULE'
-  | 'EXPORT_MISMATCH';
+  | 'EXPORT_MISMATCH'
+  | 'DUPLICATE_DECLARATION'
+  | 'MISSING_TOPOLOGY_FILE'
+  | 'MISSING_ROUTE_TARGET';
+
 
 export interface CompileDiagnostic {
   /** VFS path of the offending artifact. */

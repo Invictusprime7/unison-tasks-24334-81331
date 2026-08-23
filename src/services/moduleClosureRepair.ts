@@ -379,6 +379,8 @@ export async function repairModuleClosureWithAI(
   return {
     files,
     rewritten: [...deterministic.rewritten, ...repairedPaths.map((p) => `${p} (ai-repair)`)],
+    recovered: deterministic.recovered,
+    synthesized: deterministic.synthesized,
     dropped: deterministic.dropped,
     remaining,
     attempts,

@@ -37,6 +37,31 @@ export interface RunFullPreflightOptions {
   compileSafe?: boolean;
 }
 
+/** Stage outcome. `failed` can never masquerade as "nothing to do". */
+export type StageOutcome = 'applied' | 'declined' | 'failed';
+
+export interface ModuleClosureStageReport {
+  status: StageOutcome;
+  rewritten: string[];
+  recovered: string[];
+  synthesized: string[];
+  dropped: string[];
+  /** Specifiers still unresolved after the ladder ran. */
+  remaining: string[];
+}
+
+export interface CompileSafeStageReport {
+  status: 'accepted' | 'blocked' | 'skipped' | 'failed';
+  repaired: string[];
+  blockingCount: number;
+  summary: string;
+}
+
+export interface BundleTopologyStageReport {
+  status: 'accepted' | 'blocked' | 'skipped' | 'failed';
+  missing: string[];
+}
+
 export interface RunFullPreflightResult {
   files: Record<string, string>;
   stages: {
@@ -45,20 +70,141 @@ export interface RunFullPreflightResult {
     forbiddenStrip: { stripped: number; forbidden: string[] };
     requiredIntentClosure: { injected: string[]; missing: string[] };
     finalRepair: 'ok' | 'skipped' | 'failed';
-    compileSafe: {
-      status: 'accepted' | 'blocked' | 'skipped' | 'failed';
-      repaired: string[];
-      blockingCount: number;
-      summary: string;
-    };
+    /** Single unresolved-module ladder (resolve → recover → synthesize → drop). */
+    moduleClosure: ModuleClosureStageReport;
+    compileSafe: CompileSafeStageReport;
     /** Phase 10 — snapshot topology vs. candidate bundle. */
-    bundleTopology: {
-      status: 'accepted' | 'blocked' | 'skipped' | 'failed';
-      missing: string[];
-    };
+    bundleTopology: BundleTopologyStageReport;
   };
   /** Structured compile diagnostics for failure provenance / AI repair. */
   compileDiagnostics: CompileDiagnostic[];
+}
+
+export interface ClosureAndCompileSafeOptions {
+  siteBundleSnapshot?: SiteBundleSnapshot | null;
+  sourceLane?: CompileSafeOptions['sourceLane'];
+  pipelineStage?: CompileSafeOptions['pipelineStage'];
+  /** Set false to skip the compile-safe / topology gates (diagnostics only). */
+  compileSafe?: boolean;
+  /** Canonical Stage 4b bodies available to ladder rung 2 (recover). */
+  canonicalFiles?: Record<string, string>;
+}
+
+export interface ClosureAndCompileSafeResult {
+  files: Record<string, string>;
+  moduleClosure: ModuleClosureStageReport;
+  compileSafe: CompileSafeStageReport;
+  bundleTopology: BundleTopologyStageReport;
+  compileDiagnostics: CompileDiagnostic[];
+}
+
+/**
+ * The shared tail of every repair pipeline: the unresolved-module ladder, the
+ * compile-safe acceptance boundary and bundle topology validation.
+ *
+ * This is exported so the launch path (canonicalLaunchVfs) and the commit path
+ * (runFullPreflight) execute the SAME closure policy in the SAME order instead
+ * of hand-rolling two divergent tails.
+ */
+export function runModuleClosureAndCompileSafe(
+  inputFiles: Record<string, string>,
+  options: ClosureAndCompileSafeOptions = {},
+): ClosureAndCompileSafeResult {
+  let files = inputFiles;
+
+  const canonicalFiles =
+    options.canonicalFiles ?? options.siteBundleSnapshot?.vfsFiles ?? undefined;
+
+  let moduleClosure: ModuleClosureStageReport = {
+    status: 'declined',
+    rewritten: [],
+    recovered: [],
+    synthesized: [],
+    dropped: [],
+    remaining: [],
+  };
+  try {
+    const closure = repairUnresolvedLocalImports(files, { canonicalFiles });
+    const changed =
+      closure.rewritten.length > 0 ||
+      closure.recovered.length > 0 ||
+      closure.synthesized.length > 0 ||
+      closure.dropped.length > 0;
+    if (changed) files = closure.files;
+    moduleClosure = {
+      status: changed ? 'applied' : 'declined',
+      rewritten: closure.rewritten,
+      recovered: closure.recovered,
+      synthesized: closure.synthesized,
+      dropped: closure.dropped,
+      remaining: closure.remaining.map((item) => `${item.filePath} → "${item.importPath}"`),
+    };
+    if (changed) console.log('[preflight] module closure ladder', moduleClosure);
+  } catch (e) {
+    console.warn('[preflight] module closure ladder failed', e);
+    moduleClosure = { ...moduleClosure, status: 'failed' };
+  }
+
+  let compileSafe: CompileSafeStageReport = {
+    status: 'skipped',
+    repaired: [],
+    blockingCount: 0,
+    summary: 'skipped',
+  };
+  let compileDiagnostics: CompileDiagnostic[] = [];
+
+  if (options.compileSafe !== false) {
+    try {
+      const gate = runCompileSafeAcceptance(files, {
+        sourceLane: options.sourceLane ?? 'unknown',
+        pipelineStage: options.pipelineStage ?? 'acceptance',
+      });
+      files = gate.files;
+      compileDiagnostics = gate.diagnostics;
+      compileSafe = {
+        status: gate.accepted ? 'accepted' : 'blocked',
+        repaired: gate.repaired,
+        blockingCount: gate.blocking.length,
+        summary: summarizeCompileDiagnostics(gate.diagnostics),
+      };
+      if (!gate.accepted) {
+        console.warn('[preflight] compile-safe gate blocked', {
+          blocking: gate.blocking.slice(0, 10).map((d) => ({
+            path: d.pagePath,
+            code: d.diagnosticCode,
+            stage: d.validationStage,
+            line: d.line,
+          })),
+        });
+      }
+    } catch (e) {
+      console.warn('[preflight] compile-safe gate failed', e);
+      compileSafe = { status: 'failed', repaired: [], blockingCount: 0, summary: 'gate threw' };
+    }
+  }
+
+  let bundleTopology: BundleTopologyStageReport = { status: 'skipped', missing: [] };
+  if (options.compileSafe !== false && options.siteBundleSnapshot) {
+    try {
+      const topologyDiagnostics = validateBundleTopology(files, options.siteBundleSnapshot, {
+        sourceLane: options.sourceLane ?? 'unknown',
+        pipelineStage: options.pipelineStage ?? 'acceptance',
+      });
+      compileDiagnostics = [...compileDiagnostics, ...topologyDiagnostics];
+      bundleTopology = {
+        status: topologyDiagnostics.length === 0 ? 'accepted' : 'blocked',
+        missing: topologyDiagnostics.map((d) => d.pagePath),
+      };
+      if (topologyDiagnostics.length > 0) {
+        console.warn('[preflight] bundle topology blocked', bundleTopology.missing);
+      }
+    } catch (e) {
+      console.warn('[preflight] bundle topology check failed', e);
+      bundleTopology = { status: 'failed', missing: [] };
+    }
+  }
+
+  return { files, moduleClosure, compileSafe, bundleTopology, compileDiagnostics };
 }
 
 export function runFullPreflight(

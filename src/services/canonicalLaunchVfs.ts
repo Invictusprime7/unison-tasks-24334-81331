@@ -941,6 +941,7 @@ function* buildCanonicalLaunchArtifactSteps(
     if (tail.moduleClosure.status !== 'declined' || tail.compileSafe.status !== 'accepted') {
       console.warn('[canonicalLaunchVfs] preflight tail', {
         moduleClosure: tail.moduleClosure,
+        componentContracts: tail.componentContracts,
         compileSafe: tail.compileSafe,
         bundleTopology: tail.bundleTopology,
       });

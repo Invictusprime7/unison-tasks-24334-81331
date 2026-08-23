@@ -88,6 +88,8 @@ export interface RunFullPreflightResult {
     structuralRepair: StageOutcome;
     /** Single unresolved-module ladder (resolve → recover → synthesize → drop). */
     moduleClosure: ModuleClosureStageReport;
+    /** JSX value contracts repaired and validated before acceptance. */
+    componentContracts: ClosureAndCompileSafeResult['componentContracts'];
     compileSafe: CompileSafeStageReport;
     /** Phase 10 — snapshot topology vs. candidate bundle. */
     bundleTopology: BundleTopologyStageReport;
@@ -445,7 +447,7 @@ export function runFullPreflight(
     canonicalFiles: options.canonicalFiles,
   });
   files = tail.files;
-  const { structuralRepair, moduleClosure, compileSafe, bundleTopology } = tail;
+  const { structuralRepair, moduleClosure, componentContracts, compileSafe, bundleTopology } = tail;
   const compileDiagnostics = tail.compileDiagnostics;
 
   return {
@@ -461,6 +463,7 @@ export function runFullPreflight(
       finalRepair,
       structuralRepair,
       moduleClosure,
+      componentContracts,
       compileSafe,
       bundleTopology,
     },

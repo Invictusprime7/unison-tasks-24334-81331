@@ -149,6 +149,7 @@ import {
   findUnresolvedLocalImports,
   describeUnresolvedImports,
 } from '@/services/laneBCompanionModules';
+import { repairModuleClosureWithAI } from '@/services/moduleClosureRepair';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';

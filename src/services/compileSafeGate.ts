@@ -535,8 +535,21 @@ export function runCompileSafeAcceptance(
         line: result.line,
         column: result.column,
       });
+      continue;
+    }
+    // Duplicate `function`/`var` declarations parse fine but silently shadow a
+    // generated component. Reported (never rewritten) so provenance survives.
+    for (const name of detectDuplicateTopLevelDeclarations(source)) {
+      diag(
+        path,
+        'parse',
+        'DUPLICATE_DECLARATION',
+        `'${name}' is declared more than once at module scope`,
+        'warning',
+      );
     }
   }
+
 
   // ── D + E + F: bundle-level resolution against the candidate file set
   const candidatePaths = new Set(Object.keys(files));

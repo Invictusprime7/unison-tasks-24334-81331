@@ -91,10 +91,10 @@ function appContextFor(snapshot: SiteBundleSnapshot, input: SurgicalProjectionIn
   return {
     ...(existing || ({} as RuntimeAppContext)),
     industry: input.industry || existing?.industry || snapshot.meta?.industry || snapshot.industry,
-    brandName: existing?.brandName || input.businessName || snapshot.businessName,
-    systemType: existing?.systemType ?? snapshot.meta?.systemId ?? null,
-    themePresetId: existing?.themePresetId ?? snapshot.meta?.themePresetId ?? null,
-    templateId: existing?.templateId ?? snapshot.meta?.templateId ?? null,
+    businessName: existing?.businessName || input.businessName || snapshot.businessName,
+    systemType: existing?.systemType ?? snapshot.meta?.systemId ?? undefined,
+    themePresetId: existing?.themePresetId ?? snapshot.meta?.themePresetId ?? undefined,
+    templateId: existing?.templateId ?? snapshot.meta?.templateId ?? undefined,
     generatedAt: new Date().toISOString(),
   } as RuntimeAppContext;
 }

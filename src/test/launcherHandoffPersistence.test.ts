@@ -9,6 +9,10 @@ import {
 } from "@/services/launcherHandoffPersistence";
 import { findUnresolvedLocalImports } from '@/services/laneBCompanionModules';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
+import {
+  PUBLISHED_RUNTIME_METADATA_PATH,
+  PUBLISHED_RUNTIME_MODULE_PATH,
+} from '@/services/publishedRuntimeModule';
 
 describe("launcher handoff persistence", () => {
   beforeEach(() => {
@@ -170,6 +174,33 @@ describe("launcher handoff persistence", () => {
     expect(previewFiles['/pages/Home.tsx']).toContain("../lib/format");
     expect(previewFiles['/lib/format.ts']).toContain('format');
     expect(previewFiles['/hooks/useCart.ts']).toContain('useCart');
+  });
+
+  it('keeps the published runtime contract and repairs its source module before handoff closure', () => {
+    const runtime = {
+      version: '1.0',
+      runtimeVersion: '1.0',
+      siteId: 'site-handoff',
+      businessId: null,
+      projectId: null,
+      snapshotId: 'snap-handoff-runtime',
+      endpoint: null,
+      runtimeEndpoint: null,
+      formEndpoint: null,
+      controllerEndpoints: {},
+    };
+    const navigationState = buildLauncherNavigationState({
+      vfsFiles: {
+        '/src/App.tsx': "import { hydrate } from './components/catalogHydration'; export default function App(){ return <main>{hydrate()}</main>; }",
+        '/src/components/catalogHydration.ts': "import { PUBLISHED_RUNTIME_CONFIG } from '../unison/publishedRuntime'; export const hydrate = () => PUBLISHED_RUNTIME_CONFIG.siteId;",
+        [PUBLISHED_RUNTIME_METADATA_PATH]: JSON.stringify(runtime),
+      },
+    });
+
+    const files = navigationState.vfsFiles as Record<string, string>;
+    expect(files[PUBLISHED_RUNTIME_METADATA_PATH]).toBe(JSON.stringify(runtime));
+    expect(files[PUBLISHED_RUNTIME_MODULE_PATH]).toContain('site-handoff');
+    expect(findUnresolvedLocalImports(files)).toEqual([]);
   });
 
   it('uses the same canonical artifact for persisted recovery and immediate preview', () => {

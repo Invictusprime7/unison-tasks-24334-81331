@@ -15,10 +15,12 @@
  *     `null` and callers preserve their seed props.
  */
 
+import { PUBLISHED_RUNTIME_IMPORT_SPECIFIER } from '@/services/publishedRuntimeModule';
+
 export const BUSINESS_PROFILE_HYDRATION_PATH = '/src/components/businessProfile.ts';
 
 export const BUSINESS_PROFILE_HYDRATION_MODULE = `import { useEffect, useState } from 'react';
-import { PUBLISHED_RUNTIME_CONFIG } from '@/unison/publishedRuntime';
+import { PUBLISHED_RUNTIME_CONFIG } from '${PUBLISHED_RUNTIME_IMPORT_SPECIFIER}';
 
 export interface BusinessProfileLive {
   businessId: string;

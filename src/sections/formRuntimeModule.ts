@@ -6,10 +6,12 @@
  * public form-submit Edge Function. Builder preview keeps its host behavior.
  */
 
+import { PUBLISHED_RUNTIME_IMPORT_SPECIFIER } from '@/services/publishedRuntimeModule';
+
 export const FORM_RUNTIME_PATH = '/src/components/formRuntime.ts';
 
 export const FORM_RUNTIME_MODULE = `import { useEffect } from 'react';
-import { PUBLISHED_RUNTIME_CONFIG } from '@/unison/publishedRuntime';
+import { PUBLISHED_RUNTIME_CONFIG } from '${PUBLISHED_RUNTIME_IMPORT_SPECIFIER}';
 
 type PublishedRuntimeConfig = {
   siteId: string | null;

@@ -31,6 +31,7 @@ import { parseGeneratedSource } from './aiSitePreflightRepair';
 import { supabase } from '@/integrations/supabase/client';
 import { extractCleanCode } from '@/utils/aiCodeCleaner';
 import { synthesizeCompanionModule } from './companionModuleSynthesis';
+import { normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
 
 export interface ModuleClosureRepairResult {
   files: Record<string, string>;
@@ -59,7 +60,7 @@ const MODULE_EXTENSION_CANDIDATES = ['', '.tsx', '.ts', '.jsx', '.js', '/index.t
 
 /** Absolute path a relative specifier points at, without extension resolution. */
 function absoluteSpecifierPath(importerPath: string, specifier: string): string {
-  return normalizeVfsPath(`${dirOf(importerPath)}/${specifier}`);
+  return normalizeCanonicalVfsPath(`${dirOf(importerPath)}/${specifier}`);
 }
 
 function findCanonicalBody(
@@ -69,7 +70,7 @@ function findCanonicalBody(
   if (!canonicalFiles) return null;
   const normalized: Record<string, string> = {};
   for (const [path, content] of Object.entries(canonicalFiles)) {
-    if (typeof content === 'string') normalized[normalizeVfsPath(path)] = content;
+    if (typeof content === 'string') normalized[normalizeCanonicalVfsPath(path)] = content;
   }
   for (const suffix of MODULE_EXTENSION_CANDIDATES) {
     const candidate = `${absolutePath}${suffix}`;
@@ -145,8 +146,19 @@ export function repairUnresolvedLocalImports(
   options: ModuleClosureRepairOptions = {},
 ): ModuleClosureRepairResult {
   const files: Record<string, string> = {};
+  const canonicalAuthority = new Set<string>();
   for (const [path, content] of Object.entries(inputFiles || {})) {
-    if (typeof content === 'string') files[normalizeVfsPath(path)] = content;
+    if (typeof content !== 'string') continue;
+    const canonicalPath = normalizeCanonicalVfsPath(path);
+    const isAlreadyCanonical = normalizeVfsPath(path) === canonicalPath;
+    // Repair and handoff must reason over the same path space. If a legacy
+    // bare path and its canonical /src path collide, preserve the explicitly
+    // canonical source instead of certifying a graph that handoff later rejects.
+    if (files[canonicalPath] !== undefined && canonicalAuthority.has(canonicalPath) && !isAlreadyCanonical) {
+      continue;
+    }
+    files[canonicalPath] = content;
+    if (isAlreadyCanonical) canonicalAuthority.add(canonicalPath);
   }
 
   const rewritten: string[] = [];

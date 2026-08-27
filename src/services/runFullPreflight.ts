@@ -78,6 +78,10 @@ export interface BundleTopologyStageReport {
 
 export interface RunFullPreflightResult {
   files: Record<string, string>;
+  runtime?: {
+    execution: 'worker' | 'compatibility-fallback';
+    reason?: string;
+  };
   /** Generated files that syntax repair could not recover. Never seal these. */
   quarantinedPaths?: string[];
   /** Parser diagnostics retained for an actionable finalization error. */
@@ -293,7 +297,7 @@ export function runModuleClosureAndCompileSafe(
   }
 
   let bundleTopology: BundleTopologyStageReport = { status: 'skipped', missing: [] };
-  if (options.compileSafe !== false && options.siteBundleSnapshot) {
+  if (options.siteBundleSnapshot) {
     try {
       const topologyDiagnostics = validateBundleTopology(files, options.siteBundleSnapshot, {
         sourceLane: options.sourceLane ?? 'unknown',

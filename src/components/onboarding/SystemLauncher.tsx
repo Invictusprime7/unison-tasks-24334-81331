@@ -78,6 +78,7 @@ import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { preflightNavWiring } from "@/services/preflightNavWiring";
 import { runPreflightRepair } from "@/services/aiSitePreflightRepair";
+import { runFullPreflight } from "@/services/runFullPreflight";
 import { buildCanonicalLaunchArtifactsAsync } from "@/services/canonicalLaunchVfs";
 import {
   createConfirmedLaunchIds,
@@ -3934,6 +3935,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const artifacts = await buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
           yieldToHost: yieldToBrowser,
           signal,
+          preflightRuntime: {
+            workerTimeoutMs: 30_000,
+            fallbackPreflight: (files, options) => runFullPreflight(files, {
+              ...options,
+              // The worker owns the expensive compile-safe pass. If that
+              // boundary is unavailable, retain every structural safety gate
+              // and let Preview perform the deferred bundle compilation.
+              compileSafe: false,
+            }),
+          },
         });
         // Canonical artifact assembly already runs the shared structural-repair
         // → module-closure → compile-safe tail. Re-running the full Sandpack
@@ -3953,6 +3964,15 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         // Artifact assembly remains canonical and has no competing scaffold
         // fallback. Sandpack diagnostics above are intentionally non-blocking.
       });
+      if (launchArtifacts.preflightResult.runtime?.execution === 'compatibility-fallback') {
+        launchReliabilityMode = 'lane-b-degraded';
+        run.degrade(
+          'preflight',
+          'preflight.worker_unavailable',
+          'Final preview checks used compatibility mode; the site was still validated and saved.',
+          launchArtifacts.preflightResult.runtime.reason,
+        );
+      }
       // Seal diagnostics: registered pages that reached the sealed revision
       // without a file body. The launch still opens, but the gap is recorded.
       const sealedMissingPageFiles =

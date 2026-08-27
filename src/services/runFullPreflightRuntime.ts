@@ -28,6 +28,7 @@ export interface FullPreflightWorkerLike {
 export interface RunFullPreflightRuntimeOptions {
   signal?: AbortSignal;
   workerFactory?: () => FullPreflightWorkerLike;
+  workerTimeoutMs?: number;
   /** Test/SSR compatibility only. Browser launch code must use the worker. */
   fallbackPreflight?: typeof runFullPreflight;
 }
@@ -38,6 +39,15 @@ export class FullPreflightWorkerBootstrapError extends Error {
     this.name = 'FullPreflightWorkerBootstrapError';
   }
 }
+
+export class FullPreflightWorkerTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Wizard final preflight worker did not respond within ${timeoutMs}ms.`);
+    this.name = 'FullPreflightWorkerTimeoutError';
+  }
+}
+
+const DEFAULT_WORKER_TIMEOUT_MS = 30_000;
 
 function defaultWorkerFactory(): FullPreflightWorkerLike {
   if (typeof Worker === 'undefined') {
@@ -72,10 +82,13 @@ function runWorker(
   worker: FullPreflightWorkerLike,
   request: FullPreflightWorkerRequest,
   signal?: AbortSignal,
+  timeoutMs = DEFAULT_WORKER_TIMEOUT_MS,
 ): Promise<RunFullPreflightResult> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const cleanup = () => {
+      if (timer) clearTimeout(timer);
       worker.onmessage = null;
       worker.onerror = null;
       signal?.removeEventListener('abort', handleAbort);
@@ -117,6 +130,9 @@ function runWorker(
       return;
     }
     signal?.addEventListener('abort', handleAbort, { once: true });
+    timer = setTimeout(() => {
+      settle(() => reject(new FullPreflightWorkerTimeoutError(timeoutMs)));
+    }, timeoutMs);
     try {
       worker.postMessage(request);
     } catch (error) {
@@ -132,17 +148,28 @@ export async function runFullPreflightRuntime(
   options: RunFullPreflightOptions,
   runtime: RunFullPreflightRuntimeOptions = {},
 ): Promise<RunFullPreflightResult> {
+  const timeoutMs = runtime.workerTimeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS;
+  console.info('[runFullPreflightRuntime] worker started', { timeoutMs });
   try {
-    return await runWorker((runtime.workerFactory ?? defaultWorkerFactory)(), {
+    const result = await runWorker((runtime.workerFactory ?? defaultWorkerFactory)(), {
       requestId: createRequestId(),
       files,
       options,
-    }, runtime.signal);
+    }, runtime.signal, timeoutMs);
+    console.info('[runFullPreflightRuntime] worker completed');
+    return { ...result, runtime: { execution: 'worker' } };
   } catch (error) {
-    if (!(error instanceof FullPreflightWorkerBootstrapError) || !runtime.fallbackPreflight) {
+    const canFallback =
+      error instanceof FullPreflightWorkerBootstrapError ||
+      error instanceof FullPreflightWorkerTimeoutError;
+    if (!canFallback || !runtime.fallbackPreflight) {
       throw error;
     }
     if (runtime.signal?.aborted) throw abortError(runtime.signal);
-    return runtime.fallbackPreflight(files, options);
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn('[runFullPreflightRuntime] worker unavailable; using compatibility fallback', { reason });
+    const result = runtime.fallbackPreflight(files, options);
+    console.info('[runFullPreflightRuntime] compatibility fallback completed');
+    return { ...result, runtime: { execution: 'compatibility-fallback', reason } };
   }
 }

@@ -28,8 +28,42 @@ describe('runFullPreflightRuntime', () => {
 
     await expect(runFullPreflightRuntime({}, {}, {
       workerFactory: () => worker,
-    })).resolves.toBe(result);
+    })).resolves.toMatchObject({
+      ...result,
+      runtime: { execution: 'worker' },
+    });
     expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it('terminates a silent worker at the runtime deadline and uses the compatibility fallback', async () => {
+    vi.useFakeTimers();
+    const fallbackResult = fakeResult();
+    const terminate = vi.fn();
+    const fallbackPreflight = vi.fn(() => fallbackResult);
+    const worker: FullPreflightWorkerLike = {
+      onmessage: null,
+      onerror: null,
+      postMessage: vi.fn(),
+      terminate,
+    };
+
+    const pending = runFullPreflightRuntime({}, {}, {
+      workerFactory: () => worker,
+      workerTimeoutMs: 50,
+      fallbackPreflight,
+    });
+    await vi.advanceTimersByTimeAsync(50);
+
+    await expect(pending).resolves.toMatchObject({
+      ...fallbackResult,
+      runtime: {
+        execution: 'compatibility-fallback',
+        reason: expect.stringContaining('did not respond within 50ms'),
+      },
+    });
+    expect(terminate).toHaveBeenCalledOnce();
+    expect(fallbackPreflight).toHaveBeenCalledOnce();
+    vi.useRealTimers();
   });
 
   it('terminates a never-settling preflight when the launch watchdog aborts', async () => {

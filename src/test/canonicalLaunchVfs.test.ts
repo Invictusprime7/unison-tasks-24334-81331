@@ -11,6 +11,7 @@ import { createBuilderPage, createEmptyPageRegistry } from "@/types/pageRegistry
 import { launchStateToSandpackFiles } from "@/utils/launchToSandpack";
 import { createLaunchState } from "@/types/launchState";
 import { runFullPreflight } from "@/services/runFullPreflight";
+import type { FullPreflightWorkerLike } from "@/services/runFullPreflightRuntime";
 
 function createSnapshot(): SiteBundleSnapshot {
   const pageRegistry = createEmptyPageRegistry();
@@ -329,6 +330,48 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(asynchronous.files).toEqual(synchronous.files);
     expect(asynchronous.runtimeManifest).toEqual(synchronous.runtimeManifest);
     expect(asynchronous.siteBundleSnapshot?.snapshotId).toBe(synchronous.siteBundleSnapshot?.snapshotId);
+    vi.useRealTimers();
+  });
+
+  it('seals a topology-validated artifact when a silent preflight worker uses compatibility mode', async () => {
+    vi.useFakeTimers();
+    const snapshot = createSnapshot();
+    const terminate = vi.fn();
+    const worker: FullPreflightWorkerLike = {
+      onmessage: null,
+      onerror: null,
+      postMessage: vi.fn(),
+      terminate,
+    };
+
+    const pending = buildCanonicalLaunchArtifactsAsync({
+      generatedFiles: {
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      themePresetId: 'modern',
+      strictPreflight: false,
+    }, {
+      yieldToHost: async () => undefined,
+      preflightRuntime: {
+        workerFactory: () => worker,
+        workerTimeoutMs: 50,
+        fallbackPreflight: (files, options) => runFullPreflight(files, {
+          ...options,
+          compileSafe: false,
+        }),
+      },
+    });
+    await vi.runAllTimersAsync();
+    const artifacts = await pending;
+
+    expect(terminate).toHaveBeenCalledOnce();
+    expect(artifacts.preflightResult.runtime?.execution).toBe('compatibility-fallback');
+    expect(artifacts.preflightResult.stages.compileSafe.status).toBe('skipped');
+    expect(artifacts.preflightResult.stages.bundleTopology.status).toBe('accepted');
+    expect(artifacts.siteBundleSnapshot?.vfsFiles['/src/App.tsx']).toContain('Routes');
     vi.useRealTimers();
   });
 

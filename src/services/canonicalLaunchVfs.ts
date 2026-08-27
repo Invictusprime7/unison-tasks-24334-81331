@@ -906,6 +906,9 @@ function* buildCanonicalLaunchArtifactSteps(
   for (const key of Object.keys(mergedFiles)) delete mergedFiles[key];
   Object.assign(mergedFiles, preflight.files);
 
+  const compatibilityFallbackSkippedCompileSafe =
+    preflight.runtime?.execution === 'compatibility-fallback' &&
+    preflight.stages.compileSafe.status === 'skipped';
   const blockingPreflightStages = [
     ...(preflight.stages.earlyRepair === 'failed' ? ['early syntax repair failed'] : []),
     ...(preflight.stages.navWiring === 'failed' ? ['navigation wiring failed'] : []),
@@ -924,7 +927,7 @@ function* buildCanonicalLaunchArtifactSteps(
     ...(preflight.stages.requiredIntentClosure.missing.length > 0
       ? [`missing required intents: ${preflight.stages.requiredIntentClosure.missing.join(', ')}`]
       : []),
-    ...(preflight.stages.compileSafe.status !== 'accepted'
+    ...(preflight.stages.compileSafe.status !== 'accepted' && !compatibilityFallbackSkippedCompileSafe
       ? [`compile-safe ${preflight.stages.compileSafe.status}: ${preflight.stages.compileSafe.summary}`]
       : []),
     ...(preflight.stages.bundleTopology.status !== 'accepted'

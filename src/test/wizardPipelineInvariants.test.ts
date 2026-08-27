@@ -54,6 +54,10 @@ describe('wizard pipeline ownership invariants', () => {
     // Single authored artifact path: no seed-recovery fallback may reappear.
     expect(launcherSource).not.toContain('seed_recovery');
     expect(launcherSource).toContain('yieldToHost: yieldToBrowser');
+    expect(launcherSource).toContain('workerTimeoutMs: 30_000');
+    expect(launcherSource).toContain('fallbackPreflight: (files, options) => runFullPreflight(files, {');
+    expect(launcherSource).toContain('compileSafe: false');
+    expect(launcherSource).toContain("'preflight.worker_unavailable'");
     expect(launcherSource).toContain('findUnresolvedLocalImports(artifacts.files)');
     expect(launcherSource).not.toContain('runStrictImportContractCheck({');
     expect(canonicalLaunchSource).toContain('export async function buildCanonicalLaunchArtifactsAsync(');

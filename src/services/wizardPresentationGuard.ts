@@ -1,6 +1,10 @@
 import type { TemplateLayoutContract } from '@/services/templateLayoutContract';
 import type { WizardHeroGeometry } from '@/services/wizardGenerationBrief';
 import { countPageChromeLandmarks } from '@/services/wizardSharedChrome';
+import {
+  collectResolvedCompositions,
+  hasResolvedComposition,
+} from '@/platform/core/resolvedComposition';
 
 /**
  * Recovery Phase 4 — this module is a QUALITY GATE, not a design authority.
@@ -252,9 +256,15 @@ export function assessWizardPagePresentations(input: {
     : '/src/pages/Home.tsx';
   const canonicalHomePage = input.canonicalFiles[homePath] || input.canonicalFiles[homePath.slice(1)];
   const floors = input.sectionFloors || {};
+  const resolvedCompositions = collectResolvedCompositions(input.canonicalFiles);
 
   for (const rawPath of input.pagePaths) {
     const path = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+    // A declared Stage 4b composition owns this page's geometry, section
+    // depth, chrome, variants, and intents. Lane B contributes content only,
+    // so applying whole-page design checks to its discarded TSX is an obsolete
+    // ownership contract and must never block canonical launch.
+    if (hasResolvedComposition(resolvedCompositions, path)) continue;
     const generatedPage = input.aiFiles[path] || input.aiFiles[path.slice(1)] || '';
     const canonicalPage = input.canonicalFiles[path] || input.canonicalFiles[path.slice(1)];
     if (!canonicalPage) continue;

@@ -10,6 +10,10 @@ import {
   assessWizardHomePresentation,
   assessWizardPagePresentations,
 } from '@/services/wizardPresentationGuard';
+import {
+  resolvedCompositionPathFor,
+  serializeResolvedComposition,
+} from '@/platform/core/resolvedComposition';
 
 const contract: TemplateLayoutContract = {
   version: '1.0',
@@ -143,7 +147,7 @@ const HYDRATABLE = new Set([]);`;
     expect(result.reasons['/src/pages/Contact.tsx']).toContain('parallel global theme system');
   });
 
-  it('rejects a route whose hero changes the selected Home geometry', () => {
+  it('does not let raw Lane B geometry block a Stage 4b-composed route', () => {
     const homePage = `const SECTIONS = [
   {"id":"home-hero","type":"hero","props":{"headline":"Studio","layout":"split","image":"hero.jpg"}}
 ];
@@ -159,7 +163,21 @@ const HYDRATABLE = new Set([]);`;
         '/src/pages/Home.tsx': `<main><nav>Menu</nav><section data-ut-layout="split" data-ut-media-treatment="split-frame"><img src="hero.jpg" alt="Studio" /><h1>Studio</h1><p>${'A polished studio home experience '.repeat(90)}</p><button data-ut-intent="booking.create">Book</button></section><section>Services</section><footer>Studio</footer></main>`,
         '/src/pages/Pricing.tsx': centeredCandidate,
       },
-      canonicalFiles: { '/src/pages/Home.tsx': homePage, '/src/pages/Pricing.tsx': pricingPage },
+      canonicalFiles: {
+        '/src/pages/Home.tsx': homePage,
+        '/src/pages/Pricing.tsx': pricingPage,
+        [resolvedCompositionPathFor('/src/pages/Pricing.tsx')]: serializeResolvedComposition({
+          version: '1.0',
+          compiledBy: 'stage-4b',
+          pageFilePath: '/src/pages/Pricing.tsx',
+          sections: [{
+            sectionId: 'pricing-hero',
+            semanticType: 'hero',
+            primitiveId: 'Hero',
+            variantId: 'hero:centered',
+          }],
+        }),
+      },
       pagePaths: ['/src/pages/Home.tsx', '/src/pages/Pricing.tsx'],
       requiredHeroGeometry: {
         layout: 'split',
@@ -168,7 +186,7 @@ const HYDRATABLE = new Set([]);`;
       },
     });
 
-    expect(result.rejectedPaths).toEqual(['/src/pages/Pricing.tsx']);
-    expect(result.reasons['/src/pages/Pricing.tsx']).toContain('expected data-ut-layout="split"');
+    expect(result.rejectedPaths).toEqual([]);
+    expect(result.reasons['/src/pages/Pricing.tsx']).toBeUndefined();
   });
 });

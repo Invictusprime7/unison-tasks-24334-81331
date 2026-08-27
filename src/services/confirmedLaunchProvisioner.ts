@@ -43,6 +43,25 @@ function waitWithSignal<T>(work: PromiseLike<T>, signal?: AbortSignal): Promise<
   });
 }
 
+async function confirmedLaunchErrorMessage(error: unknown): Promise<string> {
+  const fallback = error instanceof Error && error.message
+    ? error.message
+    : 'Unable to provision the confirmed site launch.';
+  const context = error && typeof error === 'object'
+    ? (error as { context?: unknown }).context
+    : undefined;
+  if (!(context instanceof Response)) return fallback;
+
+  try {
+    const body = await context.clone().json() as { error?: unknown; message?: unknown };
+    if (typeof body.error === 'string' && body.error.trim()) return body.error.trim();
+    if (typeof body.message === 'string' && body.message.trim()) return body.message.trim();
+  } catch {
+    // Fall back to the Supabase client error when the response is not JSON.
+  }
+  return fallback;
+}
+
 export function createConfirmedLaunchIds(existingBusinessId?: string | null): ConfirmedLaunchIds {
   return {
     businessId: existingBusinessId || crypto.randomUUID(),
@@ -63,7 +82,7 @@ export async function provisionConfirmedLaunchSite(
     supabase.functions.invoke('provision-launch-site', { body: input }),
     signal,
   );
-  if (error) throw new Error(error.message || 'Unable to provision the confirmed site launch.');
+  if (error) throw new Error(await confirmedLaunchErrorMessage(error));
 
   const result = (data as { data?: Partial<ConfirmedLaunchIds> } | null)?.data;
   if (!result?.businessId || !result.siteId || !result.projectId || !result.draftId || !result.buildId || !result.bundleId) {

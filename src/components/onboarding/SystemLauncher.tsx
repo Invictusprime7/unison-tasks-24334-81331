@@ -153,6 +153,10 @@ import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeRe
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
 import { createWizardMergeContext } from '@/services/wizardMergeContext';
+import {
+  collectResolvedCompositions,
+  hasResolvedComposition,
+} from '@/platform/core/resolvedComposition';
 
 // ============================================================================
 // Types
@@ -1497,6 +1501,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       return null;
     }
   });
+  const clearInvalidBusinessSelection = useCallback(() => {
+    setSelectedBusinessId(null);
+    try {
+      localStorage.removeItem('unison:lastBusinessId');
+    } catch {
+      // Storage may be unavailable; clearing component state is sufficient.
+    }
+  }, []);
 
   const [validationAttempts, setValidationAttempts] = useState<Array<{
     attempt: number;
@@ -3054,10 +3066,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         }
       }
       // ── Strict wizard-only gate ────────────────────────────────────────
-      // System Launcher runtime must be authored by the 4-step wizard seed via
-      // Lane B. Do NOT complete missing/invalid AI output from the canonical
-      // scaffold here — that is the minimal fallback path that was masking dead
-      // SiteBundle/orchestration token breaks in production.
+      // Stage 4b compositions are complete page bodies; Lane B enriches their
+      // content and owns only pages without a resolved composition.
       // ── AI enrichment is optional by contract ──────────────────────────
       // The deterministic seed produced by the 4-step wizard (industry
       // composition + selected template + theme tokens + selected pages) is a
@@ -3091,6 +3101,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }
 
       const aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
+      const resolvedCompositions = collectResolvedCompositions(siteBundleSnapshot.vfsFiles);
       const wizardGenerationGaps: {
         aiError?: string;
         payloadIssue?: typeof lastPayloadIssue;
@@ -3110,8 +3121,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         .filter((path): path is string => Boolean(path))
         .filter((path) => {
           const normalized = path.startsWith('/') ? path : `/${path}`;
-          return !aiSourcedFiles[normalized] && !aiSourcedFiles[path];
+          return !hasResolvedComposition(resolvedCompositions, normalized)
+            && !aiSourcedFiles[normalized]
+            && !aiSourcedFiles[path];
         });
+
+      const canonicalContentFallbackPaths = Object.values(siteBundleSnapshot.pageRegistry.pages)
+        .map((page) => (page as { filePath?: string }).filePath)
+        .filter((path): path is string => Boolean(path))
+        .map((path) => (path.startsWith('/') ? path : `/${path}`))
+        .filter((path) => hasResolvedComposition(resolvedCompositions, path))
+        .filter((path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')]);
+      if (canonicalContentFallbackPaths.length > 0) {
+        launchReliabilityMode = 'lane-b-degraded';
+        wizardGenerationGaps.completedFromScaffold = true;
+        wizardGenerationGaps.scaffoldFilledPaths = canonicalContentFallbackPaths;
+        console.warn('[SystemLauncher] Lane B content unavailable; preserving complete Stage 4b compositions', {
+          paths: canonicalContentFallbackPaths,
+        });
+      }
 
       // ── Targeted Lane B retry for missing pages ──────────────────────────
       // If Lane B skipped any selected wizard pages, re-invoke Lane B with a
@@ -3472,12 +3500,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }
 
       // Recompute missing after structured compilation and the Lane B repair
-      // pass. Snapshot scaffolds remain blocked: supported structured compilers
-      // or accepted Lane B output must own every selected page body.
+      // pass. Only undeclared pages require a complete Lane B-owned body.
       const stillMissing = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .filter((path): path is string => Boolean(path))
         .map((path) => (path.startsWith('/') ? path : `/${path}`))
+        .filter((path) => !hasResolvedComposition(resolvedCompositions, path))
         .filter((path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')]);
 
       // A batch repair must not make the whole launch depend on every requested
@@ -3718,7 +3746,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       );
 
       if (laneBRepairedPaths.length > 0) {
-        wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
+        wizardGenerationGaps.scaffoldFilledPaths = [
+          ...new Set([...wizardGenerationGaps.scaffoldFilledPaths, ...laneBRepairedPaths]),
+        ];
       }
       if (unresolvedAfterCompletion.length > 0) {
         // A selected page is part of the launch contract. Never hide an
@@ -3806,8 +3836,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       // ── Merge AI output (if any) with LOCKED themed CSS + DETERMINISTIC ROUTER ──
       // /src/App.tsx is OWNED by the deterministic router from the page registry.
-      // Lane B owns every registered page body/component; missing pages hard-fail
-      // above, and unselected pages are never routed or scaffold-filled.
+      // Stage 4b owns declared page bodies; Lane B enriches their content and
+      // fully owns only undeclared pages. Unselected pages are never routed.
       const generatedFiles: Record<string, string> = {
         ...aiSourcedFiles,
         '/src/index.css': themedIndexCss,
@@ -3926,6 +3956,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         businessRuntime,
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
+        canonicalPageFallbackPaths: canonicalContentFallbackPaths,
         // The shared preflight tail below owns structural repair, module
         // closure and compile-safe acceptance. Sandpack projection is deferred
         // to Preview so launch never compiles the same artifact twice.
@@ -4335,7 +4366,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               <BusinessSelector
                 value={selectedBusinessId}
                 onChange={setSelectedBusinessId}
-                mode="member"
+                mode="editor"
+                onInvalidSelection={clearInvalidBusinessSelection}
                 allowCreate
                 size="sm"
                 placeholder="Restore into business"
@@ -4508,7 +4540,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   <BusinessSelector
                     value={selectedBusinessId}
                     onChange={(id) => setSelectedBusinessId(id)}
-                    mode="member"
+                    mode="editor"
+                    onInvalidSelection={clearInvalidBusinessSelection}
                     allowCreate
                     size="sm"
                     placeholder="New business"

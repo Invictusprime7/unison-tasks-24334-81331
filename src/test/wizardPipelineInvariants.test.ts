@@ -65,6 +65,7 @@ describe('wizard pipeline ownership invariants', () => {
     expect(canonicalLaunchSource).toContain('await runFullPreflightRuntime(');
     expect(preflightRuntimeSource).toContain("name: 'unison-wizard-full-preflight'");
     expect(preflightRuntimeSource).toContain('worker.terminate()');
+    expect(launcherSource).toContain('canonicalPageFallbackPaths: canonicalContentFallbackPaths');
   });
 
   it('returns the exact topology plan used to populate SiteBundleSnapshot.pageRegistry', () => {

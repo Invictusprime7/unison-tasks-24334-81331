@@ -495,6 +495,16 @@ describe('launch business runtime persistence', () => {
     }
   });
 
+  it('uses the canonical editor role boundary for confirmed launch provisioning', () => {
+    const endpoint = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/provision-launch-site/index.ts'),
+      'utf8',
+    );
+
+    expect(endpoint).toContain("lower(bm.role) IN ('owner', 'admin', 'manager', 'editor')");
+    expect(endpoint).not.toMatch(/lower\(bm\.role\) IN \([^)]*'(staff|viewer|billing|member)'/);
+  });
+
   it('requires a provisioned form definition before accepting public submissions', () => {
     const formSubmit = readFileSync(resolve(process.cwd(), 'supabase/functions/form-submit/index.ts'), 'utf8');
     const persistence = readFileSync(resolve(process.cwd(), 'src/services/launchFormDefinitionPersistence.ts'), 'utf8');

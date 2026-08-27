@@ -319,7 +319,7 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
           LEFT JOIN public.business_members bm
             ON bm.business_id = b.id AND bm.user_id = $2
           WHERE b.id = $1
-            AND (b.owner_id = $2 OR bm.role IN ('owner', 'admin'))
+            AND (b.owner_id = $2 OR lower(bm.role) IN ('owner', 'admin', 'manager', 'editor'))
         ) AS authorized`,
         [businessId, userId],
       );
@@ -509,7 +509,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message === "FORBIDDEN_EXISTING_BUSINESS") {
-      return errorResponse("You must be an owner or admin of the selected business.", 403, corsHeaders);
+      return errorResponse("You must have editor access to the selected business.", 403, corsHeaders);
     }
     console.error("[provision-launch-site] confirmed launch failed", error);
     return errorResponse("Unable to provision the confirmed launch.", 500, corsHeaders);

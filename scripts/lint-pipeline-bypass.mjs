@@ -36,6 +36,9 @@ const SEAL_SYMBOLS = ['sealSnapshot'];
 const SEAL_ALLOWLIST = new Set([
   'src/platform/core/snapshotSeal.ts',
   'src/platform/core/index.ts',
+  // Commit-internal reseal of an existing snapshot after surgical file ops.
+  // projectSurgicalCommit asserts the commitToPipeline guard at runtime.
+  'src/platform/core/surgicalProjection.ts',
   'src/services/canonicalLaunchVfs.ts',
 ]);
 

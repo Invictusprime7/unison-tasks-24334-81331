@@ -134,22 +134,29 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(merged['/.unison/design-intervention.json']).toContain('collage-hero');
   });
 
-  it("keeps Lane B as the page-body author even when Stage 4b declared a composition", () => {
+  it("keeps Stage 4b design authority and applies Lane B content when a composition is declared", () => {
     const snapshot = createSnapshot();
     snapshot.vfsFiles["/src/pages/Home.tsx"] = [
-      'const SECTIONS = [{"id":"home-hero","type":"hero","props":{"headline":"Canonical headline"}}];',
-      'const HYDRATABLE = new Set([]);',
-      'export default function Home(){ return <main>Canonical composed home</main>; }',
+      'const SECTIONS = [{"id":"home-hero","type":"hero","variantId":"hero:full-bleed","props":{"headline":"Canonical headline","description":"Canonical description","ctas":[{"label":"Canonical CTA","href":"/contact","intent":"contact.submit"}]}}];',
+      'const SECTION_MAP = { hero: () => null };',
+      'const DESIGN_SIGNATURE = "collage-hero|stagger-reveal";',
+      'export default function Home(){ return <main>Canonical composed home {SECTIONS.length}</main>; }',
     ].join("\n");
-    snapshot.vfsFiles["/.unison/compositions/src/pages/Home.json"] = JSON.stringify({
-      pageId: "page_home",
-      route: "/",
-      sections: [{ semanticType: "hero", variantId: "hero:full-bleed" }],
+    snapshot.vfsFiles["/.unison/compositions/pages/Home.json"] = JSON.stringify({
+      version: "1.0",
+      compiledBy: "stage-4b",
+      pageFilePath: "/src/pages/Home.tsx",
+      sections: [{
+        sectionId: "home-hero",
+        semanticType: "hero",
+        primitiveId: "Hero",
+        variantId: "hero:full-bleed",
+      }],
     });
 
     const laneBHome = [
       'export default function Home(){',
-      '  return <main><section data-ut-intent="contact.submit">Lane B authored home</section></main>;',
+      '  return <main><h1>Lane B business headline</h1><p>Lane B business description.</p><button data-ut-intent="contact.submit">Book a strategy call</button></main>;',
       '}',
     ].join("\n");
 
@@ -159,10 +166,32 @@ describe("buildCanonicalLaunchArtifacts", () => {
       snapshot,
     );
 
-    expect(merged["/src/pages/Home.tsx"]).toBe(laneBHome);
-    expect(merged["/src/pages/Home.tsx"]).not.toContain("Canonical composed home");
-    // The declared composition survives as the design contract, not as a body.
-    expect(merged["/.unison/compositions/src/pages/Home.json"]).toContain("hero:full-bleed");
+    expect(merged["/src/pages/Home.tsx"]).toContain("Canonical composed home");
+    expect(merged["/src/pages/Home.tsx"]).toContain("Lane B business headline");
+    expect(merged["/src/pages/Home.tsx"]).toContain("Lane B business description.");
+    expect(merged["/src/pages/Home.tsx"]).toContain("Book a strategy call");
+    expect(merged["/src/pages/Home.tsx"]).toContain("hero:full-bleed");
+    expect(merged["/src/pages/Home.tsx"]).toContain("collage-hero|stagger-reveal");
+    expect(merged["/src/pages/Home.tsx"]).toContain("contact.submit");
+    expect(merged["/src/pages/Home.tsx"]).not.toContain("return <main><h1>Lane B business headline");
+    expect(merged["/.unison/compositions/pages/Home.json"]).toContain("hero:full-bleed");
+  });
+
+  it("keeps full Lane B page ownership when Stage 4b did not declare a composition", () => {
+    const snapshot = createSnapshot();
+    snapshot.vfsFiles["/src/pages/Home.tsx"] =
+      "export default function Home(){ return <main>Canonical undeclared page</main>; }";
+    const laneBHome =
+      "export default function Home(){ return <main>Lane B complete undeclared page</main>; }";
+
+    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
+      { "/src/pages/Home.tsx": laneBHome },
+      snapshot.vfsFiles,
+      snapshot,
+    );
+
+    expect(merged["/src/pages/Home.tsx"]).toContain("Lane B complete undeclared page");
+    expect(merged["/src/pages/Home.tsx"]).not.toContain("Canonical undeclared page");
   });
 
   it("blocks a missing Lane B page when canonical fallback is disabled", () => {

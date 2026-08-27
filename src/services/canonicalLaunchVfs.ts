@@ -40,7 +40,12 @@ import { PreviewPipelineError } from './previewPipelineError';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
-import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
+import {
+  collectResolvedCompositions,
+  hasResolvedComposition,
+  RESOLVED_COMPOSITION_ROOT,
+} from '@/platform/core/resolvedComposition';
+import { mergeLaneBIntoCanonicalPage } from '@/services/laneBContentPlan';
 import {
   assertWizardMergeContextMatchesSelections,
   type WizardMergeContext,
@@ -401,6 +406,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   );
   generatedFiles = normalizeCanonicalVfsFiles(generatedFiles);
   canonicalFiles = normalizeCanonicalVfsFiles(canonicalFiles);
+  const resolvedCompositions = collectResolvedCompositions(canonicalFiles);
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
   const pathVariants = (path: string): string[] => {
@@ -470,12 +476,8 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   // Stage 4b never composed. After the merge we persist the enriched VFS back
   // into the SiteBundleSnapshot.
   const merged = { ...canonicalFiles };
-  /** Paths whose body in `merged` came from Lane B (or a Lane B App rebase). */
-  const laneBAuthoredPaths = new Set<string>();
-
-  // Recovery invariant: Lane B is the only successful-path author of registered
-  // Wizard page bodies. Stage 4b's compositions stay available as sanctioned
-  // vocabulary + preflight expectations, never as a replacement body.
+  /** Paths for which Lane B supplied a complete page or a canonical content plan. */
+  const laneBCompletedPaths = new Set<string>();
 
   for (const [path, content] of Object.entries(generatedFiles)) {
     const normalizedPath = normalizePath(path);
@@ -495,7 +497,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
     if (shouldMoveLegacyAppIntoHome) {
       merged[normalizePath(homeFilePath)] = rebaseAppModuleForHomePage(content);
-      laneBAuthoredPaths.add(normalizePath(homeFilePath));
+      laneBCompletedPaths.add(normalizePath(homeFilePath));
       continue;
     }
 
@@ -507,11 +509,20 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
           { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
         );
       }
-      // A valid Lane B page body is persisted byte-for-byte. Sanitization and
-      // import healing run later in the shared prep pass; no design authority
-      // reinterprets this source.
-      merged[normalizedPath] = content;
-      laneBAuthoredPaths.add(normalizedPath);
+      const canonicalPageSource = readCanonical(normalizedPath);
+      if (hasResolvedComposition(resolvedCompositions, normalizedPath) && canonicalPageSource) {
+        const contentMerge = mergeLaneBIntoCanonicalPage(canonicalPageSource, content);
+        // A declared Stage 4b composition is design-authoritative. If Lane B
+        // supplies no safely extractable content, preserve that design instead
+        // of reverting to wholesale generated TSX.
+        merged[normalizedPath] = contentMerge?.applied
+          ? contentMerge.source
+          : canonicalPageSource;
+      } else {
+        // No declared composition: Lane B remains the complete page-body owner.
+        merged[normalizedPath] = content;
+      }
+      laneBCompletedPaths.add(normalizedPath);
       continue;
     }
 
@@ -547,7 +558,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     const existingMergedPage = merged[normalizedPagePath];
 
     if (
-      laneBAuthoredPaths.has(normalizedPagePath) &&
+      laneBCompletedPaths.has(normalizedPagePath) &&
       existingMergedPage &&
       !isMinimalPreviewFallbackSource(existingMergedPage)
     ) {

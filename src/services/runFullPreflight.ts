@@ -78,6 +78,10 @@ export interface BundleTopologyStageReport {
 
 export interface RunFullPreflightResult {
   files: Record<string, string>;
+  /** Generated files that syntax repair could not recover. Never seal these. */
+  quarantinedPaths?: string[];
+  /** Parser diagnostics retained for an actionable finalization error. */
+  quarantinedDiagnostics?: Array<{ path: string; error: string }>;
   stages: {
     earlyRepair: 'ok' | 'skipped' | 'failed';
     navWiring: 'ok' | 'skipped' | 'failed';
@@ -369,9 +373,17 @@ export function runFullPreflight(
 
   // 1) Early syntax repair
   let earlyRepair: 'ok' | 'skipped' | 'failed' = 'skipped';
+  const quarantinedPaths = new Set<string>();
+  const quarantinedDiagnostics = new Map<string, string>();
   try {
     const r = runPreflightRepair(files, { context: ctx });
     files = r.files;
+    for (const report of r.reports) {
+      if (report.status === 'quarantined') {
+        quarantinedPaths.add(report.path);
+        quarantinedDiagnostics.set(report.path, report.finalError || 'Unrecoverable generated source');
+      }
+    }
     earlyRepair = 'ok';
   } catch (e) {
     console.warn('[runFullPreflight] early repair failed', e);
@@ -431,6 +443,12 @@ export function runFullPreflight(
   try {
     const r = runPreflightRepair(files, { context: ctx });
     files = r.files;
+    for (const report of r.reports) {
+      if (report.status === 'quarantined') {
+        quarantinedPaths.add(report.path);
+        quarantinedDiagnostics.set(report.path, report.finalError || 'Unrecoverable generated source');
+      }
+    }
     finalRepair = 'ok';
   } catch (e) {
     console.warn('[runFullPreflight] final repair failed', e);
@@ -452,6 +470,8 @@ export function runFullPreflight(
 
   return {
     files,
+    quarantinedPaths: Array.from(quarantinedPaths),
+    quarantinedDiagnostics: Array.from(quarantinedDiagnostics, ([path, error]) => ({ path, error })),
     stages: {
       earlyRepair,
       navWiring,

@@ -10,6 +10,7 @@ import { createEmptyCreatorData } from "@/types/creatorData";
 import { createBuilderPage, createEmptyPageRegistry } from "@/types/pageRegistry";
 import { launchStateToSandpackFiles } from "@/utils/launchToSandpack";
 import { createLaunchState } from "@/types/launchState";
+import { runFullPreflight } from "@/services/runFullPreflight";
 
 function createSnapshot(): SiteBundleSnapshot {
   const pageRegistry = createEmptyPageRegistry();
@@ -164,7 +165,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(merged["/.unison/compositions/src/pages/Home.json"]).toContain("hero:full-bleed");
   });
 
-  it("only falls back to the canonical page body when Lane B produced nothing", () => {
+  it("blocks a missing Lane B page when canonical fallback is disabled", () => {
     const snapshot = createSnapshot();
     snapshot.vfsFiles["/src/pages/Home.tsx"] =
       "export default function Home(){ return <main>Canonical composed home</main>; }";
@@ -172,13 +173,12 @@ describe("buildCanonicalLaunchArtifacts", () => {
     const degraded = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot);
     expect(degraded["/src/pages/Home.tsx"]).toContain("Canonical composed home");
 
-    const strict = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot, {
+    expect(() => mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot, {
       allowCanonicalPageFallback: false,
-    });
-    expect(strict["/src/pages/Home.tsx"]).toBeUndefined();
+    })).toThrow('Lane B did not author every registered Wizard page: /src/pages/Home.tsx');
   });
 
-  it("keeps allowlisted canonical bodies and prunes registered pages with no module", () => {
+  it("does not prune a selected route to mask a missing Lane B page", () => {
     const snapshot = createSnapshot();
     const aboutPage = createBuilderPage("page_about", "About", "/about", "about", {
       filePath: "/src/pages/About.tsx",
@@ -191,7 +191,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     snapshot.vfsFiles["/src/pages/About.tsx"] =
       "export default function About(){ return <main>Canonical About</main>; }";
 
-    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
+    expect(() => mergeGeneratedVfsWithCanonicalSnapshot(
       { "/src/pages/Home.tsx": "export default function Home(){ return <main>Lane B home</main>; }" },
       snapshot.vfsFiles,
       snapshot,
@@ -199,13 +199,9 @@ describe("buildCanonicalLaunchArtifacts", () => {
         allowCanonicalPageFallback: false,
         canonicalPageFallbackPaths: ["/src/pages/About.tsx"],
       },
-    );
+    )).toThrow('Lane B did not author every registered Wizard page: /src/pages/Booking.tsx');
 
-    expect(merged["/src/pages/About.tsx"]).toContain("Canonical About");
-    expect(merged["/src/pages/Booking.tsx"]).toBeUndefined();
-    expect(snapshot.pageRegistry.pages[bookingPage.pageId]).toBeUndefined();
-    expect(merged["/src/App.tsx"]).not.toContain("./pages/Booking");
-    expect(merged["/src/App.tsx"]).toContain("./pages/About");
+    expect(snapshot.pageRegistry.pages[bookingPage.pageId]).toEqual(bookingPage);
   });
 
   it("uses LaunchState VFS when the builder preview mounts before VFS import", () => {
@@ -297,6 +293,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
       yieldToHost: async () => {
         yieldCount += 1;
       },
+      preflightRuntime: { fallbackPreflight: runFullPreflight },
     });
 
     expect(yieldCount).toBeGreaterThanOrEqual(8);
@@ -361,9 +358,9 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.siteBundleSnapshot?.vfsFiles['/src/components/SharedRuntime.tsx']).toContain('snapshot');
   });
 
-  it("can preserve generated wizard output without merging canonical snapshot files", () => {
+  it("rejects output that omits registered pages when canonical merging is disabled", () => {
     const snapshot = createSnapshot();
-    const artifacts = buildCanonicalLaunchArtifacts({
+    expect(() => buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/App.tsx": "export default function App(){ return <main>Wizard First</main>; }",
         "/src/index.css": snapshot.vfsFiles["/src/index.css"],
@@ -382,11 +379,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
       industry: "agency",
       aesthetic: "modern",
       backendRequired: false,
-    });
-
-    expect(artifacts.files["/src/App.tsx"]).toContain("Wizard First");
-    expect(artifacts.files["/src/pages/Home.tsx"]).toBeUndefined();
-    expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
+    })).toThrow('bundle topology blocked: /src/pages/Home.tsx');
   });
 
   it("keeps Lane B AI page output authoritative at wizard launch (no canonical lock)", () => {
@@ -457,7 +450,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     snapshot.vfsFiles["/src/pages/About.tsx"] =
       "export default function About(){ return <div>Canonical About Fallback</div>; }";
 
-    const artifacts = buildCanonicalLaunchArtifacts({
+    expect(() => buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/pages/Home.tsx": "export default function Home(){ return <main>Wizard Home</main>; }",
       },
@@ -475,11 +468,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
       industry: "agency",
       aesthetic: "modern",
       backendRequired: false,
-    });
-
-    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Wizard Home");
-    expect(artifacts.files["/src/pages/About.tsx"]).toBeUndefined();
-    expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
+    })).toThrow('Lane B did not author every registered Wizard page: /src/pages/About.tsx');
   });
 
   it("refuses to persist a quarantined wizard page when strict preflight is enabled", () => {
@@ -494,7 +483,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
       compiledPlayground: { vfsFiles: snapshot.vfsFiles },
       themePresetId: "modern",
       strictPreflight: true,
-    })).toThrow(/refusing to persist quarantine scaffolds.*Unterminated JSX contents/);
+    })).toThrow(/quarantined generated files:.*Unterminated JSX contents/);
   });
 
   it('repairs an unresolved JSX import contract instead of blocking persistence', () => {

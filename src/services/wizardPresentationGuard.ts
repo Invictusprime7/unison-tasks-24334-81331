@@ -169,18 +169,13 @@ export function findHardcodedGeometry(source: string): string[] {
 }
 
 function generatedPageFallbackReason(source: string, requiresMedia: boolean): string | null {
-  // Chrome is page-owned and deterministic: exactly one navigation landmark and
-  // exactly one footer per page. Zero means an unreachable page, more than one
-  // means competing chrome (the two-navbar / two-footer regression).
+  // Shared chrome is router-owned for body-only Lane B pages. Zero landmarks in
+  // the page is expected; one remains supported for legacy authored pages and
+  // the router suppresses its matching wrapper. More than one is always a
+  // competing-chrome defect.
   const chrome = countPageChromeLandmarks(source);
-  if (chrome.navbars === 0) {
-    return 'generated page renders no navigation landmark';
-  }
   if (chrome.navbars > 1) {
     return 'generated page renders competing navigation chrome';
-  }
-  if (chrome.footers === 0) {
-    return 'generated page renders no footer landmark';
   }
   if (chrome.footers > 1) {
     return 'generated page renders competing footer chrome';

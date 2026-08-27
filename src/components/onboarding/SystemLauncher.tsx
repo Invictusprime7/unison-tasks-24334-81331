@@ -114,7 +114,6 @@ import {
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
 import {
-  assessWizardHomePresentation,
   assessWizardPagePresentations,
 } from "@/services/wizardPresentationGuard";
 import {
@@ -148,7 +147,6 @@ import {
   findUnresolvedLocalImports,
   describeUnresolvedImports,
 } from '@/services/laneBCompanionModules';
-import { repairModuleClosureWithAI } from '@/services/moduleClosureRepair';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
@@ -526,6 +524,9 @@ const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 // must not consume the 2-attempt content/syntax-repair budget an isolated
 // page gets. One extra same-round retry absorbs transport noise for free.
 const WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES = 1;
+// Provisioning plus the atomic canonical revision must settle well before
+// Supabase's request-idle ceiling. LaunchRun owns this browser-side deadline.
+const WIZARD_COMMIT_TIMEOUT_MS = 90_000;
 const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   timeoutMs: 120_000,
@@ -1883,6 +1884,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         playground: materializedPlayground,
         compileResult: compiledPlayground,
         siteBundleSnapshot,
+        compileArtifact,
         runtimeManifest: pipelineManifest,
         sitePlan,
       } = pipelineResult;
@@ -3062,66 +3064,32 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // preset fallback — it is the wizard's own seed. So when Lane B fails
       // (rate limit, transport, timeout, contract miss) we degrade to that seed
       // and keep the journey moving instead of stranding the user.
-      const seedGenerationResult = (): typeof generationResult => ({
+      const emptyGenerationResult = (): NonNullable<typeof generationResult> => ({
         structured: {} as LauncherPayload,
         sanitized: {
-          files: { ...siteBundleSnapshot.vfsFiles },
+          files: {},
           rejected: [],
-          notes: ['wizard-seed-degraded'],
+          notes: ['lane-b-page-completion-required'],
         } as unknown as SanitizedGeneratedFiles,
       });
       if (aiError) {
-        launchReliabilityMode = 'lane-b-degraded';
         const details = await getFunctionErrorMessage(aiError);
-        run.degrade(
-          'enrich',
-          isRateLimitError(aiError) ? 'enrich.rate_limited' : 'enrich.failed',
-          isRateLimitError(aiError)
-            ? 'AI copy polish was skipped because the providers were busy — your pages use the wizard template content.'
-            : 'AI copy polish was skipped — your pages use the wizard template content.',
+        console.warn('[SystemLauncher] Broad Lane B turn failed; completing every selected page in isolation', {
+          rateLimited: isRateLimitError(aiError),
           details,
-        );
-        generationResult = seedGenerationResult();
+        });
+        generationResult = emptyGenerationResult();
       }
       if (!generationResult) {
-        launchReliabilityMode = 'lane-b-degraded';
         const reason = lastPayloadIssue?.qualityReason
           || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'AI returned no usable wizard files');
-        run.degrade(
-          'enrich',
-          'enrich.contract_miss',
-          'AI copy polish did not meet the generation contract — your pages use the wizard template content.',
+        console.warn('[SystemLauncher] Broad Lane B payload missed the contract; completing every selected page in isolation', {
           reason,
-        );
-        generationResult = seedGenerationResult();
+        });
+        generationResult = emptyGenerationResult();
       }
 
-      let aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
-      const canonicalHomePath = Object.values(siteBundleSnapshot.pageRegistry.pages)
-        .map((page) => (page as { filePath?: string }).filePath)
-        .find((path): path is string => /\/Home\.(tsx|jsx)$/i.test(path));
-      const homeQualityRejections: string[] = [];
-      if (canonicalHomePath) {
-        // Quality gate only — a rejected Home triggers a focused Lane B retry
-        // below. The canonical Stage 4b Home is never substituted here.
-        const homeAssessment = assessWizardHomePresentation({
-          aiFiles: aiSourcedFiles,
-          homePath: canonicalHomePath,
-          contract: templateLayoutContract,
-        });
-        if (homeAssessment.rejections.length > 0) {
-          homeQualityRejections.push(...homeAssessment.rejectedPaths);
-          console.warn('[SystemLauncher] Lane B Home rejected by the presentation quality gate', {
-            templateId: templateLayoutContract.templateId,
-            reason: homeAssessment.rejections[0]?.reason,
-          });
-        }
-      }
-      // Pages the degraded Lane B path explicitly keeps from the canonical
-      // (Stage 4b composed) snapshot body. The final merge runs with
-      // allowCanonicalPageFallback:false, so these paths must be allowlisted or
-      // the router will import a module the merge deleted.
-      const canonicalPageFallbackPaths: string[] = [];
+      const aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
       const wizardGenerationGaps: {
         aiError?: string;
         payloadIssue?: typeof lastPayloadIssue;
@@ -3136,11 +3104,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         scaffoldFileCount: Object.keys(siteBundleSnapshot?.vfsFiles || {}).length,
       };
 
-      const totalUsableFiles = Object.keys(aiSourcedFiles).length;
-      if (totalUsableFiles === 0) {
-        launchReliabilityMode = 'lane-b-blocked';
-        throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
-      }
       const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .filter((path): path is string => Boolean(path))
@@ -3757,90 +3720,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
       if (unresolvedAfterCompletion.length > 0) {
-        // Pass 3 — Lane-B-only recovery exhausted. Per the Launch Run
-        // never-fail contract, this DEGRADES instead of aborting the journey:
-        //  • if Stage 4b already composed a canonical body for the path, that
-        //    body stays (it is the wizard's own industry/template composition,
-        //    NOT a minimal preset),
-        //  • otherwise the page is dropped from the registry so the router
-        //    never points at a file that does not exist.
-        // Either way the run reaches handoff and the builder opens.
-        launchReliabilityMode = 'lane-b-degraded';
+        // A selected page is part of the launch contract. Never hide an
+        // incomplete Lane B result by substituting Stage 4b copy or deleting a
+        // route from the registry after the user selected it.
+        launchReliabilityMode = 'lane-b-blocked';
         const completionReasons = laneBCompletionDiagnostics
           .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
           .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
           .join(' | ');
-        const registryPages = siteBundleSnapshot.pageRegistry.pages as Record<string, {
-          filePath?: string;
-          name?: string;
-          title?: string;
-          slug?: string;
-          isHome?: boolean;
-        }>;
-        const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
-        const keptFromCanonical: string[] = [];
-        const droppedPages: string[] = [];
-
-        for (const rawPath of unresolvedAfterCompletion) {
-          const normalized = normalizePath(rawPath);
-          const canonicalBody = siteBundleSnapshot.vfsFiles[normalized]
-            || siteBundleSnapshot.vfsFiles[normalized.replace(/^\//, '')];
-          const entry = Object.entries(registryPages).find(([, candidate]) => (
-            candidate.filePath ? normalizePath(candidate.filePath) === normalized : false
-          ));
-
-          if (canonicalBody) {
-            keptFromCanonical.push(normalized);
-            continue;
-          }
-
-          if (entry && !entry[1].isHome && entry[0] !== siteBundleSnapshot.pageRegistry.homePageId) {
-            delete registryPages[entry[0]];
-            droppedPages.push(entry[1].name || entry[1].title || entry[1].slug || normalized);
-          } else {
-            // Home with no canonical body is the only unrecoverable case.
-            launchReliabilityMode = 'lane-b-blocked';
-            console.error('[SystemLauncher] Lane B could not generate the home page and no canonical body exists', {
-              path: normalized,
-              reasons: completionReasons,
-            });
-            throw new Error(
-              'Lane B could not generate the home page. Retry generation. Scaffold placeholders are disabled.',
-            );
-          }
-        }
-
-        siteBundleSnapshot.pageRegistry.version += 1;
-        canonicalPageFallbackPaths.push(...keptFromCanonical);
-        wizardGenerationGaps.scaffoldFilledPaths = [
-          ...(wizardGenerationGaps.scaffoldFilledPaths || []),
-          ...keptFromCanonical,
-        ];
-
-        console.warn('[SystemLauncher] Lane B page completion degraded (launch continues)', {
-          keptFromCanonical,
-          droppedPages,
+        console.error('[SystemLauncher] Lane B page completion exhausted without a complete selected site', {
+          unresolvedAfterCompletion,
           reasons: completionReasons,
         });
-
-        if (keptFromCanonical.length > 0) {
-          run.degrade(
-            'enrich',
-            'enrich.lane_b_page_canonical_body',
-            `AI copy unavailable for ${keptFromCanonical.length} page(s); the wizard composition was kept. Regenerate any page anytime.`,
-          );
-        }
-        if (droppedPages.length > 0) {
-          run.degrade(
-            'enrich',
-            'enrich.lane_b_page_dropped',
-            `Could not generate: ${droppedPages.join(', ')}. The site launched without ${droppedPages.length === 1 ? 'this page' : 'these pages'}; add ${droppedPages.length === 1 ? 'it' : 'them'} again from the builder.`,
-          );
-        }
+        throw new Error(
+          `Lane B could not complete ${unresolvedAfterCompletion.length} selected page(s): ${unresolvedAfterCompletion.join(', ')}. Retry generation. ${completionReasons}`,
+        );
       }
 
 
-      const presentationAssessment = assessWizardPagePresentations({
+      const assessCurrentPresentations = () => assessWizardPagePresentations({
         aiFiles: aiSourcedFiles,
         canonicalFiles: siteBundleSnapshot.vfsFiles,
         pagePaths: Object.values(siteBundleSnapshot.pageRegistry.pages)
@@ -3854,21 +3752,51 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             .filter((route) => route.depth?.minSections)
             .map((route) => [route.path, route.depth.minSections]),
         ),
-
       });
-      const qualityRejectedPaths = Array.from(new Set([
-        ...homeQualityRejections,
-        ...presentationAssessment.rejectedPaths,
-      ]));
-      if (qualityRejectedPaths.length > 0) {
-        // Degraded, not overridden: Lane B stays the page-body author and the
-        // launch records which pages missed the visual contract.
-        launchReliabilityMode = 'lane-b-degraded';
-        console.warn('[SystemLauncher] Lane B pages failed the presentation quality gate', {
+
+      let presentationAssessment = assessCurrentPresentations();
+      for (const attempt of [2, 3, 4] as const) {
+        if (presentationAssessment.rejectedPaths.length === 0) break;
+        console.warn('[SystemLauncher] Repairing pages rejected by the presentation quality gate', {
+          attempt,
           templateId: templateLayoutContract.templateId,
-          paths: qualityRejectedPaths,
+          paths: presentationAssessment.rejectedPaths,
           reasons: presentationAssessment.reasons,
         });
+
+        for (const path of presentationAssessment.rejectedPaths) {
+          const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+          const current = aiSourcedFiles[normalizedPath] || aiSourcedFiles[normalizedPath.slice(1)];
+          if (current) rejectedPageCandidates[normalizedPath] = current;
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt: attempt - 1,
+            accepted: false,
+            reason: presentationAssessment.reasons[path] || presentationAssessment.reasons[normalizedPath]
+              || 'Page failed the final presentation quality gate',
+          });
+          delete aiSourcedFiles[normalizedPath];
+          delete aiSourcedFiles[normalizedPath.slice(1)];
+        }
+
+        for (
+          let pageOffset = 0;
+          pageOffset < presentationAssessment.rejectedPaths.length;
+          pageOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
+        ) {
+          const completionWave = presentationAssessment.rejectedPaths
+            .slice(pageOffset, pageOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS)
+            .map((path) => (path.startsWith('/') ? path : `/${path}`));
+          await Promise.all(completionWave.map((path) => completeMissingWizardPage(path, attempt)));
+        }
+        presentationAssessment = assessCurrentPresentations();
+      }
+
+      if (presentationAssessment.rejectedPaths.length > 0) {
+        launchReliabilityMode = 'lane-b-blocked';
+        throw new Error(
+          `Lane B could not satisfy the final presentation contract for ${presentationAssessment.rejectedPaths.join(', ')}. ${Object.entries(presentationAssessment.reasons).map(([path, reason]) => `${path}: ${reason}`).join(' | ')}`,
+        );
       }
 
       // Stamp gaps so downstream readiness artifacts can record them.
@@ -3974,6 +3902,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
         siteBundleSnapshot,
+        compileArtifact,
         compiledPlayground,
         canonicalPlayground: materializedPlayground,
         mergeWithCanonicalSnapshot: true,
@@ -3996,7 +3925,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         businessRuntime,
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
         allowCanonicalPageFallback: false,
-        canonicalPageFallbackPaths,
         // The shared preflight tail below owns structural repair, module
         // closure and compile-safe acceptance. Sandpack projection is deferred
         // to Preview so launch never compiles the same artifact twice.
@@ -4104,59 +4032,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // cloned SiteBundleSnapshot. This launcher only appends metadata files.
       const wiredVfsFiles: Record<string, string> = { ...preWiredVfsFiles };
 
-      // Close the local-import contract BEFORE the artifact is sealed. Preview
-      // prep refuses to synthesize placeholders for wizard drafts, so a page
-      // importing an unauthored companion would otherwise surface as a
-      // PreviewPipelineError after handoff (preview falls back to scaffold).
-      //
-      // Repair sequence: deterministic path-variant + dead-import recovery
-      // first, then one bounded AI repair pass whose output is only accepted
-      // when the deterministic parser and closure check both pass.
-      if (findUnresolvedLocalImports(wiredVfsFiles).length > 0) {
-        setLaunchStatus('Closing the module contract for generated pages…');
-        let closure: Awaited<ReturnType<typeof repairModuleClosureWithAI>> | null = null;
-        try {
-          closure = await repairModuleClosureWithAI(wiredVfsFiles, { maxAttempts: 2 });
-        } catch (error) {
-          console.warn('[SystemLauncher] module closure repair failed', error);
-        }
-
-        if (closure) {
-          const snapshotVfs = launchArtifacts.siteBundleSnapshot?.vfsFiles as
-            | Record<string, string>
-            | undefined;
-          for (const [path, value] of Object.entries(closure.files)) {
-            const content = value as string;
-            if (typeof content !== 'string' || wiredVfsFiles[path] === content) continue;
-            wiredVfsFiles[path] = content;
-            if (snapshotVfs && path in snapshotVfs) snapshotVfs[path] = content;
-          }
-          if (closure.rewritten.length || closure.dropped.length) {
-            console.log('[SystemLauncher] module closure repaired', {
-              rewritten: closure.rewritten,
-              dropped: closure.dropped,
-              attempts: closure.attempts,
-            });
-          }
-        }
-
-        const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);
-        if (preSealUnresolvedImports.length > 0) {
-          launchReliabilityMode = 'lane-b-degraded';
-          for (const item of preSealUnresolvedImports.slice(0, 3)) {
-            run.degrade(
-              'preflight',
-              'lane_b.unresolved_module',
-              `${item.filePath.split('/').pop()} references a module that was not generated ("${item.importPath}") — regenerate that page from the AI panel.`,
-              describeUnresolvedImports(preSealUnresolvedImports),
-            );
-          }
-          console.warn('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
-        }
-      }
-
-
-
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
         console.log(
           `[SystemLauncher] Applied ${launchArtifacts.bindingApplication?.appliedBindings} wizard bindings to deterministic VFS`,
@@ -4166,8 +4041,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // Launch is a single action. A second review confirmation here used to
       // suspend handleLaunch on an unresolved Promise and made the completed
       // pipeline appear frozen instead of opening the Web Builder.
-      setLaunchStatus('Creating the site workspace and live data contracts…');
-      run.markStage('commit', 'active');
+      setLaunchStatus('Saving your project...');
+      const { confirmedLaunch, result, launcherRevisionId } = await run.stage('commit', async (signal) => {
+        console.info('[SystemLauncher] commit started', { projectId: launchIds.projectId });
       // A builder handoff is only valid after the complete canonical identity
       // exists remotely. Fabricating a local identity here creates a project
       // that can render but can never commit, causing the preview/autosave loop.
@@ -4184,7 +4060,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         systemType: selectedSystem,
         templateId: effectiveTemplate?.id,
         themePresetId: resolvedPreset.id,
-      });
+      }, { signal });
       const launchProjectId = confirmedLaunch.projectId;
       const launcherDraftId = confirmedLaunch.draftId;
 
@@ -4212,44 +4088,51 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         },
         patch,
         options: {
-          requirePreviewPass: false,
+          requirePreviewPass: true,
           requireReadinessPass: false,
           businessName: brand,
           industry: String(generationCategory),
           selectedTemplateId: effectiveTemplate?.id,
           themePresetId: resolvedPreset.id,
           selections: wizardSelections,
+          signal,
            reviewedArtifact: {
              siteBundleSnapshot: launchArtifacts.siteBundleSnapshot ?? siteBundleSnapshot,
              runtimeManifest: launchArtifacts.runtimeManifest,
              playground: materializedPlayground ?? undefined,
+             preflightResult: launchArtifacts.preflightResult,
            },
         },
       });
       if (!result.persistedRevisionId) {
         throw new Error('The generated site could not be committed to its project. Please confirm again.');
       }
-      const launcherRevisionId = result.persistedRevisionId;
+      console.info('[SystemLauncher] commit completed', {
+        projectId: confirmedLaunch.projectId,
+        revisionId: result.persistedRevisionId,
+      });
+        return { confirmedLaunch, result, launcherRevisionId: result.persistedRevisionId };
+      }, { timeoutMs: WIZARD_COMMIT_TIMEOUT_MS });
+      const launchProjectId = confirmedLaunch.projectId;
+      const launcherDraftId = confirmedLaunch.draftId;
       try {
         localStorage.setItem('unison:lastBusinessId', confirmedLaunch.businessId);
       } catch { /* browser storage is best-effort */ }
       // Public form contracts live outside the VFS: form-submit rejects any
       // intent that disagrees with its approved definition. Never fail the
       // launch over this — the builder can re-provision forms later.
-      const formDefinitionPersistence = await persistLaunchFormDefinitions({
+      void persistLaunchFormDefinitions({
         businessId: confirmedLaunch.businessId,
         siteId: confirmedLaunch.siteId,
         projectId: launchProjectId,
         definitions: plannedFormDefinitions,
+      }).then((formDefinitionPersistence) => {
+        if (formDefinitionPersistence.error) {
+          console.warn('[SystemLauncher] form definitions will retry in builder', formDefinitionPersistence.error);
+        }
+      }).catch((error) => {
+        console.warn('[SystemLauncher] form definition persistence failed after handoff', error);
       });
-      if (formDefinitionPersistence.error) {
-        run.degrade(
-          'commit',
-          'commit.form_definitions_unavailable',
-          'Your forms are live, but their approved settings will finish saving in the builder.',
-          formDefinitionPersistence.error,
-        );
-      }
       const canonicalVfsFiles = Object.keys(result.vfsFiles).length > 0
         ? result.vfsFiles
         : wiredVfsFiles;
@@ -4358,33 +4241,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         launchState,
       });
 
-      // Mark onboarding complete so route guards allow /web-builder.
-      // Without this, /web-builder redirects back to /onboarding (onboarding_required).
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await supabase
-            .from("onboarding_state")
-            .upsert(
-              {
-                user_id: user.id,
-                completed: true,
-                current_step: "launched",
-                industry: selectedSystem ?? null,
-                business_name: businessName || null,
-                project_id: launchProjectId,
-              },
-              { onConflict: "user_id" }
-            );
-        }
-      } catch (onboardingErr) {
-        console.warn("[SystemLauncher] failed to mark onboarding complete", onboardingErr);
-      }
-
       // Strict post-launch destination: always the WebBuilder, wired to the
       // generated site (preview + VFS/playground). Never bounce through the
       // dashboard. `replace: true` so back-nav doesn't re-enter the wizard.
-      run.markStage('commit', 'done');
+      setLaunchStatus('Opening the Web Builder...');
+      run.markStage('handoff', 'active');
       run.markStage('handoff', 'done');
       publishLaunchDegradations(run.snapshot().degradations);
       navigate("/web-builder", {

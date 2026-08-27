@@ -41,6 +41,10 @@ describe('wizard pipeline ownership invariants', () => {
       resolve(process.cwd(), 'src/services/canonicalLaunchVfs.ts'),
       'utf8',
     );
+    const preflightRuntimeSource = readFileSync(
+      resolve(process.cwd(), 'src/services/runFullPreflightRuntime.ts'),
+      'utf8',
+    );
 
     expect(launcherSource).toContain('function yieldToBrowser(): Promise<void>');
     expect(launcherSource).toContain("setLaunchStatus('Preparing your site…');");
@@ -54,6 +58,9 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).not.toContain('runStrictImportContractCheck({');
     expect(canonicalLaunchSource).toContain('export async function buildCanonicalLaunchArtifactsAsync(');
     expect(canonicalLaunchSource).toContain('function* buildCanonicalLaunchArtifactSteps(');
+    expect(canonicalLaunchSource).toContain('await runFullPreflightRuntime(');
+    expect(preflightRuntimeSource).toContain("name: 'unison-wizard-full-preflight'");
+    expect(preflightRuntimeSource).toContain('worker.terminate()');
   });
 
   it('returns the exact topology plan used to populate SiteBundleSnapshot.pageRegistry', () => {
@@ -375,6 +382,11 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).not.toContain('<VFSPreview');
     expect(launcherSource).not.toContain('const installPromise =');
     expect(launcherSource.indexOf('navigate("/web-builder"')).toBeGreaterThan(provisionIndex);
+    expect(launcherSource).toContain("await run.stage('commit', async (signal) => {");
+    expect(launcherSource).toContain('timeoutMs: WIZARD_COMMIT_TIMEOUT_MS');
+    expect(launcherSource).toContain('}, { signal });');
+    expect(launcherSource).toContain('preflightResult: launchArtifacts.preflightResult');
+    expect(launcherSource).not.toContain('const formDefinitionPersistence = await persistLaunchFormDefinitions');
   });
 
   it('reaches the builder only after the reviewed artifact has a durable committed revision', () => {

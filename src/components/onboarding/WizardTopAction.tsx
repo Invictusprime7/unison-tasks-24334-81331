@@ -35,7 +35,9 @@ const PIPELINE_STAGES: { id: string; label: string; keywords: string[] }[] = [
   { id: "repair", label: "Backfilling missing pages", keywords: ["remaining", "repair", "missing"] },
   { id: "snapshot", label: "Merging snapshot & theme", keywords: ["snapshot", "theme", "merge"] },
   { id: "intents", label: "Wiring intents & routes", keywords: ["intent", "wiring", "route"] },
-  { id: "preview", label: "Finalizing preview", keywords: ["preview", "finaliz", "commit"] },
+  { id: "preview", label: "Finalizing preview", keywords: ["preview", "finaliz"] },
+  { id: "commit", label: "Saving project", keywords: ["commit", "saving", "workspace", "live data"] },
+  { id: "handoff", label: "Opening Web Builder", keywords: ["opening", "web builder", "handoff"] },
 ];
 
 function deriveStageFromStatus(status: string): number {
@@ -70,7 +72,7 @@ export function WizardTopAction(props: WizardTopActionProps) {
     }
     setTickStage(0);
     const interval = window.setInterval(() => {
-      setTickStage((prev) => Math.min(prev + 1, PIPELINE_STAGES.length - 2));
+      setTickStage((prev) => Math.min(prev + 1, PIPELINE_STAGES.length - 3));
     }, 2200);
     return () => window.clearInterval(interval);
   }, [isLaunching]);

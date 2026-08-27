@@ -1,6 +1,9 @@
 import type { LayoutCategory } from '@/data/templates/types';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
-import { sealSnapshot } from '@/platform/core/snapshotSeal';
+import {
+  sealSnapshot,
+  type WizardCompileArtifact,
+} from '@/platform/core/snapshotSeal';
 
 import { ensureViteRootFiles } from '@/services/previewSession';
 import type { PlaygroundCompileResult, PlaygroundState, WizardSelections } from '@/types/playground';
@@ -24,12 +27,15 @@ import {
 import { normalizeCanonicalVfsFiles } from '@/utils/canonicalVfsPath';
 import { generateCanonicalRouter } from '@/utils/topologyRouterGenerator';
 import { applyWizardBindingsToVfs, type WizardBindingApplicationResult } from './wizardBindingBridge';
-import { preflightNavWiring } from './preflightNavWiring';
-import { runPreflightRepair, runPreflightRepairSteps } from './aiSitePreflightRepair';
-import { runCompileSafeAcceptance, summarizeCompileDiagnostics } from './compileSafeGate';
-import { repairUnresolvedLocalImports } from './moduleClosureRepair';
-import { runModuleClosureAndCompileSafe } from './runFullPreflight';
-import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';
+import {
+  runFullPreflight,
+  type RunFullPreflightOptions,
+  type RunFullPreflightResult,
+} from './runFullPreflight';
+import {
+  runFullPreflightRuntime,
+  type RunFullPreflightRuntimeOptions,
+} from './runFullPreflightRuntime';
 import { PreviewPipelineError } from './previewPipelineError';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
@@ -103,12 +109,30 @@ export interface CanonicalLaunchArtifacts {
   siteBundleSnapshot?: SiteBundleSnapshot;
   canonicalPlayground?: Record<string, unknown>;
   bindingApplication: WizardBindingApplicationResult | null;
+  /** Exact final preflight result reused by the wizard's canonical commit. */
+  preflightResult: RunFullPreflightResult;
+}
+
+interface CanonicalLaunchPreflightStep {
+  kind: 'full-preflight';
+  files: Record<string, string>;
+  options: RunFullPreflightOptions;
+}
+
+type CanonicalLaunchArtifactStep = CanonicalLaunchPreflightStep | undefined;
+
+function isCanonicalLaunchPreflightStep(
+  value: CanonicalLaunchArtifactStep,
+): value is CanonicalLaunchPreflightStep {
+  return value?.kind === 'full-preflight';
 }
 
 export interface BuildCanonicalLaunchArtifactsInput {
   generatedFiles: Record<string, string>;
   preferredEntryPoint?: string;
   siteBundleSnapshot?: SiteBundleSnapshot;
+  /** Frozen Stage 4b revision that the final snapshot must be sealed from. */
+  compileArtifact?: WizardCompileArtifact;
   compiledPlayground?: Pick<PlaygroundCompileResult, 'vfsFiles'> | null;
   canonicalPlayground?: PlaygroundState | Record<string, unknown> | null;
   mergeWithCanonicalSnapshot?: boolean;
@@ -228,13 +252,14 @@ function cloneSnapshotWithRuntimeVfs(
   siteBundleSnapshot: SiteBundleSnapshot,
   appContext: RuntimeAppContext,
   files: Record<string, string>,
+  compileArtifact?: WizardCompileArtifact,
   missingPageFilePolicy: 'throw' | 'report' = 'throw',
 ): SiteBundleSnapshot {
   // Pass 1 seal point: Stage 4b artifact + Lane B convergence + preflight
   // become the single authoritative revision here. Nothing downstream may
   // amend page bodies after this returns.
   return sealSnapshot({
-    artifact: siteBundleSnapshot,
+    artifact: compileArtifact ?? siteBundleSnapshot,
     appContext,
     vfsFiles: files,
     missingPageFilePolicy,
@@ -555,24 +580,23 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   }
 
   // ── Registry ⇄ VFS closure ───────────────────────────────────────────────
-  // The router is generated from the page registry, so a registered page with
-  // no surviving module makes /src/App.tsx import a file that will never exist
-  // and halts the preview at Sandpack prep. Prune those routes here so
-  // registry, router and VFS stay closed. Home is never pruned: its absence is
-  // an unrecoverable launch that upstream gates must report.
+  // A selected route is part of the Wizard contract. Never mutate the Stage 4b
+  // registry to make an incomplete Lane B result look valid: page completion
+  // must author every registered body before the snapshot can be sealed.
   const unroutablePages: string[] = [];
-  for (const [pageId, page] of Object.entries(snapshot.pageRegistry.pages)) {
-    const entry = page as { filePath?: string; isHome?: boolean };
+  for (const page of Object.values(snapshot.pageRegistry.pages)) {
+    const entry = page as { filePath?: string };
     if (!entry.filePath) continue;
     const normalized = normalizePath(entry.filePath);
     if (typeof merged[normalized] === 'string') continue;
-    if (Boolean(entry.isHome) || pageId === snapshot.pageRegistry.homePageId) continue;
-    delete snapshot.pageRegistry.pages[pageId];
     unroutablePages.push(normalized);
   }
   if (unroutablePages.length > 0) {
-    snapshot.pageRegistry.version += 1;
-    console.warn('[canonicalLaunchVfs] Pruned registered pages with no module', unroutablePages);
+    throw new PreviewPipelineError(
+      'vfs',
+      `Lane B did not author every registered Wizard page: ${unroutablePages.join(', ')}.`,
+      { blockedFiles: unroutablePages, recoverableByRelaunch: true },
+    );
   }
 
   // ── Single chrome authority: the page body ──────────────────────────────
@@ -724,7 +748,7 @@ export function upsertCanonicalMetadataFiles(
 
 function* buildCanonicalLaunchArtifactSteps(
   input: BuildCanonicalLaunchArtifactsInput,
-): Generator<void, CanonicalLaunchArtifacts, void> {
+): Generator<CanonicalLaunchArtifactStep, CanonicalLaunchArtifacts, RunFullPreflightResult | undefined> {
   const mergeWithCanonicalSnapshot = input.mergeWithCanonicalSnapshot ?? true;
   if (input.mergeContext && input.wizardSelections) {
     assertWizardMergeContextMatchesSelections(input.mergeContext, input.wizardSelections);
@@ -790,49 +814,12 @@ function* buildCanonicalLaunchArtifactSteps(
     : input.compiledPlayground?.vfsFiles || {};
   const boundFiles = bindingApplication?.files || repairedFiles;
   yield;
-  const preflight = input.siteBundleSnapshot
-    ? (() => {
-        try {
-          return preflightNavWiring(boundFiles, input.siteBundleSnapshot);
-        } catch (error) {
-          console.warn('[canonicalLaunchVfs] Preflight nav wiring failed; continuing', error);
-          return null;
-        }
-      })()
-    : null;
-  const wiredFiles = preflight?.files || boundFiles;
-  if (preflight && (preflight.wired > 0 || preflight.skipped.length > 0)) {
-    console.info('[canonicalLaunchVfs] Preflight nav wiring:', {
-      wired: preflight.wired,
-      skipped: preflight.skipped.length,
-    });
-  }
+  const wiredFiles = boundFiles;
 
   // ── Industry forbidden-intent strip ────────────────────────────────────
   // Remove any data-ut-intent attributes whose value is on the active
   // industry's forbidden list (e.g. checkout.start on a nonprofit).
-  const industryForStrip =
-    (input.industry as string | undefined) || input.siteBundleSnapshot?.industry;
-  const profile = industryForStrip ? getIndustryIntentProfile(industryForStrip) : undefined;
-  const forbidden = profile?.forbidden ?? [];
-  const filesAfterStrip: Record<string, string> = { ...wiredFiles };
-  if (forbidden.length > 0) {
-    const escaped = forbidden.map((i) => i.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-    const attrRe = new RegExp(`\\s+data-ut-intent\\s*=\\s*["'](?:${escaped})["']`, 'g');
-    let strippedCount = 0;
-    for (const [p, src] of Object.entries(filesAfterStrip)) {
-      if (typeof src !== 'string') continue;
-      const next = src.replace(attrRe, () => { strippedCount++; return ''; });
-      if (next !== src) filesAfterStrip[p] = next;
-    }
-    if (strippedCount > 0) {
-      console.warn('[canonicalLaunchVfs] Stripped forbidden intents for industry:', {
-        industry: industryForStrip,
-        forbidden,
-        count: strippedCount,
-      });
-    }
-  }
+  const filesAfterStrip = wiredFiles;
 
 
 
@@ -840,41 +827,7 @@ function* buildCanonicalLaunchArtifactSteps(
   // Catch any syntax damage introduced by binding/nav-wiring attribute
   // injection before files reach the preview iframe.
   yield;
-  let finalRepair: ReturnType<typeof runPreflightRepair> | null = null;
-  try {
-    finalRepair = yield* runPreflightRepairSteps(filesAfterStrip, {
-      context: { industry: input.industry, brand: input.businessName },
-    });
-  } catch (error) {
-    console.warn('[canonicalLaunchVfs] Final preflight syntax repair failed; continuing', error);
-    finalRepair = null;
-  }
-  const safeFiles = finalRepair?.files || filesAfterStrip;
-  if (finalRepair && (finalRepair.repairedCount > 0 || finalRepair.quarantinedCount > 0)) {
-    console.warn('[canonicalLaunchVfs] Final syntax repair:', {
-      clean: finalRepair.cleanCount,
-      repaired: finalRepair.repairedCount,
-      quarantined: finalRepair.quarantinedCount,
-    });
-    if (input.strictPreflight && finalRepair.quarantinedCount > 0) {
-      const blockedReports = finalRepair.reports
-        .filter((report) => report.status === 'quarantined');
-      const blockedFiles = blockedReports.map((report) => report.path);
-      const diagnostics = blockedReports.map((report) => ({
-        path: report.path,
-        error: report.finalError || 'Unknown syntax error',
-        repairPasses: report.passes || [],
-      }));
-      const diagnosticSummary = diagnostics
-        .map(({ path, error }) => `${path}: ${error}`)
-        .join(' | ');
-      throw new PreviewPipelineError(
-        'vfs',
-        `Wizard source failed final syntax preflight for ${blockedFiles.join(', ')}; refusing to persist quarantine scaffolds. ${diagnosticSummary}`,
-        { blockedFiles, diagnostics, recoverableByRelaunch: true },
-      );
-    }
-  }
+  const safeFiles = filesAfterStrip;
 
   yield;
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
@@ -920,32 +873,64 @@ function* buildCanonicalLaunchArtifactSteps(
     generatedSiteRuntimeManifest,
   );
 
-  // ── Compile-safe acceptance (pre-seal) ─────────────────────────────────
-  // Validate the complete transaction, including every deterministic runtime
-  // consumer and generated module. Running this before those modules existed
-  // let canonical code enter the snapshot with an apparently unresolved
-  // import, leaving Sandpack as the first authoritative closure check.
+  // The complete shared preflight owns every repair and acceptance decision.
+  // It runs after Lane B merge and deterministic runtime injection so the
+  // exact transaction being sealed is the one that was validated.
   yield;
-  {
-    // Single shared tail — identical ladder + gates as the commit path.
-    // Replacing the whole map (instead of Object.assign) keeps dropped or
-    // rewritten modules from resurrecting as stale entries.
-    const tail = runModuleClosureAndCompileSafe(mergedFiles, {
-      siteBundleSnapshot: input.siteBundleSnapshot,
-      canonicalFiles,
-      sourceLane: 'lane-b',
-      pipelineStage: 'generation',
-    });
-    for (const key of Object.keys(mergedFiles)) delete mergedFiles[key];
-    Object.assign(mergedFiles, tail.files);
-    if (tail.moduleClosure.status !== 'declined' || tail.compileSafe.status !== 'accepted') {
-      console.warn('[canonicalLaunchVfs] preflight tail', {
-        moduleClosure: tail.moduleClosure,
-        componentContracts: tail.componentContracts,
-        compileSafe: tail.compileSafe,
-        bundleTopology: tail.bundleTopology,
-      });
-    }
+  const preflightOptions: RunFullPreflightOptions = {
+    siteBundleSnapshot: input.siteBundleSnapshot,
+    canonicalFiles,
+    industry: input.industry || input.siteBundleSnapshot?.industry,
+    brand: input.businessName || input.siteBundleSnapshot?.businessName,
+    sourceLane: 'lane-b',
+  };
+  const preflight = yield {
+    kind: 'full-preflight',
+    files: { ...mergedFiles },
+    options: preflightOptions,
+  };
+  if (!preflight) {
+    throw new Error('Wizard final preflight returned no result.');
+  }
+  for (const key of Object.keys(mergedFiles)) delete mergedFiles[key];
+  Object.assign(mergedFiles, preflight.files);
+
+  const blockingPreflightStages = [
+    ...(preflight.stages.earlyRepair === 'failed' ? ['early syntax repair failed'] : []),
+    ...(preflight.stages.navWiring === 'failed' ? ['navigation wiring failed'] : []),
+    ...(preflight.stages.finalRepair === 'failed' ? ['final syntax repair failed'] : []),
+    ...(preflight.stages.structuralRepair === 'failed' ? ['structural repair failed'] : []),
+    ...(preflight.stages.moduleClosure.status === 'failed' ? ['module closure failed'] : []),
+    ...(preflight.stages.moduleClosure.remaining.length > 0
+      ? [`unresolved modules: ${preflight.stages.moduleClosure.remaining.join(', ')}`]
+      : []),
+    ...(preflight.stages.componentContracts.status === 'failed'
+      ? ['component-contract repair failed']
+      : []),
+    ...(preflight.stages.componentContracts.remaining.length > 0
+      ? [`invalid component contracts: ${preflight.stages.componentContracts.remaining.join(', ')}`]
+      : []),
+    ...(preflight.stages.requiredIntentClosure.missing.length > 0
+      ? [`missing required intents: ${preflight.stages.requiredIntentClosure.missing.join(', ')}`]
+      : []),
+    ...(preflight.stages.compileSafe.status !== 'accepted'
+      ? [`compile-safe ${preflight.stages.compileSafe.status}: ${preflight.stages.compileSafe.summary}`]
+      : []),
+    ...(preflight.stages.bundleTopology.status !== 'accepted'
+      ? [`bundle topology ${preflight.stages.bundleTopology.status}: ${preflight.stages.bundleTopology.missing.join(', ')}`]
+      : []),
+    ...((preflight.quarantinedPaths || []).length > 0
+      ? [`quarantined generated files: ${(preflight.quarantinedDiagnostics || [])
+          .map(({ path, error }) => `${path}: ${error}`)
+          .join(' | ') || preflight.quarantinedPaths!.join(', ')}`]
+      : []),
+  ];
+  if (blockingPreflightStages.length > 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `Wizard preflight refused to seal an incomplete generated revision. ${blockingPreflightStages.join(' | ')}`,
+      { recoverableByRelaunch: true },
+    );
   }
 
   const canonicalPlayground = buildCanonicalPlayground(runtimeSnapshotSeed, input.canonicalPlayground);
@@ -970,18 +955,14 @@ function* buildCanonicalLaunchArtifactSteps(
   // runtime code, so reparsing every generated page here only duplicates CPU
   // work and can freeze the launcher shell.
   const verifiedViteFiles = viteReadyFiles;
-  // Launch assembly reports missing page files instead of throwing: the wizard
-  // deliberately drops minimal canonical stubs, and the launcher's
-  // `enrich.pages_missing_baseline` gate (Pass 4) is the layer that decides to
-  // re-compile or block. Strict throwing stays the default for builder-commit
-  // and import seals.
-  const missingPageFilePolicy: 'throw' | 'report' = 'report';
+  const missingPageFilePolicy = 'throw' as const;
 
   const siteBundleSnapshot = runtimeSnapshotSeed
     ? cloneSnapshotWithRuntimeVfs(
         runtimeSnapshotSeed,
         appContext,
         verifiedViteFiles,
+        input.compileArtifact,
         missingPageFilePolicy,
       )
     : undefined;
@@ -1053,6 +1034,7 @@ function* buildCanonicalLaunchArtifactSteps(
     siteBundleSnapshot,
     canonicalPlayground,
     bindingApplication,
+    preflightResult: preflight,
   };
 }
 
@@ -1061,17 +1043,36 @@ export function buildCanonicalLaunchArtifacts(
 ): CanonicalLaunchArtifacts {
   const steps = buildCanonicalLaunchArtifactSteps(input);
   let result = steps.next();
-  while (!result.done) result = steps.next();
+  while (!result.done) {
+    const step = result.value as CanonicalLaunchArtifactStep;
+    result = isCanonicalLaunchPreflightStep(step)
+      ? steps.next(runFullPreflight(step.files, step.options))
+      : steps.next();
+  }
   return result.value;
 }
 
 export async function buildCanonicalLaunchArtifactsAsync(
   input: BuildCanonicalLaunchArtifactsInput,
-  options: { yieldToHost: () => Promise<void>; signal?: AbortSignal },
+  options: {
+    yieldToHost: () => Promise<void>;
+    signal?: AbortSignal;
+    preflightRuntime?: Omit<RunFullPreflightRuntimeOptions, 'signal'>;
+  },
 ): Promise<CanonicalLaunchArtifacts> {
   const steps = buildCanonicalLaunchArtifactSteps(input);
   let result = steps.next();
   while (!result.done) {
+    const step = result.value as CanonicalLaunchArtifactStep;
+    if (isCanonicalLaunchPreflightStep(step)) {
+      const preflight = await runFullPreflightRuntime(
+        step.files,
+        step.options,
+        { ...options.preflightRuntime, signal: options.signal },
+      );
+      result = steps.next(preflight);
+      continue;
+    }
     await options.yieldToHost();
     // A caller-side watchdog (e.g. LaunchRun's stage timeout) may have given
     // up on this attempt already. Stop advancing the generator instead of

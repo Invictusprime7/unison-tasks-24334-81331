@@ -81,6 +81,16 @@ describe('provisionConfirmedLaunchSite', () => {
     await expect(provisionConfirmedLaunchSite(shellInput)).rejects.toThrow('incomplete site identity');
   });
 
+  it('stops waiting when the launch commit watchdog aborts provisioning', async () => {
+    invoke.mockReturnValueOnce(new Promise(() => undefined));
+    const controller = new AbortController();
+    const pending = provisionConfirmedLaunchSite(shellInput, { signal: controller.signal });
+
+    controller.abort(new Error('Saving your project stalled after 90s.'));
+
+    await expect(pending).rejects.toThrow('Saving your project stalled after 90s.');
+  });
+
   it('rejects a provisioning shell that contains VFS content before canonical commit', async () => {
     invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
     maybeSingle.mockResolvedValueOnce({

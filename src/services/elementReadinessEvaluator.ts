@@ -73,6 +73,7 @@ export interface EvaluateElementReadinessOptions {
   provisionedCapabilities?: CapabilityId[];
   /** Used to scope row-count queries to a single business when the table is multi-tenant. */
   businessId?: string | null;
+  signal?: AbortSignal;
 }
 
 // ----------------------------------------------------------------------------
@@ -120,6 +121,7 @@ async function getRowCount(
   table: string,
   businessId: string | null | undefined,
   cache: RowCountCache,
+  signal?: AbortSignal,
 ): Promise<number | null> {
   const cacheKey = `${table}::${businessId ?? '*'}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
@@ -128,6 +130,7 @@ async function getRowCount(
     // generic typing.
     type LooseQuery = {
       eq: (col: string, val: string) => LooseQuery;
+      abortSignal: (signal: AbortSignal) => LooseQuery;
     } & Promise<{ count: number | null; error: unknown }>;
 
     const builder = (supabase as unknown as {
@@ -138,7 +141,8 @@ async function getRowCount(
       .from(table)
       .select('id', { count: 'exact', head: true });
 
-    const query = businessId ? builder.eq('business_id', businessId) : builder;
+    let query = businessId ? builder.eq('business_id', businessId) : builder;
+    if (signal) query = query.abortSignal(signal);
     const res = await query;
     if (res.error) {
       cache.set(cacheKey, null);
@@ -208,7 +212,7 @@ export async function evaluateElementReadiness(
 
     // Row assertion check
     if (def.backingTable && def.rowAssertion && opts.businessId) {
-      const count = await getRowCount(def.backingTable, opts.businessId, rowCache);
+      const count = await getRowCount(def.backingTable, opts.businessId, rowCache, opts.signal);
       if (!meetsAssertion(count, def)) {
         records.push({
           elementId: occ.elementId,

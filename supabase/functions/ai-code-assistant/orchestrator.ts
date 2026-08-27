@@ -361,7 +361,9 @@ async function runBuilderLane(
   const researchContext = formatResearchContext(research);
 
   // ── 6. Compact messages + builder context ──────────────────────────────
-  const processedMessages = compactMessages(messages);
+  const processedMessages = compactMessages(
+    messages.map(({ role, content }) => ({ role, content })),
+  );
 
   // Builder-priority VFS compaction (issue-aware)
   const issueHint = detectIssueHint(previewDiagnostics ?? undefined, memory?.goalCategory);

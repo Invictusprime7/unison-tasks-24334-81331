@@ -12,6 +12,8 @@ const SUPABASE_DB_URL = Deno.env.get("SUPABASE_DB_URL")!;
 const MAX_FILE_COUNT = 300;
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_TOTAL_BYTES = 5_000_000;
+const DB_CONNECT_TIMEOUT_MS = 10_000;
+const DB_CLOSE_TIMEOUT_MS = 2_000;
 const REQUIRED_UI_FOUNDATION_PATHS = [
   "/.unison/ui-manifest.json",
   "/src/unison/ui/index.ts",
@@ -279,12 +281,34 @@ async function query<T extends Record<string, unknown>>(
   return result.rows;
 }
 
+async function withTimeout<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: number | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, userEmail: string) {
   const pg = new PgClient(SUPABASE_DB_URL);
-  await pg.connect();
+  let connected = false;
 
   try {
+    await withTimeout(pg.connect(), DB_CONNECT_TIMEOUT_MS, 'database connection');
+    connected = true;
     await pg.queryArray("BEGIN");
+    // Bound every lock/query in this transaction below the frontend commit
+    // watchdog. A database stall must roll back and return an actionable 500;
+    // it must never leave the Wizard waiting for the platform's 150s idle cap.
+    await pg.queryArray("SET LOCAL lock_timeout = '5s'");
+    await pg.queryArray("SET LOCAL statement_timeout = '15s'");
+    await pg.queryArray("SET LOCAL idle_in_transaction_session_timeout = '30s'");
     const businessId = body.existingBusinessId ?? body.ids.businessId;
     if (body.existingBusinessId) {
       const authorization = await query<{ authorized: boolean }>(
@@ -420,13 +444,35 @@ async function provisionConfirmedLaunch(body: ProvisionBody, userId: string, use
       [businessId, body.ids.siteId, JSON.stringify({ projectId: body.ids.projectId, systemType: body.systemType })],
     );
 
+    // Route guards read this row before allowing /web-builder. Persist it in
+    // the same transaction as the project shell so the frontend does not need
+    // one more redirect-blocking auth/query round trip after canonical commit.
+    await query(
+      pg,
+      `INSERT INTO public.onboarding_state
+        (user_id, completed, current_step, industry, business_name, project_id, updated_at)
+       VALUES ($1, true, 'launched', $2, $3, $4, now())
+       ON CONFLICT (user_id) DO UPDATE SET
+         completed = true,
+         current_step = 'launched',
+         industry = EXCLUDED.industry,
+         business_name = EXCLUDED.business_name,
+         project_id = EXCLUDED.project_id,
+         updated_at = now()`,
+      [userId, body.systemType, body.businessName, body.ids.projectId],
+    );
+
     await pg.queryArray("COMMIT");
     return { ...body.ids, businessId };
   } catch (error) {
-    try { await pg.queryArray("ROLLBACK"); } catch { /* connection already closed */ }
+    if (connected) {
+      try { await withTimeout(pg.queryArray("ROLLBACK"), DB_CLOSE_TIMEOUT_MS, 'database rollback'); } catch { /* connection already closed */ }
+    }
     throw error;
   } finally {
-    try { await pg.end(); } catch { /* no-op */ }
+    if (connected) {
+      try { await withTimeout(pg.end(), DB_CLOSE_TIMEOUT_MS, 'database close'); } catch { /* isolate cleanup owns a stuck socket */ }
+    }
   }
 }
 
@@ -448,9 +494,17 @@ Deno.serve(async (req) => {
     });
   }
   try {
+    console.info('[provision-launch-site] confirmed launch started', {
+      projectId: parsed.data.ids.projectId,
+      existingBusiness: Boolean(parsed.data.existingBusinessId),
+    });
     // Instantiate once here to fail closed when the function environment is incomplete.
     createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     const provisioned = await provisionConfirmedLaunch(parsed.data, auth.user.id, auth.user.email);
+    console.info('[provision-launch-site] confirmed launch completed', {
+      projectId: provisioned.projectId,
+      businessId: provisioned.businessId,
+    });
     return secureJsonResponse({ success: true, data: provisioned }, 201, corsHeaders);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

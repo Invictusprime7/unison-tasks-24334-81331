@@ -499,6 +499,7 @@ describe('launch business runtime persistence', () => {
     const formSubmit = readFileSync(resolve(process.cwd(), 'supabase/functions/form-submit/index.ts'), 'utf8');
     const persistence = readFileSync(resolve(process.cwd(), 'src/services/launchFormDefinitionPersistence.ts'), 'utf8');
     const launcher = readFileSync(resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'), 'utf8');
+    const provisioner = readFileSync(resolve(process.cwd(), 'supabase/functions/provision-launch-site/index.ts'), 'utf8');
 
     // form-submit is the enforcement point for approved definitions.
     expect(formSubmit).toContain('.from("form_definitions")');
@@ -511,6 +512,9 @@ describe('launch business runtime persistence', () => {
     expect(persistence).toContain("from('form_definitions')");
     expect(persistence).toContain("onConflict: 'business_id,project_id,site_id,external_id'");
     expect(launcher).toContain('persistLaunchFormDefinitions({');
+    expect(launcher).toContain('void persistLaunchFormDefinitions({');
+    expect(provisioner).toContain('INSERT INTO public.onboarding_state');
+    expect(provisioner).toContain("SET LOCAL statement_timeout = '15s'");
   });
 
   it('persists only a site-bound compiled runtime manifest with the confirmed launch', () => {

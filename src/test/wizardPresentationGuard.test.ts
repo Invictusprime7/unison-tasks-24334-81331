@@ -39,8 +39,8 @@ describe('Wizard presentation guard', () => {
 
   it('runs before the final VFS merge so drift is detected pre-seal', () => {
     const launcher = readFileSync(resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'), 'utf8');
-    expect(launcher).toContain('assessWizardHomePresentation({');
-    expect(launcher.indexOf('assessWizardHomePresentation({')).toBeLessThan(launcher.indexOf('const generatedFiles: Record<string, string>'));
+    expect(launcher).toContain('assessWizardPagePresentations({');
+    expect(launcher.indexOf('assessWizardPagePresentations({')).toBeLessThan(launcher.indexOf('const generatedFiles: Record<string, string>'));
   });
 
   it('rejects a generic Home against the real photography composition and its image-led presentation modules', () => {

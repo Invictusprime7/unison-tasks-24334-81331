@@ -37,7 +37,10 @@ import type { CompiledContract } from '@/platform/core/contractCompiler';
 import type { ThemeTokens } from '@/sections/types';
 import { PreviewGate, PublishGate, type GateVerdict } from '@/platform/core/gates';
 import { hasFatalCompileErrors } from './compileSafeGate';
-import { runFullPreflight } from '@/services/runFullPreflight';
+import {
+  runFullPreflight,
+  type RunFullPreflightResult,
+} from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
 import { evaluateElementReadiness, type ElementReadinessReport } from '@/services/elementReadinessEvaluator';
 import { executeBackendOps, type BackendOpExecutionReport } from '@/services/backendOpExecutor';
@@ -106,7 +109,11 @@ export interface CommitMutationInput {
       siteBundleSnapshot: SiteBundleSnapshot;
       runtimeManifest: RuntimeManifest;
       playground?: PlaygroundState;
+      /** Final preflight already run before the Wizard snapshot was sealed. */
+      preflightResult?: RunFullPreflightResult;
     };
+    /** Cancels redirect-critical database work when the launch stage expires. */
+    signal?: AbortSignal;
   };
 }
 
@@ -220,6 +227,11 @@ function sanitizePreviewArtifacts(contents: string): string {
 export async function commitMutation(
   input: CommitMutationInput,
 ): Promise<CommitMutationResult> {
+  if (input.options?.signal?.aborted) {
+    throw input.options.signal.reason instanceof Error
+      ? input.options.signal.reason
+      : new Error('Canonical commit was cancelled.');
+  }
   const diagnostics: CommitDiagnostic[] = [];
   const log = (
     stage: string,
@@ -365,13 +377,18 @@ export async function commitMutation(
   const requirePreview = input.options?.requirePreviewPass !== false;
   const requireReadiness = input.options?.requireReadinessPass !== false;
 
-  let preflight = runFullPreflight(files, {
-    siteBundleSnapshot: (snapshotForPersistence as { meta?: unknown } | null) as
-      | import('@/platform/core/canonicalPipeline').SiteBundleSnapshot
-      | null,
-    industry: input.options?.industry,
-    brand: input.options?.businessName,
-  });
+  // Wizard launch already ran this exact final preflight in a cancellable
+  // worker before sealing its reviewed artifact. Reuse that verdict so commit
+  // cannot repeat the CPU-heavy pass on the browser's main thread.
+  let preflight = reviewedArtifact?.preflightResult
+    ? { ...reviewedArtifact.preflightResult, files }
+    : runFullPreflight(files, {
+        siteBundleSnapshot: (snapshotForPersistence as { meta?: unknown } | null) as
+          | import('@/platform/core/canonicalPipeline').SiteBundleSnapshot
+          | null,
+        industry: input.options?.industry,
+        brand: input.options?.businessName,
+      });
   files = preflight.files;
   if (input.source === 'wizard-launch') {
     snapshotForPersistence = mergeWizardLaunchSnapshot(
@@ -474,6 +491,7 @@ export async function commitMutation(
       vfsFiles: files,
       provisionedCapabilities,
       businessId: input.identity.businessId,
+      signal: input.options?.signal,
     });
     elementPreviewBlocked = elementReadiness.summary.previewBlocked;
     elementPublishBlocked = elementReadiness.summary.publishBlocked;
@@ -1006,7 +1024,7 @@ async function finalize(args: {
   const dryRun = input.options?.dryRun === true;
 
   if (!dryRun) {
-    const { data, error } = await (supabase.rpc as any)('commit_canonical_site_revision', {
+    let commitRequest = (supabase.rpc as any)('commit_canonical_site_revision', {
       p_project_id: input.identity.projectId,
       p_business_id: input.identity.businessId,
       p_draft_id: input.identity.draftId,
@@ -1026,6 +1044,10 @@ async function finalize(args: {
       p_vfs_hash: vfsHash,
       p_active_page_path: input.current.activePagePath ?? null,
     });
+    if (input.options?.signal) {
+      commitRequest = commitRequest.abortSignal(input.options.signal);
+    }
+    const { data, error } = await commitRequest;
     if (error || typeof data !== 'string' || !data) {
       const detail = error?.message || 'atomic commit returned no revision id';
       diagnostics.push({

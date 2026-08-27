@@ -21,6 +21,28 @@ export interface ConfirmedLaunchProvisionInput {
   themePresetId: string;
 }
 
+export interface ConfirmedLaunchProvisionOptions {
+  signal?: AbortSignal;
+}
+
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new Error('Confirmed launch provisioning was cancelled.');
+}
+
+function waitWithSignal<T>(work: PromiseLike<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return Promise.resolve(work);
+  if (signal.aborted) return Promise.reject(abortError(signal));
+  return new Promise<T>((resolve, reject) => {
+    const handleAbort = () => reject(abortError(signal));
+    signal.addEventListener('abort', handleAbort, { once: true });
+    Promise.resolve(work).then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', handleAbort);
+    });
+  });
+}
+
 export function createConfirmedLaunchIds(existingBusinessId?: string | null): ConfirmedLaunchIds {
   return {
     businessId: existingBusinessId || crypto.randomUUID(),
@@ -34,10 +56,13 @@ export function createConfirmedLaunchIds(existingBusinessId?: string | null): Co
 
 export async function provisionConfirmedLaunchSite(
   input: ConfirmedLaunchProvisionInput,
+  options: ConfirmedLaunchProvisionOptions = {},
 ): Promise<ConfirmedLaunchIds> {
-  const { data, error } = await supabase.functions.invoke('provision-launch-site', {
-    body: input,
-  });
+  const { signal } = options;
+  const { data, error } = await waitWithSignal(
+    supabase.functions.invoke('provision-launch-site', { body: input }),
+    signal,
+  );
   if (error) throw new Error(error.message || 'Unable to provision the confirmed site launch.');
 
   const result = (data as { data?: Partial<ConfirmedLaunchIds> } | null)?.data;
@@ -47,11 +72,12 @@ export async function provisionConfirmedLaunchSite(
 
   // Provisioning owns identity only. Any site content present before the
   // platform-core commit would create a competing source of truth.
-  const { data: draftRow, error: verifyError } = await supabase
+  let draftQuery = supabase
     .from('builder_drafts')
     .select('id, project_id, business_id, site_id, last_revision_id, vfs_files, metadata')
-    .eq('id', result.draftId)
-    .maybeSingle();
+    .eq('id', result.draftId);
+  if (signal) draftQuery = draftQuery.abortSignal(signal);
+  const { data: draftRow, error: verifyError } = await draftQuery.maybeSingle();
   if (verifyError) {
     throw new Error(`Launch persisted but could not be verified: ${verifyError.message}`);
   }
@@ -72,16 +98,20 @@ export async function provisionConfirmedLaunchSite(
     throw new Error('Confirmed launch shell contains content outside the canonical commit pipeline.');
   }
 
-  const { data: authData, error: authError } = await supabase.auth.getUser();
+  const { data: authData, error: authError } = await waitWithSignal(
+    supabase.auth.getUser(),
+    signal,
+  );
   if (authError || !authData.user?.id) {
     throw new Error('Confirmed launch project ownership could not be verified.');
   }
-  const { data: membership, error: membershipError } = await supabase
+  let membershipQuery = supabase
     .from('project_members')
     .select('id')
     .eq('project_id', result.projectId)
-    .eq('user_id', authData.user.id)
-    .maybeSingle();
+    .eq('user_id', authData.user.id);
+  if (signal) membershipQuery = membershipQuery.abortSignal(signal);
+  const { data: membership, error: membershipError } = await membershipQuery.maybeSingle();
   if (membershipError || !membership) {
     throw new Error('Confirmed launch project ownership could not be verified.');
   }

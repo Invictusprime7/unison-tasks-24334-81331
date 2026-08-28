@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { onPipelineCommit, type CommitResult } from '@/platform/core';
-import { runWizardStage4b } from '@/services/wizardStage4bRuntime';
+import { runWizardLaneA } from '@/services/wizardStage4bRuntime';
 import type { WizardSelections } from '@/types/playground';
 import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
@@ -52,7 +52,7 @@ describe('Wizard Stage 4b runtime', () => {
     };
 
     try {
-      const stage4b = await runWizardStage4b({
+      const stage4b = await runWizardLaneA({
         selections,
         mergeContext,
         workerFactory: () => worker,
@@ -87,7 +87,7 @@ describe('Wizard Stage 4b runtime', () => {
       terminate: vi.fn(),
     };
 
-    await expect(runWizardStage4b({
+    await expect(runWizardLaneA({
       selections,
       mergeContext,
       workerFactory: () => worker,
@@ -109,7 +109,7 @@ describe('Wizard Stage 4b runtime', () => {
       terminate: vi.fn(),
     };
 
-    const stage4b = await runWizardStage4b({
+    const stage4b = await runWizardLaneA({
       selections,
       mergeContext,
       workerFactory: () => worker,
@@ -131,7 +131,7 @@ describe('Wizard Stage 4b runtime', () => {
       terminate,
     };
 
-    const pending = runWizardStage4b({
+    const pending = runWizardLaneA({
       selections,
       mergeContext,
       signal: controller.signal,

@@ -81,6 +81,7 @@ export interface RunFullPreflightResult {
   runtime?: {
     execution: 'worker' | 'compatibility-fallback';
     reason?: string;
+    repairAttempts?: number;
   };
   /** Generated files that syntax repair could not recover. Never seal these. */
   quarantinedPaths?: string[];

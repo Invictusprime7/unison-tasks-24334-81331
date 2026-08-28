@@ -3,6 +3,10 @@ import {
   type RunFullPreflightOptions,
   type RunFullPreflightResult,
 } from '@/services/runFullPreflight';
+import {
+  acceptGeneratedBundle,
+  type CompileRepairFn,
+} from '@/services/compileSafeGate';
 
 export interface FullPreflightWorkerRequest {
   requestId: string;
@@ -31,6 +35,9 @@ export interface RunFullPreflightRuntimeOptions {
   workerTimeoutMs?: number;
   /** Test/SSR compatibility only. Browser launch code must use the worker. */
   fallbackPreflight?: typeof runFullPreflight;
+  /** Optional compiler-guided repair. The deterministic gate remains authoritative. */
+  repair?: CompileRepairFn;
+  maxRepairAttempts?: number;
 }
 
 export class FullPreflightWorkerBootstrapError extends Error {
@@ -149,27 +156,60 @@ export async function runFullPreflightRuntime(
   runtime: RunFullPreflightRuntimeOptions = {},
 ): Promise<RunFullPreflightResult> {
   const timeoutMs = runtime.workerTimeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS;
-  console.info('[runFullPreflightRuntime] worker started', { timeoutMs });
-  try {
-    const result = await runWorker((runtime.workerFactory ?? defaultWorkerFactory)(), {
-      requestId: createRequestId(),
-      files,
-      options,
-    }, runtime.signal, timeoutMs);
-    console.info('[runFullPreflightRuntime] worker completed');
-    return { ...result, runtime: { execution: 'worker' } };
-  } catch (error) {
-    const canFallback =
-      error instanceof FullPreflightWorkerBootstrapError ||
-      error instanceof FullPreflightWorkerTimeoutError;
-    if (!canFallback || !runtime.fallbackPreflight) {
-      throw error;
+  const execute = async (candidateFiles: Record<string, string>): Promise<RunFullPreflightResult> => {
+    console.info('[runFullPreflightRuntime] worker started', { timeoutMs });
+    try {
+      const result = await runWorker((runtime.workerFactory ?? defaultWorkerFactory)(), {
+        requestId: createRequestId(),
+        files: candidateFiles,
+        options,
+      }, runtime.signal, timeoutMs);
+      console.info('[runFullPreflightRuntime] worker completed');
+      return { ...result, runtime: { execution: 'worker' } };
+    } catch (error) {
+      const canFallback =
+        error instanceof FullPreflightWorkerBootstrapError ||
+        error instanceof FullPreflightWorkerTimeoutError;
+      if (!canFallback || !runtime.fallbackPreflight) throw error;
+      if (runtime.signal?.aborted) throw abortError(runtime.signal);
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn('[runFullPreflightRuntime] worker unavailable; using compatibility fallback', { reason });
+      const result = runtime.fallbackPreflight(candidateFiles, options);
+      console.info('[runFullPreflightRuntime] compatibility fallback completed');
+      return { ...result, runtime: { execution: 'compatibility-fallback', reason } };
     }
-    if (runtime.signal?.aborted) throw abortError(runtime.signal);
-    const reason = error instanceof Error ? error.message : String(error);
-    console.warn('[runFullPreflightRuntime] worker unavailable; using compatibility fallback', { reason });
-    const result = runtime.fallbackPreflight(files, options);
-    console.info('[runFullPreflightRuntime] compatibility fallback completed');
-    return { ...result, runtime: { execution: 'compatibility-fallback', reason } };
+  };
+
+  const initial = await execute(files);
+  if (initial.stages.compileSafe.status !== 'blocked' || !runtime.repair) return initial;
+
+  const repaired = await acceptGeneratedBundle(initial.files, {
+    sourceLane: options.sourceLane,
+    pipelineStage: 'acceptance',
+    repair: runtime.repair,
+    maxRepairAttempts: runtime.maxRepairAttempts,
+  });
+  if (!repaired.accepted) {
+    return {
+      ...initial,
+      files: repaired.files,
+      compileDiagnostics: repaired.diagnostics,
+      stages: {
+        ...initial.stages,
+        compileSafe: {
+          status: 'blocked',
+          repaired: repaired.repaired,
+          blockingCount: repaired.blocking.length,
+          summary: initial.stages.compileSafe.summary,
+        },
+      },
+      runtime: { ...initial.runtime!, repairAttempts: repaired.attempts },
+    };
   }
+
+  const final = await execute(repaired.files);
+  return {
+    ...final,
+    runtime: { ...final.runtime!, repairAttempts: repaired.attempts },
+  };
 }

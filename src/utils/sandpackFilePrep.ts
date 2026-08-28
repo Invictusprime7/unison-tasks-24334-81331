@@ -4685,6 +4685,7 @@ function synthesizeMissingLocalImports(
     themeModule?: string | null;
     iconModule?: string | null;
     sharedModules?: Record<string, string>;
+    canonicalOnly?: boolean;
   } = {},
 ): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
@@ -4750,6 +4751,8 @@ function synthesizeMissingLocalImports(
         );
         continue;
       }
+
+      if (options.canonicalOnly) continue;
 
       if (isTypeOnlyImportStatement(match[0])) {
         const typePath = hasExplicitModuleExtension(resolved) ? resolved : `${resolved}.ts`;
@@ -6670,6 +6673,16 @@ export function prepareSandpackFiles(
   // Unresolved local imports that are actually lucide icons become real
   // lucide-react imports instead of killing the wizard preview.
   rewriteLucideIconLocalImports(sandpackFiles);
+
+  // Restore only approved Wizard-owned modules before generic closure. This
+  // prevents the usage-derived ladder from synthesizing a competing theme,
+  // icon, or shared-chrome module at a different extension.
+  synthesizeMissingLocalImports(sandpackFiles, {
+    themeModule: buildCanonicalThemeModule(resolvedPresetId || cssResolution.themePresetId),
+    iconModule: buildCanonicalIconModule(),
+    sharedModules: buildCanonicalWizardChromeModules(),
+    canonicalOnly: true,
+  });
 
   // Single unresolved-module ladder (resolve → recover → synthesize → drop).
   // This is the SAME policy the launch/commit preflight tail runs, so prep can

@@ -39,6 +39,8 @@ describe('Wizard first-attempt authoring contract', () => {
     });
 
     expect(contract).toContain('Return exactly these file keys and no others: /src/pages/Services.tsx, /src/pages/Faq.tsx');
+    expect(contract).toContain('Each requested file already exists in the candidate VFS as Lane A JSX.');
+    expect(contract).toContain('Preserve Lane A section hierarchy, layout geometry, media treatment, responsive behavior, and semantic metadata');
     expect(contract).toContain('Minimum: 4 literal body regions');
     expect(contract).toContain('data-ut-intent="quote.request"');
     expect(contract).toContain('data-ut-intent="lead.capture"');

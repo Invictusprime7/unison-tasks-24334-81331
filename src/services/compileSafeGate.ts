@@ -562,14 +562,14 @@ export function runCompileSafeAcceptance(
       continue;
     }
     // Duplicate `function`/`var` declarations parse fine but silently shadow a
-    // generated component. Reported (never rewritten) so provenance survives.
+    // generated component. They must be repaired before canonical acceptance.
     for (const name of detectDuplicateTopLevelDeclarations(source)) {
       diag(
         path,
         'parse',
         'DUPLICATE_DECLARATION',
         `'${name}' is declared more than once at module scope`,
-        'warning',
+        'error',
       );
     }
   }
@@ -636,7 +636,7 @@ export function runCompileSafeAcceptance(
           'export-contract',
           'EXPORT_MISMATCH',
           `'${target}' has no default export (imported as ${imp.defaultName})`,
-          'warning',
+          'error',
         );
       }
       for (const spec2 of imp.named) {
@@ -646,7 +646,7 @@ export function runCompileSafeAcceptance(
             'export-contract',
             'EXPORT_MISMATCH',
             `'${target}' does not export '${spec2.imported}'`,
-            'warning',
+            'error',
           );
         }
       }

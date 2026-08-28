@@ -1,4 +1,4 @@
-import type { PublishedRuntimeConfig } from '@/services/canonicalLaunchVfs';
+import type { PublishedRuntimeConfig } from '@/services/publishedRuntimeModule';
 
 export interface PublishedRuntimeReadiness {
   ok: boolean;

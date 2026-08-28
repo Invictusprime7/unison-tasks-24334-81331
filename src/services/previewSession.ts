@@ -248,6 +248,8 @@ export function ensureViteRootFiles(
     extraDependencies?: Record<string, string>;
     themePresetId?: string | null;
     stage4bCss?: string;
+    /** Lane A only: Stage 4b will author the stylesheet after Lane B. */
+    deferStage4b?: boolean;
   },
 ): FileMap {
   const result = { ...fileMap };
@@ -343,6 +345,7 @@ export function ensureViteRootFiles(
       result['/src/index.css'] = options.stage4bCss;
       return result;
     }
+    if (options?.deferStage4b) return result;
     throw new PreviewPipelineError(
       'vfs',
       'Missing /src/index.css. Stage 4b must inject the authoritative themed stylesheet before preview root files are prepared.',

@@ -10,6 +10,8 @@ import { THEME_PRESETS } from "@/components/onboarding/themePresets";
 import { themePresetToThemeTokens } from "@/components/onboarding/themePresetToTokens";
 import { buildThemedIndexCss } from "@/components/onboarding/themePresetToIndexCss";
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
+import { buildTemplateLayoutContract } from '@/services/templateLayoutContract';
+import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
 describe("launchStateToSandpackFiles", () => {
   it('does not reintroduce raw launcher paths after canonical normalization', () => {
@@ -507,11 +509,22 @@ describe("launchStateToSandpackFiles", () => {
       expect(pipeline.compileResult.vfsFiles[page.filePath!]).toMatch(/export\s+default\b/);
     }
     expect(pipeline.compileResult.vfsFiles['/src/App.tsx']).toContain('<Routes>');
+    const composition = getCompositionsBySystemType('booking')
+      .find((candidate) => candidate.id === templateId)!;
+    const mergeContext = createWizardMergeContext({
+      industry: wizardSelections.industryOverlay,
+      templateId,
+      themePresetId: wizardSelections.themePresetId,
+      themeTokens: wizardSelections.themeTokens,
+      templateLayoutContract: buildTemplateLayoutContract(composition),
+    });
+    const laneBPages = Object.fromEntries(
+      Object.values(pipeline.siteBundleSnapshot.pageRegistry.pages)
+        .map((page) => [page.filePath!, pipeline.compileResult.vfsFiles[page.filePath!]]),
+    );
 
     const artifacts = buildCanonicalLaunchArtifacts({
-      generatedFiles: {
-        "/src/App.tsx": "export default function App(){ return <main>Generated Home</main>; }",
-      },
+      generatedFiles: laneBPages,
       preferredEntryPoint: "/src/App.tsx",
       siteBundleSnapshot: pipeline.siteBundleSnapshot,
       compiledPlayground: pipeline.compileResult,
@@ -525,6 +538,7 @@ describe("launchStateToSandpackFiles", () => {
       aesthetic: "modern",
       backendRequired: false,
       wizardSelections,
+      mergeContext,
     });
 
     expect(artifacts.files["/src/pages/Services.tsx"]).toBeTruthy();

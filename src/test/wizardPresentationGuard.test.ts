@@ -147,7 +147,7 @@ const HYDRATABLE = new Set([]);`;
     expect(result.reasons['/src/pages/Contact.tsx']).toContain('parallel global theme system');
   });
 
-  it('does not let raw Lane B geometry block a Stage 4b-composed route', () => {
+  it('requires Lane B geometry before Stage 4b stamps a composed route', () => {
     const homePage = `const SECTIONS = [
   {"id":"home-hero","type":"hero","props":{"headline":"Studio","layout":"split","image":"hero.jpg"}}
 ];
@@ -186,7 +186,7 @@ const HYDRATABLE = new Set([]);`;
       },
     });
 
-    expect(result.rejectedPaths).toEqual([]);
-    expect(result.reasons['/src/pages/Pricing.tsx']).toBeUndefined();
+    expect(result.rejectedPaths).toEqual(['/src/pages/Pricing.tsx']);
+    expect(result.reasons['/src/pages/Pricing.tsx']).toContain('hero geometry');
   });
 });

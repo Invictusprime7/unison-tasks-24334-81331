@@ -10,6 +10,7 @@ import { GENERATED_UI_FOUNDATION_VERSION } from '@/platform/core/generatedUiFoun
 import { getCompositionsBySystemType } from '@/sections/templates';
 import { getVariantById, getVariantsForSection } from '@/sections/variants';
 import { buildTemplateLayoutContract } from '@/services/templateLayoutContract';
+import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
 function wizardSelections() {
   const style = THEME_PRESETS.find((preset) => preset.id === 'organic');
@@ -29,6 +30,19 @@ function wizardSelections() {
     requestedPages: ['services', 'booking'],
     scaffoldMode: 'selected-pages' as const,
   };
+}
+
+function wizardMergeContext() {
+  const selections = wizardSelections();
+  const composition = getCompositionsBySystemType('booking')
+    .find((candidate) => candidate.id === selections.templateId);
+  return createWizardMergeContext({
+    industry: selections.industryOverlay,
+    templateId: selections.templateId,
+    themePresetId: selections.themePresetId,
+    themeTokens: selections.themeTokens,
+    templateLayoutContract: composition ? buildTemplateLayoutContract(composition) : null,
+  });
 }
 
 describe('wizard pipeline ownership invariants', () => {
@@ -55,8 +69,10 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).not.toContain('seed_recovery');
     expect(launcherSource).toContain('yieldToHost: yieldToBrowser');
     expect(launcherSource).toContain('workerTimeoutMs: 30_000');
-    expect(launcherSource).toContain('fallbackPreflight: (files, options) => runFullPreflight(files, {');
-    expect(launcherSource).toContain('compileSafe: false');
+    expect(launcherSource).toContain('fallbackPreflight: (files, options) => runFullPreflight(files, options)');
+    expect(launcherSource).not.toContain('compileSafe: false');
+    expect(launcherSource).toContain('maxRepairAttempts: 2');
+    expect(launcherSource).toContain('Repair the implementation defect without redesigning, simplifying, flattening, or replacing the generated page.');
     expect(launcherSource).toContain("'preflight.worker_unavailable'");
     expect(launcherSource).toContain('findUnresolvedLocalImports(artifacts.files)');
     expect(launcherSource).not.toContain('runStrictImportContractCheck({');
@@ -65,7 +81,8 @@ describe('wizard pipeline ownership invariants', () => {
     expect(canonicalLaunchSource).toContain('await runFullPreflightRuntime(');
     expect(preflightRuntimeSource).toContain("name: 'unison-wizard-full-preflight'");
     expect(preflightRuntimeSource).toContain('worker.terminate()');
-    expect(launcherSource).toContain('canonicalPageFallbackPaths: canonicalContentFallbackPaths');
+    expect(launcherSource).not.toContain('canonicalContentFallbackPaths');
+    expect(launcherSource).not.toContain('canonicalPageFallbackPaths');
   });
 
   it('returns the exact topology plan used to populate SiteBundleSnapshot.pageRegistry', () => {
@@ -79,12 +96,18 @@ describe('wizard pipeline ownership invariants', () => {
 
   it('persists semantic HSL tokens through snapshot and runtime app context', () => {
     const result = commitToPipeline({ selections: wizardSelections() }, 'wizard-launch');
+    expect(result.siteBundleSnapshot.meta.themeInjection).toBeUndefined();
+    expect(result.compileResult.vfsFiles['/src/index.css']).toBeUndefined();
+    for (const page of Object.values(result.siteBundleSnapshot.pageRegistry.pages)) {
+      expect(result.compileResult.vfsFiles[page.filePath!]).not.toContain('data-ut-template-id=');
+    }
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: result.compileResult.vfsFiles,
       preferredEntryPoint: '/src/App.tsx',
       siteBundleSnapshot: result.siteBundleSnapshot,
       compiledPlayground: result.compileResult,
       wizardSelections: wizardSelections(),
+      mergeContext: wizardMergeContext(),
       mergeWithCanonicalSnapshot: true,
     });
 
@@ -127,20 +150,26 @@ describe('wizard pipeline ownership invariants', () => {
     expect(artifacts.files['/src/pages/Home.tsx']).toContain('const DESIGN_MOTION');
     expect(artifacts.files['/src/index.css']).toContain(SHADCN_LIBRARY_CSS_MARKER);
     expect(artifacts.files['/src/index.css']).toContain('.ut-shadcn-card');
-    expect(artifacts.files['/src/pages/Home.tsx']).not.toContain('data-ut-template-id=');
+    for (const page of Object.values(artifacts.siteBundleSnapshot!.pageRegistry.pages)) {
+      expect(artifacts.files[page.filePath!], page.filePath).toContain(
+        `data-ut-template-id="${wizardSelections().templateId}"`,
+      );
+    }
     expect(artifacts.siteBundleSnapshot?.manifest.layout.header).not.toBe('default');
     expect(artifacts.siteBundleSnapshot?.manifest.layout.footer).not.toBe('default');
     expect(artifacts.siteBundleSnapshot?.meta.designIntervention?.themePresetId).toBe(wizardSelections().themePresetId);
     expect(artifacts.siteBundleSnapshot?.meta.designIntervention?.motionRecipes.length).toBeGreaterThan(0);
   });
 
-  it('passes Stage 4b visual intelligence and design memory into Lane B', () => {
+  it('passes the final visual contract and design memory into Lane B', () => {
     const launcherSource = readFileSync(
       resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'),
       'utf8',
     );
 
-    expect(launcherSource).toContain('── STAGE 4B VISUAL INTELLIGENCE (BINDING) ──');
+    expect(launcherSource).toContain('── LANE B VISUAL CONTRACT (BINDING) ──');
+    expect(launcherSource).toContain('Stage 4b will compile the supplied semantic theme tokens into /src/index.css after this turn.');
+    expect(launcherSource).not.toContain('The selected theme is already compiled into /src/index.css.');
     expect(launcherSource).toContain('Available visual recipes:');
     expect(launcherSource).toContain('Available interaction primitives:');
     expect(launcherSource).toContain('DESIGN MEMORY:');
@@ -300,7 +329,7 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('pageRoles: { [normalizedPath]: pageRole }');
     expect(launcherSource).toContain('Completed wizard page contains residual visual literals after token normalization');
     expect(launcherSource).not.toContain('Page contains hardcoded visual colors instead of Stage 4b theme tokens');
-    expect(launcherSource).toContain('allowCanonicalPageFallback: false');
+    expect(launcherSource).not.toContain('allowCanonicalPageFallback');
     expect(launcherSource).toContain('GENERATED UI CONTRACT:');
     expect(launcherSource).toContain('DESIGN INTERVENTION (LOCKED):');
     expect(launcherSource).toContain('@/unison/ui');
@@ -314,7 +343,6 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain("normalizedPath === '/.unison/ui-manifest.json'");
     expect(launcherSource).toContain("normalizedPath === '/src/index.css'");
     expect(launcherSource).toContain('sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(structured.files))');
-    expect(launcherSource).toContain('sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(retryStructured.files))');
     expect(launcherSource).toContain('sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(completionStructured.files))');
   });
 
@@ -344,19 +372,16 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain(
       'takeWizardGenerationBudget(WIZARD_UI_REPAIR_MAX_MS)',
     );
-    expect(launcherSource).toContain(
-      'unresolvedWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES',
-    );
-    expect(launcherSource).toContain('compileStructuredWizardFaqPage({');
-    expect(launcherSource).toContain("if (pageRole !== 'faq') continue;");
-    expect(launcherSource).toContain('const unresolvedWizardPageFiles = missingWizardPageFiles.filter(');
-    expect(launcherSource).toContain(
-      'takeWizardGenerationBudget(WIZARD_BATCH_REPAIR_MAX_MS)',
-    );
-    expect(launcherSource).toContain(
-      'for (const attempt of [2, 3, 4] as const)',
-    );
-    expect(launcherSource).toContain('completeMissingWizardPage(path, attempt)');
+    expect(launcherSource).not.toContain('compileStructuredWizardFaqPage');
+    expect(launcherSource).not.toContain('[2, 3, 4]');
+    expect(launcherSource).toContain('Lane B could not generate: ${failedPage?.title');
+    expect(launcherSource).toContain('Retry generation or deselect this page.');
+    expect(launcherSource).not.toContain("if (pageRole !== 'faq') continue;");
+    expect(launcherSource).not.toContain('WIZARD_BATCH_REPAIR_MAX_MS');
+    expect(launcherSource).not.toContain('WIZARD_BATCH_REPAIR_MAX_PAGES');
+    expect(launcherSource).toContain('const attempt = 2 as const;');
+    expect(launcherSource).toContain('if (laneBRetriedPaths.has(missingPath)) return;');
+    expect(launcherSource).toContain('completeMissingWizardPage(path)');
     expect(launcherSource).toContain("reasoningEffort: 'low'");
     expect(launcherSource).toContain("selectedModelId: 'google/gemini-2.5-flash-lite'");
     expect(launcherSource).toContain('maxTokens: 20_000');
@@ -458,7 +483,8 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('function findUnderGeneratedWizardPages(');
     expect(launcherSource).toContain('const underGeneratedPages = findUnderGeneratedWizardPages(');
     expect(launcherSource).toContain('Deferring under-generated registered pages to isolated Lane B completion');
-    expect(launcherSource).toContain('Your previous response omitted or under-generated the following selected wizard pages.');
+    expect(launcherSource).toContain('── LANE B PAGE COMPLETION TURN ──');
+    expect(launcherSource).toContain('Improve the supplied near-complete page without replacing its working content');
   });
 
   it('describes exactly which keys the model returned when a page completion omits the requested file', () => {
@@ -497,7 +523,6 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).toContain('function findRegisteredPageRole(');
     expect(launcherSource).toContain('pageRoles?: Record<string, string | undefined>');
     expect(launcherSource).toContain('registeredPages: ReadonlyArray<{ path: string; role?: string }>');
-    expect(launcherSource).toContain('getWizardPageRoleInstruction(p.pageType)');
     expect(launcherSource).toContain('const resolvedPageRole = page?.pageRole || page?.pageType;');
     expect(launcherSource).toContain('getWizardPageRoleInstruction(resolvedPageRole)');
   });

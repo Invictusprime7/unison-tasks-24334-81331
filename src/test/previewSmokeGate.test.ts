@@ -144,6 +144,7 @@ describe('Phase 12 regression matrix', () => {
     });
     const mismatch = result.diagnostics.find((d) => d.diagnosticCode === 'EXPORT_MISMATCH');
     expect(mismatch?.pagePath).toBe('/src/pages/Home.tsx');
+    expect(result.accepted).toBe(false);
   });
 
   it('cross-page candidate dependency committed in the same transaction passes both gates', () => {

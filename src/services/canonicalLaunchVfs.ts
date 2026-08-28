@@ -1,5 +1,8 @@
 import type { LayoutCategory } from '@/data/templates/types';
-import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
+import {
+  applyWizardStage4bFinalization,
+  type SiteBundleSnapshot,
+} from '@/platform/core/canonicalPipeline';
 import {
   sealSnapshot,
   type WizardCompileArtifact,
@@ -40,12 +43,7 @@ import { PreviewPipelineError } from './previewPipelineError';
 import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
-import {
-  collectResolvedCompositions,
-  hasResolvedComposition,
-  RESOLVED_COMPOSITION_ROOT,
-} from '@/platform/core/resolvedComposition';
-import { mergeLaneBIntoCanonicalPage } from '@/services/laneBContentPlan';
+import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
 import {
   assertWizardMergeContextMatchesSelections,
   type WizardMergeContext,
@@ -83,7 +81,6 @@ import {
 export {
   buildPublishedRuntimeModule,
   PUBLISHED_RUNTIME_MODULE_PATH,
-  type PublishedRuntimeConfig,
 } from '@/services/publishedRuntimeModule';
 
 export const CANONICAL_METADATA_FILE_PATHS = {
@@ -163,19 +160,6 @@ export interface BuildCanonicalLaunchArtifactsInput {
   businessRuntime?: BusinessRuntimeContract | null;
   /** Capability set that authorizes generated component runtime contracts. */
   enabledCapabilities?: readonly CapabilityId[];
-  /**
-   * When false, registered page modules must come from generatedFiles. The
-   * canonical snapshot may still provide router/root support, but its page
-   * scaffold cannot silently fill missing Lane B output.
-   */
-  allowCanonicalPageFallback?: boolean;
-  /**
-   * Explicit per-path exceptions to `allowCanonicalPageFallback:false`. The
-   * launcher's degraded Lane B path decides that a specific page keeps its
-   * canonical (Stage 4b composed, non-minimal) body; without this allowlist the
-   * merge deletes that body and the router imports a module that never exists.
-   */
-  canonicalPageFallbackPaths?: readonly string[];
   /** Throw if internal preflight has to quarantine generated code. */
   strictPreflight?: boolean;
   /** Validated identity produced once by the Wizard and consumed by the seal. */
@@ -396,17 +380,9 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
-  options: {
-    allowCanonicalPageFallback?: boolean;
-    canonicalPageFallbackPaths?: readonly string[];
-  } = {},
 ): Record<string, string> {
-  const canonicalFallbackAllowlist = new Set(
-    (options.canonicalPageFallbackPaths || []).map((path) => (path.startsWith('/') ? path : `/${path}`)),
-  );
   generatedFiles = normalizeCanonicalVfsFiles(generatedFiles);
   canonicalFiles = normalizeCanonicalVfsFiles(canonicalFiles);
-  const resolvedCompositions = collectResolvedCompositions(canonicalFiles);
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
   const pathVariants = (path: string): string[] => {
@@ -449,15 +425,8 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const homeFilePath = homePage?.filePath || '/src/pages/Home.tsx';
   const generatedAppModule = readGenerated('/src/App.tsx');
 
-  // SNAPSHOT-FIRST HOME AUTHORITY (Pass 2 — theme parity guarantee).
-  // The canonical SiteBundleSnapshot composes Home.tsx with semantic Tailwind
-  // tokens (bg-background, text-foreground, …) so the wizard's themed
-  // /src/index.css applies uniformly across every industry. If an AI-authored
-  // /src/App.tsx silently rebases into Home.tsx (which historically ships
-  // hardcoded hex colors), the home route loses the theme override while every
-  // other registered page keeps it — the exact regression where Home renders
-  // un-themed across industries. Refuse to seed home from generated App.tsx
-  // whenever the canonical snapshot already provides a real, non-fallback home.
+  // A generated App module is legacy input, never a substitute for a selected
+  // Lane B Home page when the canonical registry already declares one.
   const canonicalHome = readCanonical(homeFilePath);
   const canonicalHomeIsAuthoritative = Boolean(
     canonicalHome && canonicalHome.trim() && !isMinimalPreviewFallbackSource(canonicalHome),
@@ -470,13 +439,10 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     !canonicalHomeIsAuthoritative
   );
 
-  // Canonical snapshot is the base for router/root support and — Pass 3 — for
-  // every page whose design Stage 4b has *declared* via a ResolvedPageComposition.
-  // Lane B is a CONTENT author on those pages and the body author only on pages
-  // Stage 4b never composed. After the merge we persist the enriched VFS back
-  // into the SiteBundleSnapshot.
+  // Canonical snapshot owns router/root support. Lane B owns every registered
+  // page body; Stage 4b runs after this merge.
   const merged = { ...canonicalFiles };
-  /** Paths for which Lane B supplied a complete page or a canonical content plan. */
+  /** Paths for which Lane B supplied a complete page. */
   const laneBCompletedPaths = new Set<string>();
 
   for (const [path, content] of Object.entries(generatedFiles)) {
@@ -509,19 +475,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
           { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
         );
       }
-      const canonicalPageSource = readCanonical(normalizedPath);
-      if (hasResolvedComposition(resolvedCompositions, normalizedPath) && canonicalPageSource) {
-        const contentMerge = mergeLaneBIntoCanonicalPage(canonicalPageSource, content);
-        // A declared Stage 4b composition is design-authoritative. If Lane B
-        // supplies no safely extractable content, preserve that design instead
-        // of reverting to wholesale generated TSX.
-        merged[normalizedPath] = contentMerge?.applied
-          ? contentMerge.source
-          : canonicalPageSource;
-      } else {
-        // No declared composition: Lane B remains the complete page-body owner.
-        merged[normalizedPath] = content;
-      }
+      merged[normalizedPath] = content;
       laneBCompletedPaths.add(normalizedPath);
       continue;
     }
@@ -554,7 +508,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     if (!page.filePath) continue;
     const normalizedPagePath = normalizePath(page.filePath);
     const generatedPage = readGenerated(page.filePath);
-    const canonicalPage = readCanonical(page.filePath);
     const existingMergedPage = merged[normalizedPagePath];
 
     if (
@@ -570,20 +523,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     if (generatedPage && !isMinimalPreviewFallbackSource(generatedPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = generatedPage;
-      continue;
-    }
-
-    // Canonical page fallback is a DEGRADED path only. Wizard final merges pass
-    // allowCanonicalPageFallback:false so a missing Lane B page surfaces as an
-    // incomplete launch instead of being masked by a Stage 4b scaffold body.
-    if (
-      (options.allowCanonicalPageFallback !== false
-        || canonicalFallbackAllowlist.has(normalizedPagePath))
-      && canonicalPage
-      && !isMinimalPreviewFallbackSource(canonicalPage)
-    ) {
-      removePathVariants(merged, page.filePath);
-      merged[normalizedPagePath] = canonicalPage;
       continue;
     }
 
@@ -687,14 +626,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     );
   }
 
-  if (!merged['/src/index.css']) {
-    throw new PreviewPipelineError(
-      'vfs',
-      'SiteBundleSnapshot is missing injected /src/index.css; refusing to inject default/minimal preview CSS.',
-      { recoverableByRelaunch: true },
-    );
-  }
-
   // ── Route integrity: one registered page = one VFS file = one route ───────
   const seenRoutes = new Set<string>();
   for (const page of Object.values(snapshot.pageRegistry.pages)) {
@@ -765,13 +696,13 @@ function* buildCanonicalLaunchArtifactSteps(
     assertWizardMergeContextMatchesSelections(input.mergeContext, input.wizardSelections);
   }
   const snapshotThemePresetId = input.siteBundleSnapshot
-    ? assertSnapshotThemeSeed(
-        input.siteBundleSnapshot,
+    ? assertThemeSeed(
+        input.siteBundleSnapshot.meta.themePresetId,
+        'Lane A SiteBundleSnapshot -> canonical launch',
         assertThemeSeed(
           input.mergeContext?.themePresetId ?? input.themePresetId ?? input.siteBundleSnapshot.meta.themePresetId,
-          'SiteBundleSnapshot -> canonical launch',
+          'WizardMergeContext -> canonical launch',
         ),
-        'SiteBundleSnapshot -> canonical launch',
       )
     : null;
   if (input.siteBundleSnapshot && (input.mergeContext?.themePresetId || input.themePresetId)) {
@@ -842,13 +773,22 @@ function* buildCanonicalLaunchArtifactSteps(
 
   yield;
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
-        allowCanonicalPageFallback: input.allowCanonicalPageFallback,
-        canonicalPageFallbackPaths: input.canonicalPageFallbackPaths,
-        // Lane B owns registered page bodies. Snapshot topology owns the
-        // registry/router/bindings and Stage 4b owns /src/index.css.
-      })
+    ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot)
     : { ...safeFiles };
+  if (input.siteBundleSnapshot && input.wizardSelections && input.mergeContext) {
+    const designIntervention = input.siteBundleSnapshot.meta.designIntervention;
+    if (!designIntervention) {
+      throw new Error('Wizard Stage 4b requires the Lane A design intervention.');
+    }
+    const finalized = applyWizardStage4bFinalization({
+      files: mergedFiles,
+      selections: input.wizardSelections,
+      mergeContext: input.mergeContext,
+      designIntervention,
+    });
+    for (const path of Object.keys(mergedFiles)) delete mergedFiles[path];
+    Object.assign(mergedFiles, finalized.files);
+  }
   Object.assign(mergedFiles, restoreLegacyRevealGroupModules(mergedFiles));
   mergedFiles[BUSINESS_PROFILE_HYDRATION_PATH] = BUSINESS_PROFILE_HYDRATION_MODULE;
   mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
@@ -906,9 +846,6 @@ function* buildCanonicalLaunchArtifactSteps(
   for (const key of Object.keys(mergedFiles)) delete mergedFiles[key];
   Object.assign(mergedFiles, preflight.files);
 
-  const compatibilityFallbackSkippedCompileSafe =
-    preflight.runtime?.execution === 'compatibility-fallback' &&
-    preflight.stages.compileSafe.status === 'skipped';
   const blockingPreflightStages = [
     ...(preflight.stages.earlyRepair === 'failed' ? ['early syntax repair failed'] : []),
     ...(preflight.stages.navWiring === 'failed' ? ['navigation wiring failed'] : []),
@@ -924,13 +861,13 @@ function* buildCanonicalLaunchArtifactSteps(
     ...(preflight.stages.componentContracts.remaining.length > 0
       ? [`invalid component contracts: ${preflight.stages.componentContracts.remaining.join(', ')}`]
       : []),
-    ...(preflight.stages.requiredIntentClosure.missing.length > 0
+    ...(input.siteBundleSnapshot && preflight.stages.requiredIntentClosure.missing.length > 0
       ? [`missing required intents: ${preflight.stages.requiredIntentClosure.missing.join(', ')}`]
       : []),
-    ...(preflight.stages.compileSafe.status !== 'accepted' && !compatibilityFallbackSkippedCompileSafe
+    ...(preflight.stages.compileSafe.status !== 'accepted'
       ? [`compile-safe ${preflight.stages.compileSafe.status}: ${preflight.stages.compileSafe.summary}`]
       : []),
-    ...(preflight.stages.bundleTopology.status !== 'accepted'
+    ...(input.siteBundleSnapshot && preflight.stages.bundleTopology.status !== 'accepted'
       ? [`bundle topology ${preflight.stages.bundleTopology.status}: ${preflight.stages.bundleTopology.missing.join(', ')}`]
       : []),
     ...((preflight.quarantinedPaths || []).length > 0

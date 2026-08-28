@@ -77,7 +77,7 @@ describe('SystemLauncher Lane B merge wiring', () => {
   });
 
   it('closes the local import contract before sealing the artifact', () => {
-    expect(launcherSource).toContain('const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);');
-    expect(launcherSource).toContain("'lane_b.unresolved_module'");
+    expect(launcherSource).toContain('const unresolved = findUnresolvedLocalImports(artifacts.files);');
+    expect(launcherSource).toContain('canonical artifact has unresolved local imports');
   });
 });

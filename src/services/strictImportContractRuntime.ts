@@ -7,7 +7,7 @@
  * single unbroken synchronous call, and the browser can't repaint or
  * process input until it returns. Running it in a Worker keeps the same
  * coverage/output without risking the main thread, mirroring
- * wizardStage4bRuntime's worker-with-fallback pattern. A small main-thread
+ * wizardStage4bRuntime's Lane A worker-with-fallback pattern. A small main-thread
  * cache (keyed like prepareSandpackFiles' own internal one) lets the second
  * caller in the same launch — Preview mounting moments after the launcher's
  * own check — reuse the first caller's result instead of recomputing.

@@ -4,11 +4,12 @@ import {
   type FullPreflightWorkerLike,
 } from '@/services/runFullPreflightRuntime';
 import type { RunFullPreflightResult } from '@/services/runFullPreflight';
+import { runFullPreflight } from '@/services/runFullPreflight';
 
 function fakeResult(): RunFullPreflightResult {
-  return {
-    files: { '/src/App.tsx': 'export default function App(){ return <main />; }' },
-  } as unknown as RunFullPreflightResult;
+  return runFullPreflight({
+    '/src/App.tsx': 'export default function App(){ return <main />; }',
+  });
 }
 
 describe('runFullPreflightRuntime', () => {
@@ -84,5 +85,44 @@ describe('runFullPreflightRuntime', () => {
 
     await expect(pending).rejects.toThrow('final preflight deadline reached');
     expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it('revalidates the whole candidate after compiler-guided repair', async () => {
+    const workers: FullPreflightWorkerLike[] = [];
+    const workerFactory = (): FullPreflightWorkerLike => {
+      const worker: FullPreflightWorkerLike = {
+        onmessage: null,
+        onerror: null,
+        terminate: vi.fn(),
+        postMessage: vi.fn((request) => {
+          const result = runFullPreflight(request.files, request.options);
+          queueMicrotask(() => worker.onmessage?.({
+            data: { requestId: request.requestId, ok: true, result },
+          } as MessageEvent));
+        }),
+      };
+      workers.push(worker);
+      return worker;
+    };
+    const repair = vi.fn(async () => (
+      'export default function Home() { return <main>Repaired</main>; }'
+    ));
+
+    const result = await runFullPreflightRuntime({
+      '/src/pages/Home.tsx': [
+        "import Widget from 'some-hallucinated-package';",
+        'export default function Home() { return <Widget />; }',
+      ].join('\n'),
+    }, { sourceLane: 'lane-b' }, {
+      workerFactory,
+      repair,
+      maxRepairAttempts: 2,
+    });
+
+    expect(repair).toHaveBeenCalledOnce();
+    expect(workers).toHaveLength(2);
+    expect(result.stages.compileSafe.status).toBe('accepted');
+    expect(result.runtime?.repairAttempts).toBe(1);
+    expect(result.files['/src/pages/Home.tsx']).toContain('Repaired');
   });
 });

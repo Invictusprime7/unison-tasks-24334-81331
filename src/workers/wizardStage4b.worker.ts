@@ -1,15 +1,15 @@
 import { commitToPipeline } from '@/platform/core';
 import type {
-  WizardStage4bWorkerRequest,
-  WizardStage4bWorkerResponse,
+  WizardLaneAWorkerRequest,
+  WizardLaneAWorkerResponse,
 } from '@/services/wizardStage4bRuntime';
 
-interface WizardStage4bWorkerScope {
-  onmessage: ((event: MessageEvent<WizardStage4bWorkerRequest>) => void) | null;
-  postMessage(message: WizardStage4bWorkerResponse): void;
+interface WizardLaneAWorkerScope {
+  onmessage: ((event: MessageEvent<WizardLaneAWorkerRequest>) => void) | null;
+  postMessage(message: WizardLaneAWorkerResponse): void;
 }
 
-const workerScope = self as unknown as WizardStage4bWorkerScope;
+const workerScope = self as unknown as WizardLaneAWorkerScope;
 
 workerScope.onmessage = (event) => {
   const request = event.data;

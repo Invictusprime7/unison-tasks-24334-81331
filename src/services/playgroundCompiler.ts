@@ -31,6 +31,8 @@ export interface CompilePlaygroundOptions {
   themePresetId?: string;
   /** Exact Stage 4b stylesheet supplied by the canonical pipeline. */
   stage4bCss?: string;
+  /** Produce the Lane A intermediate before Stage 4b owns /src/index.css. */
+  deferStage4b?: boolean;
   /** Industry overlay used by template/page scaffolding. */
   industry?: LayoutCategory | string | null;
   /** Versioned visual recipes chosen by the canonical wizard pipeline. */
@@ -289,6 +291,7 @@ export function compilePlayground(
   const hydratedVfsFiles = ensureViteRootFiles(vfsFiles, {
     themePresetId: resolvedThemePresetId ?? null,
     stage4bCss: options?.stage4bCss,
+    deferStage4b: options?.deferStage4b,
   });
 
   for (const [p, c] of Object.entries(hydratedVfsFiles)) {

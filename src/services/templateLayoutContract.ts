@@ -113,7 +113,10 @@ export function stampTemplateLayoutIdentity(
   for (const pagePath of pagePaths) {
     const source = next[pagePath];
     if (typeof source !== 'string' || source.includes('data-ut-template-id=')) continue;
-    const tagged = source.replace(/<(main|section)\b([^>]*)>/i, (match, tag: string, attrs: string) => (
+    const rootPattern = /<(main|section)\b/.test(source)
+      ? /<(main|section)\b([^>]*)>/
+      : /<(div|article)\b([^>]*)>/;
+    const tagged = source.replace(rootPattern, (match, tag: string, attrs: string) => (
       `<${tag}${attrs} data-ut-template-id="${contract.templateId}" data-ut-layout-signature="${contract.signature}">`
     ));
     if (tagged !== source) next[pagePath] = tagged;

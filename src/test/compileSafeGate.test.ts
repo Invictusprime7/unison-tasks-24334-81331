@@ -99,6 +99,17 @@ describe('compile-safe acceptance gate', () => {
     expect(result.accepted).toBe(true);
   });
 
+  it('resolves a multi-level dependency chain within one candidate transaction', () => {
+    const result = runCompileSafeAcceptance({
+      '/src/pages/Home.tsx': "import Hero from './Hero';\nexport default function Home() { return <Hero />; }",
+      '/src/pages/Hero.tsx': "import Section from './components/Section';\nexport default function Hero() { return <Section />; }",
+      '/src/pages/components/Section.tsx': 'export default function Section() { return <section>Ready</section>; }',
+    });
+
+    expect(result.blocking).toEqual([]);
+    expect(result.accepted).toBe(true);
+  });
+
   it('drops unused hallucinated dependencies and blocks used ones', () => {
     const result = runCompileSafeAcceptance({
       '/src/pages/A.tsx': [
@@ -218,6 +229,7 @@ describe('bundle-level topology gate (Phase 10)', () => {
     expect(dup?.message).toContain('Hero');
     expect(dup?.pagePath).toBe('/src/pages/Dup.tsx');
     expect(result.files['/src/pages/Dup.tsx']).toContain('function Hero()');
+    expect(result.accepted).toBe(false);
   });
 
   it('treats a parse failure as fatal for commit acceptance', () => {

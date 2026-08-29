@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   WizardPipelineRail,
-  WIZARD_WIZARD_PIPELINE_STAGES,
+  WIZARD_PIPELINE_STAGES,
   deriveStageFromStatus,
 } from "./WizardPipelineRail";
 

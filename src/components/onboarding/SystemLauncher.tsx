@@ -3352,6 +3352,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           accepted: false,
           reason: formatPageAcceptanceFailure(audit),
         });
+        // Clear the page AND its authored companions: the isolated retry
+        // merge skips companion paths that already exist, so leaving a
+        // broken companion behind would shadow the regenerated fix.
+        for (const reachablePath of audit.reachable) {
+          delete aiSourcedFiles[reachablePath];
+          delete aiSourcedFiles[reachablePath.slice(1)];
+        }
         delete aiSourcedFiles[normalizedPagePath];
         delete aiSourcedFiles[normalizedPagePath.slice(1)];
         acceptanceFailedPaths.push(normalizedPagePath);

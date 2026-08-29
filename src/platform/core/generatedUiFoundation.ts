@@ -419,7 +419,7 @@ export { cn } from './cn';
 export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectLabel, SelectSeparator, SelectItem, Checkbox, FormField, FormFields, FormGrid, FormHint, FormError } from './form-fields';
 export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
-export { ImageLightbox } from './media';
+export { Image, ImageLightbox, type ImageProps } from './media';
 export { Reveal, RevealGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';
 export { FloatingNavbar, type NavigationLink } from './navigation';
 export { BentoFeatureGrid, FeatureCard } from './recipes';
@@ -658,9 +658,20 @@ export function Icon({ icon: Glyph, className, label }: { icon: LucideIcon; clas
 }
 `,
     '/src/unison/ui/media.tsx': `${marker}
+import * as React from 'react';
   import * as Dialog from './radix/dialog';
   import { Expand } from './icons';
 import { cn } from './cn';
+
+export interface ImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
+  fill?: boolean;
+  priority?: boolean;
+}
+
+// Compatibility facade: absorbs framework-style <Image fill priority /> output.
+export function Image({ fill: _fill, priority: _priority, alt = '', className, ...props }: ImageProps) {
+  return <img alt={alt} className={cn(_fill ? 'h-full w-full object-cover' : undefined, className)} {...props} />;
+}
 
 export function ImageLightbox({ src, alt, className }: { src: string; alt: string; className?: string }) {
   return <Dialog.Root><Dialog.Trigger asChild><button type="button" className={cn('group relative block overflow-hidden rounded-[var(--radius)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', className)}><img src={src} alt={alt} className="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover:scale-105" /><span className="absolute inset-0 grid place-items-center bg-foreground/0 text-background transition-colors group-hover:bg-foreground/45"><Expand className="size-6 opacity-0 transition-opacity group-hover:opacity-100" /></span></button></Dialog.Trigger><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-50 bg-foreground/70 backdrop-blur-sm" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[var(--ut-overlay-block)] w-[min(92vw,var(--ut-content-width))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[var(--radius)] bg-card shadow-2xl"><Dialog.Title className="sr-only">{alt}</Dialog.Title><img src={src} alt={alt} className="max-h-[var(--ut-overlay-block)] w-full object-contain" /></Dialog.Content></Dialog.Portal></Dialog.Root>;

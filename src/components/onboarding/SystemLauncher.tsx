@@ -3836,7 +3836,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         .filter((entry) => !entry.accepted)
         .map((entry) => `${entry.path}: ${entry.reason}`);
 
+      let lastMileClosureGap: string | null = null;
       const launchArtifacts = await run.stage('preflight', async (signal) => {
+
         const artifacts = await buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
           yieldToHost: yieldToBrowser,
           signal,

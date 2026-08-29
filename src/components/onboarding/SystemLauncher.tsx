@@ -3270,6 +3270,31 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           return false;
         }
 
+        // Page acceptance contract: the page must compile and close its own
+        // imports/exports on its own while the Lane B brain is still in the
+        // loop to regenerate it. Rescue synthesis downstream is the logged
+        // last resort, never the default acceptance path.
+        const acceptance = checkPageAcceptance(
+          {
+            ...canonicalScaffoldFiles,
+            ...aiSourcedFiles,
+            ...acceptedCompanions,
+            [normalizedPath]: normalizedCandidate,
+          },
+          normalizedPath,
+          [normalizedPath, ...Object.keys(acceptedCompanions)],
+        );
+        if (!acceptance.ok) {
+          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt,
+            accepted: false,
+            reason: formatPageAcceptanceFailure(acceptance),
+          });
+          return false;
+        }
+
         for (const [companionPath, companionSource] of Object.entries(acceptedCompanions)) {
           if (!aiSourcedFiles[companionPath]) aiSourcedFiles[companionPath] = companionSource;
         }

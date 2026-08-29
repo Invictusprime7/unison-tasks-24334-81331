@@ -3919,15 +3919,21 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         // → module-closure → compile-safe tail. Re-running the full Sandpack
         // projection here duplicated that work in a worker and could hold the
         // wizard at “Finalizing preview…” until its 180–240 second watchdog.
-        // Keep this boundary projection-free and assert only the invariant the
-        // handoff needs: every local module in the persisted artifact resolves.
+        // Keep this boundary projection-free: verify the handoff invariant, run
+        // the deterministic repair ladder one final time when it is violated,
+        // and degrade — never throw. Only session loss is fatal (launchRun
+        // never-fail contract); a residual unresolved import must not block the
+        // builder handoff.
         const unresolved = findUnresolvedLocalImports(artifacts.files);
         if (unresolved.length > 0) {
-          throw new Error(
-            `[WizardPreflight] canonical artifact has unresolved local imports: ${describeUnresolvedImports(unresolved)}`,
-          );
+          const repair = repairUnresolvedLocalImports(artifacts.files);
+          artifacts.files = repair.files;
+          if (repair.remaining.length > 0) {
+            lastMileClosureGap = describeUnresolvedImports(repair.remaining);
+          }
         }
         return artifacts;
+
       }, {
         timeoutMs: 240_000,
         // Artifact assembly remains canonical and has no competing scaffold

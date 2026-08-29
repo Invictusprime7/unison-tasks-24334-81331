@@ -3615,21 +3615,38 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (stillMissing.length > 0) {
         setLaunchStatus(`Completing ${stillMissing.length} remaining page(s) in parallel`);
       }
+      const isPageResolved = (path: string) =>
+        Boolean(aiSourcedFiles[path] || aiSourcedFiles[path.replace(/^\//, '')]);
+      let pendingCompletions = [...stillMissing];
       for (
-        let pageOffset = 0;
-        pageOffset < stillMissing.length;
-        pageOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
+        let contentAttempt = 2;
+        contentAttempt <= WIZARD_MAX_PAGE_CONTENT_ATTEMPTS && pendingCompletions.length > 0;
+        contentAttempt++
       ) {
-        const completionWave = stillMissing.slice(
-          pageOffset,
-          pageOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS,
-        );
-        await Promise.all(completionWave.map((path) => completeMissingWizardPage(path)));
+        for (
+          let pageOffset = 0;
+          pageOffset < pendingCompletions.length;
+          pageOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
+        ) {
+          const completionWave = pendingCompletions.slice(
+            pageOffset,
+            pageOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS,
+          );
+          await Promise.all(
+            completionWave.map((path) => completeMissingWizardPage(path, contentAttempt)),
+          );
+        }
+        pendingCompletions = pendingCompletions.filter((path) => !isPageResolved(path));
+        if (pendingCompletions.length > 0 && contentAttempt < WIZARD_MAX_PAGE_CONTENT_ATTEMPTS) {
+          console.warn('[SystemLauncher] Regenerating pages that failed the acceptance contract', {
+            paths: pendingCompletions,
+            nextAttempt: contentAttempt + 1,
+          });
+        }
       }
 
-      const unresolvedAfterCompletion = stillMissing.filter(
-        (path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')],
-      );
+      const unresolvedAfterCompletion = stillMissing.filter((path) => !isPageResolved(path));
+
 
       if (laneBRepairedPaths.length > 0) {
         wizardGenerationGaps.laneBRetriedPaths = [

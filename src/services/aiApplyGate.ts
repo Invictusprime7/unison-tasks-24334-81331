@@ -26,6 +26,10 @@ import {
   type PublishBlockerSummary,
 } from '@/services/vfsCommitService';
 import { legacyFilesToPatchPlan } from '@/types/patchPlan';
+import {
+  checkPageAcceptance,
+  formatPageAcceptanceFailure,
+} from '@/services/pageAcceptanceContract';
 import type { BuilderIdentity } from '@/types/builderIdentity';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import type { PlaygroundState } from '@/platform/core/playground';
@@ -106,6 +110,29 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
         }],
         rejectMessage: 'Your project session is unavailable.',
       };
+    }
+    // Page acceptance contract: the active page in the post-edit VFS must
+    // still compile and close its own imports/exports. Broken pages are
+    // rejected here with the exact defect — never rescued silently by the
+    // downstream closure/synthesis ladder.
+    if (ctx.activePagePath) {
+      const normalizedPage = ctx.activePagePath.startsWith('/')
+        ? ctx.activePagePath
+        : `/${ctx.activePagePath}`;
+      if (ctx.nextFiles[normalizedPage] || ctx.nextFiles[ctx.activePagePath]) {
+        const acceptance = checkPageAcceptance(ctx.nextFiles, normalizedPage);
+        if (!acceptance.ok) {
+          return {
+            accepted: false,
+            blockers: [{
+              source: 'preview',
+              code: 'page-acceptance-contract-failed',
+              message: `This edit would break ${normalizedPage}: ${formatPageAcceptanceFailure(acceptance)}`,
+            }],
+            rejectMessage: formatPageAcceptanceFailure(acceptance),
+          };
+        }
+      }
     }
     const patch = legacyFilesToPatchPlan(ctx.nextFiles, 'ai-builder');
     const commit = await commitMutation({

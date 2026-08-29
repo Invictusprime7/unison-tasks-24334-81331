@@ -143,6 +143,11 @@ import {
   findUnresolvedLocalImports,
   describeUnresolvedImports,
 } from '@/services/laneBCompanionModules';
+import {
+  checkPageAcceptance,
+  formatPageAcceptanceFailure,
+  buildPageAcceptanceRepairDirective,
+} from '@/services/pageAcceptanceContract';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
@@ -2158,6 +2163,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           ? `DESIGN MEMORY: Previous user work favors ${laneBDesignProfile.dominantStyle || 'intentional visual variety'} across ${laneBDesignProfile.projectCount} project(s). Preserve those cues while honoring this selected template.`
           : 'DESIGN MEMORY: Use the selected template and industry research as the visual authority; do not regress to generic landing-page defaults.',
         'Use image-led hero and gallery treatments where the canonical composition includes media. Cards, CTAs, navigation, overlays, and forms must visibly use the selected composition variants and responsive interaction patterns.',
+        'OUTPUT CONTRACT (checked before acceptance): Every relative module your pages import must be emitted as a file at its exact imported path in the same "files" object — never import a component you do not emit. Match every import style to the target module\'s actual exports (default vs named). Every page file must end with a default export of its component. Files that fail to parse, import missing modules, or mismatch exports are rejected and regenerated.',
       ].join('\n');
       const uiFoundationDirective = generatedUiFoundation?.primitiveImports?.length
         ? buildGeneratedUiFoundationDirective({
@@ -3042,10 +3048,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         laneBRetriedPaths: string[];
         aiFileCount: number;
         laneAPageCount: number;
+        /** Pages whose generation produced defects before final acceptance,
+         *  with the exact first-failure reason. Shown in the launch summary. */
+        generationDefects: string[];
       } = {
         laneBRetriedPaths: [],
         aiFileCount: Object.keys(aiSourcedFiles).length,
         laneAPageCount: Object.keys(siteBundleSnapshot.pageRegistry.pages).length,
+        generationDefects: [],
       };
 
       const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
@@ -3070,6 +3080,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }> = [];
       const rejectedPageCandidates: Record<string, string> = {};
       const laneBRetriedPaths = new Set<string>();
+      // Last page-acceptance result per path, so the retry prompt can inline
+      // the exact contract repair directive (missing companions, JSX
+      // import/export mismatches, missing default export).
+      const pageAcceptanceResults = new Map<string, ReturnType<typeof checkPageAcceptance>>();
 
       const acceptCompletedWizardPage = (
         path: string,
@@ -3265,6 +3279,32 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           return false;
         }
 
+        // Page acceptance contract: the page must compile and close its own
+        // imports/exports on its own while the Lane B brain is still in the
+        // loop to regenerate it. Rescue synthesis downstream is the logged
+        // last resort, never the default acceptance path.
+        const acceptance = checkPageAcceptance(
+          {
+            ...canonicalScaffoldFiles,
+            ...aiSourcedFiles,
+            ...acceptedCompanions,
+            [normalizedPath]: normalizedCandidate,
+          },
+          normalizedPath,
+          [normalizedPath, ...Object.keys(acceptedCompanions)],
+        );
+        if (!acceptance.ok) {
+          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
+          pageAcceptanceResults.set(normalizedPath, acceptance);
+          laneBCompletionDiagnostics.push({
+            path: normalizedPath,
+            attempt,
+            accepted: false,
+            reason: formatPageAcceptanceFailure(acceptance),
+          });
+          return false;
+        }
+
         for (const [companionPath, companionSource] of Object.entries(acceptedCompanions)) {
           if (!aiSourcedFiles[companionPath]) aiSourcedFiles[companionPath] = companionSource;
         }
@@ -3286,8 +3326,53 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         return true;
       };
 
-      const stillMissing = missingWizardPageFiles
-        .map((path) => (path.startsWith('/') ? path : `/${path}`));
+      // ── Batch acceptance audit ─────────────────────────────────────────
+      // Pages the broad Lane B turn returned are held to the same contract
+      // as isolated completions: compile + import closure + JSX export
+      // contracts. A page that fails is pulled out of the merged output and
+      // regenerated through the isolated completion path with the exact
+      // diagnostics inlined — never rescued silently downstream.
+      const acceptanceFailedPaths: string[] = [];
+      for (const page of Object.values(siteBundleSnapshot.pageRegistry.pages)) {
+        const rawPath = (page as { filePath?: string }).filePath;
+        if (!rawPath) continue;
+        const normalizedPagePath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+        const authored = aiSourcedFiles[normalizedPagePath] || aiSourcedFiles[normalizedPagePath.slice(1)];
+        if (!authored || missingWizardPageFiles.includes(rawPath)) continue;
+        const audit = checkPageAcceptance(
+          { ...canonicalScaffoldFiles, ...aiSourcedFiles },
+          normalizedPagePath,
+          Object.keys(aiSourcedFiles),
+        );
+        if (audit.ok) continue;
+        console.warn('[SystemLauncher] Batch page failed the acceptance contract; regenerating in isolation', {
+          path: normalizedPagePath,
+          reason: formatPageAcceptanceFailure(audit),
+        });
+        rejectedPageCandidates[normalizedPagePath] = authored;
+        pageAcceptanceResults.set(normalizedPagePath, audit);
+        laneBCompletionDiagnostics.push({
+          path: normalizedPagePath,
+          attempt: 1,
+          accepted: false,
+          reason: formatPageAcceptanceFailure(audit),
+        });
+        // Clear the page AND its authored companions: the isolated retry
+        // merge skips companion paths that already exist, so leaving a
+        // broken companion behind would shadow the regenerated fix.
+        for (const reachablePath of audit.reachable) {
+          delete aiSourcedFiles[reachablePath];
+          delete aiSourcedFiles[reachablePath.slice(1)];
+        }
+        delete aiSourcedFiles[normalizedPagePath];
+        delete aiSourcedFiles[normalizedPagePath.slice(1)];
+        acceptanceFailedPaths.push(normalizedPagePath);
+      }
+
+      const stillMissing = [
+        ...missingWizardPageFiles.map((path) => (path.startsWith('/') ? path : `/${path}`)),
+        ...acceptanceFailedPaths,
+      ];
 
       // A batch repair must not make the whole launch depend on every requested
       // page being returned correctly in one model response. Complete each
@@ -3354,6 +3439,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             `Forbidden industry intents: ${(behaviorContract?.forbidden || []).join(', ') || 'none'}`,
             `Industry vocabulary/context: ${industryVocabulary || generationCategory}`,
             previousFailure ? `Exact validation failure to repair: ${previousFailure}` : '',
+            pageAcceptanceResults.has(missingPath)
+              ? buildPageAcceptanceRepairDirective(pageAcceptanceResults.get(missingPath)!)
+              : '',
             previousFailure?.includes('omitted the requested page file')
               ? `PATH REPAIR REQUIRED: your last response's "files" object did not contain non-empty content under the exact key "${missingPath}" (see the returned keys listed above). Return a top-level JSON object of the exact shape {"files":{"${missingPath}":"...full file contents..."}} with no other top-level keys and no empty values.`
               : '',
@@ -3741,6 +3829,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         // to Preview so launch never compiles the same artifact twice.
         strictPreflight: false,
       };
+      // Record every generation defect that occurred before final acceptance
+      // so the launch summary can surface degradation honestly — a page that
+      // needed rejection/regeneration or downstream rescue is never silent.
+      wizardGenerationGaps.generationDefects = laneBCompletionDiagnostics
+        .filter((entry) => !entry.accepted)
+        .map((entry) => `${entry.path}: ${entry.reason}`);
+
       const launchArtifacts = await run.stage('preflight', async (signal) => {
         const artifacts = await buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
           yieldToHost: yieldToBrowser,

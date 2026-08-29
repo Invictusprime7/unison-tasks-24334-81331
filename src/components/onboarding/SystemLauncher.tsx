@@ -1937,6 +1937,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // `dropUnacceptablePages`), which rewrites registry/router/manifest — so
       // the snapshot the rest of the launch uses is a mutable binding.
       let siteBundleSnapshot = generatedSiteBundleSnapshot;
+      // Compiler-first authority: the deterministic Lane A snapshot is the
+      // launchable source. Only a genuine compiler miss blocks the launch.
+      assertRegisteredPagesPresent(siteBundleSnapshot);
+
       if (!sitePlan) {
         throw new Error('[SystemLauncher] Canonical pipeline did not return its authoritative topology plan.');
       }

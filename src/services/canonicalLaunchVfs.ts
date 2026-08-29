@@ -129,9 +129,18 @@ function isCanonicalLaunchPreflightStep(
   return value?.kind === 'full-preflight';
 }
 
+export type RegisteredPageAuthority = 'compiler' | 'legacy-lane-b';
+
 export interface BuildCanonicalLaunchArtifactsInput {
   generatedFiles: Record<string, string>;
   preferredEntryPoint?: string;
+  /**
+   * Who owns the source of a registered Wizard page.
+   * `compiler` (default) = the deterministic Lane A snapshot module always wins;
+   * `legacy-lane-b` = AI-authored TSX may replace it.
+   */
+  registeredPageAuthority?: RegisteredPageAuthority;
+
   siteBundleSnapshot?: SiteBundleSnapshot;
   /** Frozen Stage 4b revision that the final snapshot must be sealed from. */
   compileArtifact?: WizardCompileArtifact;

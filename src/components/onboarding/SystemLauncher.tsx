@@ -3691,12 +3691,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           ...new Set([...wizardGenerationGaps.laneBRetriedPaths, ...laneBRepairedPaths]),
         ];
       }
-      if (unresolvedAfterCompletion.length > 0) {
-        // Acceptance is final here: the page had its generation attempts and
-        // still cannot compile or close its own imports. Nothing downstream is
-        // allowed to rescue it, so it leaves the site whole — registry, router,
+      if (unresolvedAfterCompletion.length > 0 && WIZARD_GENERATION_MODE !== 'deterministic-compiler-v2') {
+        // Legacy AI-TSX path only: the AI owned the page body, so a page that
+        // still cannot compile leaves the site whole — registry, router,
         // routes, nav and VFS — and the drop is reported to the user.
         launchReliabilityMode = 'lane-b-degraded';
+
         const dropRequests = unresolvedAfterCompletion.map((path) => ({
           filePath: path,
           reason: laneBCompletionDiagnostics

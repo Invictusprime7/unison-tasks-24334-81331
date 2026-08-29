@@ -374,8 +374,11 @@ describe('wizard pipeline ownership invariants', () => {
     );
     expect(launcherSource).not.toContain('compileStructuredWizardFaqPage');
     expect(launcherSource).not.toContain('[2, 3, 4]');
-    expect(launcherSource).toContain('Lane B could not generate: ${failedPage?.title');
-    expect(launcherSource).toContain('Retry generation or deselect this page.');
+    // Compiler-first: an AI/Lane B failure never fails the launch. The
+    // deterministic Lane A page is retained and the run degrades instead.
+    expect(launcherSource).not.toContain('Lane B could not generate: ${failedPage?.title');
+    expect(launcherSource).toContain("const WIZARD_GENERATION_MODE: WizardGenerationMode = 'deterministic-compiler-v2';");
+    expect(launcherSource).toContain('assertRegisteredPagesPresent(siteBundleSnapshot);');
     expect(launcherSource).not.toContain("if (pageRole !== 'faq') continue;");
     expect(launcherSource).not.toContain('WIZARD_BATCH_REPAIR_MAX_MS');
     expect(launcherSource).not.toContain('WIZARD_BATCH_REPAIR_MAX_PAGES');

@@ -3978,7 +3978,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const launchArtifactInput = {
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
+        registeredPageAuthority: (WIZARD_GENERATION_MODE === 'deterministic-compiler-v2'
+          ? 'compiler'
+          : 'legacy-lane-b') as const,
         siteBundleSnapshot,
+
         compileArtifact,
         compiledPlayground,
         canonicalPlayground: materializedPlayground,

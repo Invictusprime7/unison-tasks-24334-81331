@@ -967,9 +967,11 @@ function resolveBindingTarget(
       return { targetId: pageId || '', targetType: 'page' };
     }
     case 'form.open': {
-      const formId = formIdMap[targetRef];
+      const formKey = formIdMap[targetRef] ? targetRef : (FORM_TARGET_ALIASES[targetRef] ?? targetRef);
+      const formId = formIdMap[formKey];
       return { targetId: formId || '', targetType: 'form' };
     }
+
     case 'calendar.open': {
       const calId = calendarIdMap[targetRef];
       return { targetId: calId || '', targetType: 'calendar' };

@@ -524,6 +524,11 @@ const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 // must not consume the 2-attempt content/syntax-repair budget an isolated
 // page gets. One extra same-round retry absorbs transport noise for free.
 const WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES = 1;
+// A malformed model response (unterminated JSX/regex, truncated file) is a
+// generation flake, not an impossible page. Acceptance stays the single
+// authority, but a page gets more than one clean-slate regeneration before it
+// is atomically dropped from the site.
+const WIZARD_MAX_PAGE_CONTENT_ATTEMPTS = 3;
 // Provisioning plus the atomic canonical revision must settle well before
 // Supabase's request-idle ceiling. LaunchRun owns this browser-side deadline.
 const WIZARD_COMMIT_TIMEOUT_MS = 90_000;
@@ -3085,6 +3090,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }> = [];
       const rejectedPageCandidates: Record<string, string> = {};
       const laneBRetriedPaths = new Set<string>();
+      const laneBAttemptKeys = new Set<string>();
       // Last page-acceptance result per path, so the retry prompt can inline
       // the exact contract repair directive (missing companions, JSX
       // import/export mismatches, missing default export).
@@ -3383,9 +3389,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // page being returned correctly in one model response. Complete each
       // unresolved registry page independently, carrying the exact wizard
       // template/theme identity and the full industry behavior contract.
-      const completeMissingWizardPage = async (missingPath: string): Promise<void> => {
-        const attempt = 2 as const;
-        if (laneBRetriedPaths.has(missingPath)) return;
+      const completeMissingWizardPage = async (
+        missingPath: string,
+        attempt = 2,
+      ): Promise<void> => {
+        const retryKey = `${missingPath}#${attempt}`;
+        if (laneBAttemptKeys.has(retryKey)) return;
+        laneBAttemptKeys.add(retryKey);
         laneBRetriedPaths.add(missingPath);
         const page = Object.values(siteBundleSnapshot.pageRegistry.pages).find((candidatePage) => {
           const filePath = (candidatePage as { filePath?: string }).filePath;
@@ -3405,11 +3415,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const industryVocabulary = (industryRequirements?.vocabulary || []).slice(0, 16).join(', ');
 
         if (!aiSourcedFiles[missingPath]) {
-          setLaunchStatus(`Completing ${page?.title || missingPath} (2/2)…`);
-          const rejectedCandidate = rejectedPageCandidates[missingPath];
+          setLaunchStatus(
+            `Completing ${page?.title || missingPath} (${attempt}/${WIZARD_MAX_PAGE_CONTENT_ATTEMPTS})…`,
+          );
           const previousFailure = [...laneBCompletionDiagnostics]
             .reverse()
             .find((diagnostic) => diagnostic.path === missingPath && !diagnostic.accepted)?.reason;
+          // Malformed source must never become repair context: it teaches the
+          // model to reproduce the same broken tokens. Regenerate clean.
+          const rejectedCandidate = isSyntaxCompletionFailure(previousFailure)
+            ? undefined
+            : rejectedPageCandidates[missingPath];
           const resolvedPageRole = page?.pageRole || page?.pageType;
           const pageIntent = selectIndustryIntentForIsolatedPage(resolvedIndustry, resolvedPageRole);
           const isolatedWizardSeed = {
@@ -3601,21 +3617,38 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (stillMissing.length > 0) {
         setLaunchStatus(`Completing ${stillMissing.length} remaining page(s) in parallel`);
       }
+      const isPageResolved = (path: string) =>
+        Boolean(aiSourcedFiles[path] || aiSourcedFiles[path.replace(/^\//, '')]);
+      let pendingCompletions = [...stillMissing];
       for (
-        let pageOffset = 0;
-        pageOffset < stillMissing.length;
-        pageOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
+        let contentAttempt = 2;
+        contentAttempt <= WIZARD_MAX_PAGE_CONTENT_ATTEMPTS && pendingCompletions.length > 0;
+        contentAttempt++
       ) {
-        const completionWave = stillMissing.slice(
-          pageOffset,
-          pageOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS,
-        );
-        await Promise.all(completionWave.map((path) => completeMissingWizardPage(path)));
+        for (
+          let pageOffset = 0;
+          pageOffset < pendingCompletions.length;
+          pageOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
+        ) {
+          const completionWave = pendingCompletions.slice(
+            pageOffset,
+            pageOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS,
+          );
+          await Promise.all(
+            completionWave.map((path) => completeMissingWizardPage(path, contentAttempt)),
+          );
+        }
+        pendingCompletions = pendingCompletions.filter((path) => !isPageResolved(path));
+        if (pendingCompletions.length > 0 && contentAttempt < WIZARD_MAX_PAGE_CONTENT_ATTEMPTS) {
+          console.warn('[SystemLauncher] Regenerating pages that failed the acceptance contract', {
+            paths: pendingCompletions,
+            nextAttempt: contentAttempt + 1,
+          });
+        }
       }
 
-      const unresolvedAfterCompletion = stillMissing.filter(
-        (path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')],
-      );
+      const unresolvedAfterCompletion = stillMissing.filter((path) => !isPageResolved(path));
+
 
       if (laneBRepairedPaths.length > 0) {
         wizardGenerationGaps.laneBRetriedPaths = [

@@ -530,11 +530,16 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     const existingMergedPage = merged[normalizedPagePath];
 
     if (pageAuthority === 'compiler') {
-      const selectedSource = canonicalPage
-        || (existingMergedPage && !laneBCompletedPaths.has(normalizedPagePath)
-          ? existingMergedPage
-          : undefined);
-      if (!selectedSource || isMinimalPreviewFallbackSource(selectedSource)) {
+      // Compiler-first ladder: the sealed Lane A page always wins. A Lane B /
+      // already-merged body is accepted only when the compiler produced no
+      // usable source for that route, so a selected route is never dropped
+      // just because AI enrichment misbehaved.
+      const usable = (source: string | undefined): string | undefined =>
+        source && source.trim() && !isMinimalPreviewFallbackSource(source) ? source : undefined;
+      const selectedSource = usable(canonicalPage)
+        ?? usable(existingMergedPage)
+        ?? usable(generatedPage);
+      if (!selectedSource) {
         throw new PreviewPipelineError(
           'vfs',
           `Registered page has no valid compiler source: ${normalizedPagePath}`,
@@ -545,6 +550,8 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       merged[normalizedPagePath] = selectedSource;
       continue;
     }
+
+
 
     if (
       laneBCompletedPaths.has(normalizedPagePath) &&

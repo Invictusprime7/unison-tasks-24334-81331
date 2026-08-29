@@ -3826,10 +3826,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           .map((path) => (path.startsWith('/') ? path : `/${path}`));
         // Pages that render but fall short of the quality bar still ship; only
         // pages with no module at all are removed from the site.
-        const unrenderable = rejected.filter(
-          (path) => path !== normalizedHome && !isPageResolved(path),
-        );
+        const unrenderable = WIZARD_GENERATION_MODE === 'deterministic-compiler-v2'
+          ? []
+          : rejected.filter((path) => path !== normalizedHome && !isPageResolved(path));
         const belowQuality = rejected.filter((path) => !unrenderable.includes(path));
+
 
         if (unrenderable.length > 0) {
           const dropResult = dropUnacceptablePages(

@@ -524,6 +524,11 @@ const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 // must not consume the 2-attempt content/syntax-repair budget an isolated
 // page gets. One extra same-round retry absorbs transport noise for free.
 const WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES = 1;
+// A malformed model response (unterminated JSX/regex, truncated file) is a
+// generation flake, not an impossible page. Acceptance stays the single
+// authority, but a page gets more than one clean-slate regeneration before it
+// is atomically dropped from the site.
+const WIZARD_MAX_PAGE_CONTENT_ATTEMPTS = 3;
 // Provisioning plus the atomic canonical revision must settle well before
 // Supabase's request-idle ceiling. LaunchRun owns this browser-side deadline.
 const WIZARD_COMMIT_TIMEOUT_MS = 90_000;

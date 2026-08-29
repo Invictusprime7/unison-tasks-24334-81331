@@ -153,6 +153,8 @@ import { dropUnacceptablePages, describeDroppedPages } from '@/services/dropUnac
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
+import type { SiteBundleSnapshot } from "@/platform/core/canonicalPipeline";
+
 import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
 // ============================================================================
@@ -532,7 +534,37 @@ const WIZARD_MAX_PAGE_CONTENT_ATTEMPTS = 3;
 // Provisioning plus the atomic canonical revision must settle well before
 // Supabase's request-idle ceiling. LaunchRun owns this browser-side deadline.
 const WIZARD_COMMIT_TIMEOUT_MS = 90_000;
-const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
+/**
+ * Launch authority. `deterministic-compiler-v2` makes the sealed Lane A
+ * snapshot the launchable source of truth: AI output may enrich, never own, a
+ * registered Wizard page — and an AI failure can never remove a selected route.
+ */
+type WizardGenerationMode = 'deterministic-compiler-v2' | 'legacy-ai-tsx-v1';
+const WIZARD_GENERATION_MODE: WizardGenerationMode = 'deterministic-compiler-v2';
+const WIZARD_IMPLEMENTATION_MODEL = WIZARD_GENERATION_MODE === 'deterministic-compiler-v2'
+  ? 'DETERMINISTIC_COMPILER_OWNS_PAGES_AI_ENRICHES_V2'
+  : 'AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1';
+
+/**
+ * Structural (compiler) failure gate. A registered page without a materialized
+ * module means Lane A itself failed — that blocks launch. An AI failure does not.
+ */
+function assertRegisteredPagesPresent(snapshot: SiteBundleSnapshot): void {
+  const files = snapshot.vfsFiles || {};
+  const missing = Object.values(snapshot.pageRegistry.pages)
+    .map((page) => (page as { filePath?: string }).filePath)
+    .filter((path): path is string => Boolean(path))
+    .filter((path) => {
+      const normalized = path.startsWith('/') ? path : `/${path}`;
+      return typeof files[normalized] !== 'string'
+        && typeof files[normalized.slice(1)] !== 'string';
+    });
+
+  if (missing.length > 0) {
+    throw new Error(`Compiler failed to materialize registered pages: ${missing.join(', ')}`);
+  }
+}
+
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   timeoutMs: 120_000,
   reasoningEffort: 'medium',
@@ -1905,6 +1937,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // `dropUnacceptablePages`), which rewrites registry/router/manifest — so
       // the snapshot the rest of the launch uses is a mutable binding.
       let siteBundleSnapshot = generatedSiteBundleSnapshot;
+      // Compiler-first authority: the deterministic Lane A snapshot is the
+      // launchable source. Only a genuine compiler miss blocks the launch.
+      assertRegisteredPagesPresent(siteBundleSnapshot);
+
       if (!sitePlan) {
         throw new Error('[SystemLauncher] Canonical pipeline did not return its authoritative topology plan.');
       }
@@ -3655,12 +3691,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           ...new Set([...wizardGenerationGaps.laneBRetriedPaths, ...laneBRepairedPaths]),
         ];
       }
-      if (unresolvedAfterCompletion.length > 0) {
-        // Acceptance is final here: the page had its generation attempts and
-        // still cannot compile or close its own imports. Nothing downstream is
-        // allowed to rescue it, so it leaves the site whole — registry, router,
+      if (unresolvedAfterCompletion.length > 0 && WIZARD_GENERATION_MODE !== 'deterministic-compiler-v2') {
+        // Legacy AI-TSX path only: the AI owned the page body, so a page that
+        // still cannot compile leaves the site whole — registry, router,
         // routes, nav and VFS — and the drop is reported to the user.
         launchReliabilityMode = 'lane-b-degraded';
+
         const dropRequests = unresolvedAfterCompletion.map((path) => ({
           filePath: path,
           reason: laneBCompletionDiagnostics
@@ -3693,7 +3729,22 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           `${dropResult.dropped.length} page(s) could not be generated correctly and were removed from the site.`,
           droppedSummary,
         );
+      } else if (unresolvedAfterCompletion.length > 0) {
+        // Compiler-first: a rejected AI page never removes a Wizard-selected
+        // route. The deterministic Lane A module is retained instead.
+        launchReliabilityMode = 'lane-b-degraded';
+        for (const path of unresolvedAfterCompletion) {
+          delete aiSourcedFiles[path];
+          delete aiSourcedFiles[path.startsWith('/') ? path.slice(1) : `/${path}`];
+        }
+        run.degrade(
+          'enrich',
+          'enrich.ai_page_rejected',
+          'AI page enrichment was rejected; compiler-owned page retained.',
+          unresolvedAfterCompletion.join(', '),
+        );
       }
+
 
 
       const assessCurrentPresentations = () => assessWizardPagePresentations({
@@ -3775,10 +3826,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           .map((path) => (path.startsWith('/') ? path : `/${path}`));
         // Pages that render but fall short of the quality bar still ship; only
         // pages with no module at all are removed from the site.
-        const unrenderable = rejected.filter(
-          (path) => path !== normalizedHome && !isPageResolved(path),
-        );
+        const unrenderable = WIZARD_GENERATION_MODE === 'deterministic-compiler-v2'
+          ? []
+          : rejected.filter((path) => path !== normalizedHome && !isPageResolved(path));
         const belowQuality = rejected.filter((path) => !unrenderable.includes(path));
+
 
         if (unrenderable.length > 0) {
           const dropResult = dropUnacceptablePages(
@@ -3926,7 +3978,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const launchArtifactInput = {
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
+        registeredPageAuthority: WIZARD_GENERATION_MODE === 'deterministic-compiler-v2'
+          ? ('compiler' as const)
+          : ('legacy-lane-b' as const),
+
         siteBundleSnapshot,
+
         compileArtifact,
         compiledPlayground,
         canonicalPlayground: materializedPlayground,

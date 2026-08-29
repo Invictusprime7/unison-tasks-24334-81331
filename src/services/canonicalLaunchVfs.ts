@@ -129,9 +129,18 @@ function isCanonicalLaunchPreflightStep(
   return value?.kind === 'full-preflight';
 }
 
+export type RegisteredPageAuthority = 'compiler' | 'legacy-lane-b';
+
 export interface BuildCanonicalLaunchArtifactsInput {
   generatedFiles: Record<string, string>;
   preferredEntryPoint?: string;
+  /**
+   * Who owns the source of a registered Wizard page.
+   * `compiler` (default) = the deterministic Lane A snapshot module always wins;
+   * `legacy-lane-b` = AI-authored TSX may replace it.
+   */
+  registeredPageAuthority?: RegisteredPageAuthority;
+
   siteBundleSnapshot?: SiteBundleSnapshot;
   /** Frozen Stage 4b revision that the final snapshot must be sealed from. */
   compileArtifact?: WizardCompileArtifact;
@@ -380,7 +389,10 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
+  registeredPageAuthority: RegisteredPageAuthority = 'legacy-lane-b',
 ): Record<string, string> {
+  const pageAuthority = registeredPageAuthority;
+
   generatedFiles = normalizeCanonicalVfsFiles(generatedFiles);
   canonicalFiles = normalizeCanonicalVfsFiles(canonicalFiles);
   const registryPages = Object.values(snapshot.pageRegistry.pages);
@@ -468,6 +480,11 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     }
 
     if (registeredPagePaths.has(path) || registeredPagePaths.has(normalizedPath)) {
+      if (pageAuthority === 'compiler') {
+        // Compiler-first: a generated TSX page can never replace the
+        // deterministic Lane A page module for a registered Wizard route.
+        continue;
+      }
       if (isMinimalPreviewFallbackSource(content)) {
         throw new PreviewPipelineError(
           'vfs',
@@ -479,6 +496,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       laneBCompletedPaths.add(normalizedPath);
       continue;
     }
+
 
 
     // App.tsx is always a deterministic registry router and index.css must stay
@@ -508,7 +526,25 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     if (!page.filePath) continue;
     const normalizedPagePath = normalizePath(page.filePath);
     const generatedPage = readGenerated(page.filePath);
+    const canonicalPage = readCanonical(page.filePath);
     const existingMergedPage = merged[normalizedPagePath];
+
+    if (pageAuthority === 'compiler') {
+      const selectedSource = canonicalPage
+        || (existingMergedPage && !laneBCompletedPaths.has(normalizedPagePath)
+          ? existingMergedPage
+          : undefined);
+      if (!selectedSource || isMinimalPreviewFallbackSource(selectedSource)) {
+        throw new PreviewPipelineError(
+          'vfs',
+          `Registered page has no valid compiler source: ${normalizedPagePath}`,
+          { blockedFiles: [normalizedPagePath] },
+        );
+      }
+      removePathVariants(merged, page.filePath);
+      merged[normalizedPagePath] = selectedSource;
+      continue;
+    }
 
     if (
       laneBCompletedPaths.has(normalizedPagePath) &&
@@ -528,6 +564,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
     removePathVariants(merged, page.filePath);
   }
+
 
   // ── Registry ⇄ VFS closure ───────────────────────────────────────────────
   // A selected route is part of the Wizard contract. Never mutate the Stage 4b
@@ -773,7 +810,13 @@ function* buildCanonicalLaunchArtifactSteps(
 
   yield;
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot)
+    ? mergeGeneratedVfsWithCanonicalSnapshot(
+        safeFiles,
+        canonicalFiles,
+        input.siteBundleSnapshot,
+        input.registeredPageAuthority ?? 'legacy-lane-b',
+      )
+
     : { ...safeFiles };
   if (input.siteBundleSnapshot && input.wizardSelections && input.mergeContext) {
     const designIntervention = input.siteBundleSnapshot.meta.designIntervention;

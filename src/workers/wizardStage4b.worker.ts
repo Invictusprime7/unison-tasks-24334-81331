@@ -1,4 +1,4 @@
-import { commitToPipeline } from '@/platform/core';
+import { commitToPipeline } from '@/platform/core/commitToPipeline';
 import type {
   WizardLaneAWorkerRequest,
   WizardLaneAWorkerResponse,

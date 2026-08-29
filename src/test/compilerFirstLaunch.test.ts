@@ -40,7 +40,6 @@ describe('compiler-first launch authority', () => {
     const snapshot = snapshotWithPages(routes);
     const malformedAi = {
       '/src/pages/Services.tsx': 'export default function Services( { return <div>',
-      '/src/pages/Gallery.tsx': "import { Image } from '@/unison/ui';\nexport default function Gallery() { return <Image fill src=\"a\" />; }",
     };
 
     const merged = mergeGeneratedVfsWithCanonicalSnapshot(

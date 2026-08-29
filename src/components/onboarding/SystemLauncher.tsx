@@ -3389,6 +3389,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             `Forbidden industry intents: ${(behaviorContract?.forbidden || []).join(', ') || 'none'}`,
             `Industry vocabulary/context: ${industryVocabulary || generationCategory}`,
             previousFailure ? `Exact validation failure to repair: ${previousFailure}` : '',
+            pageAcceptanceResults.has(missingPath)
+              ? buildPageAcceptanceRepairDirective(pageAcceptanceResults.get(missingPath)!)
+              : '',
             previousFailure?.includes('omitted the requested page file')
               ? `PATH REPAIR REQUIRED: your last response's "files" object did not contain non-empty content under the exact key "${missingPath}" (see the returned keys listed above). Return a top-level JSON object of the exact shape {"files":{"${missingPath}":"...full file contents..."}} with no other top-level keys and no empty values.`
               : '',

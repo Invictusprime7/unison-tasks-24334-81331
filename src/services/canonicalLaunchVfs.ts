@@ -810,7 +810,13 @@ function* buildCanonicalLaunchArtifactSteps(
 
   yield;
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot)
+    ? mergeGeneratedVfsWithCanonicalSnapshot(
+        safeFiles,
+        canonicalFiles,
+        input.siteBundleSnapshot,
+        input.registeredPageAuthority ?? 'compiler',
+      )
+
     : { ...safeFiles };
   if (input.siteBundleSnapshot && input.wizardSelections && input.mergeContext) {
     const designIntervention = input.siteBundleSnapshot.meta.designIntervention;

@@ -57,9 +57,14 @@ describe('compiler-first launch authority', () => {
 
   it('lets the legacy path keep AI ownership of registered pages', () => {
     const snapshot = snapshotWithPages(routes);
-    const generated = {
-      '/src/pages/Services.tsx': 'export default function Services() { return <section>AI</section>; }',
-    };
+    const generated = Object.fromEntries(
+      Object.values(routes).map((filePath) => [
+        filePath,
+        filePath.endsWith('Services.tsx')
+          ? 'export default function Services() { return <section>AI</section>; }'
+          : `export default function Page() { return <section>${filePath}</section>; }`,
+      ]),
+    );
     const merged = mergeGeneratedVfsWithCanonicalSnapshot(
       generated,
       snapshot.vfsFiles,

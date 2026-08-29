@@ -3393,8 +3393,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         attempt = 2,
       ): Promise<void> => {
         const retryKey = `${missingPath}#${attempt}`;
-        if (laneBRetriedPaths.has(retryKey)) return;
-        laneBRetriedPaths.add(retryKey);
+        if (laneBAttemptKeys.has(retryKey)) return;
+        laneBAttemptKeys.add(retryKey);
+        laneBRetriedPaths.add(missingPath);
         const page = Object.values(siteBundleSnapshot.pageRegistry.pages).find((candidatePage) => {
           const filePath = (candidatePage as { filePath?: string }).filePath;
           if (!filePath) return false;

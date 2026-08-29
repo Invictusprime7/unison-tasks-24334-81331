@@ -517,7 +517,25 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     if (!page.filePath) continue;
     const normalizedPagePath = normalizePath(page.filePath);
     const generatedPage = readGenerated(page.filePath);
+    const canonicalPage = readCanonical(page.filePath);
     const existingMergedPage = merged[normalizedPagePath];
+
+    if (pageAuthority === 'compiler') {
+      const selectedSource = canonicalPage
+        || (existingMergedPage && !laneBCompletedPaths.has(normalizedPagePath)
+          ? existingMergedPage
+          : undefined);
+      if (!selectedSource || isMinimalPreviewFallbackSource(selectedSource)) {
+        throw new PreviewPipelineError(
+          'vfs',
+          `Registered page has no valid compiler source: ${normalizedPagePath}`,
+          { blockedFiles: [normalizedPagePath] },
+        );
+      }
+      removePathVariants(merged, page.filePath);
+      merged[normalizedPagePath] = selectedSource;
+      continue;
+    }
 
     if (
       laneBCompletedPaths.has(normalizedPagePath) &&
@@ -537,6 +555,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
     removePathVariants(merged, page.filePath);
   }
+
 
   // ── Registry ⇄ VFS closure ───────────────────────────────────────────────
   // A selected route is part of the Wizard contract. Never mutate the Stage 4b

@@ -143,6 +143,11 @@ import {
   findUnresolvedLocalImports,
   describeUnresolvedImports,
 } from '@/services/laneBCompanionModules';
+import {
+  checkPageAcceptance,
+  formatPageAcceptanceFailure,
+  buildPageAcceptanceRepairDirective,
+} from '@/services/pageAcceptanceContract';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';

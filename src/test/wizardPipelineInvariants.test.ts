@@ -384,7 +384,7 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).not.toContain('WIZARD_BATCH_REPAIR_MAX_PAGES');
     expect(launcherSource).toContain('const WIZARD_MAX_PAGE_CONTENT_ATTEMPTS = 3;');
     expect(launcherSource).toContain('laneBRetriedPaths.add(missingPath);');
-    expect(launcherSource).toContain('completeMissingWizardPage(path)');
+    expect(launcherSource).toContain('completeMissingWizardPage(path, contentAttempt)');
     expect(launcherSource).toContain("reasoningEffort: 'low'");
     expect(launcherSource).toContain("selectedModelId: 'google/gemini-2.5-flash-lite'");
     expect(launcherSource).toContain('maxTokens: 20_000');

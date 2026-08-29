@@ -3713,12 +3713,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       });
 
       let presentationAssessment = assessCurrentPresentations();
+      // The presentation gate is a quality signal, not a second acceptance
+      // authority. Every rejected page gets a fresh repair attempt (including
+      // pages Lane B already retried), and whatever still fails is dropped or
+      // shipped degraded — the launch itself never dies here.
       const presentationRetryPaths = presentationAssessment.rejectedPaths
-        .map((path) => (path.startsWith('/') ? path : `/${path}`))
-        .filter((path) => !laneBRetriedPaths.has(path));
+        .map((path) => (path.startsWith('/') ? path : `/${path}`));
       if (presentationRetryPaths.length > 0) {
+        const presentationAttempt = WIZARD_MAX_PAGE_CONTENT_ATTEMPTS + 1;
         console.warn('[SystemLauncher] Repairing pages rejected by the presentation quality gate', {
-          attempt: 2,
+          attempt: presentationAttempt,
           templateId: templateLayoutContract.templateId,
           paths: presentationRetryPaths,
           reasons: presentationAssessment.reasons,
@@ -3729,7 +3733,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           if (current) rejectedPageCandidates[normalizedPath] = current;
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
-            attempt: 1,
+            attempt: presentationAttempt,
             accepted: false,
             reason: presentationAssessment.reasons[normalizedPath]
               || 'Page failed the final presentation quality gate',
@@ -3745,20 +3749,83 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ) {
           const completionWave = presentationRetryPaths
             .slice(pageOffset, pageOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS)
-          await Promise.all(completionWave.map((path) => completeMissingWizardPage(path)));
+          await Promise.all(
+            completionWave.map((path) => completeMissingWizardPage(path, presentationAttempt)),
+          );
+        }
+
+        // Any page whose repair produced nothing at all keeps its previous
+        // candidate rather than vanishing from the site.
+        for (const normalizedPath of presentationRetryPaths) {
+          if (!isPageResolved(normalizedPath) && rejectedPageCandidates[normalizedPath]) {
+            aiSourcedFiles[normalizedPath] = rejectedPageCandidates[normalizedPath];
+          }
         }
         presentationAssessment = assessCurrentPresentations();
       }
 
       if (presentationAssessment.rejectedPaths.length > 0) {
-        launchReliabilityMode = 'lane-b-blocked';
-        const failedPath = presentationAssessment.rejectedPaths[0];
-        const failedPage = Object.values(siteBundleSnapshot.pageRegistry.pages).find((page) => {
-          const path = (page as { filePath?: string }).filePath;
-          return path && (path.startsWith('/') ? path : `/${path}`) === failedPath;
-        }) as { title?: string; filePath?: string } | undefined;
-        throw new Error(`Lane B could not generate: ${failedPage?.title || failedPage?.filePath || failedPath}. Retry generation or deselect this page.`);
+        launchReliabilityMode = 'lane-b-degraded';
+        const homePath = (Object.values(siteBundleSnapshot.pageRegistry.pages)
+          .find((page) => (page as { isHome?: boolean }).isHome) as { filePath?: string } | undefined)?.filePath;
+        const normalizedHome = homePath
+          ? (homePath.startsWith('/') ? homePath : `/${homePath}`)
+          : undefined;
+        const rejected = presentationAssessment.rejectedPaths
+          .map((path) => (path.startsWith('/') ? path : `/${path}`));
+        // Pages that render but fall short of the quality bar still ship; only
+        // pages with no module at all are removed from the site.
+        const unrenderable = rejected.filter(
+          (path) => path !== normalizedHome && !isPageResolved(path),
+        );
+        const belowQuality = rejected.filter((path) => !unrenderable.includes(path));
+
+        if (unrenderable.length > 0) {
+          const dropResult = dropUnacceptablePages(
+            siteBundleSnapshot,
+            { ...siteBundleSnapshot.vfsFiles, ...aiSourcedFiles },
+            unrenderable.map((path) => ({
+              filePath: path,
+              reason: presentationAssessment.reasons[path]
+                || 'Page failed the final presentation quality gate',
+            })),
+          );
+          siteBundleSnapshot = dropResult.snapshot;
+          for (const droppedPage of dropResult.dropped) {
+            for (const removedPath of [droppedPage.filePath, ...droppedPage.removedModules]) {
+              delete aiSourcedFiles[removedPath];
+              delete aiSourcedFiles[removedPath.slice(1)];
+              delete canonicalScaffoldFiles[removedPath];
+              delete canonicalScaffoldFiles[removedPath.slice(1)];
+            }
+          }
+          const droppedSummary = describeDroppedPages(dropResult.dropped);
+          wizardGenerationGaps.generationDefects.push(`dropped pages: ${droppedSummary}`);
+          run.degrade(
+            'enrich',
+            'enrich.page_dropped',
+            `${dropResult.dropped.length} page(s) could not be generated correctly and were removed from the site.`,
+            droppedSummary,
+          );
+        }
+
+        if (belowQuality.length > 0) {
+          console.warn('[SystemLauncher] Shipping pages below the presentation quality bar', {
+            paths: belowQuality,
+            reasons: presentationAssessment.reasons,
+          });
+          wizardGenerationGaps.generationDefects.push(
+            `below presentation bar: ${belowQuality.join(', ')}`,
+          );
+          run.degrade(
+            'enrich',
+            'enrich.page_below_quality',
+            `${belowQuality.length} page(s) shipped below the presentation quality bar.`,
+            belowQuality.join(', '),
+          );
+        }
       }
+
 
       // Stamp gaps so downstream readiness artifacts can record them.
       (window as unknown as { __wizardGenerationGaps?: typeof wizardGenerationGaps }).__wizardGenerationGaps =

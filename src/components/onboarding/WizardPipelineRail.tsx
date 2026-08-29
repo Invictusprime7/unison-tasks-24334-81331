@@ -98,26 +98,27 @@ export function WizardPipelineRail({ isLaunching, launchStatus }: WizardPipeline
   const [log, setLog] = useState<LogEntry[]>([]);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [tickStage, setTickStage] = useState(0);
+  // Highest stage the runtime has actually reported. Stages never advance on a
+  // timer — a stage stays "running" for exactly as long as the pipeline spends
+  // in it, so the rail reflects real compile time instead of a fake cadence.
+  const [reachedStage, setReachedStage] = useState(0);
+  const [stageEnteredAt, setStageEnteredAt] = useState<number | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isLaunching) {
       setLog([]);
       setStartedAt(null);
-      setTickStage(0);
+      setReachedStage(0);
+      setStageEnteredAt(null);
       return;
     }
-    setStartedAt(Date.now());
-    setTickStage(0);
+    const begin = Date.now();
+    setStartedAt(begin);
+    setReachedStage(0);
+    setStageEnteredAt(begin);
     const clock = window.setInterval(() => setNow(Date.now()), 500);
-    const soft = window.setInterval(() => {
-      setTickStage((prev) => Math.min(prev + 1, WIZARD_PIPELINE_STAGES.length - 3));
-    }, 2600);
-    return () => {
-      window.clearInterval(clock);
-      window.clearInterval(soft);
-    };
+    return () => window.clearInterval(clock);
   }, [isLaunching]);
 
   // Project every emitted status into the log stream (deduped consecutively).
@@ -137,17 +138,27 @@ export function WizardPipelineRail({ isLaunching, launchStatus }: WizardPipeline
     });
   }, [isLaunching, launchStatus]);
 
+  // Monotonic stage advance, driven only by real runtime status.
+  useEffect(() => {
+    if (!isLaunching || !launchStatus) return;
+    const derived = deriveStageFromStatus(launchStatus);
+    setReachedStage((prev) => {
+      if (derived <= prev) return prev;
+      setStageEnteredAt(Date.now());
+      return derived;
+    });
+  }, [isLaunching, launchStatus]);
+
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log.length]);
 
-  const activeIndex = useMemo(() => {
-    if (!isLaunching) return -1;
-    return Math.max(deriveStageFromStatus(launchStatus), tickStage);
-  }, [isLaunching, launchStatus, tickStage]);
+  const activeIndex = useMemo(() => (isLaunching ? reachedStage : -1), [isLaunching, reachedStage]);
 
   const active = WIZARD_PIPELINE_STAGES[Math.min(Math.max(activeIndex, 0), WIZARD_PIPELINE_STAGES.length - 1)];
   const elapsed = startedAt ? Math.max(0, Math.round((now - startedAt) / 1000)) : 0;
+  const stageElapsed = stageEnteredAt ? Math.max(0, Math.round((now - stageEnteredAt) / 1000)) : 0;
+
 
   return (
     <AnimatePresence>
@@ -213,7 +224,10 @@ export function WizardPipelineRail({ isLaunching, launchStatus }: WizardPipeline
               {" — "}
               {active?.explain}
             </p>
-            <span className="text-[10px] font-mono text-white/30 flex-shrink-0">{elapsed}s</span>
+            <span className="text-[10px] font-mono text-white/30 flex-shrink-0">
+              {stageElapsed}s · {elapsed}s total
+            </span>
+
           </div>
 
           {/* Projected runtime log stream */}

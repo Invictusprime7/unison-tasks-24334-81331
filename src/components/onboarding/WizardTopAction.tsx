@@ -44,27 +44,21 @@ export function WizardTopAction(props: WizardTopActionProps) {
     onLaunch,
   } = props;
 
-  // Auto-advance a soft "expected stage" so users see motion even when the
-  // backend doesn't emit granular status updates. Real status keywords still
-  // win — see mergedStage below.
-  const [tickStage, setTickStage] = useState(0);
+  // The stage label is derived only from real runtime status and never advances
+  // on a timer — a long stage keeps showing that stage until the pipeline moves on.
+  const [reachedStage, setReachedStage] = useState(0);
   useEffect(() => {
     if (!isLaunching) {
-      setTickStage(0);
+      setReachedStage(0);
       return;
     }
-    setTickStage(0);
-    const interval = window.setInterval(() => {
-      setTickStage((prev) => Math.min(prev + 1, WIZARD_PIPELINE_STAGES.length - 3));
-    }, 2200);
-    return () => window.clearInterval(interval);
-  }, [isLaunching]);
-
-  const mergedStage = useMemo(() => {
-    if (!isLaunching) return -1;
+    if (!launchStatus) return;
     const derived = deriveStageFromStatus(launchStatus);
-    return Math.max(derived, tickStage);
-  }, [isLaunching, launchStatus, tickStage]);
+    setReachedStage((prev) => (derived > prev ? derived : prev));
+  }, [isLaunching, launchStatus]);
+
+  const mergedStage = useMemo(() => (isLaunching ? reachedStage : -1), [isLaunching, reachedStage]);
+
 
   // Which button variant to render based on wizard step.
   const buttonNode = (() => {

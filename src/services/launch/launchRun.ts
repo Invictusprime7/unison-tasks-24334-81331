@@ -64,11 +64,15 @@ export const LAUNCH_STAGE_LABELS: Record<LaunchStageName, string> = {
 const DEFAULT_STAGE_TIMEOUTS: Record<LaunchStageName, number> = {
   plan: 30_000,
   seed: 60_000,
-  enrich: 240_000,
-  preflight: 120_000,
-  commit: 60_000,
+  // Enrichment owns the full multi-round Lane B budget (broad turn + isolated
+  // page completions + content re-attempts). It must never expire before the
+  // launcher's own generation deadline, or correct pages get cut off mid-round.
+  enrich: 660_000,
+  preflight: 180_000,
+  commit: 90_000,
   handoff: 20_000,
 };
+
 
 // ── Cooperative yielding ────────────────────────────────────────────────────
 

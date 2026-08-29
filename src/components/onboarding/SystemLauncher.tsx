@@ -3388,10 +3388,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // page being returned correctly in one model response. Complete each
       // unresolved registry page independently, carrying the exact wizard
       // template/theme identity and the full industry behavior contract.
-      const completeMissingWizardPage = async (missingPath: string): Promise<void> => {
-        const attempt = 2 as const;
-        if (laneBRetriedPaths.has(missingPath)) return;
-        laneBRetriedPaths.add(missingPath);
+      const completeMissingWizardPage = async (
+        missingPath: string,
+        attempt = 2,
+      ): Promise<void> => {
+        const retryKey = `${missingPath}#${attempt}`;
+        if (laneBRetriedPaths.has(retryKey)) return;
+        laneBRetriedPaths.add(retryKey);
         const page = Object.values(siteBundleSnapshot.pageRegistry.pages).find((candidatePage) => {
           const filePath = (candidatePage as { filePath?: string }).filePath;
           if (!filePath) return false;

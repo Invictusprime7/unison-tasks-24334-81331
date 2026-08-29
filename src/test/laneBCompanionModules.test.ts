@@ -76,8 +76,9 @@ describe('SystemLauncher Lane B merge wiring', () => {
     expect(launcherSource).not.toContain('.filter(([path]) => requestedPaths.has(path))');
   });
 
-  it('closes the local import contract before sealing the artifact', () => {
+  it('reports, but never repairs, a residual import gap at the handoff boundary', () => {
     expect(launcherSource).toContain('const unresolved = findUnresolvedLocalImports(artifacts.files);');
-    expect(launcherSource).toContain('canonical artifact has unresolved local imports');
+    expect(launcherSource).toContain('acceptance bypassed — unresolved local imports');
+    expect(launcherSource).not.toContain('repairUnresolvedLocalImports(artifacts.files)');
   });
 });

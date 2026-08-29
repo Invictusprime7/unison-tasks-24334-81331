@@ -143,12 +143,12 @@ import {
   findUnresolvedLocalImports,
   describeUnresolvedImports,
 } from '@/services/laneBCompanionModules';
-import { repairUnresolvedLocalImports } from '@/services/moduleClosureRepair';
 import {
   checkPageAcceptance,
   formatPageAcceptanceFailure,
   buildPageAcceptanceRepairDirective,
 } from '@/services/pageAcceptanceContract';
+import { dropUnacceptablePages, describeDroppedPages } from '@/services/dropUnacceptablePages';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
@@ -1891,11 +1891,15 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const {
         playground: materializedPlayground,
         compileResult: compiledPlayground,
-        siteBundleSnapshot,
+        siteBundleSnapshot: generatedSiteBundleSnapshot,
         compileArtifact,
         runtimeManifest: pipelineManifest,
         sitePlan,
       } = pipelineResult;
+      // Generation-time acceptance may drop a page whole (see
+      // `dropUnacceptablePages`), which rewrites registry/router/manifest — so
+      // the snapshot the rest of the launch uses is a mutable binding.
+      let siteBundleSnapshot = generatedSiteBundleSnapshot;
       if (!sitePlan) {
         throw new Error('[SystemLauncher] Canonical pipeline did not return its authoritative topology plan.');
       }
@@ -3619,23 +3623,43 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ];
       }
       if (unresolvedAfterCompletion.length > 0) {
-        // A selected page is part of the launch contract. Never hide an
-        // incomplete Lane B result by substituting Stage 4b copy or deleting a
-        // route from the registry after the user selected it.
-        launchReliabilityMode = 'lane-b-blocked';
-        const completionReasons = laneBCompletionDiagnostics
-          .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
-          .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
-          .join(' | ');
-        console.error('[SystemLauncher] Lane B page completion exhausted without a complete selected site', {
-          unresolvedAfterCompletion,
-          reasons: completionReasons,
+        // Acceptance is final here: the page had its generation attempts and
+        // still cannot compile or close its own imports. Nothing downstream is
+        // allowed to rescue it, so it leaves the site whole — registry, router,
+        // routes, nav and VFS — and the drop is reported to the user.
+        launchReliabilityMode = 'lane-b-degraded';
+        const dropRequests = unresolvedAfterCompletion.map((path) => ({
+          filePath: path,
+          reason: laneBCompletionDiagnostics
+            .filter((diagnostic) => diagnostic.path === path && !diagnostic.accepted)
+            .map((diagnostic) => diagnostic.reason)
+            .slice(-1)[0] || 'Page failed the generation acceptance contract',
+        }));
+        const dropResult = dropUnacceptablePages(
+          siteBundleSnapshot,
+          { ...siteBundleSnapshot.vfsFiles, ...aiSourcedFiles },
+          dropRequests,
+        );
+        siteBundleSnapshot = dropResult.snapshot;
+        for (const droppedPage of dropResult.dropped) {
+          for (const removedPath of [droppedPage.filePath, ...droppedPage.removedModules]) {
+            delete aiSourcedFiles[removedPath];
+            delete aiSourcedFiles[removedPath.slice(1)];
+            delete canonicalScaffoldFiles[removedPath];
+            delete canonicalScaffoldFiles[removedPath.slice(1)];
+          }
+        }
+        const droppedSummary = describeDroppedPages(dropResult.dropped);
+        console.error('[SystemLauncher] Dropped pages that failed the generation acceptance contract', {
+          dropped: dropResult.dropped,
         });
-        const failedPage = Object.values(siteBundleSnapshot.pageRegistry.pages).find((page) => {
-          const path = (page as { filePath?: string }).filePath;
-          return path && unresolvedAfterCompletion.includes(path.startsWith('/') ? path : `/${path}`);
-        }) as { title?: string; filePath?: string } | undefined;
-        throw new Error(`Lane B could not generate: ${failedPage?.title || failedPage?.filePath || unresolvedAfterCompletion[0]}. Retry generation or deselect this page.`);
+        wizardGenerationGaps.generationDefects.push(`dropped pages: ${droppedSummary}`);
+        run.degrade(
+          'enrich',
+          'enrich.page_dropped',
+          `${dropResult.dropped.length} page(s) could not be generated correctly and were removed from the site.`,
+          droppedSummary,
+        );
       }
 
 
@@ -3918,22 +3942,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             },
           },
         });
-        // Canonical artifact assembly already runs the shared structural-repair
-        // → module-closure → compile-safe tail. Re-running the full Sandpack
-        // projection here duplicated that work in a worker and could hold the
-        // wizard at “Finalizing preview…” until its 180–240 second watchdog.
-        // Keep this boundary projection-free: verify the handoff invariant, run
-        // the deterministic repair ladder one final time when it is violated,
-        // and degrade — never throw. Only session loss is fatal (launchRun
-        // never-fail contract); a residual unresolved import must not block the
-        // builder handoff.
+        // Projection-only boundary. Page acceptance already ran at generation
+        // time and unacceptable pages were dropped whole, so there is nothing
+        // left to repair here. A residual unresolved import means the
+        // acceptance contract was bypassed — record it as a defect and hand
+        // off anyway (launchRun never-fail contract).
         const unresolved = findUnresolvedLocalImports(artifacts.files);
         if (unresolved.length > 0) {
-          const repair = repairUnresolvedLocalImports(artifacts.files);
-          artifacts.files = repair.files;
-          if (repair.remaining.length > 0) {
-            lastMileClosureGap = describeUnresolvedImports(repair.remaining);
-          }
+          lastMileClosureGap = describeUnresolvedImports(unresolved);
         }
         return artifacts;
 
@@ -3945,7 +3961,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (lastMileClosureGap) {
         launchReliabilityMode = 'lane-b-degraded';
         wizardGenerationGaps.generationDefects.push(
-          `unresolved local imports: ${lastMileClosureGap}`,
+          `acceptance bypassed — unresolved local imports: ${lastMileClosureGap}`,
         );
         run.degrade(
           'preflight',

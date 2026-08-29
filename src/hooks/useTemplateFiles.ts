@@ -274,7 +274,7 @@ export async function repairTemplateForHydration(template: SavedTemplate): Promi
       .join(', ');
     throw new Error(`Saved project has unresolved component modules: ${details}`);
   }
-  if (closure.rewritten.length === 0 && closure.dropped.length === 0) return template;
+  if (closure.rewritten.length === 0 && closure.recovered.length === 0) return template;
 
   const repairedFiles = closure.files;
   const serializedSnapshot = repairedFiles['/.unison/site-bundle-snapshot.json'];

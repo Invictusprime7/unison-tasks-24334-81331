@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  assertPreviewSmokeSafe,
   runPreviewSmokeGate,
   summarizePreviewSmoke,
 } from '@/services/previewSmokeGate';
@@ -120,13 +119,12 @@ describe('preview smoke gate (Phase 11)', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('throws a PreviewPipelineError with provenance when it rejects', () => {
-    expect(() =>
-      assertPreviewSmokeSafe(
-        bundle({ '/App.tsx': "import Home from './pages/Home';\nexport default Home;" }),
-        'Preview smoke gate',
-      ),
-    ).toThrowError(/preview smoke gate rejected the bundle/i);
+  it('reports rather than throws — acceptance lives at generation time', () => {
+    const result = runPreviewSmokeGate(
+      bundle({ '/App.tsx': "import Home from './pages/Home';\nexport default Home;" }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.blocking.length).toBeGreaterThan(0);
   });
 });
 

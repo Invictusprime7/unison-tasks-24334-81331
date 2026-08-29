@@ -39,6 +39,7 @@ import { PreviewGate, PublishGate, type GateVerdict } from '@/platform/core/gate
 import { hasFatalCompileErrors } from './compileSafeGate';
 import {
   runFullPreflight,
+  sealedPreflightVerdict,
   type RunFullPreflightResult,
 } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
@@ -382,6 +383,11 @@ export async function commitMutation(
   // cannot repeat the CPU-heavy pass on the browser's main thread.
   let preflight = reviewedArtifact?.preflightResult
     ? { ...reviewedArtifact.preflightResult, files }
+    : input.source === 'wizard-launch'
+    // Wizard bundles arrive sealed: acceptance ran once, at generation time.
+    // Re-running preflight here would be a second authoring authority over the
+    // same files, which is exactly what left fragments behind before.
+    ? sealedPreflightVerdict(files)
     : runFullPreflight(files, {
         siteBundleSnapshot: (snapshotForPersistence as { meta?: unknown } | null) as
           | import('@/platform/core/canonicalPipeline').SiteBundleSnapshot

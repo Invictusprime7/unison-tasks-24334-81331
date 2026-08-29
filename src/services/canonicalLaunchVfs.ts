@@ -389,7 +389,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
-  registeredPageAuthority: RegisteredPageAuthority = 'compiler',
+  registeredPageAuthority: RegisteredPageAuthority = 'legacy-lane-b',
 ): Record<string, string> {
   const pageAuthority = registeredPageAuthority;
 
@@ -814,7 +814,7 @@ function* buildCanonicalLaunchArtifactSteps(
         safeFiles,
         canonicalFiles,
         input.siteBundleSnapshot,
-        input.registeredPageAuthority ?? 'compiler',
+        input.registeredPageAuthority ?? 'legacy-lane-b',
       )
 
     : { ...safeFiles };

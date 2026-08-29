@@ -1,47 +1,56 @@
-# Remove preflight blocking: isolate broken pages instead of failing the run
+# One canonical acceptance point: generation-time, no downstream gates, no fallbacks
 
-## My honest read
+## Position
 
-Blocking was the wrong lever. The pipeline has detection in five places that can each abort a run — the launcher last-mile closure check, the preview smoke gate, the Sandpack prep import/export incompatibility throws, the snapshot coverage/route asserts, and the commit hard-reject. Each one turns "one page has a bad import" into "nothing renders and the wizard never hands off". That is strictly worse than shipping six good pages and one flagged page.
+Understood — scrap the quarantine idea. The problem is not *where* we block, it is that acceptance exists in five places. Five gates means five opinions, five repair ladders, and fragments left behind when one of them rewrites what another already committed.
 
-Correctness should be enforced where it can actually be fixed (authoring time, where the AI can regenerate the page — the page acceptance contract already added does this) and *reported* everywhere downstream. Downstream gates should be able to say "this page is degraded", never "this run is dead".
+Single rule: **a page is accepted or it does not exist.** Acceptance happens once, at generation time, inside the launcher where the Lane B brain can still fix the page. Everything downstream is pure projection with zero authority — no re-checking, no repairing, no synthesizing, no fallback content.
 
-## What changes
+## The single acceptance point
 
-### 1. One quarantine primitive, replacing all downstream throws
-A new step that takes the bundle plus diagnostics and, for every module proven non-renderable, swaps it for a synthesized module that:
-- default-exports a real React component,
-- renders a visible "This page needs to be regenerated" panel with the exact diagnostic,
-- keeps the module path and route intact so the router, nav and the rest of the site still boot.
+Inside the launcher's per-page loop, one checker (`pageAcceptanceContract`, already built) decides:
+- parses cleanly,
+- every local import in the page subgraph resolves,
+- every JSX binding matches the target module's real exports,
+- the page module default-exports a renderable component.
 
-Nothing is removed from the bundle; nothing throws.
+Fail → regenerate that page only, with the exact diagnostics inlined, within the existing retry budget.
 
-### 2. Gates become reporters
-- Preview smoke gate: keep computing diagnostics, drop `assertPreviewSmokeSafe`'s throw. Its blocking findings feed quarantine instead.
-- Sandpack prep: the default-export / JSX-contract incompatibility errors become quarantine inputs, not exceptions.
-- Snapshot coverage and route-reachability asserts: downgrade to diagnostics; a missing route target gets a quarantined stub page so the route still resolves.
-- Launcher preflight: no residual throw path at all; the run always reaches handoff.
-- Commit: preview-render diagnostics never reject a commit. Hard reject stays only for security review failures and backend operation failures. The revision row records degraded pages.
+Fail after retries → the page is **removed atomically and completely**: its module and its authored-only companions are deleted, its entry is removed from the PageRegistry, the router is re-derived, nav/footer/CTA links pointing at it are re-resolved, and the SiteBundleSnapshot composition is rewritten without it. Then the snapshot is sealed. No stub, no placeholder, no dangling route, no orphan file.
 
-The single remaining unrecoverable case is "no entry point at all", and that is synthesized rather than thrown.
+The run reports which pages were dropped and why. The site that ships is smaller but every page in it is real.
 
-### 3. Correctness moves fully upstream
-The per-page acceptance contract plus diagnostic-driven Lane B regeneration stays the mechanism that makes pages complete. It runs while the AI can still fix the page, with the existing retry budget. Anything that still fails after retries is quarantined and reported — not hidden, not fatal.
+## What gets deleted
 
-### 4. Degradation has to be visible or this becomes a silent-failure machine
-- Launch summary and the pipeline rail list each quarantined page with its reason.
-- The builder shows a persistent banner: "N page(s) degraded — regenerate".
-- A one-click "Regenerate this page" action in the builder re-runs the same page-scoped generation with the stored diagnostics.
-- Every quarantine event is recorded as a generation defect on the draft, so the failure rate is measurable rather than anecdotal.
+These stop existing rather than being demoted:
+
+- `assertPreviewSmokeSafe` and its throw path — `runPreviewSmokeGate` remains only as a dev-time assertion in tests, not in the preview compile path.
+- Snapshot coverage / route-reachability asserts in `previewArtifacts.ts` — the snapshot is authoritative by construction after the launcher's atomic removal, so re-verifying it downstream is duplicate work with the power to break a valid run.
+- `synthesizeMissingJsxExports` and the default-export synthesis in `sandpackFilePrep.ts` — prep becomes projection-only.
+- `companionModuleSynthesis` — synthesizing a companion the AI never authored is exactly the "fragment left behind" case.
+- The launcher's last-mile `repairUnresolvedLocalImports` pass added in the previous change.
+- `runPreflightRepair` on the non-wizard preview path stays only for hand-edited non-wizard VFS, which has no generator to re-ask; it never runs on wizard artifacts.
+
+`moduleClosureRepair` keeps exactly one job: deterministic path/casing normalization (drift resolution) as part of generation-time acceptance. Its synthesis and drop branches are removed.
+
+## Commit and sync stay downstream-of-truth
+
+`commitMutation` remains the single durable writer, but it stops running `runFullPreflight` on wizard artifacts — the snapshot arrives already accepted and sealed. It validates the seal instead: if the seal matches, commit; if it does not, that is a genuine pipeline bug and the run reports it rather than repairing. Playground sync keeps projecting PlaygroundState → VFS → router with no acceptance logic of its own.
+
+The AI Builder apply path uses the same single checker at authoring time (before `commitMutation`), so builder edits and wizard generation share one contract and one failure mode.
 
 ## Technical notes
 
-- New `src/services/pageQuarantine.ts`: `quarantineNonRenderablePages(files, diagnostics)` returning `{ files, quarantined: Array<{ path, reason, diagnostics }> }`.
-- Call sites: `previewArtifacts.ts` (replace `assertPreviewSmokeSafe` + the two snapshot asserts), `sandpackFilePrep.ts` (replace incompatibility throws), `SystemLauncher.tsx` preflight stage (feed into the existing `generationDefects` / `run.degrade` path), `vfsCommitService.ts` (record instead of reject).
-- `previewSmokeGate.ts` keeps `runPreviewSmokeGate`; `assertPreviewSmokeSafe` is removed and its callers migrated.
-- Quarantined module template lives with the other synthesized modules so it is stamped consistently on every compile.
-- Tests: quarantined page still boots the bundle; sibling pages render normally; route to a quarantined page resolves; commit succeeds with degraded pages recorded; launcher always reaches handoff with a bad page present.
+- Launcher: extract the drop path into `dropUnacceptablePage(state, pagePath)` that mutates registry, router, snapshot composition and VFS in one transaction, then re-seals.
+- Remove throw sites: `previewSmokeGate.assertPreviewSmokeSafe`, `previewArtifacts.assertSnapshotPreviewFileCoverage` / `assertSnapshotPreviewRouteReachability` call sites, `sandpackFilePrep` incompatibility throws.
+- Remove modules/branches: `companionModuleSynthesis.ts`, `synthesizeMissingJsxExports`, synthesis + drop branches in `moduleClosureRepair.ts`, launcher last-mile repair.
+- `vfsCommitService`: wizard-sourced commits verify `isSealedSnapshot` instead of re-running preflight; non-wizard commits keep the existing gate.
+- Tests to update/add: a page failing acceptance after retries is absent from registry, router, nav and VFS with no orphan files; the sealed snapshot equals what preview mounts byte-for-byte; no downstream module rewrites a wizard artifact; deleted synthesis paths have their tests removed rather than adapted.
+
+## Trade-off, stated plainly
+
+With no downstream rescue, a generator regression shows up as a missing page instead of a broken page. That is the correct signal, but it means the retry prompt quality is now the whole safety net — so the drop count must be surfaced prominently in the launch summary and tracked per run, otherwise silent shrinkage replaces silent breakage.
 
 ## Expected result
 
-The wizard always reaches the builder. A broken page is one visibly broken card in a working site, with a stored diagnostic and a regenerate button — instead of a dead run.
+One acceptance decision, one source of truth, one projection path. Nothing repairs anything twice, and nothing partial survives a failed page.

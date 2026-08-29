@@ -2163,6 +2163,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           ? `DESIGN MEMORY: Previous user work favors ${laneBDesignProfile.dominantStyle || 'intentional visual variety'} across ${laneBDesignProfile.projectCount} project(s). Preserve those cues while honoring this selected template.`
           : 'DESIGN MEMORY: Use the selected template and industry research as the visual authority; do not regress to generic landing-page defaults.',
         'Use image-led hero and gallery treatments where the canonical composition includes media. Cards, CTAs, navigation, overlays, and forms must visibly use the selected composition variants and responsive interaction patterns.',
+        'OUTPUT CONTRACT (checked before acceptance): Every relative module your pages import must be emitted as a file at its exact imported path in the same "files" object — never import a component you do not emit. Match every import style to the target module\'s actual exports (default vs named). Every page file must end with a default export of its component. Files that fail to parse, import missing modules, or mismatch exports are rejected and regenerated.',
       ].join('\n');
       const uiFoundationDirective = generatedUiFoundation?.primitiveImports?.length
         ? buildGeneratedUiFoundationDirective({

@@ -3290,6 +3290,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         );
         if (!acceptance.ok) {
           rejectedPageCandidates[normalizedPath] = normalizedCandidate;
+          pageAcceptanceResults.set(normalizedPath, acceptance);
           laneBCompletionDiagnostics.push({
             path: normalizedPath,
             attempt,

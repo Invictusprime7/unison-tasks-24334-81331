@@ -532,7 +532,37 @@ const WIZARD_MAX_PAGE_CONTENT_ATTEMPTS = 3;
 // Provisioning plus the atomic canonical revision must settle well before
 // Supabase's request-idle ceiling. LaunchRun owns this browser-side deadline.
 const WIZARD_COMMIT_TIMEOUT_MS = 90_000;
-const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
+/**
+ * Launch authority. `deterministic-compiler-v2` makes the sealed Lane A
+ * snapshot the launchable source of truth: AI output may enrich, never own, a
+ * registered Wizard page — and an AI failure can never remove a selected route.
+ */
+type WizardGenerationMode = 'deterministic-compiler-v2' | 'legacy-ai-tsx-v1';
+const WIZARD_GENERATION_MODE: WizardGenerationMode = 'deterministic-compiler-v2';
+const WIZARD_IMPLEMENTATION_MODEL = WIZARD_GENERATION_MODE === 'deterministic-compiler-v2'
+  ? 'DETERMINISTIC_COMPILER_OWNS_PAGES_AI_ENRICHES_V2'
+  : 'AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1';
+
+/**
+ * Structural (compiler) failure gate. A registered page without a materialized
+ * module means Lane A itself failed — that blocks launch. An AI failure does not.
+ */
+function assertRegisteredPagesPresent(snapshot: SiteBundleSnapshot): void {
+  const files = snapshot.vfsFiles || {};
+  const missing = Object.values(snapshot.pageRegistry.pages)
+    .map((page) => (page as { filePath?: string }).filePath)
+    .filter((path): path is string => Boolean(path))
+    .filter((path) => {
+      const normalized = path.startsWith('/') ? path : `/${path}`;
+      return typeof files[normalized] !== 'string'
+        && typeof files[normalized.slice(1)] !== 'string';
+    });
+
+  if (missing.length > 0) {
+    throw new Error(`Compiler failed to materialize registered pages: ${missing.join(', ')}`);
+  }
+}
+
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   timeoutMs: 120_000,
   reasoningEffort: 'medium',

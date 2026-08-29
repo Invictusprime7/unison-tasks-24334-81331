@@ -380,7 +380,10 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
+  registeredPageAuthority: RegisteredPageAuthority = 'compiler',
 ): Record<string, string> {
+  const pageAuthority = registeredPageAuthority;
+
   generatedFiles = normalizeCanonicalVfsFiles(generatedFiles);
   canonicalFiles = normalizeCanonicalVfsFiles(canonicalFiles);
   const registryPages = Object.values(snapshot.pageRegistry.pages);

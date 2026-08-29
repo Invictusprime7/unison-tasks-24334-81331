@@ -23,7 +23,6 @@
  */
 
 import { parseImportStatements, resolveCandidateModule } from './compileSafeGate';
-import { PreviewPipelineError } from './previewPipelineError';
 import { analyzeComponentContracts } from './componentContractAnalyzer';
 
 export type PreviewSmokeCode =
@@ -219,34 +218,8 @@ export function summarizePreviewSmoke(diagnostics: PreviewSmokeDiagnostic[]): st
 }
 
 /**
- * Throwing form used by the preview compiler. Surfaces the failure through the
- * existing PreviewRuntimeError panel instead of letting Sandpack be the first
- * system to notice.
+ * There is intentionally no throwing form. Acceptance happens once, at
+ * generation time (`pageAcceptanceContract`); this gate is diagnostics-only and
+ * is used by tests and reporting surfaces. Reintroducing a downstream throw
+ * here recreates the duplicate-authority failure mode it was removed for.
  */
-export function assertPreviewSmokeSafe(
-  files: Record<string, string>,
-  context: string,
-  options: { entryPoints?: string[] } = {},
-): PreviewSmokeResult {
-  const result = runPreviewSmokeGate(files, options);
-  if (result.ok) return result;
-
-  const detail = result.blocking
-    .slice(0, 8)
-    .map((d) => `${d.path}: ${d.message}`)
-    .join('; ');
-
-  throw new PreviewPipelineError(
-    'sandpack',
-    `${context}: preview smoke gate rejected the bundle (${summarizePreviewSmoke(result.blocking)}) — ${detail}`,
-    {
-      blockedFiles: [...new Set(result.blocking.map((d) => d.path))],
-      diagnostics: result.blocking.map((d) => ({
-        path: d.path,
-        error: `${d.code}: ${d.message}`,
-        repairPasses: [],
-      })),
-      recoverableByRelaunch: true,
-    },
-  );
-}

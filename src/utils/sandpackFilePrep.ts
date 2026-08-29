@@ -35,7 +35,6 @@ import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundatio
 import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
 import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
 import { restorePublishedRuntimeModule } from '@/services/publishedRuntimeModule';
-import { repairUnresolvedLocalImports } from '@/services/moduleClosureRepair';
 
 const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
 
@@ -4322,144 +4321,6 @@ export function repairLocalImportContracts(sandpackFiles: Record<string, string>
   }
 }
 
-/**
- * Last-resort export reconciliation.
- *
- * Lane B occasionally imports a JSX component name a local module does not
- * export (e.g. shadcn-style `SelectTrigger` from the generated form-fields
- * foundation). Rather than hard-failing the whole wizard launch, append a
- * permissive passthrough component to the target module so the contract holds
- * and the page still renders.
- */
-export function synthesizeMissingJsxExports(sandpackFiles: Record<string, string>): void {
-  const existingPaths = new Set(Object.keys(sandpackFiles));
-
-  for (const [filePath, content] of Object.entries(sandpackFiles)) {
-    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
-
-    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([^{}]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    let namedMatch: RegExpExecArray | null;
-    while ((namedMatch = namedImportRegex.exec(content)) !== null) {
-      const targetPath = resolveRelativeModuleTarget(filePath, namedMatch[2], existingPaths);
-      if (!targetPath || !/\.(tsx|jsx)$/.test(targetPath)) continue;
-      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
-      if (moduleExports.hasStarReExport) continue;
-
-      const additions: string[] = [];
-      for (const part of namedMatch[1].split(',').map((item) => item.trim()).filter(Boolean)) {
-        const [imported, localAlias] = part.split(/\s+as\s+/).map((item) => item.trim());
-        const local = localAlias || imported;
-        if (!/^[A-Z]\w*$/.test(imported)) continue;
-        if (!new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)) continue;
-        if (moduleExports.named.has(imported)) continue;
-        moduleExports.named.add(imported);
-        additions.push(
-          `export function ${imported}(props: any) {\n` +
-          `  const { children, asChild: _asChild, ...rest } = props || {};\n` +
-          `  return <div {...rest}>{children}</div>;\n` +
-          `}`,
-        );
-      }
-
-      if (additions.length > 0) {
-        console.warn(
-          `[sandpackFilePrep] Synthesized passthrough exports in ${targetPath}:`,
-          additions.length,
-        );
-        sandpackFiles[targetPath] =
-          `${sandpackFiles[targetPath]}\n\n// Auto-synthesized passthrough exports (import contract repair)\n${additions.join('\n\n')}\n`;
-      }
-    }
-
-    // Default-imported JSX companions: when the target module never declared a
-    // default export (empty/synthesized companion), append a passthrough
-    // default so the import contract holds instead of halting the pipeline.
-    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{[^}]*\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    let defaultMatch: RegExpExecArray | null;
-    while ((defaultMatch = defaultImportRegex.exec(content)) !== null) {
-      const local = defaultMatch[1];
-      if (!new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)) continue;
-      const targetPath = resolveRelativeModuleTarget(filePath, defaultMatch[2], existingPaths);
-      if (!targetPath || !/\.(tsx|jsx)$/.test(targetPath)) continue;
-      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
-      if (moduleExports.hasDefault || moduleExports.hasStarReExport) continue;
-
-      // Prefer re-exporting a same-named component the module already declares.
-      const reuse = moduleExports.named.has(local) ? local : null;
-      const body = reuse
-        ? `export default ${reuse};`
-        : `export default function ${local}(props: any) {\n` +
-          `  const { children, asChild: _asChild, ...rest } = props || {};\n` +
-          `  return <div {...rest}>{children}</div>;\n` +
-          `}`;
-      console.warn(`[sandpackFilePrep] Synthesized default export in ${targetPath} for "${local}"`);
-      sandpackFiles[targetPath] =
-        `${sandpackFiles[targetPath] ?? ''}\n\n// Auto-synthesized default export (import contract repair)\n${body}\n`;
-    }
-  }
-}
-
-
-function assertLocalJsxImportContracts(sandpackFiles: Record<string, string>): void {
-
-  const existingPaths = new Set(Object.keys(sandpackFiles));
-  const violations: Array<{ filePath: string; message: string }> = [];
-
-  for (const [filePath, content] of Object.entries(sandpackFiles)) {
-    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
-
-    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([^{}]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    let namedMatch: RegExpExecArray | null;
-    while ((namedMatch = namedImportRegex.exec(content)) !== null) {
-      const targetPath = resolveRelativeModuleTarget(filePath, namedMatch[2], existingPaths);
-      if (!targetPath) continue;
-      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
-      if (moduleExports.hasStarReExport) continue;
-
-      for (const part of namedMatch[1].split(',').map((item) => item.trim()).filter(Boolean)) {
-        const [imported, localAlias] = part.split(/\s+as\s+/).map((item) => item.trim());
-        const local = localAlias || imported;
-        if (
-          /^[A-Z]/.test(imported) &&
-          new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content) &&
-          !moduleExports.named.has(imported)
-        ) {
-          const available = [...moduleExports.named].join(', ') || (moduleExports.hasDefault ? 'default' : 'none');
-          violations.push({
-            filePath,
-            message: `${filePath} imports JSX component "${imported}" from "${namedMatch[2]}", but ${targetPath} does not export it (available: ${available}).`,
-          });
-        }
-      }
-    }
-
-    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{[^}]*\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    let defaultMatch: RegExpExecArray | null;
-    while ((defaultMatch = defaultImportRegex.exec(content)) !== null) {
-      const local = defaultMatch[1];
-      if (!new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)) continue;
-      const targetPath = resolveRelativeModuleTarget(filePath, defaultMatch[2], existingPaths);
-      if (!targetPath) continue;
-      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
-      if (!moduleExports.hasDefault && !moduleExports.hasStarReExport) {
-        const available = [...moduleExports.named].join(', ') || 'none';
-        violations.push({
-          filePath,
-          message: `${filePath} default-imports JSX component "${local}" from "${defaultMatch[2]}", but ${targetPath} has no default export (named exports: ${available}).`,
-        });
-      }
-    }
-  }
-
-  if (violations.length > 0) {
-    throw new PreviewPipelineError(
-      'prep',
-      `VFS JSX import/export incompatibility: ${violations.map(({ message }) => message).join(' ')}`,
-      { blockedFiles: [...new Set(violations.map(({ filePath }) => filePath))] },
-    );
-  }
-}
-
 function buildCanonicalThemeModule(themePresetId?: string | null): string | null {
   const preset = themePresetId
     ? THEME_PRESETS.find((candidate) => candidate.id === themePresetId)
@@ -6684,27 +6545,9 @@ export function prepareSandpackFiles(
     canonicalOnly: true,
   });
 
-  // Single unresolved-module ladder (resolve → recover → synthesize → drop).
-  // This is the SAME policy the launch/commit preflight tail runs, so prep can
-  // no longer invent a competing answer for a defect the pipeline already had
-  // an opinion about. Anything the ladder resolves is idempotent here.
-  try {
-    const ladder = repairUnresolvedLocalImports(sandpackFiles);
-    if (
-      ladder.rewritten.length ||
-      ladder.recovered.length ||
-      ladder.synthesized.length ||
-      ladder.dropped.length
-    ) {
-      for (const key of Object.keys(sandpackFiles)) {
-        if (!(key in ladder.files)) delete sandpackFiles[key];
-      }
-      Object.assign(sandpackFiles, ladder.files);
-    }
-  } catch (e) {
-    console.warn('[sandpackFilePrep] module closure ladder failed', e);
-  }
-
+  // Projection-only from here: acceptance happened at generation time and the
+  // snapshot is sealed. Prep must not re-run a closure ladder or author
+  // modules the generator never produced.
   synthesizeMissingLocalImports(
     sandpackFiles,
     {
@@ -6723,8 +6566,6 @@ export function prepareSandpackFiles(
   }
 
   repairLocalImportContracts(sandpackFiles);
-  synthesizeMissingJsxExports(sandpackFiles);
-  assertLocalJsxImportContracts(sandpackFiles);
 
 
   // ── SAFETY: Validate App.tsx has a default export ──
@@ -6762,8 +6603,6 @@ export function prepareSandpackFiles(
   // possible. Reconcile again, then fail with the exact file/symbol pair before
   // React receives an undefined JSX element type.
   repairLocalImportContracts(sandpackFiles);
-  synthesizeMissingJsxExports(sandpackFiles);
-  assertLocalJsxImportContracts(sandpackFiles);
 
   // ── CLEANUP: Remove unused imports from VFS files ──
   // AI often imports components/icons it doesn't actually use in the template,

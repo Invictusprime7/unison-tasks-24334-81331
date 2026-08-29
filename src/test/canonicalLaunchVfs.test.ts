@@ -468,6 +468,10 @@ describe("buildCanonicalLaunchArtifacts", () => {
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         // Lane B authors rich pages for both routes — these MUST win.
+        // The companion ships with the page: generation-time acceptance is the
+        // only acceptance point, so a page must close its own import graph.
+        "/src/components/Hero.tsx":
+          "export default function Hero(){ return <section className='bg-background text-foreground'>Hero</section>; }",
         "/src/pages/Home.tsx":
           "import Hero from '../components/Hero';\nexport default function Home(){ return <main className='bg-background text-foreground'><Hero/>Lane B Home</main>; }",
         "/src/pages/About.tsx":

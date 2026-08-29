@@ -1,23 +1,22 @@
 /**
- * Module-closure repair — Phase 3C + Phase 4 of the compile-safe hardening
- * contract.
+ * Module-closure resolution — the ONLY deterministic answer to "module X does
+ * not resolve", and it is deliberately narrow.
  *
- * Generated pages sometimes import a companion module that was never authored
- * (`./components/GalleryCategory`), or that exists under a different casing /
- * directory than the import states. Until now the launcher only *detected*
- * this (degrade) and Sandpack prep became the first system to refuse it, which
- * halts the preview pipeline.
+ * Acceptance now happens once, at generation time (see
+ * `src/services/pageAcceptanceContract.ts`). A page that cannot close its own
+ * import graph is regenerated and, failing that, dropped whole. Nothing
+ * downstream may invent a module, delete an import, or otherwise author code
+ * the generator never produced — that is exactly how fragments were left
+ * behind.
  *
- * This module closes that gap with a deterministic-first repair sequence:
+ * What survives here is pure normalization:
  *
- *   1. Path-variant recovery  — the module exists, the specifier is wrong.
- *   2. Unused-binding removal — the import is dead code.
- *   3. Bounded AI repair      — the module is genuinely missing; the AI may
- *      author it (or inline it) but the deterministic gate — never the AI —
- *      decides whether the repair succeeded.
+ *   1. resolve  — specifier drift (wrong directory / casing / extension) onto
+ *                 a module that genuinely exists in the bundle.
+ *   2. recover  — restore the canonical Stage 4b body for that exact module.
  *
- * Hard rules: never simplify, flatten or restyle a page, never strip Unison
- * semantic metadata, never rename generated components.
+ * Anything else is reported as `remaining` for the caller that owns the
+ * generation decision.
  */
 
 import {
@@ -30,31 +29,25 @@ import {
 import { parseGeneratedSource } from './aiSitePreflightRepair';
 import { supabase } from '@/integrations/supabase/client';
 import { extractCleanCode } from '@/utils/aiCodeCleaner';
-import { synthesizeCompanionModule } from './companionModuleSynthesis';
 import { normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
 
 export interface ModuleClosureRepairResult {
   files: Record<string, string>;
-  /** `file → specifier` rewrites applied (ladder rung 1: resolve). */
+  /** `file → specifier` rewrites applied (rung 1: resolve). */
   rewritten: string[];
   /** Modules restored from the canonical snapshot (rung 2: recover). */
   recovered: string[];
-  /** Modules deterministically synthesized from usage (rung 3: synthesize). */
-  synthesized: string[];
-  /** Dead imports removed (rung 4: drop). */
-  dropped: string[];
   remaining: UnresolvedLocalImport[];
 }
 
 export interface ModuleClosureRepairOptions {
   /**
    * Canonical (Stage 4b composed) bodies keyed by VFS path. Rung 2 restores a
-   * missing module from here before anything is synthesized or dropped.
+   * missing module from here.
    */
   canonicalFiles?: Record<string, string>;
-  /** Set false to disable deterministic usage-derived synthesis (rung 3). */
-  synthesize?: boolean;
 }
+
 
 const MODULE_EXTENSION_CANDIDATES = ['', '.tsx', '.ts', '.jsx', '.js', '/index.tsx', '/index.ts'];
 
@@ -112,35 +105,17 @@ function importStatementsFor(source: string, specifier: string): string[] {
   return source.match(re) || [];
 }
 
-function localsOf(statement: string): string[] {
-  const clause = statement.replace(/^\s*import\s+/, '').replace(/\s+from\s+[\s\S]*$/, '').trim();
-  if (!clause || clause.startsWith("'") || clause.startsWith('"')) return [];
-  const out: string[] = [];
-  const named = clause.match(/\{([\s\S]*?)\}/)?.[1];
-  const head = clause.replace(/\{[\s\S]*?\}/, '').replace(/,\s*$/, '').trim();
-  if (head.startsWith('* as ')) out.push(head.slice(5).trim());
-  else if (head) out.push(head);
-  if (named) {
-    for (const part of named.split(',').map((p) => p.trim()).filter(Boolean)) {
-      const body = part.replace(/^type\s+/, '');
-      const [imported, alias] = body.split(/\s+as\s+/).map((p) => p.trim());
-      out.push(alias || imported);
-    }
-  }
-  return out.filter(Boolean);
-}
-
 /**
- * The single deterministic ladder for "module X does not resolve".
+ * Deterministic normalization for "module X does not resolve".
  *
- *   1. resolve    — specifier drift (wrong directory / casing / extension)
- *   2. recover    — restore the canonical Stage 4b body for that module
- *   3. synthesize — usage-derived module (only for bindings actually used)
- *   4. drop       — the import is provably dead
+ *   1. resolve — specifier drift (wrong directory / casing / extension)
+ *   2. recover — restore the canonical Stage 4b body for that module
  *
- * Later rungs run only when every earlier rung declined. Pruning (rung 5) and
- * halting (rung 6) stay with the callers that own routing and compilation.
+ * Nothing is synthesized and no import is removed. Whatever is still
+ * unresolved is returned in `remaining` so the generation-time acceptance
+ * contract — the only authority — can regenerate or drop the page.
  */
+
 export function repairUnresolvedLocalImports(
   inputFiles: Record<string, string>,
   options: ModuleClosureRepairOptions = {},
@@ -163,13 +138,12 @@ export function repairUnresolvedLocalImports(
 
   const rewritten: string[] = [];
   const recovered: string[] = [];
-  const synthesized: string[] = [];
-  const dropped: string[] = [];
 
   const unresolved = findUnresolvedLocalImports(files);
   if (unresolved.length === 0) {
-    return { files, rewritten, recovered, synthesized, dropped, remaining: [] };
+    return { files, rewritten, recovered, remaining: [] };
   }
+
 
   // basename (lowercased) → real module paths
   const byBase = new Map<string, string[]>();
@@ -238,59 +212,16 @@ export function repairUnresolvedLocalImports(
       continue;
     }
 
-    // 3. Synthesize — derive a real module from how the importer uses it.
-    if (options.synthesize !== false) {
-      const targetPath = /\.(tsx|jsx|ts|js)$/i.test(absolutePath)
-        ? absolutePath
-        : `${absolutePath}.tsx`;
-      const module = synthesizeCompanionModule({
-        importerPath: item.filePath,
-        importerSource: source,
-        specifier: item.importPath,
-        targetPath,
-      });
-      if (module) {
-        const parsed = parseGeneratedSource(module.content);
-        if (parsed.ok) {
-          files[module.path] = module.content;
-          synthesized.push(module.path);
-          continue;
-        }
-        console.warn('[moduleClosureRepair] synthesized module failed to parse', module.path);
-      }
-    }
-
-    // 4. Dead-import removal — nothing the page renders depends on it.
-    let next = source;
-    let removedAll = true;
-    for (const statement of statements) {
-      const body = next.split(statement).join('');
-      const locals = localsOf(statement);
-      const used = locals.some((local) =>
-        new RegExp(`(?<![.\\w$])${local.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(body),
-      );
-      if (used) {
-        removedAll = false;
-        continue;
-      }
-      next = next.replace(`${statement}\n`, '').replace(statement, '');
-    }
-    if (next !== source && removedAll) {
-      const check = parseGeneratedSource(next);
-      if (check.ok) {
-        files[item.filePath] = next;
-        dropped.push(`${item.filePath} → "${item.importPath}"`);
-      }
-    }
+    // Anything past rung 2 is a generation defect, not a projection problem.
+    // It stays in `remaining` for the acceptance contract to act on.
   }
 
   return {
     files,
     rewritten,
     recovered,
-    synthesized,
-    dropped,
     remaining: findUnresolvedLocalImports(files),
+
   };
 }
 
@@ -315,7 +246,6 @@ export async function repairModuleClosureWithAI(
   const maxAttempts = Math.max(1, Math.min(3, options.maxAttempts ?? 2));
   const deterministic = repairUnresolvedLocalImports(inputFiles, {
     canonicalFiles: options.canonicalFiles,
-    synthesize: options.synthesize,
   });
   const files = { ...deterministic.files };
   const repairedPaths: string[] = [];
@@ -395,9 +325,8 @@ export async function repairModuleClosureWithAI(
     files,
     rewritten: [...deterministic.rewritten, ...repairedPaths.map((p) => `${p} (ai-repair)`)],
     recovered: deterministic.recovered,
-    synthesized: deterministic.synthesized,
-    dropped: deterministic.dropped,
     remaining,
     attempts,
   };
 }
+

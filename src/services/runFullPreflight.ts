@@ -24,7 +24,6 @@ import {
   rewriteSelfReferencingImports,
   autoInjectMissingJsxImports,
   repairLocalImportContracts,
-  synthesizeMissingJsxExports,
 } from '@/utils/sandpackFilePrep';
 import {
   runCompileSafeAcceptance,
@@ -58,9 +57,7 @@ export interface ModuleClosureStageReport {
   status: StageOutcome;
   rewritten: string[];
   recovered: string[];
-  synthesized: string[];
-  dropped: string[];
-  /** Specifiers still unresolved after the ladder ran. */
+  /** Specifiers still unresolved after normalization ran. */
   remaining: string[];
 }
 
@@ -95,7 +92,7 @@ export interface RunFullPreflightResult {
     finalRepair: 'ok' | 'skipped' | 'failed';
     /** Structural module-shape repairs, moved out of Sandpack prep. */
     structuralRepair: StageOutcome;
-    /** Single unresolved-module ladder (resolve → recover → synthesize → drop). */
+    /** Module-specifier normalization (resolve drift → recover canonical body). */
     moduleClosure: ModuleClosureStageReport;
     /** JSX value contracts repaired and validated before acceptance. */
     componentContracts: ClosureAndCompileSafeResult['componentContracts'];
@@ -156,7 +153,6 @@ function runStructuralRepairs(input: Record<string, string>): {
   }
   autoInjectMissingJsxImports(files);
   repairLocalImportContracts(files);
-  synthesizeMissingJsxExports(files);
 
   const inputKeys = Object.keys(input);
   const changed =
@@ -200,29 +196,22 @@ export function runModuleClosureAndCompileSafe(
     status: 'declined',
     rewritten: [],
     recovered: [],
-    synthesized: [],
-    dropped: [],
     remaining: [],
   };
   try {
     const closure = repairUnresolvedLocalImports(files, { canonicalFiles });
     const changed =
-      closure.rewritten.length > 0 ||
-      closure.recovered.length > 0 ||
-      closure.synthesized.length > 0 ||
-      closure.dropped.length > 0;
+      closure.rewritten.length > 0 || closure.recovered.length > 0;
     if (changed) files = closure.files;
     moduleClosure = {
       status: changed ? 'applied' : 'declined',
       rewritten: closure.rewritten,
       recovered: closure.recovered,
-      synthesized: closure.synthesized,
-      dropped: closure.dropped,
       remaining: closure.remaining.map((item) => `${item.filePath} → "${item.importPath}"`),
     };
-    if (changed) console.log('[preflight] module closure ladder', moduleClosure);
+    if (changed) console.log('[preflight] module closure normalization', moduleClosure);
   } catch (e) {
-    console.warn('[preflight] module closure ladder failed', e);
+    console.warn('[preflight] module closure normalization failed', e);
     moduleClosure = { ...moduleClosure, status: 'failed' };
   }
 
@@ -495,5 +484,34 @@ export function runFullPreflight(
     },
     compileDiagnostics,
 
+  };
+}
+
+/**
+ * Wizard-sourced commits do not re-run acceptance. The snapshot was accepted
+ * and sealed at generation time; commit only records the verdict so the same
+ * bundle is never authored twice by two different authorities.
+ */
+export function sealedPreflightVerdict(files: Record<string, string>): RunFullPreflightResult {
+  return {
+    files,
+    stages: {
+      earlyRepair: 'skipped',
+      navWiring: 'skipped',
+      forbiddenStrip: { stripped: 0, forbidden: [] },
+      requiredIntentClosure: { injected: [], missing: [] },
+      finalRepair: 'skipped',
+      structuralRepair: 'declined',
+      moduleClosure: { status: 'declined', rewritten: [], recovered: [], remaining: [] },
+      componentContracts: { status: 'declined', repaired: [], remaining: [] },
+      compileSafe: {
+        status: 'accepted',
+        repaired: [],
+        blockingCount: 0,
+        summary: 'sealed at generation time — acceptance not repeated at commit',
+      },
+      bundleTopology: { status: 'skipped', missing: [] },
+    },
+    compileDiagnostics: [],
   };
 }

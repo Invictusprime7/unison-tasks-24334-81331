@@ -28,9 +28,10 @@ vi.mock('@/platform/core/commitToPipeline', () => ({
   commitToPipeline: vi.fn(),
 }));
 
-vi.mock('@/services/runFullPreflight', () => ({
-  runFullPreflight: vi.fn(),
-}));
+vi.mock('@/services/runFullPreflight', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/runFullPreflight')>();
+  return { ...actual, runFullPreflight: vi.fn() };
+});
 
 vi.mock('@/services/playgroundControlPlaneResolver', () => ({
   resolvePlaygroundControlPlane: vi.fn(),

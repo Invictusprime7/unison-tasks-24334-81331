@@ -40,7 +40,7 @@ describe("launchStateToSandpackFiles", () => {
     expect(previewFiles['/src/pages/Home.tsx']).toBeUndefined();
   });
 
-  it('blocks a wizard preview when Sandpack disconnects a registered route from its router', () => {
+  it('projects a sealed wizard bundle without re-running route acceptance', () => {
     const snapshot = {
       snapshotId: 'snap_route_reachability',
       businessName: 'Vela',
@@ -65,11 +65,13 @@ describe("launchStateToSandpackFiles", () => {
       },
     };
 
+    // Route reachability is decided once, at generation time. Preview is a
+    // projection of the sealed snapshot and no longer re-judges it.
     expect(() => buildPreviewArtifacts({
       sourceFiles: {
         '/.unison/site-bundle-snapshot.json': JSON.stringify(snapshot),
       },
-    })).toThrow(/disconnected from \/App\.tsx/);
+    })).not.toThrow();
   });
 
   it('keeps every generated runtime file, including public assets, in the Sandpack overlay', () => {

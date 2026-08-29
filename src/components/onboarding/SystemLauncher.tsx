@@ -3413,11 +3413,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const industryVocabulary = (industryRequirements?.vocabulary || []).slice(0, 16).join(', ');
 
         if (!aiSourcedFiles[missingPath]) {
-          setLaunchStatus(`Completing ${page?.title || missingPath} (2/2)…`);
-          const rejectedCandidate = rejectedPageCandidates[missingPath];
+          setLaunchStatus(
+            `Completing ${page?.title || missingPath} (${attempt}/${WIZARD_MAX_PAGE_CONTENT_ATTEMPTS})…`,
+          );
           const previousFailure = [...laneBCompletionDiagnostics]
             .reverse()
             .find((diagnostic) => diagnostic.path === missingPath && !diagnostic.accepted)?.reason;
+          // Malformed source must never become repair context: it teaches the
+          // model to reproduce the same broken tokens. Regenerate clean.
+          const rejectedCandidate = isSyntaxCompletionFailure(previousFailure)
+            ? undefined
+            : rejectedPageCandidates[missingPath];
           const resolvedPageRole = page?.pageRole || page?.pageType;
           const pageIntent = selectIndustryIntentForIsolatedPage(resolvedIndustry, resolvedPageRole);
           const isolatedWizardSeed = {

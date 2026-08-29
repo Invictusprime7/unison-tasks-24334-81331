@@ -224,7 +224,10 @@ export function WizardPipelineRail({ isLaunching, launchStatus }: WizardPipeline
               {" — "}
               {active?.explain}
             </p>
-            <span className="text-[10px] font-mono text-white/30 flex-shrink-0">{elapsed}s</span>
+            <span className="text-[10px] font-mono text-white/30 flex-shrink-0">
+              {stageElapsed}s · {elapsed}s total
+            </span>
+
           </div>
 
           {/* Projected runtime log stream */}

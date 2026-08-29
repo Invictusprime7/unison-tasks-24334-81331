@@ -3321,8 +3321,46 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         return true;
       };
 
-      const stillMissing = missingWizardPageFiles
-        .map((path) => (path.startsWith('/') ? path : `/${path}`));
+      // ── Batch acceptance audit ─────────────────────────────────────────
+      // Pages the broad Lane B turn returned are held to the same contract
+      // as isolated completions: compile + import closure + JSX export
+      // contracts. A page that fails is pulled out of the merged output and
+      // regenerated through the isolated completion path with the exact
+      // diagnostics inlined — never rescued silently downstream.
+      const acceptanceFailedPaths: string[] = [];
+      for (const page of Object.values(siteBundleSnapshot.pageRegistry.pages)) {
+        const rawPath = (page as { filePath?: string }).filePath;
+        if (!rawPath) continue;
+        const normalizedPagePath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+        const authored = aiSourcedFiles[normalizedPagePath] || aiSourcedFiles[normalizedPagePath.slice(1)];
+        if (!authored || missingWizardPageFiles.includes(rawPath)) continue;
+        const audit = checkPageAcceptance(
+          { ...canonicalScaffoldFiles, ...aiSourcedFiles },
+          normalizedPagePath,
+          Object.keys(aiSourcedFiles),
+        );
+        if (audit.ok) continue;
+        console.warn('[SystemLauncher] Batch page failed the acceptance contract; regenerating in isolation', {
+          path: normalizedPagePath,
+          reason: formatPageAcceptanceFailure(audit),
+        });
+        rejectedPageCandidates[normalizedPagePath] = authored;
+        pageAcceptanceResults.set(normalizedPagePath, audit);
+        laneBCompletionDiagnostics.push({
+          path: normalizedPagePath,
+          attempt: 1,
+          accepted: false,
+          reason: formatPageAcceptanceFailure(audit),
+        });
+        delete aiSourcedFiles[normalizedPagePath];
+        delete aiSourcedFiles[normalizedPagePath.slice(1)];
+        acceptanceFailedPaths.push(normalizedPagePath);
+      }
+
+      const stillMissing = [
+        ...missingWizardPageFiles.map((path) => (path.startsWith('/') ? path : `/${path}`)),
+        ...acceptanceFailedPaths,
+      ];
 
       // A batch repair must not make the whole launch depend on every requested
       // page being returned correctly in one model response. Complete each

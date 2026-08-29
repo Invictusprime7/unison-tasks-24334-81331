@@ -3048,10 +3048,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         laneBRetriedPaths: string[];
         aiFileCount: number;
         laneAPageCount: number;
+        /** Pages whose generation produced defects before final acceptance,
+         *  with the exact first-failure reason. Shown in the launch summary. */
+        generationDefects: string[];
       } = {
         laneBRetriedPaths: [],
         aiFileCount: Object.keys(aiSourcedFiles).length,
         laneAPageCount: Object.keys(siteBundleSnapshot.pageRegistry.pages).length,
+        generationDefects: [],
       };
 
       const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)

@@ -3829,6 +3829,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         // to Preview so launch never compiles the same artifact twice.
         strictPreflight: false,
       };
+      // Record every generation defect that occurred before final acceptance
+      // so the launch summary can surface degradation honestly — a page that
+      // needed rejection/regeneration or downstream rescue is never silent.
+      wizardGenerationGaps.generationDefects = laneBCompletionDiagnostics
+        .filter((entry) => !entry.accepted)
+        .map((entry) => `${entry.path}: ${entry.reason}`);
+
       const launchArtifacts = await run.stage('preflight', async (signal) => {
         const artifacts = await buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
           yieldToHost: yieldToBrowser,

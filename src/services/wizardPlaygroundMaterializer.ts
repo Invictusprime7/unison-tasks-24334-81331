@@ -176,7 +176,30 @@ const FORM_TEMPLATES: Record<string, FormTemplate> = {
     submitLabel: 'Send Inquiry',
     successMessage: 'An agent will contact you shortly!',
   },
+  newsletter: {
+    name: 'Newsletter Signup',
+    fields: [
+      { label: 'Email', type: 'email', required: true, sortOrder: 0 },
+    ],
+    submitLabel: 'Subscribe',
+    successMessage: 'You are subscribed!',
+  },
 };
+
+/**
+ * Legacy binding target names emitted by older contracts/AI output. Aliasing
+ * them keeps `form.open` bindings resolvable instead of silently unwired.
+ */
+const FORM_TARGET_ALIASES: Record<string, string> = {
+  booking_form: 'booking_intake',
+  booking: 'booking_intake',
+  contact_form: 'contact',
+  newsletter_form: 'newsletter',
+  newsletter_signup: 'newsletter',
+  quote_form: 'quote_request',
+};
+
+
 
 // ============================================================================
 // Calendar Templates

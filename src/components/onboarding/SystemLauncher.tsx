@@ -143,6 +143,7 @@ import {
   findUnresolvedLocalImports,
   describeUnresolvedImports,
 } from '@/services/laneBCompanionModules';
+import { repairUnresolvedLocalImports } from '@/services/moduleClosureRepair';
 import {
   checkPageAcceptance,
   formatPageAcceptanceFailure,

@@ -3941,6 +3941,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         // Artifact assembly remains canonical and has no competing scaffold
         // fallback. Sandpack diagnostics above are intentionally non-blocking.
       });
+      if (lastMileClosureGap) {
+        launchReliabilityMode = 'lane-b-degraded';
+        wizardGenerationGaps.generationDefects.push(
+          `unresolved local imports: ${lastMileClosureGap}`,
+        );
+        run.degrade(
+          'preflight',
+          'preflight.module_closure_gap',
+          'Some generated modules could not be fully linked; the affected sections may need a retry in the builder.',
+          lastMileClosureGap,
+        );
+      }
       if (launchArtifacts.preflightResult.runtime?.execution === 'compatibility-fallback') {
         launchReliabilityMode = 'lane-b-degraded';
         run.degrade(

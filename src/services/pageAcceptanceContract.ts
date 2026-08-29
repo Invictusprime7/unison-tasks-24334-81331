@@ -138,12 +138,14 @@ export function checkPageAcceptance(
   for (const path of reachable) {
     if (!hasExplicitModuleExtension(path) || !CODE_FILE.test(path)) continue;
     const parsed = parseGeneratedSource(normalizedFiles[path]);
-    if (!parsed.ok) {
+    if (parsed.ok === false) {
+      const failureLine = parsed.line;
+      const failureColumn = parsed.column;
       diagnostics.push({
         path,
         code: 'PAGE_SYNTAX_ERROR',
-        line: parsed.line,
-        message: `${path} does not parse${parsed.line ? ` (line ${parsed.line}${parsed.column ? `:${parsed.column}` : ''})` : ''}: ${parsed.error}`,
+        line: failureLine,
+        message: `${path} does not parse${failureLine ? ` (line ${failureLine}${failureColumn ? `:${failureColumn}` : ''})` : ''}: ${parsed.error}`,
       });
     }
   }

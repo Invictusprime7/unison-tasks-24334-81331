@@ -471,6 +471,11 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     }
 
     if (registeredPagePaths.has(path) || registeredPagePaths.has(normalizedPath)) {
+      if (pageAuthority === 'compiler') {
+        // Compiler-first: a generated TSX page can never replace the
+        // deterministic Lane A page module for a registered Wizard route.
+        continue;
+      }
       if (isMinimalPreviewFallbackSource(content)) {
         throw new PreviewPipelineError(
           'vfs',
@@ -482,6 +487,7 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       laneBCompletedPaths.add(normalizedPath);
       continue;
     }
+
 
 
     // App.tsx is always a deterministic registry router and index.css must stay

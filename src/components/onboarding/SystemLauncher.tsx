@@ -153,6 +153,8 @@ import { dropUnacceptablePages, describeDroppedPages } from '@/services/dropUnac
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
+import type { SiteBundleSnapshot } from "@/platform/core/canonicalPipeline";
+
 import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
 // ============================================================================

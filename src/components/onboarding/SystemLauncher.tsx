@@ -3075,6 +3075,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       }> = [];
       const rejectedPageCandidates: Record<string, string> = {};
       const laneBRetriedPaths = new Set<string>();
+      // Last page-acceptance result per path, so the retry prompt can inline
+      // the exact contract repair directive (missing companions, JSX
+      // import/export mismatches, missing default export).
+      const pageAcceptanceResults = new Map<string, ReturnType<typeof checkPageAcceptance>>();
 
       const acceptCompletedWizardPage = (
         path: string,

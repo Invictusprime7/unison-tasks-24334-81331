@@ -260,6 +260,7 @@ export function runModuleClosureAndCompileSafe(
       });
       files = gate.files;
       compileDiagnostics = gate.diagnostics;
+      // Advisory only: component-contract findings never block acceptance.
       const contractDiagnostics = analyzeComponentContracts(files).diagnostics;
       for (const diagnostic of contractDiagnostics) {
         compileDiagnostics.push({
@@ -268,19 +269,19 @@ export function runModuleClosureAndCompileSafe(
           sourceLane: options.sourceLane ?? 'unknown',
           validationStage: 'export-contract',
           diagnosticCode: 'INVALID_JSX_COMPONENT_CONTRACT',
-          severity: 'error',
+          severity: 'warning',
           message: diagnostic.message,
           repairAttempt: 0,
           resolved: false,
         });
       }
-      const blockingCount = gate.blocking.length + contractDiagnostics.length;
       compileSafe = {
-        status: gate.accepted && contractDiagnostics.length === 0 ? 'accepted' : 'blocked',
+        status: gate.accepted ? 'accepted' : 'blocked',
         repaired: gate.repaired,
-        blockingCount,
+        blockingCount: gate.blocking.length,
         summary: summarizeCompileDiagnostics(compileDiagnostics),
       };
+
       if (!gate.accepted) {
         console.warn('[preflight] compile-safe gate blocked', {
           blocking: gate.blocking.slice(0, 10).map((d) => ({

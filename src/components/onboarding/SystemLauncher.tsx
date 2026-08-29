@@ -3729,7 +3729,22 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           `${dropResult.dropped.length} page(s) could not be generated correctly and were removed from the site.`,
           droppedSummary,
         );
+      } else if (unresolvedAfterCompletion.length > 0) {
+        // Compiler-first: a rejected AI page never removes a Wizard-selected
+        // route. The deterministic Lane A module is retained instead.
+        launchReliabilityMode = 'lane-b-degraded';
+        for (const path of unresolvedAfterCompletion) {
+          delete aiSourcedFiles[path];
+          delete aiSourcedFiles[path.startsWith('/') ? path.slice(1) : `/${path}`];
+        }
+        run.degrade(
+          'enrich',
+          'enrich.ai_page_rejected',
+          'AI page enrichment was rejected; compiler-owned page retained.',
+          unresolvedAfterCompletion.join(', '),
+        );
       }
+
 
 
       const assessCurrentPresentations = () => assessWizardPagePresentations({

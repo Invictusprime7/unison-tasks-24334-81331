@@ -289,6 +289,16 @@ export async function runBuilderTurn<TResponse = any>(
   const getAccessToken = async (forceRefresh = false): Promise<string | null> => {
     const { data: sessionData } = await supabase.auth.getSession();
     const session = sessionData.session;
+    if (forceRefresh) {
+      // The edge function just rejected this exact token. Drop every cached
+      // "accepted" verdict and the shared recent-refresh reuse window so the
+      // replay cannot hand back the same rejected access token.
+      if (session?.access_token) builderTokenChecks.delete(session.access_token);
+      if (recentBuilderRefresh?.session?.access_token) {
+        builderTokenChecks.delete(recentBuilderRefresh.session.access_token);
+      }
+      recentBuilderRefresh = null;
+    }
     const expiresAt = (session?.expires_at ?? 0) * 1000;
     if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
       // `getSession()` is a local read: a token minted by a different project
@@ -299,6 +309,7 @@ export async function runBuilderTurn<TResponse = any>(
         return session.access_token;
       }
     }
+
     const refreshedSession = await refreshBuilderSession();
     if (!refreshedSession) return null;
     if (await isTokenAcceptedByAuth(refreshedSession.access_token)) {

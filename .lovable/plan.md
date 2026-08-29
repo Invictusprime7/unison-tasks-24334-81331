@@ -8,6 +8,12 @@ The shift: **a page is only accepted if it compiles and closes its own imports/e
 
 ## What changes
 
+### 0. How this sits with VFS / Playground sync
+
+The Playground sync loop (hydrate → compile → commit) already has its own gate: `commitMutation` runs `runFullPreflight` and rejects fatal defects, and `PlaygroundSyncController.compile` re-projects PlaygroundState into VFS + router. That gate can only **accept or reject** — it has no access to the AI brain, so it cannot regenerate a broken page. It can only repair, and that is exactly the rescue pile-up we have today.
+
+Page acceptance is **upstream of all of that**: it runs inside the launcher while the Lane B brain is still available to actually fix the page by regenerating it. So this is not jumping the gun — it closes the one gap the sync/commit layer structurally cannot. The sync path stays untouched: it keeps compiling PlaygroundState the same way, and now receives clean input. As a side benefit, the shared checker (step 1) is reused by the AI Builder apply path so builder edits and wizard generation are held to the same contract.
+
 ### 1. Page acceptance contract (new)
 A single checker that runs on one page and its authored companions immediately after Lane B returns them, before anything is merged into the canonical VFS:
 

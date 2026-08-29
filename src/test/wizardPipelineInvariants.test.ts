@@ -382,7 +382,7 @@ describe('wizard pipeline ownership invariants', () => {
     expect(launcherSource).not.toContain("if (pageRole !== 'faq') continue;");
     expect(launcherSource).not.toContain('WIZARD_BATCH_REPAIR_MAX_MS');
     expect(launcherSource).not.toContain('WIZARD_BATCH_REPAIR_MAX_PAGES');
-    expect(launcherSource).toContain('const attempt = 2 as const;');
+    expect(launcherSource).toContain('const WIZARD_MAX_PAGE_CONTENT_ATTEMPTS = 3;');
     expect(launcherSource).toContain('if (laneBRetriedPaths.has(missingPath)) return;');
     expect(launcherSource).toContain('completeMissingWizardPage(path)');
     expect(launcherSource).toContain("reasoningEffort: 'low'");

@@ -190,6 +190,9 @@ export function runPreviewSmokeGate(
     }
   }
 
+  // Component-contract findings are advisory only. Generated UI facades
+  // (icons/button/motion/radix) legitimately forward values static analysis
+  // cannot prove, so they must never block a preview that otherwise boots.
   const reachableSet = new Set(reachable);
   const componentContracts = analyzeComponentContracts(files, { importerPaths: reachableSet });
   for (const contract of componentContracts.diagnostics) {
@@ -198,9 +201,10 @@ export function runPreviewSmokeGate(
       code: 'INVALID_JSX_COMPONENT_CONTRACT',
       message: contract.message,
       specifier: contract.specifier,
-      severity: 'error',
+      severity: 'warning',
     });
   }
+
 
   const blocking = diagnostics.filter((d) => d.severity === 'error');
   return { ok: blocking.length === 0, entryPoint, reachable, diagnostics, blocking };

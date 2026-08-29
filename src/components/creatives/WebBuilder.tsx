@@ -175,7 +175,6 @@ import { inferCanonicalComponentSlug } from '@/services/canonicalComponentRegist
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
 import { clearLauncherHandoff, readLauncherHandoff } from '@/services/launcherHandoffPersistence';
 import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot, markLiveEditedVfsPaths, clearLiveEditedVfsPaths } from '@/services/snapshotProjector';
-import { repairSnapshotPageCoverageLocally, repairSnapshotPageCoverageFromRevisions } from '@/services/snapshotPageCoverageRepair';
 import { createVfsHandoffSignature } from '@/services/vfsHandoffSignature';
 import { isPreviewPipelineError } from '@/services/previewPipelineError';
 import { ThemeSeedError } from '@/platform/core/themeSeedAssert';
@@ -387,8 +386,6 @@ interface WebBuilderRouteState {
   /** Durable structured WizardSeed from launcher; threaded into every AIBuilderPanel turn. */
   wizardSeed?: Record<string, unknown>;
   fromLauncher?: boolean;
-  /** Compact handoff stores snapshot files once in vfsFiles. */
-  snapshotVfsCompacted?: boolean;
   /** Durable revision id persisted by VFSCommitService (Move 2/3). When present,
    *  WebBuilder hydrates files/snapshot from `site_revisions` rather than relying
    *  solely on sessionStorage/launch context. */
@@ -644,9 +641,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
   const draftPersistencePromiseRef = useRef<Promise<string | null> | null>(null);
 
   const importedRouteStateRef = useRef<string | null>(null);
-  // Guards the durable (site_revisions) page-coverage repair so a broken draft
-  // triggers at most one recovery scan per handoff signature.
-  const pageCoverageRepairRef = useRef<string | null>(null);
 
   // The builder is independently usable for blank and restored projects.
   // Opening the launcher here creates a modal backdrop over every direct
@@ -1162,17 +1156,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     });
   }, []);
 
-  // Canonical identity backfill. A wizard/launcher handoff (or a resumed
-  // session) can arrive with only a subset of {projectId, businessId,
-  // draftId}. Every commit gate (autosave, AI apply, presentation ops) is
-  // all-or-nothing on that triple, so a single missing field silently
-  // disables in-builder AI editing. Recover the missing pieces from the
-  // canonical `builder_drafts` row instead of failing closed.
-  const [identityBackfill, setIdentityBackfill] = useState<{
-    projectId?: string;
-    businessId?: string;
-  }>({});
-
   // Pass 2 (identity hardening): resolved real projects.id for the active
   // draft. Used to construct BuilderIdentity at commit/deploy/AI-apply
   // boundaries instead of aliasing the draft id as projectId.
@@ -1180,9 +1163,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     templateFiles.currentProjectId ||
     (effectiveRouteState?.projectId as string | undefined) ||
     (effectiveRouteState?.returnProjectId as string | undefined) ||
-    identityBackfill.projectId ||
     null;
-
 
   const hydrateSavedTemplate = useCallback((template: {
     id: string;
@@ -1402,62 +1383,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     })();
     return () => { cancelled = true; };
   }, [routeBusinessId, projectId, recoveredBusinessId]);
-  const businessId = routeBusinessId || recoveredBusinessId || identityBackfill.businessId || undefined;
-
-  // Backfill the canonical triple from the draft row (and, when the draft id
-  // itself is unknown, from the project row). Runs once per missing field so
-  // AI edits / autosave stop failing with "Canonical project identity is
-  // unavailable" after a wizard handoff that only carried partial state.
-  useEffect(() => {
-    const knownProjectId = resolvedProjectId || projectId || null;
-    const needsProject = !knownProjectId;
-    const needsBusiness = !businessId;
-    const needsDraft = !currentDraftId;
-    if (!needsProject && !needsBusiness && !needsDraft) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        let draftId = currentDraftId || templateFiles.currentDraftId || null;
-        if (!draftId && knownProjectId) {
-          draftId = await findBuilderDraftIdForProject({
-            projectId: knownProjectId,
-            projectName: projectNameFromState,
-            businessId,
-          });
-        }
-        if (cancelled || !draftId) return;
-
-        if (!currentDraftId) setCurrentDraftId(draftId);
-        if (!needsProject && !needsBusiness) return;
-
-        const { data } = await supabaseClient
-          .from('builder_drafts')
-          .select('project_id, business_id')
-          .eq('id', draftId)
-          .maybeSingle();
-        if (cancelled || !data) return;
-
-        setIdentityBackfill((prev) => {
-          const next = { ...prev };
-          if (needsProject && data.project_id) next.projectId = data.project_id;
-          if (needsBusiness && data.business_id) next.businessId = data.business_id;
-          return next.projectId === prev.projectId && next.businessId === prev.businessId ? prev : next;
-        });
-      } catch (err) {
-        console.warn('[WebBuilder] canonical identity backfill failed:', err);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [
-    businessId,
-    currentDraftId,
-    projectId,
-    projectNameFromState,
-    resolvedProjectId,
-    templateFiles.currentDraftId,
-  ]);
-
+  const businessId = routeBusinessId || recoveredBusinessId || undefined;
 
   // Local editable project name. Seeded from route state, kept in sync if the
   // user (or another tab) renames the project via CloudProjects.
@@ -2642,26 +2568,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         }
         console.log('[WebBuilder] hydrated from site_revisions:', revision.id, Object.keys(files).length, 'files');
         const currentFiles = virtualFSRef.current.getSandpackFiles();
-        const routeFiles = effectiveRouteState?.vfsFiles || {};
-        const routeCarriesHydratedRevision = Boolean(
-          effectiveRouteState?.revisionId === revision.id
-          && Object.keys(routeFiles).length > 0,
-        );
-        // Wizard handoff already carries commitMutation's exact persisted VFS.
-        // Its synchronous route-state importer owns first paint; replaying the
-        // same revision through this async effect creates a last-writer-wins
-        // race with snapshot projection/router hydration and can replace the
-        // generated pages just as Sandpack starts compiling. Keep loading the
-        // revision for identity/runtime metadata, but do not write its files a
-        // second time when navigation state names that exact revision.
-        if (
-          !routeCarriesHydratedRevision
-          && computeBuilderVfsSignature(currentFiles) !== computeBuilderVfsSignature(files)
-        ) {
-          // Replace, never merge: a committed revision is a complete file set.
-          // Merging leaks the previously opened project's modules into this one
-          // and leaves the router importing pages this revision never authored.
-          importBuilderFiles(files, { entryPoint: launchEntryPoint, replace: true });
+        if (computeBuilderVfsSignature(currentFiles) !== computeBuilderVfsSignature(files)) {
+          importBuilderFiles(files, { entryPoint: launchEntryPoint });
         }
         setHydratedRevision(revision);
         setCurrentRevisionId(revision.id);
@@ -2755,14 +2663,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         setRuntimeProjectionRevisionId(hydratedRevision.id);
       })
       .catch((error) => {
-        if (cancelled) return;
-        // Never dead-end the builder on a projection read: the committed
-        // revision is already hydrated, so fall back to snapshot defaults and
-        // let Sandpack compile immediately.
-        console.warn('[WebBuilder] project runtime projection load failed:', error);
-        setActivePublishedRevisionId(null);
-        setActivePagePath(resolveProjectActivePagePath(revisionSnapshot, null));
-        setRuntimeProjectionRevisionId(hydratedRevision.id);
+        if (!cancelled) {
+          setCanonicalHydrationError(error instanceof Error ? error.message : String(error));
+          console.warn('[WebBuilder] project runtime projection load failed:', error);
+        }
       });
     return () => { cancelled = true; };
   }, [hydratedRevision]);
@@ -3694,33 +3598,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     return previewCode;
   }, [templateCustomizer, previewCode]);
 
-  // Canonical playground handed to AI Builder commits. Without it,
-  // commitToPipeline's recompile path throws ("non-wizard commits require
-  // `playground`") and every AI edit is rejected as
-  // "Canonical pipeline failed; nothing safe to publish".
-  const aiCommitPlayground = useMemo<PlaygroundState>(() => ({
-    pageRegistry: creatorPlayground.pageRegistry,
-    creatorData: creatorPlayground.creatorData,
-    bindings: playgroundBindings,
-    calendars: playgroundCalendars,
-    popups: playgroundPopups,
-  }), [
-    creatorPlayground.pageRegistry,
-    creatorPlayground.creatorData,
-    playgroundBindings,
-    playgroundCalendars,
-    playgroundPopups,
-  ]);
-
-  const aiCommitBusinessName =
-    creatorPlayground.creatorData.businessInfo.businessName ||
-    currentTemplateName ||
-    projectNameFromState ||
-    systemName ||
-    undefined;
-
   // Build the v2 save payload — full multi-page VFS round-trip
-
   const buildSavePayload = useCallback(() => {
     const canonicalPlayground = {
       pageRegistry: creatorPlayground.pageRegistry,
@@ -4021,17 +3899,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
 
     setAutoSaveStatus('saving');
-    const autosaveSnapshot = hydratedRevision?.siteBundleSnapshot ?? null;
-    const livePageRegistry = creatorPlaygroundStateRef.current.pageRegistry;
-    const hasLivePages = Object.keys(livePageRegistry?.pages ?? {}).length > 0;
-    const autosavePlayground = hasLivePages
-      ? {
-          pageRegistry: livePageRegistry,
-          creatorData: creatorPlaygroundStateRef.current.creatorData,
-          calendars: (autosaveSnapshot as { calendars?: unknown } | null)?.calendars ?? {},
-          popups: (autosaveSnapshot as { popups?: unknown } | null)?.popups ?? {},
-        }
-      : (hydratedRevision?.playground ?? null);
     const persist = async (): Promise<boolean> => {
       try {
         const existingDraftId = currentDraftIdRef.current;
@@ -4039,18 +3906,8 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         if (!existingDraftId || !businessId || !canonicalProjectId) {
           throw new Error('Canonical project identity is required before cloud autosave.');
         }
-        if (!autosavePlayground) {
-          // No canonical playground yet (registry still hydrating). Committing
-          // now would throw inside the pipeline and persist a rejected revision,
-          // which strands the draft without a committed projection.
-          console.warn('[AutoSave] Skipped — canonical playground not hydrated yet.');
-          setAutoSaveStatus('idle');
-          return false;
-        }
         const { data: { user } } = await supabaseClient.auth.getUser();
         if (!user) throw new Error('Authenticated project identity is required before cloud autosave.');
-
-
 
         const commit = await commitMutation({
           source: 'playground-edit',
@@ -4064,13 +3921,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           },
           current: {
             vfsFiles: currentVfsFiles,
-            siteBundleSnapshot: autosaveSnapshot ?? undefined,
-            // Non-wizard commits recompile from the canonical playground; without
-            // it commitToPipeline throws and every autosave persists a `rejected`
-            // revision, leaving builder_drafts.last_revision_id null (the draft
-            // then looks "lost" on reopen). Prefer the live registry, fall back to
-            // the hydrated revision's playground projection.
-            playground: (autosavePlayground ?? undefined) as never,
+            siteBundleSnapshot: hydratedRevision?.siteBundleSnapshot ?? undefined,
             activePagePath,
           },
           patch: legacyFilesToPatchPlan(currentVfsFiles, `Autosave: ${reason}`),
@@ -5025,62 +4876,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       let wizardResolution = resolveSnapshot(vfsFiles, navState as any);
       vfsFiles = projectSnapshotVfsFiles(vfsFiles, wizardResolution);
       wizardResolution = resolveSnapshot(vfsFiles, navState as any);
-
-      // Repair pass 1 (sync): older drafts can carry a registered page whose
-      // source only exists under a flattened/cased path variant or inside the
-      // snapshot's own vfsFiles. Recover it before the guard runs.
-      const localRepair = repairSnapshotPageCoverageLocally(
-        vfsFiles,
-        (navState as any)?.siteBundleSnapshot ?? wizardResolution.snapshot,
-      );
-      if (localRepair.changed) {
-        console.warn('[WebBuilder] Repaired registered pages from handoff variants:', localRepair.repaired);
-        vfsFiles = localRepair.files;
-        wizardResolution = resolveSnapshot(vfsFiles, navState as any);
-      }
-
-      if (localRepair.stillMissing.length > 0) {
-        // Repair pass 2 (durable): pull the missing page source out of the
-        // draft's revision history instead of stranding the project behind the
-        // minimal-fallback guard.
-        if (pageCoverageRepairRef.current !== navStateSignature) {
-          pageCoverageRepairRef.current = navStateSignature;
-          const snapshotForRepair = (navState as any)?.siteBundleSnapshot ?? wizardResolution.snapshot;
-          const repairFiles = vfsFiles;
-          void (async () => {
-            try {
-              const durable = await repairSnapshotPageCoverageFromRevisions({
-                files: repairFiles,
-                snapshot: snapshotForRepair,
-                projectId: (navState as any)?.projectId ?? resolvedProjectId ?? null,
-                draftId: (navState as any)?.draftId ?? currentDraftId ?? null,
-              });
-              if (durable.changed && durable.stillMissing.length === 0) {
-                importedRouteStateRef.current = null;
-                replaceProjectFiles(durable.files, {
-                  activePath: selectEditableEntryPath(durable.files, normalizedEntryPoint || launchEntryPoint)
-                    || launchEntryPoint,
-                });
-                toast.success('Draft repaired', {
-                  description: `Recovered ${durable.repaired.length} page(s) from your revision history.`,
-                });
-              } else {
-                toast.error('This draft is missing generated pages', {
-                  description: `No saved revision still contains ${durable.stillMissing.join(', ')}. Re-run the System Launcher to regenerate.`,
-                });
-              }
-            } catch (repairError) {
-              console.error('[WebBuilder] Page-coverage repair failed:', repairError);
-            }
-          })();
-        }
-        toast('Repairing draft…', {
-          description: `Looking for ${localRepair.stillMissing.join(', ')} in your revision history.`,
-        });
-        importedRouteStateRef.current = navStateSignature;
-        return;
-      }
-
       assertNoMinimalFallbackPreview(vfsFiles, wizardResolution, 'Launcher handoff import');
       if (wizardResolution.isWizardDraft && !vfsFiles['/src/index.css']) {
         throw new Error('[WebBuilder] Launcher handoff is missing injected /src/index.css from SiteBundleSnapshot; refusing preview CSS fallback.');
@@ -6314,32 +6109,13 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
 
   console.log('[WebBuilder] About to return JSX...');
 
-  const persistedRuntimeContext = hydratedRevision
-    ? (hydratedRevision.siteBundleSnapshot as SiteBundleSnapshot | null)?.appContext?.runtimeContext
-    : effectiveRouteState?.runtimeManifest?.appContext?.runtimeContext
-      ?? effectiveRouteState?.siteBundleSnapshot?.appContext?.runtimeContext
-      ?? launch?.runtimeManifest?.appContext?.runtimeContext;
-  // Revival: older / recovered revisions predate the persisted runtime context
-  // (or were committed before appContext existed). Rather than declaring the
-  // site unrecoverable, rebuild the tenant identity from the revision row —
-  // the revision already carries the durable business/project/draft triple.
-  const revivedRuntimeContext = hydratedRevision
-    ? {
-        workspaceId: hydratedRevision.businessId,
-        businessId: hydratedRevision.businessId,
-        projectId: hydratedRevision.projectId,
-        websiteId: hydratedRevision.draftId,
-        snapshotId:
-          (hydratedRevision.siteBundleSnapshot as SiteBundleSnapshot | null)?.snapshotId
-          || hydratedRevision.id,
-        environment: 'builder' as const,
-        revisionId: hydratedRevision.id,
-      }
-    : undefined;
-  const builderRuntimeContext =
-    normalizeUnisonRuntimeContext(persistedRuntimeContext)
-    ?? normalizeUnisonRuntimeContext(revivedRuntimeContext);
-
+  const builderRuntimeContext = normalizeUnisonRuntimeContext(
+    hydratedRevision
+      ? (hydratedRevision.siteBundleSnapshot as SiteBundleSnapshot | null)?.appContext?.runtimeContext
+      : effectiveRouteState?.runtimeManifest?.appContext?.runtimeContext
+        ?? effectiveRouteState?.siteBundleSnapshot?.appContext?.runtimeContext
+        ?? launch?.runtimeManifest?.appContext?.runtimeContext,
+  );
   const projectRuntime = useMemo(() => {
     if (
       !hydratedRevision
@@ -6363,16 +6139,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       && !builderRuntimeContext?.workspaceId
       ? 'Canonical revision is missing its persisted workspace runtime identity.'
       : null);
-  // Autosaved / recovered projects already carry a complete VFS locally. Once
-  // those files exist there is nothing to wait for: render the builder and let
-  // Sandpack compile while canonical revision metadata resolves in background.
-  const hasLocalVfsFiles = Object.keys(virtualFS.getSandpackFiles()).length > 0;
   const canonicalHydrationPending = hasCanonicalIdentity
     && !canonicalRuntimeError
-    && !hasLocalVfsFiles
     && (!hydratedRevision || runtimeProjectionRevisionId !== hydratedRevision.id);
 
-  if (canonicalRuntimeError && emptyProjectDraft && !hasLocalVfsFiles) {
+  if (canonicalRuntimeError && emptyProjectDraft) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] px-6 text-zinc-100">
         <div className="w-full max-w-md border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
@@ -6396,7 +6167,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     );
   }
 
-  if (canonicalRuntimeError && !hasLocalVfsFiles) {
+  if (canonicalRuntimeError) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#09090b] px-6 text-zinc-100">
         <div className="w-full max-w-md border border-red-900/70 bg-zinc-950 p-6 shadow-2xl">
@@ -6845,7 +6616,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                 businessDataContext={businessDataContext}
                 systemsBuildContext={systemsBuildContextFromState}
                 wizardSeed={wizardSeedFromState}
-                siteBundleSnapshot={(hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? (effectiveRouteState?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null}
                 vfsContext={aiVFS.getContext().summary}
                 vfsFiles={virtualFS.getSandpackFiles()}
                 previewRef={livePreviewRef}
@@ -6860,10 +6630,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                   // Mirrors the System Launcher pipeline so AI Builder chat
                   // edits cannot crash preview, ship un-stamped nav links, or
                   // leak intents disallowed by the active industry profile.
-                  const snapshotForPreflight =
-                  (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null)
-                  ?? (effectiveRouteState?.siteBundleSnapshot as SiteBundleSnapshot | null)
-                  ?? null;
+                  const snapshotForPreflight = (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null;
                   const beforeFiles = virtualFS.getSandpackFiles();
                   const canonicalFiles = canonicalizeAIFilePaths(rawFiles, beforeFiles);
                   const preflight = runFullPreflight(canonicalFiles, {
@@ -6888,9 +6655,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         nextFiles: proposedFiles,
                         snapshotForPreflight,
                         activePagePath,
-                        playground: aiCommitPlayground,
-                        businessName: aiCommitBusinessName,
-                        industry: snapshotForPreflight?.industry,
                       }
                     : null;
                   if (!commitCtx) {
@@ -7334,7 +7098,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               businessDataContext={businessDataContext}
               systemsBuildContext={systemsBuildContextFromState}
                 wizardSeed={wizardSeedFromState}
-              siteBundleSnapshot={(hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? (effectiveRouteState?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null}
               vfsContext={aiVFS.getContext().summary}
               vfsFiles={virtualFS.getSandpackFiles()}
               previewRef={livePreviewRef}
@@ -7343,10 +7106,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
               layoutOps={layoutOpsForAI}
               onApproveCapabilityPlan={approveCapabilityPlanFromPanel}
               onApplyToVFS={async (rawFiles, applyMeta) => {
-                const snapshotForPreflight =
-                  (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null)
-                  ?? (effectiveRouteState?.siteBundleSnapshot as SiteBundleSnapshot | null)
-                  ?? null;
+                const snapshotForPreflight = (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | null) ?? null;
                 const beforeFiles = virtualFS.getSandpackFiles();
                 const canonicalFiles = canonicalizeAIFilePaths(rawFiles, beforeFiles);
                 const files = runFullPreflight(canonicalFiles, {
@@ -7367,9 +7127,6 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       nextFiles: proposedFiles,
                       snapshotForPreflight,
                       activePagePath,
-                      playground: aiCommitPlayground,
-                      businessName: aiCommitBusinessName,
-                      industry: snapshotForPreflight?.industry,
                     }
                   : null;
                 if (!commitCtx) {

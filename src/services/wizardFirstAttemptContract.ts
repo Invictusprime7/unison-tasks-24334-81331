@@ -72,8 +72,6 @@ export function buildWizardFirstAttemptContract(input: {
   return [
     '── LANE B FIRST-PASS COMPILATION CONTRACT (HARD) ──',
     `Return exactly these file keys and no others: ${exactPaths.join(', ')}.`,
-    'Each requested file already exists in the candidate VFS as Lane A JSX. Enrich that exact page rather than replacing its visual concept.',
-    'Preserve Lane A section hierarchy, layout geometry, media treatment, responsive behavior, and semantic metadata while adding stateful behavior and business content.',
     'Every value must be a complete standalone React TypeScript page that parses as TSX before it is returned.',
     'Balance every JSX tag, brace, bracket, parenthesis, quote, and template literal. Do not use JavaScript regular-expression literals in generated pages.',
     'This is Vite + React Router. Never import from next, next/*, gatsby, remix, or another application framework; use plain <img alt="..."> for images.',

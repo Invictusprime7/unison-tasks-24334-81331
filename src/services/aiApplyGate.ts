@@ -26,13 +26,8 @@ import {
   type PublishBlockerSummary,
 } from '@/services/vfsCommitService';
 import { legacyFilesToPatchPlan } from '@/types/patchPlan';
-import {
-  checkPageAcceptance,
-  formatPageAcceptanceFailure,
-} from '@/services/pageAcceptanceContract';
 import type { BuilderIdentity } from '@/types/builderIdentity';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
-import type { PlaygroundState } from '@/platform/core/playground';
 
 export interface AiCommitContext {
   businessId: string;
@@ -44,15 +39,6 @@ export interface AiCommitContext {
   nextFiles: Record<string, string>;
   snapshotForPreflight?: SiteBundleSnapshot | null;
   activePagePath: string;
-  /**
-   * Canonical playground state. REQUIRED for the recompile path —
-   * `commitToPipeline` throws "non-wizard commits require `playground`" when
-   * it is missing, which surfaced as "Canonical pipeline failed; nothing safe
-   * to publish" on every AI edit.
-   */
-  playground?: PlaygroundState | null;
-  businessName?: string;
-  industry?: string;
 }
 
 export interface AiCommitDryRunOutcome {
@@ -111,29 +97,6 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
         rejectMessage: 'Your project session is unavailable.',
       };
     }
-    // Page acceptance contract: the active page in the post-edit VFS must
-    // still compile and close its own imports/exports. Broken pages are
-    // rejected here with the exact defect — never rescued silently by the
-    // downstream closure/synthesis ladder.
-    if (ctx.activePagePath) {
-      const normalizedPage = ctx.activePagePath.startsWith('/')
-        ? ctx.activePagePath
-        : `/${ctx.activePagePath}`;
-      if (ctx.nextFiles[normalizedPage] || ctx.nextFiles[ctx.activePagePath]) {
-        const acceptance = checkPageAcceptance(ctx.nextFiles, normalizedPage);
-        if (!acceptance.ok) {
-          return {
-            accepted: false,
-            blockers: [{
-              source: 'preview',
-              code: 'page-acceptance-contract-failed',
-              message: `This edit would break ${normalizedPage}: ${formatPageAcceptanceFailure(acceptance)}`,
-            }],
-            rejectMessage: formatPageAcceptanceFailure(acceptance),
-          };
-        }
-      }
-    }
     const patch = legacyFilesToPatchPlan(ctx.nextFiles, 'ai-builder');
     const commit = await commitMutation({
       source: 'ai-builder',
@@ -142,15 +105,13 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
         vfsFiles: ctx.beforeFiles,
         siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
         activePagePath: ctx.activePagePath,
-        playground: ctx.playground ?? undefined,
       },
       patch,
       options: {
         dryRun: true,
         requirePreviewPass: true,
         requireReadinessPass: false,
-        businessName: ctx.businessName,
-        industry: ctx.industry ?? ctx.snapshotForPreflight?.industry,
+        industry: ctx.snapshotForPreflight?.industry,
       },
     });
     return { accepted: true, blockers: [], commit };
@@ -191,14 +152,12 @@ export async function persistAiCommit(ctx: AiCommitContext): Promise<CommitMutat
       vfsFiles: ctx.beforeFiles,
       siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
       activePagePath: ctx.activePagePath,
-      playground: ctx.playground ?? undefined,
     },
     patch,
     options: {
       requirePreviewPass: true,
       requireReadinessPass: false,
-      businessName: ctx.businessName,
-      industry: ctx.industry ?? ctx.snapshotForPreflight?.industry,
+      industry: ctx.snapshotForPreflight?.industry,
     },
   });
 }

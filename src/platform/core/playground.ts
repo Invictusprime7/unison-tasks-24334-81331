@@ -96,6 +96,12 @@ export interface WizardSelections {
    */
   themeTokens?: import('@/sections/types').ThemeTokens;
   /**
+   * Constrained final interaction plan. Lane B may supply this after page
+   * generation; the platform compiler persists and reapplies it on later
+   * saves/restores without asking the model to regenerate the plan.
+   */
+  interactionManifest?: import('@/services/wizardInteractionEnrichment').WizardInteractionManifest;
+  /**
    * Primary intent from the industry profile (e.g. 'booking.create', 'contact.submit').
    * Forwarded to the topology planner so the materializer's internal planSiteTopology
    * call produces the same page set as the SystemLauncher's direct call.

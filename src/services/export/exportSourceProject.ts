@@ -39,6 +39,7 @@ export interface SourceProjectExportResult {
 
 // Toolchain files we regenerate at export time — the scaffold synth owns them.
 const SKIP_PATH_PREFIXES = [
+  '/.unison/',
   '/node_modules/',
 ];
 
@@ -106,18 +107,10 @@ export async function exportSourceProject(
   };
   prepared['/.unison/runtime-manifest.json'] = JSON.stringify(manifestForZip, null, 2);
 
-  // Preserve Unison-native metadata verbatim so a re-import can re-thread the
-  // canonical snapshot, playground registry and wizard seed without re-running
-  // the wizard.
-  for (const metadataPath of [
-    '/.unison/site-bundle-snapshot.json',
-    '/.unison/canonical-playground.json',
-    '/.unison/wizard-seed.json',
-    '/.unison/app-context.json',
-  ]) {
-    if (typeof vfsFiles[metadataPath] === 'string' && !prepared[metadataPath]) {
-      prepared[metadataPath] = vfsFiles[metadataPath];
-    }
+  // Preserve the snapshot verbatim if already threaded through the projector.
+  if (typeof vfsFiles['/.unison/site-bundle-snapshot.json'] === 'string'
+      && !prepared['/.unison/site-bundle-snapshot.json']) {
+    prepared['/.unison/site-bundle-snapshot.json'] = vfsFiles['/.unison/site-bundle-snapshot.json'];
   }
 
   const zip = new JSZip();

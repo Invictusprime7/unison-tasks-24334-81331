@@ -16,7 +16,6 @@ import { findBuilderDraftIdForProject } from "@/services/builderDraftBridge";
 import { migrateFrameworkVfs } from "@/services/frameworkVfsMigration";
 import { commitMutation } from "@/services/vfsCommitService";
 import { legacyFilesToPatchPlan } from "@/types/patchPlan";
-import { repairModuleClosureWithAI } from "@/services/moduleClosureRepair";
 
 interface TemplateData {
   html: string;
@@ -247,59 +246,6 @@ export const draftRowToTemplate = (row: any): SavedTemplate => {
     },
   };
 };
-
-function syncSnapshotVfs(
-  snapshot: unknown,
-  vfsFiles: Record<string, string>,
-): unknown {
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return snapshot;
-  return { ...(snapshot as Record<string, unknown>), vfsFiles };
-}
-
-/**
- * Drafts created before companion modules became transactional can contain a
- * valid page that imports a file Lane B dropped. Repair that legacy boundary
- * before the draft enters WebBuilder/VFSPreview, then mirror the repaired file
- * map into every persisted snapshot projection used during hydration.
- */
-export async function repairTemplateForHydration(template: SavedTemplate): Promise<SavedTemplate> {
-  const sourceFiles = template.canvas_data.vfsFiles;
-  if (!sourceFiles || Object.keys(sourceFiles).length === 0) return template;
-
-  const closure = await repairModuleClosureWithAI(sourceFiles, { maxAttempts: 2 });
-  if (closure.remaining.length > 0) {
-    const details = closure.remaining
-      .slice(0, 3)
-      .map((item) => `${item.filePath} → ${item.importPath}`)
-      .join(', ');
-    throw new Error(`Saved project has unresolved component modules: ${details}`);
-  }
-  if (closure.rewritten.length === 0 && closure.recovered.length === 0) return template;
-
-  const repairedFiles = closure.files;
-  const serializedSnapshot = repairedFiles['/.unison/site-bundle-snapshot.json'];
-  if (serializedSnapshot) {
-    try {
-      const parsed = JSON.parse(serializedSnapshot) as unknown;
-      const synced = syncSnapshotVfs(parsed, repairedFiles);
-      repairedFiles['/.unison/site-bundle-snapshot.json'] = JSON.stringify(synced, null, 2);
-    } catch {
-      // The strict preview gate will report malformed canonical metadata.
-    }
-  }
-
-  return {
-    ...template,
-    canvas_data: {
-      ...template.canvas_data,
-      vfsFiles: repairedFiles,
-      siteBundleSnapshot: syncSnapshotVfs(
-        template.canvas_data.siteBundleSnapshot,
-        repairedFiles,
-      ) as Record<string, unknown> | undefined,
-    },
-  };
-}
 
 export function useTemplateFiles() {
   const [loading, setLoading] = useState(false);
@@ -698,7 +644,7 @@ export function useTemplateFiles() {
         const template = localTemplates.find(t => t.id === id);
         if (template) {
           setCurrentDraftId(template.id);
-          return repairTemplateForHydration(template);
+          return template;
         }
         throw new Error("Project not found");
       }
@@ -766,7 +712,7 @@ export function useTemplateFiles() {
             | undefined) ??
           null;
         setCurrentProjectId(draftProjectId ?? null);
-        return repairTemplateForHydration(draftRowToTemplate(hydratedDraft));
+        return draftRowToTemplate(hydratedDraft);
       }
 
       // Legacy fallback: design_templates (read-only)

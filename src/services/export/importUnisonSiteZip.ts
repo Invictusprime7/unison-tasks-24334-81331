@@ -188,6 +188,7 @@ export async function importUnisonSiteZip(
     siteBundleSnapshot: restoredSnapshot,
     canonicalPlayground,
     mergeWithCanonicalSnapshot: true,
+    allowCanonicalPageFallback: false,
     strictPreflight: true,
     businessName: restoredSnapshot.businessName,
     industry: restoredSnapshot.industry,

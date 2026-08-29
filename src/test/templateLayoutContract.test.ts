@@ -33,15 +33,4 @@ describe('template layout contract', () => {
     expect(stamped['/src/pages/Home.tsx']).toContain('className="bg-background"');
     expect(stampTemplateLayoutIdentity(stamped, contract)).toEqual(stamped);
   });
-
-  it('stamps a component-composed page on its first intrinsic container', () => {
-    const composition = getCompositionById('salon-premium');
-    const contract = buildTemplateLayoutContract(composition!);
-    const files = {
-      '/src/pages/Home.tsx': 'function Section(){ return <div>Content</div>; } export default function Home(){ return <SiteLayout><Section /></SiteLayout>; }',
-    };
-
-    const stamped = stampTemplateLayoutIdentity(files, contract);
-    expect(stamped['/src/pages/Home.tsx']).toContain('<div data-ut-template-id="salon-premium"');
-  });
 });

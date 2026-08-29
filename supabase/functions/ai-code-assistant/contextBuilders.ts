@@ -294,9 +294,7 @@ RULES:
 2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
 3. Use ONLY react, lucide-react, framer-motion (optional), and any @/unison/ui/* modules explicitly listed in the Wizard UI Foundation manifest. Do not import other local modules.
 4. Use Tailwind semantic tokens whenever possible: bg-primary, text-foreground, bg-card, border-border, text-muted-foreground. NEVER hardcode hex colors or Tailwind palette colors (bg-slate-900, text-white, bg-zinc-800, etc.) — those will fight the wizard theme.
-5. For custom color expressions READ CSS vars: style={{ color: 'hsl(var(--primary))' }}, style={{ background: 'hsl(var(--card) / 0.8)' }}.
-5b. NEVER redefine a canonical token. Do not emit style={{ '--primary': ... }}, '--background', '--foreground', '--card', '--muted', '--border', '--accent', '--radius' (or a brandColors/theme object that feeds them). The wizard's /src/index.css is the only authority — inline redefinitions are self-referential and blank out the entire page.
-5c. NEVER put DOM attributes inside className/cn(): data-ut-intent, data-ut-layout and friends are real JSX attributes, not class strings.
+5. For custom color expressions reference CSS vars: style={{ color: 'hsl(var(--primary))' }}, style={{ background: 'hsl(var(--card) / 0.8)' }}.
 6. Wire ALL interactive buttons with data-ut-intent attributes. EVERY button/CTA must have one:
    - Contact/form buttons: data-ut-intent="contact.submit"
    - Booking/appointment buttons: data-ut-intent="booking.create"

@@ -81,32 +81,6 @@ describe('provisionConfirmedLaunchSite', () => {
     await expect(provisionConfirmedLaunchSite(shellInput)).rejects.toThrow('incomplete site identity');
   });
 
-  it('surfaces the Edge Function authorization message for a rejected business', async () => {
-    const error = Object.assign(new Error('Edge Function returned a non-2xx status code'), {
-      context: new Response(JSON.stringify({
-        error: 'You must have editor access to the selected business.',
-      }), {
-        status: 403,
-        headers: { 'content-type': 'application/json' },
-      }),
-    });
-    invoke.mockResolvedValueOnce({ data: null, error });
-
-    await expect(provisionConfirmedLaunchSite(shellInput)).rejects.toThrow(
-      'You must have editor access to the selected business.',
-    );
-  });
-
-  it('stops waiting when the launch commit watchdog aborts provisioning', async () => {
-    invoke.mockReturnValueOnce(new Promise(() => undefined));
-    const controller = new AbortController();
-    const pending = provisionConfirmedLaunchSite(shellInput, { signal: controller.signal });
-
-    controller.abort(new Error('Saving your project stalled after 90s.'));
-
-    await expect(pending).rejects.toThrow('Saving your project stalled after 90s.');
-  });
-
   it('rejects a provisioning shell that contains VFS content before canonical commit', async () => {
     invoke.mockResolvedValueOnce({ data: { data: ids }, error: null });
     maybeSingle.mockResolvedValueOnce({

@@ -7,7 +7,7 @@
  * single unbroken synchronous call, and the browser can't repaint or
  * process input until it returns. Running it in a Worker keeps the same
  * coverage/output without risking the main thread, mirroring
- * wizardStage4bRuntime's Lane A worker-with-fallback pattern. A small main-thread
+ * wizardStage4bRuntime's worker-with-fallback pattern. A small main-thread
  * cache (keyed like prepareSandpackFiles' own internal one) lets the second
  * caller in the same launch — Preview mounting moments after the launcher's
  * own check — reuse the first caller's result instead of recomputing.
@@ -19,7 +19,6 @@ export interface StrictImportContractWorkerRequest {
   files: Record<string, string>;
   entryPoint?: string;
   themePresetId?: string | null;
-  aesthetic?: string | null;
 }
 
 export type StrictImportContractWorkerResponse =
@@ -54,7 +53,6 @@ export interface RunPrepareSandpackFilesOffThreadOptions {
   files: Record<string, string>;
   entryPoint?: string;
   themePresetId?: string | null;
-  aesthetic?: string | null;
   signal?: AbortSignal;
   workerFactory?: () => StrictImportContractWorkerLike;
   fallbackCompute?: (
@@ -143,13 +141,8 @@ function hashFilesRecord(files: Record<string, string>): string {
   return (h >>> 0).toString(36);
 }
 
-function cacheKeyFor(
-  files: Record<string, string>,
-  entryPoint: string | undefined,
-  themePresetId: string | null | undefined,
-  aesthetic: string | null | undefined,
-): string {
-  return `${hashFilesRecord(files)}::${entryPoint || ''}::${themePresetId || ''}::${aesthetic || ''}`;
+function cacheKeyFor(files: Record<string, string>, entryPoint: string | undefined, themePresetId: string | null | undefined): string {
+  return `${hashFilesRecord(files)}::${entryPoint || ''}::${themePresetId || ''}`;
 }
 
 function storeInCache(key: string, files: Record<string, string>): void {
@@ -258,7 +251,13 @@ export async function runStrictImportContractCheck({
   themePresetId,
   signal,
   workerFactory,
-  fallbackCheck,
+  fallbackCheck = (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => {
+    prepareSandpackFiles(fallbackFiles, {
+      entryPoint: fallbackEntryPoint,
+      themePresetId: fallbackThemePresetId,
+      strict: true,
+    });
+  },
 }: RunStrictImportContractCheckOptions): Promise<void> {
   await runPrepareSandpackFilesOffThread({
     files,
@@ -267,17 +266,8 @@ export async function runStrictImportContractCheck({
     signal,
     workerFactory,
     fallbackCompute: (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => {
-      fallbackCheck?.(fallbackFiles, fallbackEntryPoint, fallbackThemePresetId);
-      // The result is shared with the Builder's immediately-following preview
-      // compile. Cache the actual Sandpack overlay, never the raw /src VFS.
-      // Returning fallbackFiles here poisoned the shared cache whenever module
-      // workers were blocked, so Preview received unresolved /src modules and
-      // rendered nothing after an otherwise successful Wizard finalization.
-      return prepareSandpackFiles(fallbackFiles, {
-        entryPoint: fallbackEntryPoint,
-        themePresetId: fallbackThemePresetId,
-        strict: true,
-      });
+      fallbackCheck(fallbackFiles, fallbackEntryPoint, fallbackThemePresetId);
+      return fallbackFiles;
     },
   });
 }
@@ -293,16 +283,14 @@ export async function runPrepareSandpackFilesOffThread({
   files,
   entryPoint,
   themePresetId,
-  aesthetic,
   signal,
   workerFactory = defaultWorkerFactory,
   fallbackCompute = (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => prepareSandpackFiles(fallbackFiles, {
     entryPoint: fallbackEntryPoint,
     themePresetId: fallbackThemePresetId,
-    aesthetic: aesthetic || undefined,
   }),
 }: RunPrepareSandpackFilesOffThreadOptions): Promise<Record<string, string>> {
-  const cacheKey = cacheKeyFor(files, entryPoint, themePresetId, aesthetic);
+  const cacheKey = cacheKeyFor(files, entryPoint, themePresetId);
   const cached = preparedFilesCache.get(cacheKey);
   if (cached) return { ...cached };
   let computation = preparedFilesInFlight.get(cacheKey);
@@ -319,7 +307,6 @@ export async function runPrepareSandpackFilesOffThread({
           files,
           entryPoint,
           themePresetId,
-          aesthetic,
         });
         storeInCache(cacheKey, result);
         return result;

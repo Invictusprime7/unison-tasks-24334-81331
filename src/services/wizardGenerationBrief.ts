@@ -92,9 +92,9 @@ export interface WizardGenerationBrief {
     classes: string[];
     rule: string;
   };
-  /** Chrome authority: the deterministic router supplies exactly one shell. */
+  /** Chrome authority: page bodies own exactly one navbar and one footer. */
   chrome: {
-    owner: 'router';
+    owner: 'page-body';
     rule: string;
     routes: { path: string; label: string }[];
   };
@@ -319,8 +319,8 @@ export function buildWizardGenerationBrief(input: {
       rule: `Author every page inside the "${pack.name}" design system: ${pack.description} Typography is ${pack.signature.typography.displayStack.split(',')[0]} display at weight ${pack.signature.typography.displayWeight} over ${pack.signature.typography.bodyStack.split(',')[0]} body; gradient language is "${pack.signature.gradient}" (use ut-gradient-hero / ut-gradient-panel / ut-gradient-text, never a hand-written gradient); spacing density is "${pack.signature.density}" (use ut-grid / ut-stack / ut-block / ut-pad, never literal gap or padding values); the hero is "${pack.signature.hero.layout}" aligned ${pack.signature.hero.align} (use ut-hero + ut-hero-media, never a different hero composition); badges, tags and eyebrows use ut-pill / ut-eyebrow so the "${pack.signature.pill}" shape language stays consistent; entrance motion is "${pack.signature.entrance}" via ut-reveal and ut-reveal-2/3/4 for stagger. Use the ut-* primitives and --ut-* tokens for type scale, surfaces, media framing and motion. Do not invent a competing visual language, and never substitute hardcoded sizes, radii, shadows or gradients for these tokens.`,
     },
     chrome: {
-      owner: 'router',
-      rule: 'The deterministic App router owns shared chrome and renders exactly one route-registry-derived navigation landmark and footer around every body-only page. Never emit /src/sections/SiteNavbar.tsx or /src/sections/SiteFooter.tsx, and do not import or render shared navigation/footer chrome inside a generated page. The registered routes below are authoritative.',
+      owner: 'page-body',
+      rule: 'Each page body owns its chrome and must render EXACTLY ONE navigation landmark and EXACTLY ONE footer. The router renders routes only — it adds no navbar and no footer. Never emit /src/sections/SiteNavbar.tsx or /src/sections/SiteFooter.tsx, never render a second <nav>/<header> nav bar or a second <footer>, and keep the nav links identical to the registered routes below.',
       routes: routes.map((route) => ({ path: route.path, label: route.title })),
     },
     ui: {

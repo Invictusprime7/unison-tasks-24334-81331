@@ -103,65 +103,6 @@ now or deferred.
 
 ---
 
-## WZ-PIPE-01 — Canonical Wizard Three-Stage Generation
-
-**Status:** In progress
-**Last checked:** 2026-08-27
-
-**User outcome:** every selected page, including Home, keeps Lane A's
-free-styled composition, receives Lane B content enrichment, and receives
-Stage 4b theme/identity before one compile-safe snapshot is committed.
-
-**Current evidence:** `SystemLauncher.tsx` invokes the Lane A compiler and
-permits one isolated Lane B page retry; `canonicalLaunchVfs.ts` replaces each
-registered page with Lane B output, calls `applyWizardStage4bFinalization`,
-then requires accepted full preflight before sealing. R5 content grafting,
-deterministic FAQ recovery, and canonical page fallback switches were removed.
-The full local suite passes (139 files, 1,088 tests), as do TypeScript,
-pipeline-bypass, single-source-of-truth, and production-build checks.
-
-**Canonical owner:** `WizardCompileArtifact` owns the frozen Lane A revision;
-`buildCanonicalLaunchArtifactsAsync` owns Lane B merge, Stage 4b finalization,
-compile-safe acceptance, and `SiteBundleSnapshot` sealing;
-`VFSCommitService.commitMutation` remains the persisted revision boundary.
-
-**Scope:** Wizard generation order, page recovery, final theme/identity,
-candidate-wide compile acceptance, and Preview smoke admission. **Non-scope:**
-schema changes, Supabase deployment, unrelated builder mutation sources,
-published-runtime parity, and frontend redesign.
-
-**Dependencies:** canonical page registry, `WizardMergeContext`, theme bridge,
-generated UI foundation, module-closure/compile-safe gates, snapshot seal, and
-VFS commit service.
-
-**Migration strategy:** additive Stage 4b finalizer and temporary compatibility
-worker fallback; remove conflicting R5/fallback behavior immediately because
-it authored a different contract and persisted no unique user data. No data
-backfill is required.
-
-**Implementation slices:** defer Stage 4b during Lane A; enrich every Lane A
-page through Lane B; apply Stage 4b last; reject missing pages; cap Lane B at
-two total content attempts; rerun full-candidate compile-safe validation after
-bounded repair; admit Preview only after smoke validation.
-
-**Acceptance gates:** local functional and contract gates pass. Still required:
-a live Wizard launch through builder redirect, committed snapshot refresh/reopen,
-and approved-preview-to-published revision parity. Isolation is unchanged by
-this no-schema slice.
-
-**Rollback:** revert the code revision before new Wizard runs; existing sealed
-snapshots remain readable and no persisted data migration must be reversed.
-
-**Removal gate:** do not delete the worker fallback or compatibility readers
-until supported-browser worker execution and historical snapshot reopen are
-proven in production telemetry. R5 content-plan and page-scaffold recovery are
-retired and must not return.
-
-Roadmap placement: advances Stage 4 and Stage 8 locally, while Stage 0 recovery
-and Stage 6 published parity remain unverified runtime gates.
-
----
-
 ## Stages 3–9
 
 **Status:** Unknown — not assessed this cycle.
@@ -173,11 +114,11 @@ evidence) before this table is updated.
 | Stage | Status |
 |---|---|
 | 3. Business Profile Nucleus | Unknown |
-| 4. Builder Transaction Consolidation | In progress (WZ-PIPE-01 only) |
+| 4. Builder Transaction Consolidation | Unknown |
 | 5. Booking Vertical Proof (full golden journey, two tenants) | Unknown |
 | 6. Preview And Publish Parity | Unknown |
 | 7. Project Workspace Convergence | Unknown |
-| 8. AI Reliability Hardening | In progress (WZ-PIPE-01 only) |
+| 8. AI Reliability Hardening | Unknown |
 | 9. Commercial And Operational Gate | Unknown |
 
 ---
@@ -246,11 +187,3 @@ evidence) before this table is updated.
   verify-then-commit-fast, not commit-after-full-validation, for this
   workspace. Stage 2's remaining exit-gate gap is now only the RLS-level
   cross-tenant test.
-- **2026-08-27**: Restored one Wizard generation sequence for every page:
-  Lane A free-styled JSX -> Lane B enrichment -> Stage 4b theme/identity ->
-  compile-safe acceptance -> snapshot seal. Removed R5 content grafting,
-  deterministic FAQ/scaffold recovery, composed-page presentation bypasses,
-  and all canonical page fallback switches. Lane B gets one isolated retry;
-  bounded compiler repair must pass whole-candidate validation. Local evidence:
-  139/139 Vitest files and 1,088/1,088 tests, TypeScript, both architecture
-  guards, and production Vite build pass. No schema or remote function changes.

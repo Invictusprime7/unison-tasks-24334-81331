@@ -25,7 +25,6 @@ import { createCanonicalComponentInstance } from '@/services/canonicalComponentR
 import { resolveComponentRuntimeContract } from '@/services/componentRuntimeContract';
 import { compileGeneratedSiteRuntimeManifest } from '@/services/generatedSiteRuntimeManifest';
 import { getIntentDef } from '@/platform/core/intentSurfaceRegistry';
-import { PUBLISHED_RUNTIME_IMPORT_SPECIFIER } from '@/services/publishedRuntimeModule';
 
 function createSnapshot(): SiteBundleSnapshot {
   const pageRegistry = createEmptyPageRegistry();
@@ -149,7 +148,6 @@ describe('launch business runtime persistence', () => {
       siteBundleSnapshot: createSnapshot(),
     }))).toContain('PUBLISHED_RUNTIME_CONFIG');
     expect(PUBLISHED_RUNTIME_MODULE_PATH).toBe('/src/unison/publishedRuntime.ts');
-    expect(PUBLISHED_RUNTIME_IMPORT_SPECIFIER).toBe('@/unison/publishedRuntime');
     expect(buildGeneratedSiteRuntimeManifestModule(compileGeneratedSiteRuntimeManifest({
       siteId: 'site-1',
       snapshot: createSnapshot(),
@@ -159,14 +157,6 @@ describe('launch business runtime persistence', () => {
   });
 
   it('keeps Builder hydration while adding the standalone public runtime path', () => {
-    for (const runtimeConsumer of [
-      CATALOG_HYDRATION_MODULE,
-      BUSINESS_PROFILE_HYDRATION_MODULE,
-      FORM_RUNTIME_MODULE,
-      PUBLISHED_ACTION_RUNTIME_MODULE,
-    ]) {
-      expect(runtimeConsumer).toContain(`from '${PUBLISHED_RUNTIME_IMPORT_SPECIFIER}'`);
-    }
     expect(CATALOG_HYDRATION_MODULE).toContain('CATALOG_HYDRATE_REQUEST');
     expect(CATALOG_HYDRATION_MODULE).toContain("from '@/unison/publishedRuntime'");
     expect(CATALOG_HYDRATION_MODULE).toContain("operation: 'read'");
@@ -495,21 +485,10 @@ describe('launch business runtime persistence', () => {
     }
   });
 
-  it('uses the canonical editor role boundary for confirmed launch provisioning', () => {
-    const endpoint = readFileSync(
-      resolve(process.cwd(), 'supabase/functions/provision-launch-site/index.ts'),
-      'utf8',
-    );
-
-    expect(endpoint).toContain("lower(bm.role) IN ('owner', 'admin', 'manager', 'editor')");
-    expect(endpoint).not.toMatch(/lower\(bm\.role\) IN \([^)]*'(staff|viewer|billing|member)'/);
-  });
-
   it('requires a provisioned form definition before accepting public submissions', () => {
     const formSubmit = readFileSync(resolve(process.cwd(), 'supabase/functions/form-submit/index.ts'), 'utf8');
     const persistence = readFileSync(resolve(process.cwd(), 'src/services/launchFormDefinitionPersistence.ts'), 'utf8');
     const launcher = readFileSync(resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'), 'utf8');
-    const provisioner = readFileSync(resolve(process.cwd(), 'supabase/functions/provision-launch-site/index.ts'), 'utf8');
 
     // form-submit is the enforcement point for approved definitions.
     expect(formSubmit).toContain('.from("form_definitions")');
@@ -522,9 +501,6 @@ describe('launch business runtime persistence', () => {
     expect(persistence).toContain("from('form_definitions')");
     expect(persistence).toContain("onConflict: 'business_id,project_id,site_id,external_id'");
     expect(launcher).toContain('persistLaunchFormDefinitions({');
-    expect(launcher).toContain('void persistLaunchFormDefinitions({');
-    expect(provisioner).toContain('INSERT INTO public.onboarding_state');
-    expect(provisioner).toContain("SET LOCAL statement_timeout = '15s'");
   });
 
   it('persists only a site-bound compiled runtime manifest with the confirmed launch', () => {

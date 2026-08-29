@@ -10,10 +10,6 @@ import {
   assessWizardHomePresentation,
   assessWizardPagePresentations,
 } from '@/services/wizardPresentationGuard';
-import {
-  resolvedCompositionPathFor,
-  serializeResolvedComposition,
-} from '@/platform/core/resolvedComposition';
 
 const contract: TemplateLayoutContract = {
   version: '1.0',
@@ -43,8 +39,8 @@ describe('Wizard presentation guard', () => {
 
   it('runs before the final VFS merge so drift is detected pre-seal', () => {
     const launcher = readFileSync(resolve(process.cwd(), 'src/components/onboarding/SystemLauncher.tsx'), 'utf8');
-    expect(launcher).toContain('assessWizardPagePresentations({');
-    expect(launcher.indexOf('assessWizardPagePresentations({')).toBeLessThan(launcher.indexOf('const generatedFiles: Record<string, string>'));
+    expect(launcher).toContain('assessWizardHomePresentation({');
+    expect(launcher.indexOf('assessWizardHomePresentation({')).toBeLessThan(launcher.indexOf('const generatedFiles: Record<string, string>'));
   });
 
   it('rejects a generic Home against the real photography composition and its image-led presentation modules', () => {
@@ -147,7 +143,7 @@ const HYDRATABLE = new Set([]);`;
     expect(result.reasons['/src/pages/Contact.tsx']).toContain('parallel global theme system');
   });
 
-  it('requires Lane B geometry before Stage 4b stamps a composed route', () => {
+  it('rejects a route whose hero changes the selected Home geometry', () => {
     const homePage = `const SECTIONS = [
   {"id":"home-hero","type":"hero","props":{"headline":"Studio","layout":"split","image":"hero.jpg"}}
 ];
@@ -163,21 +159,7 @@ const HYDRATABLE = new Set([]);`;
         '/src/pages/Home.tsx': `<main><nav>Menu</nav><section data-ut-layout="split" data-ut-media-treatment="split-frame"><img src="hero.jpg" alt="Studio" /><h1>Studio</h1><p>${'A polished studio home experience '.repeat(90)}</p><button data-ut-intent="booking.create">Book</button></section><section>Services</section><footer>Studio</footer></main>`,
         '/src/pages/Pricing.tsx': centeredCandidate,
       },
-      canonicalFiles: {
-        '/src/pages/Home.tsx': homePage,
-        '/src/pages/Pricing.tsx': pricingPage,
-        [resolvedCompositionPathFor('/src/pages/Pricing.tsx')]: serializeResolvedComposition({
-          version: '1.0',
-          compiledBy: 'stage-4b',
-          pageFilePath: '/src/pages/Pricing.tsx',
-          sections: [{
-            sectionId: 'pricing-hero',
-            semanticType: 'hero',
-            primitiveId: 'Hero',
-            variantId: 'hero:centered',
-          }],
-        }),
-      },
+      canonicalFiles: { '/src/pages/Home.tsx': homePage, '/src/pages/Pricing.tsx': pricingPage },
       pagePaths: ['/src/pages/Home.tsx', '/src/pages/Pricing.tsx'],
       requiredHeroGeometry: {
         layout: 'split',
@@ -187,6 +169,6 @@ const HYDRATABLE = new Set([]);`;
     });
 
     expect(result.rejectedPaths).toEqual(['/src/pages/Pricing.tsx']);
-    expect(result.reasons['/src/pages/Pricing.tsx']).toContain('hero geometry');
+    expect(result.reasons['/src/pages/Pricing.tsx']).toContain('expected data-ut-layout="split"');
   });
 });

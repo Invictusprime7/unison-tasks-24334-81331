@@ -2,13 +2,13 @@
  * BusinessSelector — dark-themed dropdown for choosing a Business Profile.
  *
  * Mounted in:
- *   - Wizard (SystemLauncher step 1)                → mode="editor"
+ *   - Wizard (SystemLauncher step 1)                → mode="member"
  *   - Web Builder topbar pill (BusinessPill)        → mode="admin"
  *   - Cloud Settings "Projects & businesses" table  → mode="admin"
  *
- * `mode="admin"` filters to owner/admin, `mode="editor"` filters to
- * owner/admin/manager/editor, and `mode="member"` shows every membership.
- * `allowCreate` adds an inline "+ New business" affordance.
+ * `mode="admin"` filters to businesses where the current user is owner
+ * or admin (required for reassignment). `mode="member"` shows every
+ * membership. `allowCreate` adds an inline "+ New business" affordance.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -19,7 +19,6 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import {
   loadBusinessMemberships,
-  canEditBusiness,
   isAdminRole,
   type BusinessMembershipRow,
 } from '@/services/businessMembership';
@@ -28,8 +27,7 @@ import { CreateBusinessInline } from './CreateBusinessInline';
 export interface BusinessSelectorProps {
   value: string | null | undefined;
   onChange: (businessId: string, row: BusinessMembershipRow) => void;
-  mode?: 'admin' | 'editor' | 'member';
-  onInvalidSelection?: () => void;
+  mode?: 'admin' | 'member';
   allowCreate?: boolean;
   size?: 'sm' | 'md';
   placeholder?: string;
@@ -41,7 +39,6 @@ export function BusinessSelector({
   value,
   onChange,
   mode = 'member',
-  onInvalidSelection,
   allowCreate = false,
   size = 'md',
   placeholder = 'Select a business',
@@ -79,21 +76,11 @@ export function BusinessSelector({
   }, []);
 
   const filtered = useMemo(
-    () => mode === 'admin'
-      ? rows.filter((row) => isAdminRole(row.role))
-      : mode === 'editor'
-        ? rows.filter((row) => canEditBusiness(row.role))
-        : rows,
+    () => (mode === 'admin' ? rows.filter((r) => isAdminRole(r.role)) : rows),
     [rows, mode],
   );
 
-  useEffect(() => {
-    if (!loading && value && !filtered.some((row) => row.businessId === value)) {
-      onInvalidSelection?.();
-    }
-  }, [filtered, loading, onInvalidSelection, value]);
-
-  const selected = filtered.find((row) => row.businessId === value);
+  const selected = filtered.find((r) => r.businessId === value) ?? rows.find((r) => r.businessId === value);
   const label = selected?.name ?? placeholder;
 
   const handleCreated = (id: string, name: string) => {
@@ -144,9 +131,7 @@ export function BusinessSelector({
               <div className="px-3 py-6 text-xs text-cyan-100/50">
                 {mode === 'admin'
                   ? 'You are not an admin of any business yet.'
-                  : mode === 'editor'
-                    ? 'You cannot edit any business profiles yet.'
-                    : 'You have no business profiles yet.'}
+                  : 'You have no business profiles yet.'}
               </div>
             ) : (
               filtered.map((row) => {

@@ -8,6 +8,8 @@ import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
 import {
   assertNoMinimalFallbackPreview,
+  assertSnapshotPreviewFileCoverage,
+  assertSnapshotPreviewRouteReachability,
   projectSnapshotVfsFiles,
   resolveSnapshot,
 } from '@/services/snapshotProjector';
@@ -189,13 +191,8 @@ function finishPreviewArtifacts(
   }
 
   assertNoMinimalFallbackPreview(sandpackFiles, finalPreviewResolution, 'Preview artifact integrity gate');
-
-  // Acceptance is owned by generation time (pageAcceptanceContract) and the
-  // snapshot arrives sealed. Preview re-verification of coverage, route
-  // reachability and boot-safety was duplicate authority that could reject a
-  // bundle the pipeline already accepted, so it is gone. The only guard left
-  // here is the minimal-fallback assertion above, which protects snapshot
-  // identity rather than page correctness.
+  assertSnapshotPreviewFileCoverage(sourceFiles, sandpackFiles, finalPreviewResolution, 'Preview artifact coverage gate');
+  assertSnapshotPreviewRouteReachability(sandpackFiles, finalPreviewResolution, 'Preview artifact route gate');
 
   // Resolve dependencies from Sandpack's actual entry graph. Snapshot-owned
   // VFS facades may expose many optional libraries, but an unreferenced

@@ -47,6 +47,7 @@ import type { ThemeTokens } from '@/sections/types';
 import type { GeneratedSitePlan } from './siteTopologyPlanner';
 import type { BusinessSystemState } from './capabilityRegistry';
 import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
+import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
 import {
   buildGeneratedUiFoundation,
@@ -65,95 +66,6 @@ import {
 } from '@/services/wizardGenerationBrief';
 import { createWizardCompileArtifact, type WizardCompileArtifact } from './snapshotSeal';
 import { isArtDirectionPackId } from '@/sections/variants/artDirectionPacks';
-import { getCompositionById } from '@/sections/templates';
-import {
-  buildTemplateLayoutContract,
-  stampTemplateLayoutIdentity,
-} from '@/services/templateLayoutContract';
-import {
-  assertWizardMergeContextMatchesSelections,
-  type WizardMergeContext,
-} from '@/services/wizardMergeContext';
-
-/**
- * Stage 4b identity stamp. Applied on EVERY compile and recompile so a page
- * body can never lose its template identity after an edit round-trip.
- */
-function applyStage4bTemplateIdentity(
-  files: Record<string, string>,
-  templateId?: string | null,
-): Record<string, string> {
-  if (!templateId) return files;
-  const composition = getCompositionById(templateId);
-  if (!composition) return files;
-  return stampTemplateLayoutIdentity(files, buildTemplateLayoutContract(composition));
-}
-
-export interface WizardStage4bFinalizationResult {
-  files: Record<string, string>;
-  themedCss: string;
-  uiFoundation: GeneratedUiManifest;
-}
-
-/**
- * Apply the Wizard's theme and template identity to the complete Lane B
- * candidate. This is the only initial-launch Stage 4b writer and must run
- * immediately before compile-safe acceptance.
- */
-export function applyWizardStage4bFinalization(input: {
-  files: Record<string, string>;
-  selections: WizardSelections;
-  mergeContext: WizardMergeContext;
-  designIntervention: WizardDesignIntervention;
-}): WizardStage4bFinalizationResult {
-  assertWizardMergeContextMatchesSelections(input.mergeContext, input.selections);
-  const themePresetId = assertThemeSeed(
-    input.mergeContext.themePresetId,
-    'Lane B -> Stage 4b',
-  );
-  const themeTokens = input.mergeContext.themeTokens ?? input.selections.themeTokens;
-  if (!themeTokens) {
-    throw new Error('[canonicalPipeline] Stage 4b requires the WizardMergeContext theme tokens.');
-  }
-  if (input.mergeContext.templateId && !input.mergeContext.templateLayoutContract) {
-    throw new Error('[canonicalPipeline] Stage 4b requires the selected template layout contract.');
-  }
-
-  const themedCss = buildThemedIndexCssFromTokens(themeTokens, {
-    presetId: themePresetId,
-    label: themePresetId,
-    artDirectionPackId: input.designIntervention.artDirectionPackId,
-  });
-  if (!themedCss.includes('--primary') || !themedCss.includes(SHADCN_LIBRARY_CSS_MARKER)) {
-    throw new Error('[canonicalPipeline] Stage 4b did not produce the canonical shadcn stylesheet.');
-  }
-
-  const normalized = normalizeWizardThemeTokens(input.files).files;
-  normalized['/src/index.css'] = themedCss;
-  const foundation = buildGeneratedUiFoundation({
-    industry: input.mergeContext.industry,
-    templateId: input.mergeContext.templateId,
-    themePresetId,
-    needsBooking: input.selections.needsBooking,
-    wantsLeadCapture: input.selections.wantsLeadCapture,
-    sellsProducts: input.selections.sellsProducts,
-  });
-  Object.assign(normalized, foundation.files);
-  let files = ensureGeneratedUiFoundation(normalized, {
-    industry: input.mergeContext.industry,
-    templateId: input.mergeContext.templateId,
-    themePresetId,
-    needsBooking: input.selections.needsBooking,
-    wantsLeadCapture: input.selections.wantsLeadCapture,
-    sellsProducts: input.selections.sellsProducts,
-  }).files;
-  if (input.mergeContext.templateLayoutContract) {
-    files = stampTemplateLayoutIdentity(files, input.mergeContext.templateLayoutContract);
-  }
-  files['/.unison/design-intervention.json'] = JSON.stringify(input.designIntervention, null, 2);
-
-  return { files, themedCss, uiFoundation: foundation.manifest };
-}
 
 
 // ============================================================================
@@ -170,7 +82,10 @@ export interface CanonicalPipelineResult {
   validations: PlaygroundValidation[];
   compileResult: PlaygroundCompileResult;
   siteBundleSnapshot: SiteBundleSnapshot;
-  /** Frozen Lane A baseline. Stage 4b finalizes it after Lane B. */
+  /**
+   * Stage 4b compile artifact (frozen baseline, pre-Lane-B). `sealSnapshot()`
+   * converts this + Lane B + preflight into the final sealed revision.
+   */
   compileArtifact?: WizardCompileArtifact;
   runtimeManifest: RuntimeManifest;
 
@@ -275,6 +190,8 @@ export interface SiteBundleSnapshotMeta {
    * instead of re-deriving a pack, so the aesthetic cannot drift.
    */
   artDirectionPackId?: string | null;
+  /** Durable constrained final interaction plan. */
+  interactionManifest?: WizardInteractionManifest;
   /** Explicit chain-of-custody for the Stage 4b dynamic theme stylesheet. */
   themeInjection?: {
     version: '1.0';
@@ -294,7 +211,7 @@ export interface SiteBundleSnapshotMeta {
   designIntervention?: WizardDesignIntervention;
   /**
    * Seal stamp written by `sealSnapshot()`. Present only on the final sealed
-  * revision — Lane A compile artifacts never carry it.
+   * revision — Stage 4b compile artifacts never carry it.
    */
   seal?: {
     version: '1.0';
@@ -338,12 +255,10 @@ function readSnapshotDesignIntervention(
 export function executeCanonicalPipeline(
   selections: WizardSelections,
   existingVfsFiles: Record<string, string> = {},
-  mergeContext?: WizardMergeContext,
 ): CanonicalPipelineResult {
   assertWithinCommit('executeCanonicalPipeline');
-  if (mergeContext) assertWizardMergeContextMatchesSelections(mergeContext, selections);
   const themePresetId = assertThemeSeed(
-    mergeContext?.themePresetId ?? selections.themePresetId,
+    selections.themePresetId,
     'WizardSelections -> Lane A',
   );
   const warnings: string[] = [];
@@ -385,7 +300,7 @@ export function executeCanonicalPipeline(
   // Stage 4: Compile playground → VFS + router + bindings
   // Pass the wizard's Template + Style card selections so subpage scaffolds are
   // real role-filtered themed compositions instead of generic placeholders.
-  const themeTokens = mergeContext?.themeTokens ?? selections.themeTokens;
+  const themeTokens = selections.themeTokens;
   if (!themeTokens) {
     throw new Error(
       '[canonicalPipeline] Stage 4b assertion failed: selections.themeTokens is missing. ' +
@@ -397,10 +312,10 @@ export function executeCanonicalPipeline(
   const designIntervention = buildWizardDesignIntervention({
     businessName: selections.businessName,
     businessModel: selections.businessModel,
-    industryOverlay: mergeContext?.industry || selections.industryOverlay || (selections as { industry?: string }).industry,
-    templateId: mergeContext?.templateId || selections.templateId,
+    industryOverlay: selections.industryOverlay || (selections as { industry?: string }).industry,
+    templateId: selections.templateId,
     themePresetId,
-    wizardSeedId: mergeContext?.wizardSeedId || selections.wizardSeedId,
+    wizardSeedId: selections.wizardSeedId,
     // Every wizard dimension feeds the canonical generation seed so goals and
     // page selections materially change the composition — not just the theme.
     primaryGoal: selections.primaryGoal,
@@ -411,18 +326,43 @@ export function executeCanonicalPipeline(
     sellsProducts: selections.sellsProducts,
     wantsLeadCapture: selections.wantsLeadCapture,
   });
+  const themedCss = buildThemedIndexCssFromTokens(themeTokens, {
+    presetId: themePresetId,
+    label: themePresetId,
+    artDirectionPackId: designIntervention.artDirectionPackId,
+  });
+  if (
+    !themedCss ||
+    typeof themedCss !== 'string' ||
+    !themedCss.includes('--primary') ||
+    !themedCss.includes(SHADCN_LIBRARY_CSS_MARKER)
+  ) {
+    throw new Error(
+      '[canonicalPipeline] Stage 4b assertion failed: theme tokens did not produce the canonical shadcn stylesheet.',
+    );
+  }
   const compileResult = compilePlayground(playground, existingVfsFiles, selections.businessName, {
     selectedTemplateId: selections.templateId,
     selectedThemeId: selections.themeId,
     themePresetId,
-    deferStage4b: true,
+    stage4bCss: themedCss,
     industry: selections.industryOverlay || (selections as { industry?: string }).industry || null,
     designIntervention,
   });
 
-  // Lane A emits the complete free-styled page set and the approved local UI
-  // modules Lane B may import. Theme CSS and template identity are deliberately
-  // deferred until Lane B has enriched every page.
+  const normalizedThemeFiles = normalizeWizardThemeTokens(compileResult.vfsFiles);
+  compileResult.vfsFiles = normalizedThemeFiles.files;
+
+  // Stage 4b: Lock in the wizard's Style-card tokens at the compile layer so
+  // every downstream artifact (siteBundleSnapshot.vfsFiles, builder_drafts
+  // persistence, AIBuilderPanel continuity, Playground rehydration) ships the
+  // themed `/src/index.css` — not the un-themed default from the base scaffold.
+  // Mirrors `recompileFromPlayground`'s themed CSS injection.
+  //
+  // INVARIANT: the selected Style card's resolved semantic HSL tokens must be
+  // present. Stage 4b consumes that payload directly; theme ids are retained
+  // only for traceability and downstream identity.
+  compileResult.vfsFiles['/src/index.css'] = themedCss;
   const uiFoundation = buildGeneratedUiFoundation({
     industry: selections.industryOverlay || (selections as { industry?: string }).industry,
     templateId: selections.templateId,
@@ -450,13 +390,8 @@ export function executeCanonicalPipeline(
     'wizard',
     uiFoundation.manifest,
     designIntervention,
-    false,
   );
-  assertThemeSeed(
-    siteBundleSnapshot.meta.themePresetId,
-    'Lane A -> SiteBundleSnapshot.meta',
-    themePresetId,
-  );
+  assertSnapshotThemeSeed(siteBundleSnapshot, themePresetId, 'Stage 4b -> SiteBundleSnapshot.meta');
 
   // Stage 6: Derive RuntimeManifest from snapshot
   const runtimeManifest = deriveRuntimeManifest(siteBundleSnapshot);
@@ -584,10 +519,6 @@ export function recompileFromPlayground(
     themePresetId,
   });
   Object.assign(compileResult.vfsFiles, uiFoundation.files);
-  compileResult.vfsFiles = applyStage4bTemplateIdentity(
-    compileResult.vfsFiles,
-    options?.selectedTemplateId,
-  );
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
@@ -643,13 +574,13 @@ function projectToSiteBundleSnapshot(
     templateId?: string | null;
     wizardSeedId?: string | null;
     themeTokens?: ThemeTokens;
+    interactionManifest?: WizardInteractionManifest;
     uiFoundation?: GeneratedUiManifest;
     designIntervention?: WizardDesignIntervention;
   },
   source: SiteBundleSnapshotMeta['source'] = 'wizard',
   uiFoundation?: GeneratedUiManifest,
   designIntervention?: WizardDesignIntervention,
-  stage4bApplied = true,
 ): SiteBundleSnapshot {
   const registry = compileResult.pageRouteRegistry;
   const pages = Object.values(registry.pages);
@@ -734,14 +665,13 @@ function projectToSiteBundleSnapshot(
         (designIntervention || selections.designIntervention)?.artDirectionPackId ?? null,
       wizardSeedId: selections.wizardSeedId ?? undefined,
       generationSeed: (designIntervention || selections.designIntervention)?.seed,
-      ...(stage4bApplied ? {
-        themeInjection: {
-          version: '1.0' as const,
-          stage: '4b' as const,
-          presetId: resolvedThemePresetId,
-          cssPath: '/src/index.css' as const,
-        },
-      } : {}),
+      interactionManifest: selections.interactionManifest,
+      themeInjection: {
+        version: '1.0',
+        stage: '4b',
+        presetId: resolvedThemePresetId,
+        cssPath: '/src/index.css',
+      },
       uiFoundation: uiFoundation ? {
         version: uiFoundation.version,
         manifestPath: '/.unison/ui-manifest.json',

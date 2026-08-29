@@ -10,8 +10,6 @@ import { createEmptyCreatorData } from "@/types/creatorData";
 import { createBuilderPage, createEmptyPageRegistry } from "@/types/pageRegistry";
 import { launchStateToSandpackFiles } from "@/utils/launchToSandpack";
 import { createLaunchState } from "@/types/launchState";
-import { runFullPreflight } from "@/services/runFullPreflight";
-import type { FullPreflightWorkerLike } from "@/services/runFullPreflightRuntime";
 
 function createSnapshot(): SiteBundleSnapshot {
   const pageRegistry = createEmptyPageRegistry();
@@ -135,29 +133,22 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(merged['/.unison/design-intervention.json']).toContain('collage-hero');
   });
 
-  it("uses the complete Lane B page body before Stage 4b identity is applied", () => {
+  it("keeps Lane B as the page-body author even when Stage 4b declared a composition", () => {
     const snapshot = createSnapshot();
     snapshot.vfsFiles["/src/pages/Home.tsx"] = [
-      'const SECTIONS = [{"id":"home-hero","type":"hero","variantId":"hero:full-bleed","props":{"headline":"Canonical headline","description":"Canonical description","ctas":[{"label":"Canonical CTA","href":"/contact","intent":"contact.submit"}]}}];',
-      'const SECTION_MAP = { hero: () => null };',
-      'const DESIGN_SIGNATURE = "collage-hero|stagger-reveal";',
-      'export default function Home(){ return <main>Canonical composed home {SECTIONS.length}</main>; }',
+      'const SECTIONS = [{"id":"home-hero","type":"hero","props":{"headline":"Canonical headline"}}];',
+      'const HYDRATABLE = new Set([]);',
+      'export default function Home(){ return <main>Canonical composed home</main>; }',
     ].join("\n");
-    snapshot.vfsFiles["/.unison/compositions/pages/Home.json"] = JSON.stringify({
-      version: "1.0",
-      compiledBy: "stage-4b",
-      pageFilePath: "/src/pages/Home.tsx",
-      sections: [{
-        sectionId: "home-hero",
-        semanticType: "hero",
-        primitiveId: "Hero",
-        variantId: "hero:full-bleed",
-      }],
+    snapshot.vfsFiles["/.unison/compositions/src/pages/Home.json"] = JSON.stringify({
+      pageId: "page_home",
+      route: "/",
+      sections: [{ semanticType: "hero", variantId: "hero:full-bleed" }],
     });
 
     const laneBHome = [
       'export default function Home(){',
-      '  return <main><h1>Lane B business headline</h1><p>Lane B business description.</p><button data-ut-intent="contact.submit">Book a strategy call</button></main>;',
+      '  return <main><section data-ut-intent="contact.submit">Lane B authored home</section></main>;',
       '}',
     ].join("\n");
 
@@ -167,66 +158,24 @@ describe("buildCanonicalLaunchArtifacts", () => {
       snapshot,
     );
 
+    expect(merged["/src/pages/Home.tsx"]).toBe(laneBHome);
     expect(merged["/src/pages/Home.tsx"]).not.toContain("Canonical composed home");
-    expect(merged["/src/pages/Home.tsx"]).toContain("Lane B business headline");
-    expect(merged["/src/pages/Home.tsx"]).toContain("Lane B business description.");
-    expect(merged["/src/pages/Home.tsx"]).toContain("Book a strategy call");
-    expect(merged["/src/pages/Home.tsx"]).not.toContain("hero:full-bleed");
-    expect(merged["/src/pages/Home.tsx"]).not.toContain("collage-hero|stagger-reveal");
-    expect(merged["/src/pages/Home.tsx"]).toContain("contact.submit");
-    expect(merged["/src/pages/Home.tsx"]).toContain("return <main><h1>Lane B business headline");
-    expect(merged["/.unison/compositions/pages/Home.json"]).toContain("hero:full-bleed");
+    // The declared composition survives as the design contract, not as a body.
+    expect(merged["/.unison/compositions/src/pages/Home.json"]).toContain("hero:full-bleed");
   });
 
-  it("keeps full Lane B page ownership when Stage 4b did not declare a composition", () => {
-    const snapshot = createSnapshot();
-    snapshot.vfsFiles["/src/pages/Home.tsx"] =
-      "export default function Home(){ return <main>Canonical undeclared page</main>; }";
-    const laneBHome =
-      "export default function Home(){ return <main>Lane B complete undeclared page</main>; }";
-
-    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
-      { "/src/pages/Home.tsx": laneBHome },
-      snapshot.vfsFiles,
-      snapshot,
-    );
-
-    expect(merged["/src/pages/Home.tsx"]).toContain("Lane B complete undeclared page");
-    expect(merged["/src/pages/Home.tsx"]).not.toContain("Canonical undeclared page");
-  });
-
-  it("blocks a missing Lane B page without a canonical fallback switch", () => {
+  it("only falls back to the canonical page body when Lane B produced nothing", () => {
     const snapshot = createSnapshot();
     snapshot.vfsFiles["/src/pages/Home.tsx"] =
       "export default function Home(){ return <main>Canonical composed home</main>; }";
 
-    expect(() => mergeGeneratedVfsWithCanonicalSnapshot(
-      {},
-      snapshot.vfsFiles,
-      snapshot,
-    )).toThrow('Lane B did not author every registered Wizard page: /src/pages/Home.tsx');
-  });
+    const degraded = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot);
+    expect(degraded["/src/pages/Home.tsx"]).toContain("Canonical composed home");
 
-  it("does not prune a selected route to mask a missing Lane B page", () => {
-    const snapshot = createSnapshot();
-    const aboutPage = createBuilderPage("page_about", "About", "/about", "about", {
-      filePath: "/src/pages/About.tsx",
+    const strict = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot, {
+      allowCanonicalPageFallback: false,
     });
-    const bookingPage = createBuilderPage("page_booking", "Booking", "/booking", "booking", {
-      filePath: "/src/pages/Booking.tsx",
-    });
-    snapshot.pageRegistry.pages[aboutPage.pageId] = aboutPage;
-    snapshot.pageRegistry.pages[bookingPage.pageId] = bookingPage;
-    snapshot.vfsFiles["/src/pages/About.tsx"] =
-      "export default function About(){ return <main>Canonical About</main>; }";
-
-    expect(() => mergeGeneratedVfsWithCanonicalSnapshot(
-      { "/src/pages/Home.tsx": "export default function Home(){ return <main>Lane B home</main>; }" },
-      snapshot.vfsFiles,
-      snapshot,
-    )).toThrow('Lane B did not author every registered Wizard page: /src/pages/About.tsx, /src/pages/Booking.tsx');
-
-    expect(snapshot.pageRegistry.pages[bookingPage.pageId]).toEqual(bookingPage);
+    expect(strict["/src/pages/Home.tsx"]).toBeUndefined();
   });
 
   it("uses LaunchState VFS when the builder preview mounts before VFS import", () => {
@@ -318,52 +267,12 @@ describe("buildCanonicalLaunchArtifacts", () => {
       yieldToHost: async () => {
         yieldCount += 1;
       },
-      preflightRuntime: { fallbackPreflight: runFullPreflight },
     });
 
     expect(yieldCount).toBeGreaterThanOrEqual(8);
     expect(asynchronous.files).toEqual(synchronous.files);
     expect(asynchronous.runtimeManifest).toEqual(synchronous.runtimeManifest);
     expect(asynchronous.siteBundleSnapshot?.snapshotId).toBe(synchronous.siteBundleSnapshot?.snapshotId);
-    vi.useRealTimers();
-  });
-
-  it('runs full compile-safe acceptance before sealing after a silent preflight worker', async () => {
-    vi.useFakeTimers();
-    const snapshot = createSnapshot();
-    const terminate = vi.fn();
-    const worker: FullPreflightWorkerLike = {
-      onmessage: null,
-      onerror: null,
-      postMessage: vi.fn(),
-      terminate,
-    };
-
-    const pending = buildCanonicalLaunchArtifactsAsync({
-      generatedFiles: {
-        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
-      },
-      preferredEntryPoint: '/src/App.tsx',
-      siteBundleSnapshot: snapshot,
-      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
-      themePresetId: 'modern',
-      strictPreflight: false,
-    }, {
-      yieldToHost: async () => undefined,
-      preflightRuntime: {
-        workerFactory: () => worker,
-        workerTimeoutMs: 50,
-        fallbackPreflight: runFullPreflight,
-      },
-    });
-    await vi.runAllTimersAsync();
-    const artifacts = await pending;
-
-    expect(terminate).toHaveBeenCalledOnce();
-    expect(artifacts.preflightResult.runtime?.execution).toBe('compatibility-fallback');
-    expect(artifacts.preflightResult.stages.compileSafe.status).toBe('accepted');
-    expect(artifacts.preflightResult.stages.bundleTopology.status).toBe('accepted');
-    expect(artifacts.siteBundleSnapshot?.vfsFiles['/src/App.tsx']).toContain('Routes');
     vi.useRealTimers();
   });
 
@@ -422,9 +331,32 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.siteBundleSnapshot?.vfsFiles['/src/components/SharedRuntime.tsx']).toContain('snapshot');
   });
 
-  it("rejects output that omits registered pages when canonical merging is disabled", () => {
+  it('persists an explicit interaction manifest into app context and the cloned snapshot', () => {
     const snapshot = createSnapshot();
-    expect(() => buildCanonicalLaunchArtifacts({
+    const interactionManifest = {
+      version: '1.0' as const,
+      source: 'ai' as const,
+      templateId: 'agency-template',
+      layoutSignature: 'split-hero',
+      industry: 'agency',
+      interactions: [{ target: { kind: 'interactive' as const, value: 'hero-cta' }, effect: 'hover-lift' as const }],
+    };
+    const artifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: {},
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      interactionManifest,
+      themePresetId: 'modern',
+    });
+
+    expect(artifacts.appContext.interactionManifest).toEqual(interactionManifest);
+    expect(artifacts.siteBundleSnapshot?.meta.interactionManifest).toEqual(interactionManifest);
+  });
+
+  it("can preserve generated wizard output without merging canonical snapshot files", () => {
+    const snapshot = createSnapshot();
+    const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/App.tsx": "export default function App(){ return <main>Wizard First</main>; }",
         "/src/index.css": snapshot.vfsFiles["/src/index.css"],
@@ -443,7 +375,11 @@ describe("buildCanonicalLaunchArtifacts", () => {
       industry: "agency",
       aesthetic: "modern",
       backendRequired: false,
-    })).toThrow('bundle topology blocked: /src/pages/Home.tsx');
+    });
+
+    expect(artifacts.files["/src/App.tsx"]).toContain("Wizard First");
+    expect(artifacts.files["/src/pages/Home.tsx"]).toBeUndefined();
+    expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
   });
 
   it("keeps Lane B AI page output authoritative at wizard launch (no canonical lock)", () => {
@@ -468,10 +404,6 @@ describe("buildCanonicalLaunchArtifacts", () => {
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         // Lane B authors rich pages for both routes — these MUST win.
-        // The companion ships with the page: generation-time acceptance is the
-        // only acceptance point, so a page must close its own import graph.
-        "/src/components/Hero.tsx":
-          "export default function Hero(){ return <section className='bg-background text-foreground'>Hero</section>; }",
         "/src/pages/Home.tsx":
           "import Hero from '../components/Hero';\nexport default function Home(){ return <main className='bg-background text-foreground'><Hero/>Lane B Home</main>; }",
         "/src/pages/About.tsx":
@@ -518,13 +450,14 @@ describe("buildCanonicalLaunchArtifacts", () => {
     snapshot.vfsFiles["/src/pages/About.tsx"] =
       "export default function About(){ return <div>Canonical About Fallback</div>; }";
 
-    expect(() => buildCanonicalLaunchArtifacts({
+    const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/pages/Home.tsx": "export default function Home(){ return <main>Wizard Home</main>; }",
       },
       preferredEntryPoint: "/src/App.tsx",
       siteBundleSnapshot: snapshot,
       compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      allowCanonicalPageFallback: false,
       businessId: "biz_strict",
       projectId: "project_strict",
       systemType: "agency",
@@ -535,7 +468,11 @@ describe("buildCanonicalLaunchArtifacts", () => {
       industry: "agency",
       aesthetic: "modern",
       backendRequired: false,
-    })).toThrow('Lane B did not author every registered Wizard page: /src/pages/About.tsx');
+    });
+
+    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Wizard Home");
+    expect(artifacts.files["/src/pages/About.tsx"]).toBeUndefined();
+    expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
   });
 
   it("refuses to persist a quarantined wizard page when strict preflight is enabled", () => {
@@ -550,13 +487,13 @@ describe("buildCanonicalLaunchArtifacts", () => {
       compiledPlayground: { vfsFiles: snapshot.vfsFiles },
       themePresetId: "modern",
       strictPreflight: true,
-    })).toThrow(/quarantined generated files:.*Unterminated JSX contents/);
+    })).toThrow(/refusing to persist quarantine scaffolds.*Unterminated JSX contents/);
   });
 
-  it('repairs an unresolved JSX import contract instead of blocking persistence', () => {
+  it('refuses to persist a Wizard VFS with an unresolved JSX import contract', () => {
     const snapshot = createSnapshot();
 
-    const artifacts = buildCanonicalLaunchArtifacts({
+    expect(() => buildCanonicalLaunchArtifacts({
       generatedFiles: {
         '/src/pages/Home.tsx': [
           "import { MissingHero, MissingCaption } from '../components/HeroParts';",
@@ -569,11 +506,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
       compiledPlayground: { vfsFiles: snapshot.vfsFiles },
       themePresetId: 'modern',
       strictPreflight: true,
-    });
-
-    // Preview prep synthesizes the missing exports, so the launch persists
-    // instead of dead-ending after "Finalizing preview".
-    expect(artifacts.files['/src/pages/Home.tsx']).toContain('MissingHero');
+    })).toThrow(/Wizard runtime preflight failed before persistence:.*Home\.tsx imports JSX component "MissingHero".*HeroTitle, HeroCopy/i);
   });
 
   it('restores the canonical RevealGroup facade for legacy relative page imports', () => {

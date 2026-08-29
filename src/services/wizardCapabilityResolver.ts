@@ -571,13 +571,6 @@ export function resolveCapabilities(selections: WizardSelections): CapabilityPac
   });
   const finalBindingsV2 = [...synth.kept, ...synth.synthesized];
 
-  // A profile that exposes newsletter.subscribe must have a newsletter form to
-  // bind to, otherwise the footer submit resolves to nothing.
-  if (finalBindingsV2.some((binding) => String(binding.coreIntent) === 'newsletter.subscribe')) {
-    formSet.add('newsletter');
-  }
-
-
   return {
     id: `cap_${nanoid(8)}`,
     requiredPages: Array.from(pageSet),

@@ -7,9 +7,9 @@
  *
  * Two explicitly named revisions now exist:
  *
- *   WizardCompileArtifact — Lane A output. Topology + free-styled baseline VFS
- *   + bindings. Deterministic and reproducible from WizardSelections alone.
- *   Frozen before Lane B enrichment and Stage 4b finalization.
+ *   WizardCompileArtifact — Stage 4b output. Topology + resolved compositions +
+ *   theme + baseline VFS + bindings. Deterministic and reproducible from
+ *   WizardSelections alone. Frozen.
  *
  *   SiteBundleSnapshot — the final SEALED revision, produced by `sealSnapshot()`
  *   from artifact + Lane B result + preflight output. The only revision that
@@ -21,17 +21,18 @@
 
 import type { SiteBundleSnapshot, SiteBundleSnapshotMeta } from './canonicalPipeline';
 import type { RuntimeAppContext } from '@/types/runtimeManifest';
+import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 
 export const SNAPSHOT_SEAL_VERSION = '1.0' as const;
 
 /**
- * Lane A compile artifact — frozen, deterministic, pre-Lane-B.
+ * Stage 4b compile artifact — frozen, deterministic, pre-Lane-B.
  * Never rendered directly; it is an input to `sealSnapshot()`.
  */
 export interface WizardCompileArtifact {
   readonly kind: 'wizard-compile-artifact';
   readonly version: typeof SNAPSHOT_SEAL_VERSION;
-  /** Lane A baseline snapshot shape (pre-Lane-B and pre-Stage-4b). */
+  /** Stage 4b baseline snapshot shape (pre-seal). */
   readonly baseline: SiteBundleSnapshot;
   readonly compiledAt: string;
 }
@@ -53,12 +54,13 @@ export class SnapshotSealError extends Error {
 }
 
 export interface SealSnapshotInput {
-  /** Lane A artifact, or the baseline snapshot it wraps. */
+  /** Stage 4b artifact, or the baseline snapshot it wraps. */
   artifact: WizardCompileArtifact | SiteBundleSnapshot;
   /** Final VFS after Lane B convergence + preflight + runtime injection. */
   vfsFiles: Record<string, string>;
   /** Runtime context stamped onto the sealed revision. */
   appContext: RuntimeAppContext;
+  interactionManifest?: WizardInteractionManifest | null;
   /** Which stage produced the final merge (traceability only). */
   sealedBy?: 'wizard-launch' | 'recompile' | 'builder-commit' | 'import';
   /**
@@ -79,15 +81,15 @@ function baselineOf(artifact: SealSnapshotInput['artifact']): SiteBundleSnapshot
 }
 
 /**
- * The single seal point. Converts the Lane A artifact plus the Lane B-enriched,
- * Stage 4b-finalized VFS into the authoritative SiteBundleSnapshot. Every
- * invariant Preview depends on is asserted here; no layer may amend page
- * bodies after this returns.
+ * The single seal point. Converts a Stage 4b artifact plus the converged VFS
+ * into the authoritative SiteBundleSnapshot. Every invariant that Preview
+ * depends on is asserted here — after this returns, no layer may amend the
+ * page bodies of the returned revision.
  */
 export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
   const baseline = baselineOf(input.artifact);
   if (!baseline) {
-    throw new SnapshotSealError('cannot seal without a Lane A compile artifact.');
+    throw new SnapshotSealError('cannot seal without a Stage 4b compile artifact.');
   }
 
   // Runtime VFS excludes platform metadata sidecars (`/.unison/*`); those are
@@ -135,6 +137,7 @@ export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
     // The generation seed is sealed exactly as Stage 4b resolved it — sealing
     // must never re-derive or drop it, or the site stops being reproducible.
     generationSeed: baseline.meta?.generationSeed || baseline.meta?.designIntervention?.seed,
+    interactionManifest: input.interactionManifest || baseline.meta?.interactionManifest,
     themeInjection: {
       version: '1.0',
       stage: '4b',

@@ -416,10 +416,10 @@ ${UNISON_VFS_STYLE_BRIDGE}`,
 export { Button, IconButton, type ButtonProps, type IconButtonProps } from './button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
 export { cn } from './cn';
-export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectLabel, SelectSeparator, SelectItem, Checkbox, FormField, FormFields, FormGrid, FormHint, FormError } from './form-fields';
+export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, FormError } from './form-fields';
 export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
-export { Image, ImageLightbox, type ImageProps } from './media';
+export { ImageLightbox } from './media';
 export { Reveal, RevealGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';
 export { FloatingNavbar, type NavigationLink } from './navigation';
 export { BentoFeatureGrid, FeatureCard } from './recipes';
@@ -518,92 +518,8 @@ export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<H
   return <textarea className={cn('flex min-h-28 w-full rounded-[var(--ut-control-radius)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
 }
 
-// Shadcn-style composition parts. They carry structure only — the native
-// <select> below reads their descendants, so pages can use either API.
-export function SelectTrigger({ children }: { children?: React.ReactNode; className?: string }) {
-  return <>{children}</>;
-}
-
-export function SelectValue({ placeholder }: { placeholder?: React.ReactNode; className?: string }) {
-  return <>{placeholder ?? null}</>;
-}
-
-export function SelectContent({ children }: { children?: React.ReactNode; className?: string }) {
-  return <>{children}</>;
-}
-
-export function SelectGroup({ children }: { children?: React.ReactNode; className?: string }) {
-  return <>{children}</>;
-}
-
-export function SelectLabel({ children }: { children?: React.ReactNode; className?: string }) {
-  return <>{children}</>;
-}
-
-export function SelectSeparator() {
-  return null;
-}
-
-export function SelectItem({ children }: { value?: string; children?: React.ReactNode; className?: string }) {
-  return <>{children}</>;
-}
-
-type CollectedSelectItem = { value: string; label: React.ReactNode };
-
-function collectSelectItems(nodes: React.ReactNode, out: CollectedSelectItem[] = []): CollectedSelectItem[] {
-  React.Children.forEach(nodes, (child) => {
-    if (!React.isValidElement(child)) return;
-    const childProps = (child.props || {}) as { value?: string; children?: React.ReactNode };
-    if (child.type === SelectItem) {
-      out.push({ value: String(childProps.value ?? ''), label: childProps.children });
-      return;
-    }
-    if (childProps.children) collectSelectItems(childProps.children, out);
-  });
-  return out;
-}
-
-function findSelectPlaceholder(nodes: React.ReactNode): React.ReactNode {
-  let placeholder: React.ReactNode = null;
-  React.Children.forEach(nodes, (child) => {
-    if (placeholder || !React.isValidElement(child)) return;
-    const childProps = (child.props || {}) as { placeholder?: React.ReactNode; children?: React.ReactNode };
-    if (child.type === SelectValue) {
-      placeholder = childProps.placeholder ?? null;
-      return;
-    }
-    if (childProps.children) placeholder = findSelectPlaceholder(childProps.children);
-  });
-  return placeholder;
-}
-
-type GeneratedSelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
-  onValueChange?: (value: string) => void;
-};
-
-export function Select({ className, children, onChange, onValueChange, ...props }: GeneratedSelectProps) {
-  const items = collectSelectItems(children);
-  const placeholder = findSelectPlaceholder(children);
-  const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    onChange?.(event);
-    onValueChange?.(event.target.value);
-  };
-  return (
-    <select
-      className={cn('flex h-10 w-full rounded-[var(--ut-control-radius)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)}
-      onChange={handleChange}
-      {...props}
-    >
-      {items.length > 0 ? (
-        <>
-          {placeholder ? <option value="">{placeholder}</option> : null}
-          {items.map((item, index) => (
-            <option key={item.value + '-' + index} value={item.value}>{item.label}</option>
-          ))}
-        </>
-      ) : children}
-    </select>
-  );
+export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select className={cn('flex h-10 w-full rounded-[var(--ut-control-radius)] border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />;
 }
 
 export function Checkbox({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
@@ -658,20 +574,9 @@ export function Icon({ icon: Glyph, className, label }: { icon: LucideIcon; clas
 }
 `,
     '/src/unison/ui/media.tsx': `${marker}
-import * as React from 'react';
   import * as Dialog from './radix/dialog';
   import { Expand } from './icons';
 import { cn } from './cn';
-
-export interface ImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
-  fill?: boolean;
-  priority?: boolean;
-}
-
-// Compatibility facade: absorbs framework-style <Image fill priority /> output.
-export function Image({ fill: _fill, priority: _priority, alt = '', className, ...props }: ImageProps) {
-  return <img alt={alt} className={cn(_fill ? 'h-full w-full object-cover' : undefined, className)} {...props} />;
-}
 
 export function ImageLightbox({ src, alt, className }: { src: string; alt: string; className?: string }) {
   return <Dialog.Root><Dialog.Trigger asChild><button type="button" className={cn('group relative block overflow-hidden rounded-[var(--radius)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', className)}><img src={src} alt={alt} className="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover:scale-105" /><span className="absolute inset-0 grid place-items-center bg-foreground/0 text-background transition-colors group-hover:bg-foreground/45"><Expand className="size-6 opacity-0 transition-opacity group-hover:opacity-100" /></span></button></Dialog.Trigger><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-50 bg-foreground/70 backdrop-blur-sm" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[var(--ut-overlay-block)] w-[min(92vw,var(--ut-content-width))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[var(--radius)] bg-card shadow-2xl"><Dialog.Title className="sr-only">{alt}</Dialog.Title><img src={src} alt={alt} className="max-h-[var(--ut-overlay-block)] w-full object-contain" /></Dialog.Content></Dialog.Portal></Dialog.Root>;
@@ -854,7 +759,7 @@ const KNOWN_NAMED_IMPORT_REDIRECTS: ReadonlyArray<{
   { from: '@/unison/ui/text-input', to: '@/unison/ui/form-fields', exports: ['Input', 'TextInput'] },
   { from: '@/unison/ui/textarea', to: '@/unison/ui/form-fields', exports: ['Textarea', 'TextArea'] },
   { from: '@/unison/ui/text-area', to: '@/unison/ui/form-fields', exports: ['Textarea', 'TextArea'] },
-  { from: '@/unison/ui/select', to: '@/unison/ui/form-fields', exports: ['Select', 'SelectTrigger', 'SelectValue', 'SelectContent', 'SelectGroup', 'SelectLabel', 'SelectSeparator', 'SelectItem'] },
+  { from: '@/unison/ui/select', to: '@/unison/ui/form-fields', exports: ['Select'] },
   { from: '@/unison/ui/checkbox', to: '@/unison/ui/form-fields', exports: ['Checkbox'] },
   { from: '@/unison/ui/label', to: '@/unison/ui/form-fields', exports: ['FieldLabel', 'Label', 'FormLabel'] },
   // `@/unison/ui/motion` is the curated Reveal/Stagger recipe facade; raw

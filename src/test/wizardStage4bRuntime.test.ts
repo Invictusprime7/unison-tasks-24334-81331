@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { onPipelineCommit, type CommitResult } from '@/platform/core';
-import { runWizardLaneA } from '@/services/wizardStage4bRuntime';
+import { runWizardStage4b } from '@/services/wizardStage4bRuntime';
 import type { WizardSelections } from '@/types/playground';
-import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
 const selections = {
   businessName: 'Northstar Dental',
@@ -18,11 +17,6 @@ const selections = {
   themeTokens: {} as WizardSelections['themeTokens'],
   requestedPages: ['home', 'services', 'contact'],
 } as unknown as WizardSelections;
-const mergeContext = createWizardMergeContext({
-  industry: 'dental',
-  themePresetId: 'clean-medical',
-  themeTokens: selections.themeTokens,
-});
 
 function fakeCommitResult(): CommitResult {
   return {
@@ -52,9 +46,8 @@ describe('Wizard Stage 4b runtime', () => {
     };
 
     try {
-      const stage4b = await runWizardLaneA({
+      const stage4b = await runWizardStage4b({
         selections,
-        mergeContext,
         workerFactory: () => worker,
         now: () => clock,
       });
@@ -87,9 +80,8 @@ describe('Wizard Stage 4b runtime', () => {
       terminate: vi.fn(),
     };
 
-    await expect(runWizardLaneA({
+    await expect(runWizardStage4b({
       selections,
-      mergeContext,
       workerFactory: () => worker,
     })).rejects.toThrow('Stage 4b theme contract failed');
   });
@@ -109,9 +101,8 @@ describe('Wizard Stage 4b runtime', () => {
       terminate: vi.fn(),
     };
 
-    const stage4b = await runWizardLaneA({
+    const stage4b = await runWizardStage4b({
       selections,
-      mergeContext,
       workerFactory: () => worker,
       fallbackCommit,
     });
@@ -131,9 +122,8 @@ describe('Wizard Stage 4b runtime', () => {
       terminate,
     };
 
-    const pending = runWizardLaneA({
+    const pending = runWizardStage4b({
       selections,
-      mergeContext,
       signal: controller.signal,
       workerFactory: () => worker,
     });

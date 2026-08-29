@@ -65,11 +65,6 @@ export default defineConfig(({ mode }) => ({
       brotliSize: true,
     })
   ].filter(Boolean),
-  worker: {
-    // Worker entry now pulls in code-split (dynamically imported) modules,
-    // which rollup cannot emit as IIFE. ES workers support code-splitting.
-    format: 'es',
-  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

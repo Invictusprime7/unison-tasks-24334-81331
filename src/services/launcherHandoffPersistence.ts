@@ -1,10 +1,4 @@
 import type { LaunchState } from '@/types/launchState';
-import { findUnresolvedLocalImports, describeUnresolvedImports } from '@/services/laneBCompanionModules';
-import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
-import {
-  PUBLISHED_RUNTIME_METADATA_PATH,
-  restorePublishedRuntimeModule,
-} from '@/services/publishedRuntimeModule';
 
 const LAUNCHER_HANDOFF_KEY = 'unison.systemLauncher.pendingHandoff.v1';
 const HANDOFF_TTL_MS = 30 * 60 * 1000;
@@ -19,7 +13,6 @@ const COMPACT_UNISON_METADATA_PATHS = new Set([
   '/.unison/setup-snapshot.json',
   '/.unison/intent-bindings.json',
   '/.unison/intent-surfaces.json',
-  PUBLISHED_RUNTIME_METADATA_PATH,
 ]);
 
 export interface LauncherHandoffSnapshot {
@@ -57,13 +50,9 @@ function compactCanonicalMetadata(content: string): string {
 
 function compactVfsFiles(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const stringFiles = Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-  );
-  const canonicalFiles = normalizeCanonicalVfsFiles(stringFiles);
   const out: Record<string, string> = {};
-  for (const [path, content] of Object.entries(canonicalFiles)) {
+  for (const [path, content] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof content !== 'string') continue;
     if (path.startsWith('/.unison/')) {
       if (COMPACT_UNISON_METADATA_PATHS.has(path)) {
         out[path] = path === '/.unison/site-bundle-snapshot.json'
@@ -72,13 +61,7 @@ function compactVfsFiles(value: unknown): Record<string, string> | undefined {
       }
       continue;
     }
-    // Source modules have already been promoted to canonical /src paths. Keep
-    // every source/public file; Sandpack flattening happens only at compile.
-    if (
-      /^\/(src|public)\//.test(path) ||
-      /^\/[^/]+\.(tsx?|jsx?|css|json|svg|png|jpe?g|gif|webp|avif|woff2?|ttf|otf)$/.test(path) ||
-      /^\/(index\.html|package\.json|tsconfig\.json|vite\.config\.ts|tailwind\.config\.ts|postcss\.config\.js)$/.test(path)
-    ) {
+    if (/^\/(src|public)\//.test(path) || /^\/(index\.html|package\.json|tsconfig\.json|vite\.config\.ts|tailwind\.config\.ts|postcss\.config\.js)$/.test(path)) {
       out[path] = content;
     }
   }
@@ -93,31 +76,6 @@ function readSnapshotVfs(value: unknown): Record<string, string> | undefined {
   return Object.values(record).every((content) => typeof content === 'string')
     ? record as Record<string, string>
     : undefined;
-}
-
-function normalizeExpectedPagePath(path: string): string {
-  return normalizeCanonicalVfsPath(path);
-}
-
-function snapshotVfsCoversRegisteredPages(snapshot: unknown, files: Record<string, string>): boolean {
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return true;
-  const pageRegistry = (snapshot as { pageRegistry?: unknown }).pageRegistry;
-  if (!pageRegistry || typeof pageRegistry !== 'object' || Array.isArray(pageRegistry)) return true;
-  const pages = (pageRegistry as { pages?: unknown }).pages;
-  if (!pages || typeof pages !== 'object' || Array.isArray(pages)) return true;
-
-  const normalizedFiles = new Map(
-    Object.entries(files).map(([path, content]) => [normalizeCanonicalVfsPath(path), content]),
-  );
-
-  return Object.values(pages as Record<string, unknown>).every((page) => {
-    if (!page || typeof page !== 'object' || Array.isArray(page)) return true;
-    const filePath = (page as { filePath?: unknown }).filePath;
-    if (typeof filePath !== 'string' || !filePath.trim()) return true;
-    const normalized = normalizeExpectedPagePath(filePath);
-    const source = normalizedFiles.get(normalized);
-    return typeof source === 'string' && source.trim().length > 0;
-  });
 }
 
 function upsertJsonFile(files: Record<string, string>, path: string, value: unknown) {
@@ -146,22 +104,8 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // outer route VFS here allowed a template preset to outlive the snapshot
   // after session-storage recovery.
   const snapshotVfs = readSnapshotVfs(routeState.siteBundleSnapshot);
-  const hasCompleteSnapshotVfs = Boolean(
-    snapshotVfs
-    && Object.keys(snapshotVfs).length > 0
-    && snapshotVfsCoversRegisteredPages(routeState.siteBundleSnapshot, snapshotVfs),
-  );
-  // A commit can return a newer canonical VFS alongside snapshot metadata that
-  // still carries its pre-commit file map. Never compact from that stale map:
-  // doing so drops registered pages precisely during Wizard -> Builder handoff.
-  const sourceFiles = hasCompleteSnapshotVfs ? snapshotVfs : routeState.vfsFiles;
-  const compactFiles = restorePublishedRuntimeModule(compactVfsFiles(sourceFiles) || {});
-  const unresolved = findUnresolvedLocalImports(compactFiles);
-  if (unresolved.length > 0) {
-    throw new Error(
-      `[LauncherHandoff] canonical handoff has unresolved local imports: ${describeUnresolvedImports(unresolved)}`,
-    );
-  }
+  const hasSnapshotVfs = !!snapshotVfs && Object.keys(snapshotVfs).length > 0;
+  const compactFiles = compactVfsFiles(hasSnapshotVfs ? snapshotVfs : routeState.vfsFiles) || {};
   upsertJsonFile(compactFiles, '/.unison/runtime-manifest.json', routeState.runtimeManifest);
   upsertJsonFile(compactFiles, '/.unison/canonical-playground.json', routeState.canonicalPlayground || routeState.materializedPlayground);
   upsertJsonFile(compactFiles, '/.unison/wizard-seed.json', routeState.wizardSeed);
@@ -191,7 +135,7 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
     runtimeManifest: routeState.runtimeManifest,
     vfsFiles: compactFiles,
     siteBundleSnapshot: snapshot,
-    snapshotVfsCompacted: Object.keys(compactFiles).length > 0,
+    snapshotVfsCompacted: hasSnapshotVfs,
     canonicalPlayground: routeState.canonicalPlayground,
     materializedPlayground: hasDurableWizardFiles ? routeState.materializedPlayground : undefined,
     compiledPlayground,

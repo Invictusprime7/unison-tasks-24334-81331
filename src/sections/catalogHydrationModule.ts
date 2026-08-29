@@ -9,12 +9,10 @@
  * `CATALOG_HYDRATE_RESPONSE` with the projected rows.
  */
 
-import { PUBLISHED_RUNTIME_IMPORT_SPECIFIER } from '@/services/publishedRuntimeModule';
-
 export const CATALOG_HYDRATION_PATH = '/src/components/catalogHydration.ts';
 
 export const CATALOG_HYDRATION_MODULE = `import { useEffect, useRef, useState } from 'react';
-import { PUBLISHED_RUNTIME_CONFIG } from '${PUBLISHED_RUNTIME_IMPORT_SPECIFIER}';
+import { PUBLISHED_RUNTIME_CONFIG } from '@/unison/publishedRuntime';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shape returned to callers

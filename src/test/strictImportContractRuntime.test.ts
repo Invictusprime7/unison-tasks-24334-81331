@@ -42,32 +42,6 @@ describe('strict import-contract runtime', () => {
     expect(result).toEqual(preparedFiles);
   });
 
-  it('threads aesthetic through the worker and isolates differently styled cache entries', async () => {
-    const files = { '/App.tsx': 'export default function App(){ return null; }' };
-    const requests: Array<{ requestId: string; aesthetic?: string | null }> = [];
-    const workerFactory = vi.fn(() => {
-      const worker = {
-        onmessage: null as ((event: MessageEvent) => void) | null,
-        onerror: null as ((event: ErrorEvent) => void) | null,
-        postMessage: vi.fn((request: { requestId: string; aesthetic?: string | null }) => {
-          requests.push(request);
-          queueMicrotask(() => worker.onmessage?.({
-            data: { requestId: request.requestId, ok: true, files: { '/App.tsx': request.aesthetic || 'none' } },
-          } as MessageEvent));
-        }),
-        terminate: vi.fn(),
-      };
-      return worker;
-    });
-
-    const editorial = await runPrepareSandpackFilesOffThread({ files, aesthetic: 'editorial', workerFactory });
-    const organic = await runPrepareSandpackFilesOffThread({ files, aesthetic: 'organic', workerFactory });
-
-    expect(requests.map((request) => request.aesthetic)).toEqual(['editorial', 'organic']);
-    expect(editorial['/App.tsx']).toBe('editorial');
-    expect(organic['/App.tsx']).toBe('organic');
-  });
-
   it('resolves when the worker reports no violations', async () => {
     const terminate = vi.fn();
     const worker = {
@@ -113,10 +87,6 @@ describe('strict import-contract runtime', () => {
 
   it('falls back to the main thread (and still enforces the check) when the worker cannot start', async () => {
     const fallbackCheck = vi.fn();
-    const files = {
-      '/src/App.tsx': 'export default function App(){ return <main>Fallback compile</main>; }',
-      '/src/index.css': '@tailwind base; @tailwind components; @tailwind utilities;',
-    };
     const worker = {
       onmessage: null as ((event: MessageEvent) => void) | null,
       onerror: null as ((event: ErrorEvent) => void) | null,
@@ -130,27 +100,14 @@ describe('strict import-contract runtime', () => {
     };
 
     await runStrictImportContractCheck({
-      files,
-      entryPoint: '/src/App.tsx',
+      files: { '/App.tsx': 'x' },
+      entryPoint: '/App.tsx',
       themePresetId: 'modern',
       workerFactory: () => worker,
       fallbackCheck,
     });
 
-    expect(fallbackCheck).toHaveBeenCalledWith(files, '/src/App.tsx', 'modern');
-
-    const previewWorkerFactory = vi.fn(() => worker);
-    const cachedPreview = await runPrepareSandpackFilesOffThread({
-      files,
-      entryPoint: '/src/App.tsx',
-      themePresetId: 'modern',
-      workerFactory: previewWorkerFactory,
-    });
-
-    expect(previewWorkerFactory).not.toHaveBeenCalled();
-    expect(cachedPreview['/App.tsx']).toContain('Fallback compile');
-    expect(cachedPreview['/index.tsx']).toBeDefined();
-    expect(cachedPreview['/src/App.tsx']).toBeUndefined();
+    expect(fallbackCheck).toHaveBeenCalledWith({ '/App.tsx': 'x' }, '/App.tsx', 'modern');
   });
 
   it('terminates the worker and rejects when the caller aborts before it responds', async () => {

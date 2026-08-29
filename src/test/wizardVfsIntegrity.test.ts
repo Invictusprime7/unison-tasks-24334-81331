@@ -1,58 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
-import {
-  PUBLISHED_RUNTIME_METADATA_PATH,
-  PUBLISHED_RUNTIME_MODULE_PATH,
-} from '@/services/publishedRuntimeModule';
 
 describe('wizard VFS integrity', () => {
-  it('restores the published runtime module from its persisted contract before strict import closure', () => {
-    const runtime = {
-      version: '1.0',
-      runtimeVersion: '1.0',
-      siteId: 'site-runtime-recovery',
-      businessId: 'business-runtime-recovery',
-      projectId: 'project-runtime-recovery',
-      snapshotId: 'snap-runtime-recovery',
-      endpoint: 'https://runtime.example/read',
-      runtimeEndpoint: 'https://runtime.example/runtime',
-      formEndpoint: 'https://runtime.example/forms',
-      controllerEndpoints: {},
-    };
-    const prepared = prepareSandpackFiles({
-      '/src/App.tsx': "import { useSectionData } from './components/catalogHydration'; export default function App() { useSectionData('featured'); return <main>Catalog</main>; }",
-      '/src/components/catalogHydration.ts': "import { PUBLISHED_RUNTIME_CONFIG } from '../unison/publishedRuntime'; export const useSectionData = (_id: string) => PUBLISHED_RUNTIME_CONFIG.siteId;",
-      '/src/index.css': ':root { --primary: 221 83% 53%; }',
-      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
-      '/.unison/site-bundle-snapshot.json': JSON.stringify({
-        snapshotId: 'snap-runtime-recovery',
-        pageRegistry: { pages: {} },
-        vfsFiles: {},
-        meta: { source: 'wizard' },
-      }),
-      [PUBLISHED_RUNTIME_METADATA_PATH]: JSON.stringify(runtime),
-    });
-
-    expect(prepared['/unison/publishedRuntime.ts']).toContain('PUBLISHED_RUNTIME_CONFIG');
-    expect(prepared['/unison/publishedRuntime.ts']).toContain('site-runtime-recovery');
-    expect(prepared[PUBLISHED_RUNTIME_MODULE_PATH]).toBeUndefined();
-  });
-
-  it('still fails closed when both the published runtime module and contract are missing', () => {
-    expect(() => prepareSandpackFiles({
-      '/src/App.tsx': "import { useSectionData } from './components/catalogHydration'; export default function App() { useSectionData('featured'); return <main>Catalog</main>; }",
-      '/src/components/catalogHydration.ts': "import { PUBLISHED_RUNTIME_CONFIG } from '../unison/publishedRuntime'; export const useSectionData = (_id: string) => PUBLISHED_RUNTIME_CONFIG.siteId;",
-      '/src/index.css': ':root { --primary: 221 83% 53%; }',
-      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
-      '/.unison/site-bundle-snapshot.json': JSON.stringify({
-        snapshotId: 'snap-runtime-missing',
-        pageRegistry: { pages: {} },
-        vfsFiles: {},
-        meta: { source: 'wizard' },
-      }),
-    })).toThrow(/missing local module.*publishedRuntime/i);
-  });
-
   it('restores canonical shared wizard chrome instead of synthesizing empty modules', () => {
     const files = {
       '/src/App.tsx': [
@@ -123,25 +72,6 @@ describe('wizard VFS integrity', () => {
     expect(() => prepareSandpackFiles(files)).toThrow(/missing local module.*MissingPortfolioGrid/i);
   });
 
-  it('rejects conflicting canonical and root aliases instead of overwriting by iteration order', () => {
-    expect(() => prepareSandpackFiles({
-      '/src/App.tsx': 'export default function App() { return <main>Canonical app</main>; }',
-      '/App.tsx': 'export default function App() { return <main>Shadow app</main>; }',
-      '/src/index.css': ':root { --primary: 221 83% 53%; }',
-    })).toThrow(/both map to Sandpack module "\/App\.tsx"/i);
-  });
-
-  it('deduplicates identical canonical and root aliases safely', () => {
-    const app = 'export default function App() { return <main>Same app</main>; }';
-    const prepared = prepareSandpackFiles({
-      '/src/App.tsx': app,
-      '/App.tsx': app,
-      '/src/index.css': ':root { --primary: 221 83% 53%; }',
-    });
-
-    expect(prepared['/App.tsx']).toContain('Same app');
-  });
-
   it('rejects unbound JSX components before the runtime can render placeholder labels', () => {
     const files = {
       '/src/App.tsx': 'export default function App() { return <main><MissingPortfolioGrid /></main>; }',
@@ -196,39 +126,5 @@ describe('wizard VFS integrity', () => {
 
     expect(previewResult['/App.tsx']).toContain('Cache reuse check');
     expect(previewResult['/launch-metadata.json']).toBeUndefined();
-  });
-
-  it('resolves aliases, absolute src paths, re-exports, and JSON modules after flattening', () => {
-    const files = {
-      '/src/App.tsx': [
-        "import Home from '@/pages/Home';",
-        "import settings from '/src/data/settings.json';",
-        "export { Card } from '@/components/Card';",
-        'export default function App() { return <Home title={settings.title} />; }',
-      ].join('\n'),
-      '/src/pages/Home.tsx': [
-        "import { Card } from '/src/components/Card';",
-        'export default function Home({ title }: { title: string }) { return <Card>{title}</Card>; }',
-      ].join('\n'),
-      '/src/components/Card.tsx': 'export function Card({ children }: { children: React.ReactNode }) { return <section>{children}</section>; }',
-      '/src/data/settings.json': JSON.stringify({ title: 'Resolved preview' }),
-      '/src/index.css': ':root { --primary: 221 83% 53%; }',
-      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
-      '/.unison/site-bundle-snapshot.json': JSON.stringify({
-        snapshotId: 'snap_module_resolution',
-        pageRegistry: { pages: {} },
-        vfsFiles: {},
-        meta: { source: 'wizard' },
-      }),
-    };
-
-    const prepared = prepareSandpackFiles(files);
-
-    expect(prepared['/data/settings.json']).toContain('Resolved preview');
-    expect(prepared['/App.tsx']).toContain("from './pages/Home'");
-    expect(prepared['/App.tsx']).toContain("from './components/Card'");
-    expect(prepared['/App.tsx']).not.toContain('@/');
-    expect(prepared['/pages/Home.tsx']).toContain("from '../components/Card'");
-    expect(prepared['/pages/Home.tsx']).not.toContain('/src/');
   });
 });

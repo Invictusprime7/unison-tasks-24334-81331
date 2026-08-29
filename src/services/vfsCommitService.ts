@@ -29,19 +29,13 @@ import {
   type CommitResult as CanonicalCommitResult,
   type CommitSource as CanonicalCommitSource,
 } from '@/platform/core/commitToPipeline';
-import { isSurgicalPatch } from '@/platform/core/surgicalProjection';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import type { RuntimeManifest } from '@/platform/core/runtimeManifest';
 import type { PlaygroundState } from '@/platform/core/playground';
 import type { CompiledContract } from '@/platform/core/contractCompiler';
 import type { ThemeTokens } from '@/sections/types';
 import { PreviewGate, PublishGate, type GateVerdict } from '@/platform/core/gates';
-import { hasFatalCompileErrors } from './compileSafeGate';
-import {
-  runFullPreflight,
-  sealedPreflightVerdict,
-  type RunFullPreflightResult,
-} from '@/services/runFullPreflight';
+import { runFullPreflight } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
 import { evaluateElementReadiness, type ElementReadinessReport } from '@/services/elementReadinessEvaluator';
 import { executeBackendOps, type BackendOpExecutionReport } from '@/services/backendOpExecutor';
@@ -110,11 +104,7 @@ export interface CommitMutationInput {
       siteBundleSnapshot: SiteBundleSnapshot;
       runtimeManifest: RuntimeManifest;
       playground?: PlaygroundState;
-      /** Final preflight already run before the Wizard snapshot was sealed. */
-      preflightResult?: RunFullPreflightResult;
     };
-    /** Cancels redirect-critical database work when the launch stage expires. */
-    signal?: AbortSignal;
   };
 }
 
@@ -228,11 +218,6 @@ function sanitizePreviewArtifacts(contents: string): string {
 export async function commitMutation(
   input: CommitMutationInput,
 ): Promise<CommitMutationResult> {
-  if (input.options?.signal?.aborted) {
-    throw input.options.signal.reason instanceof Error
-      ? input.options.signal.reason
-      : new Error('Canonical commit was cancelled.');
-  }
   const diagnostics: CommitDiagnostic[] = [];
   const log = (
     stage: string,
@@ -292,47 +277,13 @@ export async function commitMutation(
   if (reviewedArtifact) {
     log('canonical', 'info', 'accepted exact user-reviewed wizard artifact; regeneration skipped');
   } else {
-    // Classification, not a bypass: a file-only patch that touches paths the
-    // snapshot already registers is projected onto that snapshot instead of
-    // re-running Stage 4b (which needs wizard-grade inputs and throws when
-    // they drifted on a Lane A/Lane B generated draft).
-    const snapshotForCanonical =
-      presentationSnapshot ?? (input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined) ?? null;
-    const changedPaths = patch.fileOps.map((op) => op.path);
-    const surgical =
-      input.source === 'ai-builder'
-      && !patch.presentationOps?.length
-      && isSurgicalPatch(snapshotForCanonical, changedPaths);
-    const canonicalSource: CanonicalCommitSource = surgical ? 'surgical-edit' : toCanonicalSource(input.source);
-    if (surgical) {
-      log('canonical', 'info', 'routing patch through surgical-edit projection (no regeneration)', changedPaths);
-    }
-    let canonicalError: unknown = null;
     try {
       canonicalResult = commitToPipeline(
-        buildCanonicalInput(input, workingFiles, snapshotForCanonical),
-        canonicalSource,
+        buildCanonicalInput(input, workingFiles, presentationSnapshot),
+        toCanonicalSource(input.source),
       );
     } catch (err) {
-      canonicalError = err;
-      if (surgical && input.current.playground) {
-        // Surgical projection refused (structural drift) — fall back to the
-        // regenerating path once before rejecting the patch.
-        log('canonical', 'warn', 'surgical projection refused; retrying via playground recompile', String(err));
-        try {
-          canonicalResult = commitToPipeline(
-            buildCanonicalInput(input, workingFiles, snapshotForCanonical),
-            toCanonicalSource(input.source),
-          );
-          canonicalError = null;
-        } catch (retryErr) {
-          canonicalError = retryErr;
-        }
-      }
-    }
-    if (canonicalError) {
-      const detail = canonicalError instanceof Error ? canonicalError.message : String(canonicalError);
-      log('canonical', 'error', 'canonical pipeline threw', detail);
+      log('canonical', 'error', 'canonical pipeline threw', String(err));
       return finalize({
         input,
         status: 'rejected',
@@ -345,13 +296,13 @@ export async function commitMutation(
         publishBlockers: [{
           source: 'preview',
           code: 'canonical-pipeline-threw',
-          message: detail || 'Canonical pipeline failed; nothing safe to publish',
+          message: 'Canonical pipeline failed; nothing safe to publish',
         }],
         vfsHash: await hashVfsFiles(workingFiles),
         backendOpsApplied: [],
         diagnostics,
         parentRevisionId: input.identity.revisionId || null,
-        rejectMessage: detail || 'canonical pipeline threw — see diagnostics',
+        rejectMessage: 'canonical pipeline threw — see diagnostics',
       });
     }
   }
@@ -378,23 +329,13 @@ export async function commitMutation(
   const requirePreview = input.options?.requirePreviewPass !== false;
   const requireReadiness = input.options?.requireReadinessPass !== false;
 
-  // Wizard launch already ran this exact final preflight in a cancellable
-  // worker before sealing its reviewed artifact. Reuse that verdict so commit
-  // cannot repeat the CPU-heavy pass on the browser's main thread.
-  let preflight = reviewedArtifact?.preflightResult
-    ? { ...reviewedArtifact.preflightResult, files }
-    : input.source === 'wizard-launch'
-    // Wizard bundles arrive sealed: acceptance ran once, at generation time.
-    // Re-running preflight here would be a second authoring authority over the
-    // same files, which is exactly what left fragments behind before.
-    ? sealedPreflightVerdict(files)
-    : runFullPreflight(files, {
-        siteBundleSnapshot: (snapshotForPersistence as { meta?: unknown } | null) as
-          | import('@/platform/core/canonicalPipeline').SiteBundleSnapshot
-          | null,
-        industry: input.options?.industry,
-        brand: input.options?.businessName,
-      });
+  let preflight = runFullPreflight(files, {
+    siteBundleSnapshot: (snapshotForPersistence as { meta?: unknown } | null) as
+      | import('@/platform/core/canonicalPipeline').SiteBundleSnapshot
+      | null,
+    industry: input.options?.industry,
+    brand: input.options?.businessName,
+  });
   files = preflight.files;
   if (input.source === 'wizard-launch') {
     snapshotForPersistence = mergeWizardLaunchSnapshot(
@@ -403,31 +344,10 @@ export async function commitMutation(
     );
   }
 
-  // Gate 1/8: no unresolved compile error may become canonical runtime state.
-  // Repair layers have already run; anything still marked as an error here
-  // would fail in the exact candidate filesystem mounted by Sandpack.
   const previewOk =
     preflight.stages.earlyRepair !== 'failed' &&
-    preflight.stages.finalRepair !== 'failed' &&
-    !hasFatalCompileErrors(preflight.compileDiagnostics ?? []);
+    preflight.stages.finalRepair !== 'failed';
   log('preflight', previewOk ? 'info' : 'warn', 'preflight stages', preflight.stages);
-
-  // Compile-safe acceptance provenance: which lane/stage produced which defect.
-  if ((preflight.compileDiagnostics?.length ?? 0) > 0) {
-    log(
-      'compileSafe',
-      preflight.stages.compileSafe.status === 'accepted' ? 'info' : 'warn',
-      `compile-safe ${preflight.stages.compileSafe.status}: ${preflight.stages.compileSafe.summary}`,
-      preflight.compileDiagnostics.slice(0, 25).map((d) => ({
-        path: d.pagePath,
-        lane: d.sourceLane,
-        stage: d.validationStage,
-        code: d.diagnosticCode,
-        severity: d.severity,
-        line: d.line,
-      })),
-    );
-  }
 
   const gate = canonicalResult?.gate ?? null;
 
@@ -497,7 +417,6 @@ export async function commitMutation(
       vfsFiles: files,
       provisionedCapabilities,
       businessId: input.identity.businessId,
-      signal: input.options?.signal,
     });
     elementPreviewBlocked = elementReadiness.summary.previewBlocked;
     elementPublishBlocked = elementReadiness.summary.publishBlocked;
@@ -540,8 +459,7 @@ export async function commitMutation(
     }
     const previewOk2 =
       preflight.stages.earlyRepair !== 'failed' &&
-      preflight.stages.finalRepair !== 'failed' &&
-      !hasFatalCompileErrors(preflight.compileDiagnostics ?? []);
+      preflight.stages.finalRepair !== 'failed';
     const readinessOk2 =
       (!gate || gate.previewReady) &&
       (!previewVerdict || previewVerdict.ok) &&
@@ -717,64 +635,25 @@ export async function commitMutation(
 // Internals
 // ----------------------------------------------------------------------------
 
-/**
- * Recover the *sealed* theme identity that already exists in the working VFS.
- * This is not a re-derivation or a default: `/.unison/site-bundle-snapshot.json`
- * is written by Stage 4b and carries the authoritative seal. Reading it lets a
- * revived draft (whose in-memory snapshot was never rehydrated) keep committing
- * against its original theme instead of throwing ThemeSeedError forever.
- */
-function readSealedThemePresetId(
-  files: Record<string, string>,
-): { themePresetId?: string; templateId?: string } {
-  const raw = files['/.unison/site-bundle-snapshot.json'];
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw) as SiteBundleSnapshot;
-    const meta = parsed?.meta as (SiteBundleSnapshot['meta'] & {
-      seal?: { themePresetId?: string; templateId?: string };
-    }) | undefined;
-    return {
-      themePresetId:
-        meta?.themePresetId
-        || meta?.seal?.themePresetId
-        || meta?.themeInjection?.presetId
-        || undefined,
-      templateId: meta?.templateId || meta?.seal?.templateId || undefined,
-    };
-  } catch {
-    return {};
-  }
-}
-
 function buildCanonicalInput(
   input: CommitMutationInput,
   workingFiles: Record<string, string>,
   snapshotOverride?: SiteBundleSnapshot | null,
 ): CanonicalCommitInput {
   const snapshot = snapshotOverride ?? input.current.siteBundleSnapshot as SiteBundleSnapshot | null | undefined;
-  const sealed = readSealedThemePresetId(workingFiles);
-  const themePresetId =
-    input.options?.themePresetId
-    ?? snapshot?.meta?.themePresetId
-    ?? sealed.themePresetId
-    ?? undefined;
   return {
     selections: input.options?.selections,
     playground: input.current.playground,
     existingVfsFiles: workingFiles,
     businessName: input.options?.businessName,
     industry: input.options?.industry,
-    selectedTemplateId:
-      input.options?.selectedTemplateId ?? snapshot?.meta?.templateId ?? sealed.templateId ?? undefined,
-    siteBundleSnapshot: snapshot ?? null,
-    selectedThemeId: input.options?.selectedThemeId ?? themePresetId,
-    themePresetId,
+    selectedTemplateId: input.options?.selectedTemplateId ?? snapshot?.meta?.templateId ?? undefined,
+    selectedThemeId: input.options?.selectedThemeId ?? snapshot?.meta?.themePresetId ?? undefined,
+    themePresetId: input.options?.themePresetId ?? snapshot?.meta?.themePresetId ?? undefined,
     themeTokens: input.options?.themeTokens ?? snapshot?.themeTokens,
     compiledContract: input.options?.compiledContract,
   };
 }
-
 
 function applyPresentationOps(
   snapshot: SiteBundleSnapshot | null | undefined,
@@ -1030,7 +909,7 @@ async function finalize(args: {
   const dryRun = input.options?.dryRun === true;
 
   if (!dryRun) {
-    let commitRequest = (supabase.rpc as any)('commit_canonical_site_revision', {
+    const { data, error } = await (supabase.rpc as any)('commit_canonical_site_revision', {
       p_project_id: input.identity.projectId,
       p_business_id: input.identity.businessId,
       p_draft_id: input.identity.draftId,
@@ -1050,10 +929,6 @@ async function finalize(args: {
       p_vfs_hash: vfsHash,
       p_active_page_path: input.current.activePagePath ?? null,
     });
-    if (input.options?.signal) {
-      commitRequest = commitRequest.abortSignal(input.options.signal);
-    }
-    const { data, error } = await commitRequest;
     if (error || typeof data !== 'string' || !data) {
       const detail = error?.message || 'atomic commit returned no revision id';
       diagnostics.push({
@@ -1201,17 +1076,6 @@ export async function loadProjectedRevisionForDraft(
     throw new Error(`[VFSCommitService] canonical draft ${draftId} was not found for project ${projectId}`);
   }
   if (typeof draft.last_revision_id !== 'string' || !draft.last_revision_id) {
-    // Recovery: a draft can lose its pointer when the very first post-launch
-    // commit was rejected (the pointer only advances on `committed`). Rather
-    // than declaring the wizard site lost, project the newest usable revision
-    // for this draft so the builder can still open and re-commit.
-    const recovered = await loadRecoveryRevisionForDraft(projectId, draftId);
-    if (recovered) {
-      console.warn(
-        `[VFSCommitService] draft ${draftId} had no committed projection; recovered revision ${recovered.id} (${recovered.status})`,
-      );
-      return recovered;
-    }
     throw new Error(`[VFSCommitService] canonical draft ${draftId} has no committed revision projection`);
   }
 
@@ -1225,88 +1089,10 @@ export async function loadProjectedRevisionForDraft(
     .maybeSingle();
   if (revisionError) throw revisionError;
   if (!revision) {
-    const recovered = await loadRecoveryRevisionForDraft(projectId, draftId);
-    if (recovered) return recovered;
     throw new Error(`[VFSCommitService] draft ${draftId} points to an invalid committed revision`);
   }
   return mapRevisionRow(revision as Record<string, unknown>);
 }
-
-/**
- * Score a candidate revision for revival. Highest score wins; ties break on
- * recency. Sealed rows (carrying `/.unison/site-bundle-snapshot.json`) come
- * first because they still hold the authoritative wizard output — later
- * rejected autosaves are often partial mirrors of the same draft.
- */
-export function scoreRevivalRevision(row: {
-  status?: unknown;
-  vfs_files?: unknown;
-  site_bundle_snapshot?: unknown;
-}): number {
-  const files = (row.vfs_files as Record<string, string>) ?? {};
-  const fileCount = Object.keys(files).length;
-  if (fileCount === 0) return -1;
-  const snapshot = (row.site_bundle_snapshot ?? {}) as Record<string, unknown>;
-  let score = 0;
-  if (row.status === 'committed') score += 4000;
-  if (files['/.unison/site-bundle-snapshot.json']) score += 2000;
-  if (Object.keys(snapshot).length > 0) score += 1000;
-  return score + Math.min(fileCount, 999);
-}
-
-function snapshotFromRevisionFiles(
-  files: Record<string, string>,
-  persistedSnapshot: unknown,
-): unknown {
-  const persisted = persistedSnapshot && typeof persistedSnapshot === 'object'
-    ? persistedSnapshot as Record<string, unknown>
-    : {};
-  if (Object.keys(persisted).length > 0) return persisted;
-  const raw = files['/.unison/site-bundle-snapshot.json'];
-  if (!raw) return persistedSnapshot;
-  try {
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return persistedSnapshot;
-  }
-}
-
-/**
- * Best-effort projection for a draft whose committed pointer is missing.
- * Returns the highest-scoring revision that still carries VFS files so a
- * previously generated site is never stranded behind a rejected autosave.
- */
-async function loadRecoveryRevisionForDraft(
-  projectId: string,
-  draftId: string,
-): Promise<LoadedRevision | null> {
-  const { data, error } = await supabase
-    .from('site_revisions')
-    .select('*')
-    .eq('project_id', projectId)
-    .eq('draft_id', draftId)
-    .order('created_at', { ascending: false })
-    .limit(50);
-  if (error || !Array.isArray(data) || data.length === 0) return null;
-  const rows = data as Record<string, unknown>[];
-  let best: Record<string, unknown> | null = null;
-  let bestScore = 0;
-  for (const row of rows) {
-    const score = scoreRevivalRevision(row);
-    // rows arrive newest-first, so strict `>` keeps the newest of equal scores
-    if (score > 0 && score > bestScore) {
-      best = row;
-      bestScore = score;
-    }
-  }
-  if (!best) return null;
-  const files = (best.vfs_files as Record<string, string>) ?? {};
-  return mapRevisionRow({
-    ...best,
-    site_bundle_snapshot: snapshotFromRevisionFiles(files, best.site_bundle_snapshot),
-  });
-}
-
 
 /**
  * Move D — publish flow loads the latest revision whose publish gate +

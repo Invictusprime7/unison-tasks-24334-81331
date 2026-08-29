@@ -55,8 +55,6 @@ const supabase = supabaseClient as any;
 import { toast } from 'sonner';
 import type { BusinessSystemType } from '@/data/templates/types';
 import type { SystemsBuildContext } from '@/types/systemsBuildContext';
-import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
-import { renderSnapshotContextForPrompt } from '@/utils/snapshotAIContext';
 import { generateLibraryPrompt } from '@/data/siteElementsLibrary';
 import { analyzeReactSite, resolveEditTarget } from '@/utils/reactSiteAnalysis';
 import { buildComponentBehaviorMap, formatBehaviorMapForPrompt } from '@/services/aiVFSOrchestrator';
@@ -415,13 +413,6 @@ export interface VFSEdit {
   type: 'create' | 'modify' | 'delete';
   linesChanged?: number;
   preview?: string;
-  /** Full AI-authored file contents so the chat can render the file live. */
-  contents?: string;
-  /** Contents before the edit (when the file already existed) — powers the diff toggle. */
-  previousContents?: string;
-  /** Outcome reported by the commit gate for this apply. */
-  status?: 'applied' | 'held' | 'rejected' | 'pending';
-  statusReason?: string;
 }
 
 export interface IframeError {
@@ -466,8 +457,6 @@ interface AIBuilderPanelProps {
   uiFoundation?: GeneratedUiManifest | null;
   /** Snapshot-owned deterministic layout, interaction, and motion choices. */
   designIntervention?: WizardDesignIntervention | null;
-  /** Sealed SiteBundleSnapshot for the active draft — makes surgical edits snapshot-aware. */
-  siteBundleSnapshot?: SiteBundleSnapshot | null;
   /** Current VFS file list + dependency summary for AI awareness */
   vfsContext?: string | null;
   /** Full VFS file map for component-level site analysis */
@@ -563,7 +552,6 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   wizardSeed,
   uiFoundation,
   designIntervention,
-  siteBundleSnapshot,
   vfsContext,
   vfsFiles,
   onApplyToVFS,
@@ -1238,12 +1226,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         return lines.length > 1 ? lines.join('\n') : '';
       })();
 
-      // Snapshot runtime contract — the wizard-generated site the AI is editing.
-      const snapshotContextBlock = renderSnapshotContextForPrompt(siteBundleSnapshot);
-
       // Build rich context block for full-generation requests
       const contextLines: string[] = [];
-      if (snapshotContextBlock) contextLines.push(`\n${snapshotContextBlock}`);
       if (systemType) contextLines.push(`Business type: ${systemType}`);
       if (templateName) contextLines.push(`Template: ${templateName}`);
       if (userDesignProfile) {
@@ -1897,11 +1881,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         }
       }
 
-      // Per-turn apply outcome, surfaced on each file card in the chat.
-      let editApplyStatus: { status: VFSEdit['status']; reason?: string } = { status: 'pending' };
-
       // Handle multi-file output — prefer orchestrator, fall back to legacy callback
-
       if (multiFileOutput) {
         liveStep('validating', `Multi-file output: ${Object.keys(multiFileOutput).length} files detected`, Object.keys(multiFileOutput).join(', '));
         console.log('[AIBuilderPanel] Multi-file output detected:', Object.keys(multiFileOutput));
@@ -1941,12 +1921,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         }) : null;
 
         if (scopeBlockReason) {
-          editApplyStatus = { status: 'held', reason: scopeBlockReason };
           console.warn('[AIBuilderPanel] SCOPE BLOCK:', scopeBlockReason);
           setHeldFiles({ files: normalizedFiles, reason: `Edit held back: ${scopeBlockReason}` });
           toast.warning(`⚠️ Edit held for review: ${scopeBlockReason}`);
         } else if (shouldBlock) {
-          editApplyStatus = { status: 'held', reason: 'Flagged for review by the patch reviewer.' };
           void recordRunOutcome(envelopeRunId, 'rejected', { note: 'requires-approval' });
           console.warn('[AIBuilderPanel] Patch requires approval — NOT auto-applying');
           setHeldFiles({
@@ -1978,14 +1956,12 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               },
             );
             if (applyOutcome.success) {
-              editApplyStatus = { status: 'applied' };
               liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
               vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
               const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
               toast.success(`✅ Multi-file project applied${approvalNote}`);
             } else {
               const applyError = applyOutcome.errors?.[0] ?? 'The VFS rejected the generated files.';
-              editApplyStatus = { status: 'rejected', reason: applyError };
               liveStep('error', 'AI edit was not applied', applyError);
               vfsEventBus.emit('ai:apply:error', { message: applyError, source: 'multi-file' });
               toast.error('AI edit was not applied', { description: applyError, duration: 8000 });
@@ -2016,31 +1992,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // to avoid overwriting the entire App.tsx with a single component's code.
       const singleFilePath = resolvedTargetFile || defaultTargetFile || '/src/App.tsx';
 
-      // Determine VFS edits from response — carry full contents so the chat can
-      // render each AI-edited file live (with a before/after diff toggle).
-      const readExistingFile = (path: string): string | undefined => {
-        const raw = vfsFiles?.[path] as unknown;
-        if (typeof raw === 'string') return raw;
-        if (raw && typeof raw === 'object' && typeof (raw as { code?: string }).code === 'string') {
-          return (raw as { code: string }).code;
-        }
-        return undefined;
-      };
-
+      // Determine VFS edits from response
       const edits: VFSEdit[] = [];
       if (multiFileOutput) {
         Object.keys(multiFileOutput).forEach(path => {
-          const contents = multiFileOutput![path];
-          const previousContents = readExistingFile(path);
           edits.push({
             path,
-            type: previousContents === undefined ? 'create' : 'modify',
-            linesChanged: contents.split('\n').length,
-            preview: contents.substring(0, 200),
-            contents,
-            previousContents,
-            status: editApplyStatus.status,
-            statusReason: editApplyStatus.reason,
+            type: 'create',
+            linesChanged: multiFileOutput![path].split('\n').length,
+            preview: multiFileOutput![path].substring(0, 200),
           });
         });
       } else if (generatedCode) {
@@ -2049,10 +2009,6 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           type: currentCode ? 'modify' : 'create',
           linesChanged: generatedCode.split('\n').length,
           preview: generatedCode.substring(0, 200),
-          contents: generatedCode,
-          previousContents: readExistingFile(singleFilePath) ?? (currentCode || undefined),
-          status: editApplyStatus.status,
-          statusReason: editApplyStatus.reason,
         });
       }
 

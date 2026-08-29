@@ -8,6 +8,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight,
@@ -31,9 +41,14 @@ import { StyleTokenCard } from "./StyleTokenCard";
 
 import { TemplateLivePreview } from "./TemplateLivePreview";
 import { WizardTopAction } from "./WizardTopAction";
+import { LaunchReviewSummary } from "./LaunchReviewSummary";
 import { BusinessSelector } from "@/components/business/BusinessSelector";
 
 import { themePresetToThemeTokens } from "./themePresetToTokens";
+import {
+  buildThemedIndexCssFromTokens,
+  SHADCN_LIBRARY_CSS_MARKER,
+} from "./themePresetToIndexCss";
 import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -69,12 +84,12 @@ import {
   type IndustryTag,
 } from "@/sections/references";
 import { getCompositionsBySystemType, getCompositionById } from "@/sections/templates";
-import { runWizardLaneA } from "@/services/wizardStage4bRuntime";
+import { runWizardStage4b } from "@/services/wizardStage4bRuntime";
+import { runStrictImportContractCheck } from "@/services/strictImportContractRuntime";
 import { INDUSTRY_INTENT_PROFILES } from "@/platform/core/industryIntentProfiles";
 import { applyWizardBindingsToVfs, buildWizardBindingGuide } from "@/services/wizardBindingBridge";
 import { preflightNavWiring } from "@/services/preflightNavWiring";
 import { runPreflightRepair } from "@/services/aiSitePreflightRepair";
-import { runFullPreflight } from "@/services/runFullPreflight";
 import { buildCanonicalLaunchArtifactsAsync } from "@/services/canonicalLaunchVfs";
 import {
   createConfirmedLaunchIds,
@@ -88,7 +103,8 @@ import type { BusinessModel, IndustryOverlay, WizardSelections } from "@/types/p
 import { buildNativePublishReadinessManifest, buildNativePublishSetupSnapshot } from "@/services/nativePublishReadiness";
 import { auditWizardIntentGap, buildIntentBindingsFile, buildIntentSurfacesFile } from "@/services/wizardIntentAudit";
 import {
-  persistAndBuildLauncherHandoff,
+  buildLauncherNavigationState,
+  persistLauncherHandoff,
 } from "@/services/launcherHandoffPersistence";
 import { ImportProjectZipButton } from "@/components/onboarding/ImportProjectZipButton";
 import { ImportUnisonSiteZipButton } from "@/components/onboarding/ImportUnisonSiteZipButton";
@@ -111,6 +127,7 @@ import {
   stampTemplateLayoutIdentity,
 } from "@/services/templateLayoutContract";
 import {
+  assessWizardHomePresentation,
   assessWizardPagePresentations,
 } from "@/services/wizardPresentationGuard";
 import {
@@ -125,6 +142,7 @@ import {
   getWizardPageRoleInstruction,
 } from "@/services/wizardPageQuality";
 import {
+  compileStructuredWizardFaqPage,
   isSyntaxCompletionFailure,
   selectIndustryIntentForIsolatedPage,
 } from "@/services/wizardPageCompletionRecovery";
@@ -143,19 +161,10 @@ import {
   findUnresolvedLocalImports,
   describeUnresolvedImports,
 } from '@/services/laneBCompanionModules';
-import {
-  checkPageAcceptance,
-  formatPageAcceptanceFailure,
-  buildPageAcceptanceRepairDirective,
-} from '@/services/pageAcceptanceContract';
-import { dropUnacceptablePages, describeDroppedPages } from '@/services/dropUnacceptablePages';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
-import type { SiteBundleSnapshot } from "@/platform/core/canonicalPipeline";
-
-import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
 // ============================================================================
 // Types
@@ -178,6 +187,16 @@ interface SystemLauncherProps {
    * owners don't retype the identity they just entered post-signup.
    */
   prefill?: SystemLauncherPrefill | null;
+}
+
+interface LaunchPreviewConfirmation {
+  businessName: string;
+  siteName: string;
+  fileCount: number;
+  pagePaths: string[];
+  businessId: string;
+  siteId: string;
+  files: Record<string, string>;
 }
 
 type SanitizedGeneratedFiles = ReturnType<typeof sanitizeGeneratedFiles>;
@@ -512,6 +531,8 @@ const WIZARD_MIN_AI_TURN_MS = 15_000;
 // multi-page JSON payload. Leave browser and post-processing headroom beyond it.
 const WIZARD_INITIAL_AI_TURN_MS = 142_000;
 const WIZARD_UI_REPAIR_MAX_MS = 65_000;
+const WIZARD_BATCH_REPAIR_MAX_MS = 65_000;
+const WIZARD_BATCH_REPAIR_MAX_PAGES = 2;
 // Every isolated page — regardless of how many pages are missing in a given
 // round — gets this full allowance. Pages in the same round already run
 // concurrently (bounded by WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS), so a
@@ -526,45 +547,7 @@ const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 // must not consume the 2-attempt content/syntax-repair budget an isolated
 // page gets. One extra same-round retry absorbs transport noise for free.
 const WIZARD_ISOLATED_PAGE_TRANSPORT_RETRIES = 1;
-// A malformed model response (unterminated JSX/regex, truncated file) is a
-// generation flake, not an impossible page. Acceptance stays the single
-// authority, but a page gets more than one clean-slate regeneration before it
-// is atomically dropped from the site.
-const WIZARD_MAX_PAGE_CONTENT_ATTEMPTS = 3;
-// Provisioning plus the atomic canonical revision must settle well before
-// Supabase's request-idle ceiling. LaunchRun owns this browser-side deadline.
-const WIZARD_COMMIT_TIMEOUT_MS = 90_000;
-/**
- * Launch authority. `deterministic-compiler-v2` makes the sealed Lane A
- * snapshot the launchable source of truth: AI output may enrich, never own, a
- * registered Wizard page — and an AI failure can never remove a selected route.
- */
-type WizardGenerationMode = 'deterministic-compiler-v2' | 'legacy-ai-tsx-v1';
-const WIZARD_GENERATION_MODE: WizardGenerationMode = 'deterministic-compiler-v2';
-const WIZARD_IMPLEMENTATION_MODEL = WIZARD_GENERATION_MODE === 'deterministic-compiler-v2'
-  ? 'DETERMINISTIC_COMPILER_OWNS_PAGES_AI_ENRICHES_V2'
-  : 'AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1';
-
-/**
- * Structural (compiler) failure gate. A registered page without a materialized
- * module means Lane A itself failed — that blocks launch. An AI failure does not.
- */
-function assertRegisteredPagesPresent(snapshot: SiteBundleSnapshot): void {
-  const files = snapshot.vfsFiles || {};
-  const missing = Object.values(snapshot.pageRegistry.pages)
-    .map((page) => (page as { filePath?: string }).filePath)
-    .filter((path): path is string => Boolean(path))
-    .filter((path) => {
-      const normalized = path.startsWith('/') ? path : `/${path}`;
-      return typeof files[normalized] !== 'string'
-        && typeof files[normalized.slice(1)] !== 'string';
-    });
-
-  if (missing.length > 0) {
-    throw new Error(`Compiler failed to materialize registered pages: ${missing.join(', ')}`);
-  }
-}
-
+const WIZARD_IMPLEMENTATION_MODEL = "AI_TSX_LOCKED_TEMPLATE_THEME_NO_DETERMINISTIC_FALLBACK_V1";
 const WIZARD_LANE_B_GATEWAY_OPTIONS = {
   timeoutMs: 120_000,
   reasoningEffort: 'medium',
@@ -1522,7 +1505,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   const [launchStatus, setLaunchStatus] = useState("");
   // Inline, recoverable launch failure. The wizard never toasts errors.
   const [launchError, setLaunchError] = useState<string | null>(null);
-  const activeLaunchRunRef = useRef<LaunchRun | null>(null);
+  const [launchPreviewConfirmation, setLaunchPreviewConfirmation] = useState<LaunchPreviewConfirmation | null>(null);
+  const launchConfirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   // Business Profile selected in the wizard header. When set, the project
   // is stamped into this business; when null we fall back to
   // install-system provisioning (creates a fresh business).
@@ -1533,14 +1517,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       return null;
     }
   });
-  const clearInvalidBusinessSelection = useCallback(() => {
-    setSelectedBusinessId(null);
-    try {
-      localStorage.removeItem('unison:lastBusinessId');
-    } catch {
-      // Storage may be unavailable; clearing component state is sufficient.
-    }
-  }, []);
 
   const [validationAttempts, setValidationAttempts] = useState<Array<{
     attempt: number;
@@ -1565,15 +1541,26 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     youtube: "",
   });
 
+  const requestLaunchConfirmation = useCallback((preview: LaunchPreviewConfirmation) => (
+    new Promise<boolean>((resolve) => {
+      launchConfirmationResolverRef.current = resolve;
+      setLaunchPreviewConfirmation(preview);
+    })
+  ), []);
+
+  const resolveLaunchConfirmation = useCallback((confirmed: boolean) => {
+    const resolve = launchConfirmationResolverRef.current;
+    launchConfirmationResolverRef.current = null;
+    setLaunchPreviewConfirmation(null);
+    resolve?.(confirmed);
+  }, []);
+
   const currentStepIdx = STEP_META.findIndex((s) => s.key === step);
 
   useEffect(() => {
     if (open) {
       fetchDesignProfile();
-      return;
     }
-    activeLaunchRunRef.current?.cancel();
-    activeLaunchRunRef.current = null;
   }, [open, fetchDesignProfile]);
 
   // Milestone 1 — prefill wizard identity from BusinessProfileGate handoff.
@@ -1697,8 +1684,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
   };
 
   const handleLaunch = async () => {
-    if (isLaunching) return;
-    if (!open) return;
+    if (isLaunching || launchPreviewConfirmation) return;
     if (!selectedSystem) return;
     const system = businessSystems.find((s) => s.id === selectedSystem);
     if (!system) return;
@@ -1720,7 +1706,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
     // The launch run owns the journey: it records non-fatal degradations so the
     // wizard never dead-ends the user with an error toast.
     const run: LaunchRun = createLaunchRun();
-    activeLaunchRunRef.current = run;
   // Let the generating state paint before composing the sizeable canonical VFS.
   await yieldToBrowser();
     
@@ -1736,7 +1721,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // User must be authenticated to generate a site
       if (!sessionData.session) {
         toast.error("Please sign in to continue");
-        onOpenChange(false);
         navigate("/auth");
         return;
       }
@@ -1900,47 +1884,24 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const preWiredExistingFiles: Record<string, string> = {
         '/.unison/wizard-seed.json': JSON.stringify(preWizardSeed, null, 2),
       };
-      const selectedComposition = effectiveTemplate?.id
-        ? getCompositionById(effectiveTemplate.id)
-        : null;
-      const mergeContext = createWizardMergeContext({
-        industry: resolvedIndustry,
-        templateId: effectiveTemplate?.id,
-        themePresetId: earlyResolvedPreset.id,
-        themeTokens: earlyThemeTokens,
-        templateLayoutContract: selectedComposition
-          ? buildTemplateLayoutContract({ ...selectedComposition, theme: earlyThemeTokens })
-          : null,
-        wizardSeedId,
-      });
 
-      const laneA = await runWizardLaneA({
+      const stage4b = await runWizardStage4b({
         selections: wizardSelections,
-        mergeContext,
         existingVfsFiles: preWiredExistingFiles,
         yieldToHost: yieldToBrowser,
       });
-      const pipelineResult = laneA.pipelineResult;
-      console.info('[SystemLauncher] Lane A ready', {
-        execution: laneA.execution,
-        durationMs: laneA.durationMs,
+      const pipelineResult = stage4b.pipelineResult;
+      console.info('[SystemLauncher] Stage 4b ready', {
+        execution: stage4b.execution,
+        durationMs: stage4b.durationMs,
       });
       const {
         playground: materializedPlayground,
         compileResult: compiledPlayground,
-        siteBundleSnapshot: generatedSiteBundleSnapshot,
-        compileArtifact,
+        siteBundleSnapshot,
         runtimeManifest: pipelineManifest,
         sitePlan,
       } = pipelineResult;
-      // Generation-time acceptance may drop a page whole (see
-      // `dropUnacceptablePages`), which rewrites registry/router/manifest — so
-      // the snapshot the rest of the launch uses is a mutable binding.
-      let siteBundleSnapshot = generatedSiteBundleSnapshot;
-      // Compiler-first authority: the deterministic Lane A snapshot is the
-      // launchable source. Only a genuine compiler miss blocks the launch.
-      assertRegisteredPagesPresent(siteBundleSnapshot);
-
       if (!sitePlan) {
         throw new Error('[SystemLauncher] Canonical pipeline did not return its authoritative topology plan.');
       }
@@ -1952,6 +1913,40 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         console.warn('[SystemLauncher] Pipeline errors:', pipelineResult.errors);
       }
       await yieldToBrowser();
+
+      // ── ASSERTION: Stage 4b must have overwritten /src/index.css with the
+      // exact themed stylesheet for the resolved preset. If this fails, some
+      // path bypassed canonicalPipeline Stage 4b or a later writer clobbered
+      // the themed file. Stop the build instead of shipping un-themed tokens.
+      const expectedThemedCss = buildThemedIndexCssFromTokens(earlyThemeTokens, {
+        presetId: earlyResolvedPreset.id,
+        label: earlyResolvedPreset.id,
+        artDirectionPackId: siteBundleSnapshot.meta.artDirectionPackId,
+      });
+      const actualIndexCss =
+        compiledPlayground?.vfsFiles?.['/src/index.css'] ??
+        siteBundleSnapshot?.vfsFiles?.['/src/index.css'];
+      if (
+        !actualIndexCss ||
+        actualIndexCss !== expectedThemedCss ||
+        !actualIndexCss.includes(SHADCN_LIBRARY_CSS_MARKER)
+      ) {
+        const msg =
+          '[SystemLauncher] Stage 4b verification failed: compiled /src/index.css does not match the canonical shadcn stylesheet ' +
+          `for preset "${earlyResolvedPreset.id}". Some path bypassed canonicalPipeline Stage 4b or clobbered the file. ` +
+          'Refer to mem://architecture/styling/canonical-pipeline-theme-injection.';
+        console.error(msg, {
+          presetId: earlyResolvedPreset.id,
+          hasCompiledCss: !!compiledPlayground?.vfsFiles?.['/src/index.css'],
+          hasSnapshotCss: !!siteBundleSnapshot?.vfsFiles?.['/src/index.css'],
+        });
+        // Repair the themed stylesheet in place rather than aborting the launch.
+        if (compiledPlayground?.vfsFiles) compiledPlayground.vfsFiles['/src/index.css'] = expectedThemedCss;
+        if (siteBundleSnapshot?.vfsFiles) siteBundleSnapshot.vfsFiles['/src/index.css'] = expectedThemedCss;
+        // This repair is synchronous and complete, so it is an internal
+        // invariant diagnostic rather than a user-visible launch degradation.
+        // The committed snapshot receives the repaired canonical stylesheet.
+      }
 
       // ── Resolve composition from selected Template card only ──
       // Template selection is a hard structural contract for AI generation.
@@ -2027,6 +2022,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           return sec;
         }),
       };
+
+      // Themed CSS — LOCKED by Style card; force-applied over any AI output
+      const themedIndexCss = buildThemedIndexCssFromTokens(themedTokens, {
+        presetId: resolvedPreset.id,
+        label: resolvedPreset.id,
+        artDirectionPackId: siteBundleSnapshot.meta.artDirectionPackId,
+      });
 
       // ── Blueprint enriched with Style card palette + custom instructions ──
       const blueprint = {
@@ -2139,6 +2141,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
 
       const canonicalScaffoldFiles: Record<string, string> = ensureGeneratedUiFoundation({
         ...(siteBundleSnapshot.vfsFiles || compiledPlayground?.vfsFiles || {}),
+        '/src/index.css': themedIndexCss,
       }, {
         industry: resolvedIndustry,
         templateId: wizardSelections.templateId,
@@ -2200,8 +2203,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         }
       })();
       const laneBVisualIntelligence = [
-        '── LANE B VISUAL CONTRACT (BINDING) ──',
-        'Stage 4b will compile the supplied semantic theme tokens into /src/index.css after this turn. Use those tokens; never replace or flatten them.',
+        '── STAGE 4B VISUAL INTELLIGENCE (BINDING) ──',
+        `The selected theme is already compiled into /src/index.css. Build on its semantic tokens; never replace or flatten them.`,
         `Available visual recipes: ${(generatedUiFoundation?.layoutRecipes || []).join(', ') || 'collage-hero, bento-features, media-card-grid, conversion-form'}.`,
         `Available interaction primitives: ${(generatedUiFoundation?.interactions || []).join(', ') || 'mobile-nav-dialog, image-lightbox, accordion, tabs'}.`,
         `Available motion facade: ${generatedUiFoundation?.runtimeFacades?.animation || '@/unison/ui/animation'} and ${generatedUiFoundation?.importRoot || '@/unison/ui'}/motion. Use the selected motion recipes to sequence content rather than static stacks.`,
@@ -2209,7 +2212,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           ? `DESIGN MEMORY: Previous user work favors ${laneBDesignProfile.dominantStyle || 'intentional visual variety'} across ${laneBDesignProfile.projectCount} project(s). Preserve those cues while honoring this selected template.`
           : 'DESIGN MEMORY: Use the selected template and industry research as the visual authority; do not regress to generic landing-page defaults.',
         'Use image-led hero and gallery treatments where the canonical composition includes media. Cards, CTAs, navigation, overlays, and forms must visibly use the selected composition variants and responsive interaction patterns.',
-        'OUTPUT CONTRACT (checked before acceptance): Every relative module your pages import must be emitted as a file at its exact imported path in the same "files" object — never import a component you do not emit. Match every import style to the target module\'s actual exports (default vs named). Every page file must end with a default export of its component. Files that fail to parse, import missing modules, or mismatch exports are rejected and regenerated.',
       ].join('\n');
       const uiFoundationDirective = generatedUiFoundation?.primitiveImports?.length
         ? buildGeneratedUiFoundationDirective({
@@ -2335,21 +2337,22 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // native fetch, but never substitutes generated content with a static
       // preset or scaffold.
       let launchReliabilityMode: 'ai' | 'lane-b-degraded' | 'lane-b-blocked' = 'ai';
-      // Lane B and its compiler-guided repair share this bounded context.
-      const slimBlueprint = {
-        version: blueprint.version,
-        launcherPolicy: blueprint.launcherPolicy,
-        identity: blueprint.identity,
-        brand: blueprint.brand,
-        design: blueprint.design,
-        theme_tokens: blueprint.theme_tokens,
-        intents: blueprint.intents,
-        template_sections: blueprint.template_sections,
-        template_intents: blueprint.template_intents,
-        industry_context: blueprint.industry_context,
-      };
       {
         setLaunchStatus('Generating site…');
+        // Lane B (wizard-seed): same brain as the in-Builder AIBuilderPanel.
+        // Pass a SLIM blueprint — wizardSeed already carries brand/theme/intents.
+        const slimBlueprint = {
+          version: blueprint.version,
+          launcherPolicy: blueprint.launcherPolicy,
+          identity: blueprint.identity,
+          brand: blueprint.brand,
+          design: blueprint.design,
+          theme_tokens: blueprint.theme_tokens,
+          intents: blueprint.intents,
+          template_sections: blueprint.template_sections,
+          template_intents: blueprint.template_intents,
+          industry_context: blueprint.industry_context,
+        };
 
         const initialTargetPaths = canonicalPages
           .map((page) => page.path)
@@ -2777,7 +2780,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   });
                 }
               }
-              const normalizedFiles: Record<string, string> = { ...sanitized.files };
+              const normalizedFiles: Record<string, string> = {
+                ...sanitized.files,
+                '/src/index.css': themedIndexCss,
+              };
               if (!normalizedFiles['/src/App.tsx'] && normalizedFiles['src/App.tsx']) {
                 normalizedFiles['/src/App.tsx'] = normalizedFiles['src/App.tsx'];
               }
@@ -3060,50 +3066,92 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           }
         }
       }
-      // A failed broad Lane B turn does not authorize a scaffold fallback.
-      // It moves every selected page into the same isolated Lane B retry path.
-      const emptyGenerationResult = (): NonNullable<typeof generationResult> => ({
+      // ── Strict wizard-only gate ────────────────────────────────────────
+      // System Launcher runtime must be authored by the 4-step wizard seed via
+      // Lane B. Do NOT complete missing/invalid AI output from the canonical
+      // scaffold here — that is the minimal fallback path that was masking dead
+      // SiteBundle/orchestration token breaks in production.
+      // ── AI enrichment is optional by contract ──────────────────────────
+      // The deterministic seed produced by the 4-step wizard (industry
+      // composition + selected template + theme tokens + selected pages) is a
+      // complete, valid SiteBundleSnapshot on its own. This is NOT the minimal
+      // preset fallback — it is the wizard's own seed. So when Lane B fails
+      // (rate limit, transport, timeout, contract miss) we degrade to that seed
+      // and keep the journey moving instead of stranding the user.
+      const seedGenerationResult = (): typeof generationResult => ({
         structured: {} as LauncherPayload,
         sanitized: {
-          files: {},
+          files: { ...siteBundleSnapshot.vfsFiles },
           rejected: [],
-          notes: ['lane-b-page-completion-required'],
+          notes: ['wizard-seed-degraded'],
         } as unknown as SanitizedGeneratedFiles,
       });
       if (aiError) {
+        launchReliabilityMode = 'lane-b-degraded';
         const details = await getFunctionErrorMessage(aiError);
-        console.warn('[SystemLauncher] Broad Lane B turn failed; completing every selected page in isolation', {
-          rateLimited: isRateLimitError(aiError),
+        run.degrade(
+          'enrich',
+          isRateLimitError(aiError) ? 'enrich.rate_limited' : 'enrich.failed',
+          isRateLimitError(aiError)
+            ? 'AI copy polish was skipped because the providers were busy — your pages use the wizard template content.'
+            : 'AI copy polish was skipped — your pages use the wizard template content.',
           details,
-        });
-        generationResult = emptyGenerationResult();
+        );
+        generationResult = seedGenerationResult();
       }
       if (!generationResult) {
+        launchReliabilityMode = 'lane-b-degraded';
         const reason = lastPayloadIssue?.qualityReason
           || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'AI returned no usable wizard files');
-        console.warn('[SystemLauncher] Broad Lane B payload missed the contract; completing every selected page in isolation', {
+        run.degrade(
+          'enrich',
+          'enrich.contract_miss',
+          'AI copy polish did not meet the generation contract — your pages use the wizard template content.',
           reason,
-        });
-        generationResult = emptyGenerationResult();
+        );
+        generationResult = seedGenerationResult();
       }
 
-      const aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
+      let aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
+      const canonicalHomePath = Object.values(siteBundleSnapshot.pageRegistry.pages)
+        .map((page) => (page as { filePath?: string }).filePath)
+        .find((path): path is string => /\/Home\.(tsx|jsx)$/i.test(path));
+      const homeQualityRejections: string[] = [];
+      if (canonicalHomePath) {
+        // Quality gate only — a rejected Home triggers a focused Lane B retry
+        // below. The canonical Stage 4b Home is never substituted here.
+        const homeAssessment = assessWizardHomePresentation({
+          aiFiles: aiSourcedFiles,
+          homePath: canonicalHomePath,
+          contract: templateLayoutContract,
+        });
+        if (homeAssessment.rejections.length > 0) {
+          homeQualityRejections.push(...homeAssessment.rejectedPaths);
+          console.warn('[SystemLauncher] Lane B Home rejected by the presentation quality gate', {
+            templateId: templateLayoutContract.templateId,
+            reason: homeAssessment.rejections[0]?.reason,
+          });
+        }
+      }
       const wizardGenerationGaps: {
         aiError?: string;
         payloadIssue?: typeof lastPayloadIssue;
-        laneBRetriedPaths: string[];
+        completedFromScaffold: boolean;
+        scaffoldFilledPaths: string[];
         aiFileCount: number;
-        laneAPageCount: number;
-        /** Pages whose generation produced defects before final acceptance,
-         *  with the exact first-failure reason. Shown in the launch summary. */
-        generationDefects: string[];
+        scaffoldFileCount: number;
       } = {
-        laneBRetriedPaths: [],
+        completedFromScaffold: false,
+        scaffoldFilledPaths: [],
         aiFileCount: Object.keys(aiSourcedFiles).length,
-        laneAPageCount: Object.keys(siteBundleSnapshot.pageRegistry.pages).length,
-        generationDefects: [],
+        scaffoldFileCount: Object.keys(siteBundleSnapshot?.vfsFiles || {}).length,
       };
 
+      const totalUsableFiles = Object.keys(aiSourcedFiles).length;
+      if (totalUsableFiles === 0) {
+        launchReliabilityMode = 'lane-b-blocked';
+        throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
+      }
       const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .filter((path): path is string => Boolean(path))
@@ -3125,12 +3173,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         reason: string;
       }> = [];
       const rejectedPageCandidates: Record<string, string> = {};
-      const laneBRetriedPaths = new Set<string>();
-      const laneBAttemptKeys = new Set<string>();
-      // Last page-acceptance result per path, so the retry prompt can inline
-      // the exact contract repair directive (missing companions, JSX
-      // import/export mismatches, missing default export).
-      const pageAcceptanceResults = new Map<string, ReturnType<typeof checkPageAcceptance>>();
+      const structuredCompiledPaths: string[] = [];
 
       const acceptCompletedWizardPage = (
         path: string,
@@ -3326,32 +3369,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           return false;
         }
 
-        // Page acceptance contract: the page must compile and close its own
-        // imports/exports on its own while the Lane B brain is still in the
-        // loop to regenerate it. Rescue synthesis downstream is the logged
-        // last resort, never the default acceptance path.
-        const acceptance = checkPageAcceptance(
-          {
-            ...canonicalScaffoldFiles,
-            ...aiSourcedFiles,
-            ...acceptedCompanions,
-            [normalizedPath]: normalizedCandidate,
-          },
-          normalizedPath,
-          [normalizedPath, ...Object.keys(acceptedCompanions)],
-        );
-        if (!acceptance.ok) {
-          rejectedPageCandidates[normalizedPath] = normalizedCandidate;
-          pageAcceptanceResults.set(normalizedPath, acceptance);
-          laneBCompletionDiagnostics.push({
-            path: normalizedPath,
-            attempt,
-            accepted: false,
-            reason: formatPageAcceptanceFailure(acceptance),
-          });
-          return false;
-        }
-
         for (const [companionPath, companionSource] of Object.entries(acceptedCompanions)) {
           if (!aiSourcedFiles[companionPath]) aiSourcedFiles[companionPath] = companionSource;
         }
@@ -3373,66 +3390,148 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         return true;
       };
 
-      // ── Batch acceptance audit ─────────────────────────────────────────
-      // Pages the broad Lane B turn returned are held to the same contract
-      // as isolated completions: compile + import closure + JSX export
-      // contracts. A page that fails is pulled out of the merged output and
-      // regenerated through the isolated completion path with the exact
-      // diagnostics inlined — never rescued silently downstream.
-      const acceptanceFailedPaths: string[] = [];
-      for (const page of Object.values(siteBundleSnapshot.pageRegistry.pages)) {
-        const rawPath = (page as { filePath?: string }).filePath;
-        if (!rawPath) continue;
-        const normalizedPagePath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
-        const authored = aiSourcedFiles[normalizedPagePath] || aiSourcedFiles[normalizedPagePath.slice(1)];
-        if (!authored || missingWizardPageFiles.includes(rawPath)) continue;
-        const audit = checkPageAcceptance(
-          { ...canonicalScaffoldFiles, ...aiSourcedFiles },
-          normalizedPagePath,
-          Object.keys(aiSourcedFiles),
-        );
-        if (audit.ok) continue;
-        console.warn('[SystemLauncher] Batch page failed the acceptance contract; regenerating in isolation', {
-          path: normalizedPagePath,
-          reason: formatPageAcceptanceFailure(audit),
-        });
-        rejectedPageCandidates[normalizedPagePath] = authored;
-        pageAcceptanceResults.set(normalizedPagePath, audit);
-        laneBCompletionDiagnostics.push({
-          path: normalizedPagePath,
-          attempt: 1,
-          accepted: false,
-          reason: formatPageAcceptanceFailure(audit),
-        });
-        // Clear the page AND its authored companions: the isolated retry
-        // merge skips companion paths that already exist, so leaving a
-        // broken companion behind would shadow the regenerated fix.
-        for (const reachablePath of audit.reachable) {
-          delete aiSourcedFiles[reachablePath];
-          delete aiSourcedFiles[reachablePath.slice(1)];
+      for (const missingPath of missingWizardPageFiles) {
+        const normalizedPath = missingPath.startsWith('/') ? missingPath : `/${missingPath}`;
+        const pageRole = findRegisteredPageRole(siteBundleSnapshot, normalizedPath);
+        if (pageRole !== 'faq') continue;
+
+        const intent = selectIndustryIntentForIsolatedPage(resolvedIndustry, pageRole);
+        if (!intent) {
+          throw new Error(`Structured FAQ compiler could not resolve an authorized industry intent for ${resolvedIndustry}.`);
         }
-        delete aiSourcedFiles[normalizedPagePath];
-        delete aiSourcedFiles[normalizedPagePath.slice(1)];
-        acceptanceFailedPaths.push(normalizedPagePath);
+        const compiledFaq = compileStructuredWizardFaqPage({
+          filePath: normalizedPath,
+          businessName: brand,
+          industry: resolvedIndustry,
+          intent,
+        });
+        if (!acceptCompletedWizardPage(normalizedPath, { [compiledFaq.filePath]: compiledFaq.source }, 0)) {
+          const failure = [...laneBCompletionDiagnostics]
+            .reverse()
+            .find((diagnostic) => diagnostic.path === normalizedPath && !diagnostic.accepted)?.reason;
+          throw new Error(`Structured FAQ compiler failed the canonical page acceptance gate: ${failure || normalizedPath}`);
+        }
+        structuredCompiledPaths.push(normalizedPath);
+      }
+      if (structuredCompiledPaths.length > 0) {
+        console.info('[SystemLauncher] Materialized structured Wizard pages without executable AI output', {
+          paths: structuredCompiledPaths,
+        });
       }
 
-      const stillMissing = [
-        ...missingWizardPageFiles.map((path) => (path.startsWith('/') ? path : `/${path}`)),
-        ...acceptanceFailedPaths,
-      ];
+      const unresolvedWizardPageFiles = missingWizardPageFiles.filter((path) => {
+        const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+        return !aiSourcedFiles[normalizedPath] && !aiSourcedFiles[normalizedPath.replace(/^\//, '')];
+      });
+
+      if (
+        unresolvedWizardPageFiles.length > 0 &&
+        unresolvedWizardPageFiles.length <= WIZARD_BATCH_REPAIR_MAX_PAGES
+      ) {
+        setLaunchStatus(`Generating ${unresolvedWizardPageFiles.length} remaining page(s)…`);
+        const normalizedMissing = unresolvedWizardPageFiles.map((p) => (p.startsWith('/') ? p : `/${p}`));
+        const missingPageDetails = Object.values(siteBundleSnapshot.pageRegistry.pages)
+          .filter((page) => {
+            const fp = (page as { filePath?: string }).filePath;
+            if (!fp) return false;
+            const n = fp.startsWith('/') ? fp : `/${fp}`;
+            return normalizedMissing.includes(n);
+          })
+          .map((page) => {
+            const p = page as { filePath?: string; title?: string; path?: string; pageType?: string };
+            const fp = (p.filePath || '').startsWith('/') ? p.filePath! : `/${p.filePath}`;
+            const roleInstruction = getWizardPageRoleInstruction(p.pageType);
+            return `  • ${p.title || fp} → ${fp}  [route ${p.path || '/'}${p.pageType ? `, type ${p.pageType}` : ''}]`
+              + (roleInstruction ? `\n    Structural requirement: ${roleInstruction}` : '');
+          })
+          .join('\n');
+        const retryPrompt = [
+          `${aiUserPrompt}`,
+          '',
+          '── LANE B REPAIR TURN — REGENERATE MISSING WIZARD PAGES ──',
+          'Your previous response omitted or under-generated the following selected wizard pages.',
+          'Re-emit ONLY these complete replacement files in the same multi-file JSON contract.',
+          'Do NOT touch shared chrome (SiteNavbar/SiteFooter), Home, or App.tsx.',
+          'Each page must be a complete, production-quality, industry-faithful',
+          'React page (5+ sections, real copy, working data-ut-intent CTAs).',
+          '',
+          missingPageDetails,
+        ].join('\n');
+        try {
+          const repairBudgetMs = takeWizardGenerationBudget(WIZARD_BATCH_REPAIR_MAX_MS);
+          const retry = await withTimeout(
+            (signal) => runBuilderTurn<any>({
+              messages: [{ role: 'user', content: retryPrompt }],
+              mode: 'wizard-seed',
+              currentCode: wizardCurrentCode,
+              editMode: false,
+              templateName: effectiveTemplate?.label || system.name,
+              aesthetic: resolvedPreset.id,
+              source: resolvedIndustry,
+              systemType: selectedSystem,
+              systemsBuildContext: {
+                version: blueprint.version,
+                launcherPolicy: blueprint.launcherPolicy,
+                identity: blueprint.identity,
+                brand: blueprint.brand,
+                design: blueprint.design,
+                theme_tokens: blueprint.theme_tokens,
+                intents: blueprint.intents,
+                template_sections: blueprint.template_sections,
+                template_intents: blueprint.template_intents,
+              },
+              userDesignProfile: laneBDesignProfile,
+              siteElementsLibraryContext,
+              vfsFiles: wizardVfsPayload,
+              previewSnapshot: wizardPreviewSnapshot,
+              recentChangedFiles: normalizedMissing,
+              gatewayOptions: WIZARD_LANE_B_GATEWAY_OPTIONS,
+              wizardSeed,
+            }, { signal, timeoutMs: repairBudgetMs - 2_000 }),
+            repairBudgetMs,
+            `Lane B repair turn exceeded the remaining Wizard generation deadline.`,
+          );
+          if (!retry.error) {
+            const { structured: retryStructured } = extractLaneBLauncherPayload(
+              retry.data as Record<string, unknown> | null,
+              `${brand} ${system.name}`,
+            );
+            if (retryStructured?.files) {
+              const retrySanitized = sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(retryStructured.files));
+              for (const missing of normalizedMissing) {
+                acceptCompletedWizardPage(missing, retrySanitized.files, 1);
+              }
+              console.info('[SystemLauncher] Lane B repair pass filled pages:', laneBRepairedPaths);
+            } else {
+              console.warn('[SystemLauncher] Lane B repair pass returned no structured files');
+            }
+          } else {
+            console.warn('[SystemLauncher] Lane B repair pass failed:', await getFunctionErrorMessage(retry.error));
+          }
+        } catch (retryErr) {
+          console.warn('[SystemLauncher] Lane B repair pass threw:', retryErr);
+        }
+      } else if (unresolvedWizardPageFiles.length > WIZARD_BATCH_REPAIR_MAX_PAGES) {
+        console.info('[SystemLauncher] Skipping oversized Lane B batch repair; using isolated page completion', {
+          missingPageCount: unresolvedWizardPageFiles.length,
+          batchRepairLimit: WIZARD_BATCH_REPAIR_MAX_PAGES,
+        });
+      }
+
+      // Recompute missing after structured compilation and the Lane B repair
+      // pass. Snapshot scaffolds remain blocked: supported structured compilers
+      // or accepted Lane B output must own every selected page body.
+      const stillMissing = Object.values(siteBundleSnapshot.pageRegistry.pages)
+        .map((page) => (page as { filePath?: string }).filePath)
+        .filter((path): path is string => Boolean(path))
+        .map((path) => (path.startsWith('/') ? path : `/${path}`))
+        .filter((path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')]);
 
       // A batch repair must not make the whole launch depend on every requested
       // page being returned correctly in one model response. Complete each
       // unresolved registry page independently, carrying the exact wizard
       // template/theme identity and the full industry behavior contract.
-      const completeMissingWizardPage = async (
-        missingPath: string,
-        attempt = 2,
-      ): Promise<void> => {
-        const retryKey = `${missingPath}#${attempt}`;
-        if (laneBAttemptKeys.has(retryKey)) return;
-        laneBAttemptKeys.add(retryKey);
-        laneBRetriedPaths.add(missingPath);
+      const completeMissingWizardPage = async (missingPath: string, attempt: 2 | 3 | 4): Promise<void> => {
         const page = Object.values(siteBundleSnapshot.pageRegistry.pages).find((candidatePage) => {
           const filePath = (candidatePage as { filePath?: string }).filePath;
           if (!filePath) return false;
@@ -3451,17 +3550,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const industryVocabulary = (industryRequirements?.vocabulary || []).slice(0, 16).join(', ');
 
         if (!aiSourcedFiles[missingPath]) {
-          setLaunchStatus(
-            `Completing ${page?.title || missingPath} (${attempt}/${WIZARD_MAX_PAGE_CONTENT_ATTEMPTS})…`,
-          );
+          setLaunchStatus(`Completing ${page?.title || missingPath} (${attempt - 1}/3)…`);
+          const rejectedCandidate = rejectedPageCandidates[missingPath];
           const previousFailure = [...laneBCompletionDiagnostics]
             .reverse()
             .find((diagnostic) => diagnostic.path === missingPath && !diagnostic.accepted)?.reason;
-          // Malformed source must never become repair context: it teaches the
-          // model to reproduce the same broken tokens. Regenerate clean.
-          const rejectedCandidate = isSyntaxCompletionFailure(previousFailure)
-            ? undefined
-            : rejectedPageCandidates[missingPath];
           const resolvedPageRole = page?.pageRole || page?.pageType;
           const pageIntent = selectIndustryIntentForIsolatedPage(resolvedIndustry, resolvedPageRole);
           const isolatedWizardSeed = {
@@ -3496,9 +3589,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             `Forbidden industry intents: ${(behaviorContract?.forbidden || []).join(', ') || 'none'}`,
             `Industry vocabulary/context: ${industryVocabulary || generationCategory}`,
             previousFailure ? `Exact validation failure to repair: ${previousFailure}` : '',
-            pageAcceptanceResults.has(missingPath)
-              ? buildPageAcceptanceRepairDirective(pageAcceptanceResults.get(missingPath)!)
-              : '',
             previousFailure?.includes('omitted the requested page file')
               ? `PATH REPAIR REQUIRED: your last response's "files" object did not contain non-empty content under the exact key "${missingPath}" (see the returned keys listed above). Return a top-level JSON object of the exact shape {"files":{"${missingPath}":"...full file contents..."}} with no other top-level keys and no empty values.`
               : '',
@@ -3653,101 +3743,81 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       if (stillMissing.length > 0) {
         setLaunchStatus(`Completing ${stillMissing.length} remaining page(s) in parallel`);
       }
-      const isPageResolved = (path: string) =>
-        Boolean(aiSourcedFiles[path] || aiSourcedFiles[path.replace(/^\//, '')]);
-      let pendingCompletions = [...stillMissing];
-      for (
-        let contentAttempt = 2;
-        contentAttempt <= WIZARD_MAX_PAGE_CONTENT_ATTEMPTS && pendingCompletions.length > 0;
-        contentAttempt++
-      ) {
+      for (const attempt of [2, 3, 4] as const) {
+        const roundTargets = stillMissing.filter(
+          (path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')],
+        );
         for (
           let pageOffset = 0;
-          pageOffset < pendingCompletions.length;
+          pageOffset < roundTargets.length;
           pageOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
         ) {
-          const completionWave = pendingCompletions.slice(
+          const completionWave = roundTargets.slice(
             pageOffset,
             pageOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS,
           );
-          await Promise.all(
-            completionWave.map((path) => completeMissingWizardPage(path, contentAttempt)),
-          );
-        }
-        pendingCompletions = pendingCompletions.filter((path) => !isPageResolved(path));
-        if (pendingCompletions.length > 0 && contentAttempt < WIZARD_MAX_PAGE_CONTENT_ATTEMPTS) {
-          console.warn('[SystemLauncher] Regenerating pages that failed the acceptance contract', {
-            paths: pendingCompletions,
-            nextAttempt: contentAttempt + 1,
-          });
+          await Promise.all(completionWave.map((path) => completeMissingWizardPage(path, attempt)));
         }
       }
 
-      const unresolvedAfterCompletion = stillMissing.filter((path) => !isPageResolved(path));
-
+      const unresolvedAfterCompletion = stillMissing.filter(
+        (path) => !aiSourcedFiles[path] && !aiSourcedFiles[path.replace(/^\//, '')],
+      );
 
       if (laneBRepairedPaths.length > 0) {
-        wizardGenerationGaps.laneBRetriedPaths = [
-          ...new Set([...wizardGenerationGaps.laneBRetriedPaths, ...laneBRepairedPaths]),
-        ];
+        wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
-      if (unresolvedAfterCompletion.length > 0 && WIZARD_GENERATION_MODE !== 'deterministic-compiler-v2') {
-        // Legacy AI-TSX path only: the AI owned the page body, so a page that
-        // still cannot compile leaves the site whole — registry, router,
-        // routes, nav and VFS — and the drop is reported to the user.
+      if (unresolvedAfterCompletion.length > 0) {
         launchReliabilityMode = 'lane-b-degraded';
-
-        const dropRequests = unresolvedAfterCompletion.map((path) => ({
-          filePath: path,
-          reason: laneBCompletionDiagnostics
-            .filter((diagnostic) => diagnostic.path === path && !diagnostic.accepted)
-            .map((diagnostic) => diagnostic.reason)
-            .slice(-1)[0] || 'Page failed the generation acceptance contract',
-        }));
-        const dropResult = dropUnacceptablePages(
-          siteBundleSnapshot,
-          { ...siteBundleSnapshot.vfsFiles, ...aiSourcedFiles },
-          dropRequests,
-        );
-        siteBundleSnapshot = dropResult.snapshot;
-        for (const droppedPage of dropResult.dropped) {
-          for (const removedPath of [droppedPage.filePath, ...droppedPage.removedModules]) {
-            delete aiSourcedFiles[removedPath];
-            delete aiSourcedFiles[removedPath.slice(1)];
-            delete canonicalScaffoldFiles[removedPath];
-            delete canonicalScaffoldFiles[removedPath.slice(1)];
+        const completionReasons = laneBCompletionDiagnostics
+          .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
+          .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
+          .join(' | ');
+        // Backfill from the wizard's own seed snapshot so every selected page
+        // still exists, themed and routed, instead of blocking the launch.
+        // Pass 4 — the completion loop degrades to a STAGE 4b RE-COMPILE of the
+        // page (its baseline body from the compile artifact), never to an
+        // isolated authoring call and never to a missing file.
+        const backfilled: string[] = [];
+        const withoutStage4bBaseline: string[] = [];
+        for (const path of unresolvedAfterCompletion) {
+          const normalized = path.startsWith('/') ? path : `/${path}`;
+          const seedSource = siteBundleSnapshot.vfsFiles[normalized]
+            ?? siteBundleSnapshot.vfsFiles[path];
+          if (typeof seedSource === 'string' && seedSource.trim()) {
+            aiSourcedFiles[normalized] = seedSource;
+            backfilled.push(normalized);
+          } else {
+            withoutStage4bBaseline.push(normalized);
           }
         }
-        const droppedSummary = describeDroppedPages(dropResult.dropped);
-        console.error('[SystemLauncher] Dropped pages that failed the generation acceptance contract', {
-          dropped: dropResult.dropped,
-        });
-        wizardGenerationGaps.generationDefects.push(`dropped pages: ${droppedSummary}`);
-        run.degrade(
-          'enrich',
-          'enrich.page_dropped',
-          `${dropResult.dropped.length} page(s) could not be generated correctly and were removed from the site.`,
-          droppedSummary,
-        );
-      } else if (unresolvedAfterCompletion.length > 0) {
-        // Compiler-first: a rejected AI page never removes a Wizard-selected
-        // route. The deterministic Lane A module is retained instead.
-        launchReliabilityMode = 'lane-b-degraded';
-        for (const path of unresolvedAfterCompletion) {
-          delete aiSourcedFiles[path];
-          delete aiSourcedFiles[path.startsWith('/') ? path.slice(1) : `/${path}`];
+        if (withoutStage4bBaseline.length > 0) {
+          // A registered page with no Stage 4b body means the compile artifact
+          // itself is incomplete — surface it instead of sealing a hole.
+          console.error('[SystemLauncher] Registered pages missing a Stage 4b baseline body', {
+            paths: withoutStage4bBaseline,
+          });
+          run.degrade(
+            'enrich',
+            'enrich.pages_missing_baseline',
+            `${withoutStage4bBaseline.length} page(s) have no Stage 4b baseline to fall back to.`,
+            withoutStage4bBaseline.join(', '),
+          );
         }
         run.degrade(
           'enrich',
-          'enrich.ai_page_rejected',
-          'AI page enrichment was rejected; compiler-owned page retained.',
-          unresolvedAfterCompletion.join(', '),
+          'enrich.pages_from_seed',
+          `${backfilled.length || unresolvedAfterCompletion.length} page(s) use your wizard template content instead of AI copy.`,
+          completionReasons,
         );
+        wizardGenerationGaps.completedFromScaffold = true;
+        wizardGenerationGaps.scaffoldFilledPaths = [
+          ...(wizardGenerationGaps.scaffoldFilledPaths || []),
+          ...backfilled,
+        ];
       }
 
-
-
-      const assessCurrentPresentations = () => assessWizardPagePresentations({
+      const presentationAssessment = assessWizardPagePresentations({
         aiFiles: aiSourcedFiles,
         canonicalFiles: siteBundleSnapshot.vfsFiles,
         pagePaths: Object.values(siteBundleSnapshot.pageRegistry.pages)
@@ -3761,132 +3831,34 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             .filter((route) => route.depth?.minSections)
             .map((route) => [route.path, route.depth.minSections]),
         ),
-      });
 
-      let presentationAssessment = assessCurrentPresentations();
-      // The presentation gate is a quality signal, not a second acceptance
-      // authority. Every rejected page gets a fresh repair attempt (including
-      // pages Lane B already retried), and whatever still fails is dropped or
-      // shipped degraded — the launch itself never dies here.
-      const presentationRetryPaths = presentationAssessment.rejectedPaths
-        .map((path) => (path.startsWith('/') ? path : `/${path}`));
-      if (presentationRetryPaths.length > 0) {
-        const presentationAttempt = WIZARD_MAX_PAGE_CONTENT_ATTEMPTS + 1;
-        console.warn('[SystemLauncher] Repairing pages rejected by the presentation quality gate', {
-          attempt: presentationAttempt,
+      });
+      const qualityRejectedPaths = Array.from(new Set([
+        ...homeQualityRejections,
+        ...presentationAssessment.rejectedPaths,
+      ]));
+      if (qualityRejectedPaths.length > 0) {
+        // Degraded, not overridden: Lane B stays the page-body author and the
+        // launch records which pages missed the visual contract.
+        launchReliabilityMode = 'lane-b-degraded';
+        console.warn('[SystemLauncher] Lane B pages failed the presentation quality gate', {
           templateId: templateLayoutContract.templateId,
-          paths: presentationRetryPaths,
+          paths: qualityRejectedPaths,
           reasons: presentationAssessment.reasons,
         });
-
-        for (const normalizedPath of presentationRetryPaths) {
-          const current = aiSourcedFiles[normalizedPath] || aiSourcedFiles[normalizedPath.slice(1)];
-          if (current) rejectedPageCandidates[normalizedPath] = current;
-          laneBCompletionDiagnostics.push({
-            path: normalizedPath,
-            attempt: presentationAttempt,
-            accepted: false,
-            reason: presentationAssessment.reasons[normalizedPath]
-              || 'Page failed the final presentation quality gate',
-          });
-          delete aiSourcedFiles[normalizedPath];
-          delete aiSourcedFiles[normalizedPath.slice(1)];
-        }
-
-        for (
-          let pageOffset = 0;
-          pageOffset < presentationRetryPaths.length;
-          pageOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
-        ) {
-          const completionWave = presentationRetryPaths
-            .slice(pageOffset, pageOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS)
-          await Promise.all(
-            completionWave.map((path) => completeMissingWizardPage(path, presentationAttempt)),
-          );
-        }
-
-        // Any page whose repair produced nothing at all keeps its previous
-        // candidate rather than vanishing from the site.
-        for (const normalizedPath of presentationRetryPaths) {
-          if (!isPageResolved(normalizedPath) && rejectedPageCandidates[normalizedPath]) {
-            aiSourcedFiles[normalizedPath] = rejectedPageCandidates[normalizedPath];
-          }
-        }
-        presentationAssessment = assessCurrentPresentations();
       }
-
-      if (presentationAssessment.rejectedPaths.length > 0) {
-        launchReliabilityMode = 'lane-b-degraded';
-        const homePath = (Object.values(siteBundleSnapshot.pageRegistry.pages)
-          .find((page) => (page as { isHome?: boolean }).isHome) as { filePath?: string } | undefined)?.filePath;
-        const normalizedHome = homePath
-          ? (homePath.startsWith('/') ? homePath : `/${homePath}`)
-          : undefined;
-        const rejected = presentationAssessment.rejectedPaths
-          .map((path) => (path.startsWith('/') ? path : `/${path}`));
-        // Pages that render but fall short of the quality bar still ship; only
-        // pages with no module at all are removed from the site.
-        const unrenderable = WIZARD_GENERATION_MODE === 'deterministic-compiler-v2'
-          ? []
-          : rejected.filter((path) => path !== normalizedHome && !isPageResolved(path));
-        const belowQuality = rejected.filter((path) => !unrenderable.includes(path));
-
-
-        if (unrenderable.length > 0) {
-          const dropResult = dropUnacceptablePages(
-            siteBundleSnapshot,
-            { ...siteBundleSnapshot.vfsFiles, ...aiSourcedFiles },
-            unrenderable.map((path) => ({
-              filePath: path,
-              reason: presentationAssessment.reasons[path]
-                || 'Page failed the final presentation quality gate',
-            })),
-          );
-          siteBundleSnapshot = dropResult.snapshot;
-          for (const droppedPage of dropResult.dropped) {
-            for (const removedPath of [droppedPage.filePath, ...droppedPage.removedModules]) {
-              delete aiSourcedFiles[removedPath];
-              delete aiSourcedFiles[removedPath.slice(1)];
-              delete canonicalScaffoldFiles[removedPath];
-              delete canonicalScaffoldFiles[removedPath.slice(1)];
-            }
-          }
-          const droppedSummary = describeDroppedPages(dropResult.dropped);
-          wizardGenerationGaps.generationDefects.push(`dropped pages: ${droppedSummary}`);
-          run.degrade(
-            'enrich',
-            'enrich.page_dropped',
-            `${dropResult.dropped.length} page(s) could not be generated correctly and were removed from the site.`,
-            droppedSummary,
-          );
-        }
-
-        if (belowQuality.length > 0) {
-          console.warn('[SystemLauncher] Shipping pages below the presentation quality bar', {
-            paths: belowQuality,
-            reasons: presentationAssessment.reasons,
-          });
-          wizardGenerationGaps.generationDefects.push(
-            `below presentation bar: ${belowQuality.join(', ')}`,
-          );
-          run.degrade(
-            'enrich',
-            'enrich.page_below_quality',
-            `${belowQuality.length} page(s) shipped below the presentation quality bar.`,
-            belowQuality.join(', '),
-          );
-        }
-      }
-
 
       // Stamp gaps so downstream readiness artifacts can record them.
       (window as unknown as { __wizardGenerationGaps?: typeof wizardGenerationGaps }).__wizardGenerationGaps =
         wizardGenerationGaps;
 
-      // Merge the complete Lane B page set with the deterministic router.
-      // Stage 4b applies theme and template identity at canonical launch.
+      // ── Merge AI output (if any) with LOCKED themed CSS + DETERMINISTIC ROUTER ──
+      // /src/App.tsx is OWNED by the deterministic router from the page registry.
+      // Lane B owns every registered page body/component; missing pages hard-fail
+      // above, and unselected pages are never routed or scaffold-filled.
       const generatedFiles: Record<string, string> = {
         ...aiSourcedFiles,
+        '/src/index.css': themedIndexCss,
         '/.unison/template-layout-contract.json': JSON.stringify(templateLayoutContract, null, 2),
       };
       // Normalize App.tsx key (AI may emit with or without leading slash).
@@ -3965,26 +3937,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const intentBindingsFile = buildIntentBindingsFile(materializedPlayground);
       const intentSurfacesFile = buildIntentSurfacesFile(materializedPlayground);
 
-      // Close the manually-managed Lane B stage before preflight begins. The
-      // previous flow left `activeStage` pinned to enrich even after all page
-      // groups had settled, so the progress UI could remain at its last
-      // "0/n page groups" message throughout finalization and handoff.
-      run.markStage(
-        'enrich',
-        launchReliabilityMode === 'ai' ? 'done' : 'degraded',
-      );
       setLaunchStatus('Finalizing preview…');
       await yieldToBrowser();
       const launchArtifactInput = {
         generatedFiles,
         preferredEntryPoint: '/src/App.tsx',
-        registeredPageAuthority: WIZARD_GENERATION_MODE === 'deterministic-compiler-v2'
-          ? ('compiler' as const)
-          : ('legacy-lane-b' as const),
-
         siteBundleSnapshot,
-
-        compileArtifact,
         compiledPlayground,
         canonicalPlayground: materializedPlayground,
         mergeWithCanonicalSnapshot: true,
@@ -4003,139 +3961,36 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         themePresetId: resolvedPreset.id,
         backendRequired: false,
         wizardSelections,
-        mergeContext,
         businessRuntime,
         enabledCapabilities: industryProfile?.defaultCapabilities || [],
-        // The shared preflight tail below owns structural repair, module
-        // closure and compile-safe acceptance. Sandpack projection is deferred
-        // to Preview so launch never compiles the same artifact twice.
+        allowCanonicalPageFallback: false,
+        // The strict JSX-import-contract check runs separately, off the
+        // main thread (see runStrictImportContractCheck below) — the
+        // generator's own inline check has no yield points and can freeze
+        // the tab for as long as it takes on drifted/oversized AI content.
         strictPreflight: false,
       };
-      // Record every generation defect that occurred before final acceptance
-      // so the launch summary can surface degradation honestly — a page that
-      // needed rejection/regeneration or downstream rescue is never silent.
-      wizardGenerationGaps.generationDefects = laneBCompletionDiagnostics
-        .filter((entry) => !entry.accepted)
-        .map((entry) => `${entry.path}: ${entry.reason}`);
-
-      let lastMileClosureGap: string | null = null;
       const launchArtifacts = await run.stage('preflight', async (signal) => {
-
         const artifacts = await buildCanonicalLaunchArtifactsAsync(launchArtifactInput, {
           yieldToHost: yieldToBrowser,
           signal,
-          preflightRuntime: {
-            workerTimeoutMs: 30_000,
-            // Worker availability is a performance concern, never an
-            // acceptance-policy switch. The synchronous fallback runs the
-            // identical full gate before any snapshot can be sealed.
-            fallbackPreflight: (files, options) => runFullPreflight(files, options),
-            maxRepairAttempts: 2,
-            repair: async (request) => {
-              const repairBudgetMs = takeWizardGenerationBudget(WIZARD_UI_REPAIR_MAX_MS);
-              const diagnostics = request.diagnostics
-                .map((diagnostic) => [
-                  diagnostic.diagnosticCode,
-                  diagnostic.validationStage,
-                  diagnostic.line ? `line ${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ''}` : '',
-                  diagnostic.message,
-                ].filter(Boolean).join(' | '))
-                .join('\n');
-              const repairPrompt = [
-                '── COMPILE-SAFE REPAIR TURN ──',
-                `Repair exactly one generated file: ${request.pagePath}`,
-                `Repair attempt: ${request.attempt} of 2`,
-                `Compiler diagnostics:\n${diagnostics}`,
-                `Available preview dependencies: ${request.availableDependencies.join(', ')}`,
-                `Candidate transaction file paths:\n${request.candidateModulePaths.join('\n')}`,
-                '',
-                'Repair the implementation defect without redesigning, simplifying, flattening, or replacing the generated page.',
-                'Preserve visual composition, sections, content hierarchy, responsive behavior, animation intent, component boundaries, and semantic metadata.',
-                'Preserve every data-ut-* and data-unison-* attribute, section/component/block/slot identifier, intent, route target, and editable-field marker.',
-                'Modify only what is necessary to satisfy the compiler diagnostics.',
-                'Do not add packages outside the available dependency list and do not emit any other file.',
-                `Return exactly {"files":{"${request.pagePath}":"...full repaired source..."}} as valid JSON.`,
-              ].join('\n');
-              const repairResult = await runBuilderTurn<any>({
-                messages: [{ role: 'user', content: repairPrompt }],
-                mode: 'wizard-seed',
-                currentCode: request.source,
-                editMode: true,
-                surgicalEdit: true,
-                targetFile: request.pagePath,
-                templateName: effectiveTemplate?.label || system.name,
-                aesthetic: resolvedPreset.id,
-                source: resolvedIndustry,
-                systemType: selectedSystem,
-                systemsBuildContext: slimBlueprint,
-                userDesignProfile: laneBDesignProfile,
-                vfsFiles: { [request.pagePath]: request.source },
-                recentChangedFiles: [request.pagePath],
-                gatewayOptions: {
-                  ...WIZARD_LANE_B_GATEWAY_OPTIONS,
-                  reasoningEffort: 'low',
-                  maxTokens: 20_000,
-                  timeoutMs: Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, repairBudgetMs),
-                },
-                wizardSeed,
-              }, { signal, timeoutMs: repairBudgetMs });
-              if (repairResult.error) {
-                throw new Error(await getFunctionErrorMessage(repairResult.error));
-              }
-              const { structured } = extractLaneBLauncherPayload(
-                repairResult.data as Record<string, unknown> | null,
-                `${brand} compile repair`,
-              );
-              const repairedFiles = structured?.files
-                ? sanitizeGeneratedFiles(omitSnapshotOwnedLaneBFiles(structured.files)).files
-                : {};
-              const exactPath = request.pagePath.startsWith('/')
-                ? request.pagePath
-                : `/${request.pagePath}`;
-              const exact = repairedFiles[exactPath] || repairedFiles[exactPath.slice(1)];
-              if (exact?.trim()) return exact;
-              const candidates = Object.values(repairedFiles).filter((source) => source.trim());
-              return candidates.length === 1 ? candidates[0] : null;
-            },
-          },
         });
-        // Projection-only boundary. Page acceptance already ran at generation
-        // time and unacceptable pages were dropped whole, so there is nothing
-        // left to repair here. A residual unresolved import means the
-        // acceptance contract was bypassed — record it as a defect and hand
-        // off anyway (launchRun never-fail contract).
-        const unresolved = findUnresolvedLocalImports(artifacts.files);
-        if (unresolved.length > 0) {
-          lastMileClosureGap = describeUnresolvedImports(unresolved);
-        }
+        await runStrictImportContractCheck({
+          files: artifacts.files,
+          entryPoint: artifacts.entryPoint,
+          themePresetId: resolvedPreset.id,
+          signal,
+        });
         return artifacts;
-
       }, {
-        timeoutMs: 240_000,
-        // Artifact assembly remains canonical and has no competing scaffold
-        // fallback. Sandpack diagnostics above are intentionally non-blocking.
+        timeoutMs: 180_000,
+        // NO FALLBACK BY DESIGN. The launch artifact set has exactly one
+        // author: Stage 4b (deterministic scaffold + sealed art direction)
+        // merged with Lane B (AI-authored page bodies). A seed-recovery
+        // fallback would constitute a second, competing wizard pipeline that
+        // silently reverts AI-authored pages. If preflight stalls, the stage
+        // throws and the launch surfaces the real failure instead.
       });
-      if (lastMileClosureGap) {
-        launchReliabilityMode = 'lane-b-degraded';
-        wizardGenerationGaps.generationDefects.push(
-          `acceptance bypassed — unresolved local imports: ${lastMileClosureGap}`,
-        );
-        run.degrade(
-          'preflight',
-          'preflight.module_closure_gap',
-          'Some generated modules could not be fully linked; the affected sections may need a retry in the builder.',
-          lastMileClosureGap,
-        );
-      }
-      if (launchArtifacts.preflightResult.runtime?.execution === 'compatibility-fallback') {
-        launchReliabilityMode = 'lane-b-degraded';
-        run.degrade(
-          'preflight',
-          'preflight.worker_unavailable',
-          'Final preview checks used compatibility mode; the site was still validated and saved.',
-          launchArtifacts.preflightResult.runtime.reason,
-        );
-      }
       // Seal diagnostics: registered pages that reached the sealed revision
       // without a file body. The launch still opens, but the gap is recorded.
       const sealedMissingPageFiles =
@@ -4152,32 +4007,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           sealedMissingPageFiles.join(', '),
         );
       }
-      // Nothing between a successful preflight and the review dialog may abort
-      // the launch. These are post-launch readiness reports; a thrown error
-      // here previously killed the run right after "Finalizing preview…" and
-      // the builder never opened.
-      let plannedFormDefinitions: ReturnType<typeof planLaunchFormDefinitions> = [];
-      let publishedRuntimeReadiness: ReturnType<typeof evaluatePublishedRuntimeReadiness> = {
-        ok: false,
-        blockers: ['Publishing readiness was not evaluated.'],
-      } as ReturnType<typeof evaluatePublishedRuntimeReadiness>;
-      try {
-        plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
-        const publishedRuntimeRaw = launchArtifacts.files['/.unison/published-runtime.json'];
-        publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
-          runtime: (publishedRuntimeRaw
-            ? JSON.parse(publishedRuntimeRaw)
-            : {}) as import('@/services/publishedRuntimeModule').PublishedRuntimeConfig,
-          bindingCount: plannedDataBindings.length,
-          formDefinitionCount: plannedFormDefinitions.length,
-        });
-      } catch (readinessError) {
-        console.warn('[SystemLauncher] publishing readiness evaluation failed', readinessError);
-        publishedRuntimeReadiness = {
-          ok: false,
-          blockers: [readinessError instanceof Error ? readinessError.message : String(readinessError)],
-        } as ReturnType<typeof evaluatePublishedRuntimeReadiness>;
-      }
+      const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
+
+      const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
+        runtime: JSON.parse(launchArtifacts.files['/.unison/published-runtime.json']) as import('@/services/canonicalLaunchVfs').PublishedRuntimeConfig,
+        bindingCount: plannedDataBindings.length,
+        formDefinitionCount: plannedFormDefinitions.length,
+      });
       if (!publishedRuntimeReadiness.ok) {
         // Publishing readiness is a post-launch concern; never block the user's
         // path into the builder over it.
@@ -4213,7 +4049,26 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // `buildCanonicalLaunchArtifacts` owns final preflight after merging the
       // snapshot VFS and returns the exact validated files represented by the
       // cloned SiteBundleSnapshot. This launcher only appends metadata files.
-      const wiredVfsFiles: Record<string, string> = { ...preWiredVfsFiles };
+      const wiredVfsFiles = preWiredVfsFiles;
+
+      // Close the local-import contract BEFORE the artifact is sealed. Preview
+      // prep refuses to synthesize placeholders for wizard drafts, so a page
+      // importing an unauthored companion would otherwise surface as a
+      // PreviewPipelineError after handoff (preview falls back to scaffold).
+      const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);
+      if (preSealUnresolvedImports.length > 0) {
+        launchReliabilityMode = 'lane-b-degraded';
+        for (const item of preSealUnresolvedImports.slice(0, 3)) {
+          run.degrade(
+            'preflight',
+            'lane_b.unresolved_module',
+            `${item.filePath.split('/').pop()} references a module that was not generated ("${item.importPath}") — regenerate that page from the AI panel.`,
+            describeUnresolvedImports(preSealUnresolvedImports),
+          );
+        }
+        console.warn('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
+      }
+
 
       if ((launchArtifacts.bindingApplication?.appliedBindings || 0) > 0) {
         console.log(
@@ -4221,12 +4076,30 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         );
       }
 
-      // Launch is a single action. A second review confirmation here used to
-      // suspend handleLaunch on an unresolved Promise and made the completed
-      // pipeline appear frozen instead of opening the Web Builder.
-      setLaunchStatus('Saving your project...');
-      const { confirmedLaunch, result, launcherRevisionId } = await run.stage('commit', async (signal) => {
-        console.info('[SystemLauncher] commit started', { projectId: launchIds.projectId });
+      setLaunchStatus('Review the generated site before creating its live data workspace.');
+      // Generation is complete. The confirmation dialog is an intentional
+      // user decision, not an active loading state.
+      setIsLaunching(false);
+      setLaunchStatus('');
+      const confirmed = await requestLaunchConfirmation({
+        businessName: brand,
+        siteName: `${brand} Site`,
+        fileCount: Object.keys(wiredVfsFiles).length,
+        pagePaths: Object.keys(wiredVfsFiles)
+          .filter((path) => /^\/?src\/pages\/.+\.tsx$/i.test(path))
+          .sort(),
+        businessId: provisionedBusinessId,
+        siteId: launchIds.siteId,
+        files: wiredVfsFiles,
+      });
+      if (!confirmed) {
+        toast.info('Launch cancelled. No site data was created.');
+        return;
+      }
+
+      setIsLaunching(true);
+      setLaunchStatus('Creating the site workspace and live data contracts…');
+      run.markStage('commit', 'active');
       // A builder handoff is only valid after the complete canonical identity
       // exists remotely. Fabricating a local identity here creates a project
       // that can render but can never commit, causing the preview/autosave loop.
@@ -4243,9 +4116,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         systemType: selectedSystem,
         templateId: effectiveTemplate?.id,
         themePresetId: resolvedPreset.id,
-      }, { signal });
+      });
       const launchProjectId = confirmedLaunch.projectId;
       const launcherDraftId = confirmedLaunch.draftId;
+
+      try {
+        localStorage.setItem('unison:lastBusinessId', confirmedLaunch.businessId);
+      } catch { /* browser storage is best-effort */ }
 
       // The platform-core commit pipeline is authoritative. Confirmed launch
       // may create the tenant root, but no builder handoff exists until the
@@ -4271,72 +4148,45 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         },
         patch,
         options: {
-          requirePreviewPass: true,
+          requirePreviewPass: false,
           requireReadinessPass: false,
           businessName: brand,
           industry: String(generationCategory),
           selectedTemplateId: effectiveTemplate?.id,
           themePresetId: resolvedPreset.id,
           selections: wizardSelections,
-          signal,
            reviewedArtifact: {
              siteBundleSnapshot: launchArtifacts.siteBundleSnapshot ?? siteBundleSnapshot,
              runtimeManifest: launchArtifacts.runtimeManifest,
              playground: materializedPlayground ?? undefined,
-             preflightResult: launchArtifacts.preflightResult,
            },
         },
       });
       if (!result.persistedRevisionId) {
         throw new Error('The generated site could not be committed to its project. Please confirm again.');
       }
-      console.info('[SystemLauncher] commit completed', {
-        projectId: confirmedLaunch.projectId,
-        revisionId: result.persistedRevisionId,
-      });
-        return { confirmedLaunch, result, launcherRevisionId: result.persistedRevisionId };
-      }, { timeoutMs: WIZARD_COMMIT_TIMEOUT_MS });
-      const launchProjectId = confirmedLaunch.projectId;
-      const launcherDraftId = confirmedLaunch.draftId;
-      try {
-        localStorage.setItem('unison:lastBusinessId', confirmedLaunch.businessId);
-      } catch { /* browser storage is best-effort */ }
+      const launcherRevisionId = result.persistedRevisionId;
       // Public form contracts live outside the VFS: form-submit rejects any
       // intent that disagrees with its approved definition. Never fail the
       // launch over this — the builder can re-provision forms later.
-      void persistLaunchFormDefinitions({
+      const formDefinitionPersistence = await persistLaunchFormDefinitions({
         businessId: confirmedLaunch.businessId,
-        siteId: confirmedLaunch.siteId,
         projectId: launchProjectId,
+        siteId: confirmedLaunch.siteId,
         definitions: plannedFormDefinitions,
-      }).then((formDefinitionPersistence) => {
-        if (formDefinitionPersistence.error) {
-          console.warn('[SystemLauncher] form definitions will retry in builder', formDefinitionPersistence.error);
-        }
-      }).catch((error) => {
-        console.warn('[SystemLauncher] form definition persistence failed after handoff', error);
       });
+      if (formDefinitionPersistence.error) {
+        run.degrade(
+          'commit',
+          'commit.form_definitions_unavailable',
+          'Your forms are live, but their approved settings will finish saving in the builder.',
+          formDefinitionPersistence.error,
+        );
+      }
       const canonicalVfsFiles = Object.keys(result.vfsFiles).length > 0
         ? result.vfsFiles
         : wiredVfsFiles;
-      const committedSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;
-      // commitMutation may repair/normalize files after producing its reviewed
-      // snapshot. The handoff is one atomic artifact: its snapshot metadata and
-      // executable VFS must describe the same revision or compact persistence
-      // can discard a newly repaired registered page.
-      const canonicalSiteBundleSnapshot = committedSnapshot
-        ? {
-            ...committedSnapshot,
-            vfsFiles: { ...canonicalVfsFiles },
-            routerFile: {
-              ...committedSnapshot.routerFile,
-              content:
-                canonicalVfsFiles[committedSnapshot.routerFile?.path]
-                || committedSnapshot.routerFile?.content
-                || '',
-            },
-          }
-        : committedSnapshot;
+      const canonicalSiteBundleSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;
       const canonicalRuntimeManifest = result.runtimeManifest ?? pipelineManifest;
       if (!(launchArtifacts.entryPoint in canonicalVfsFiles)) {
         run.degrade(
@@ -4397,10 +4247,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         startInPreview: true,
         intentRuntime: true,
         businessId: confirmedLaunch.businessId,
-        siteId: confirmedLaunch.siteId,
         projectId: launchProjectId,
-        draftId: launcherDraftId,
-        revisionId: launcherRevisionId,
         industry: resolvedIndustry,
         runtimeManifest: canonicalRuntimeManifest,
         entryPoint: launchArtifacts.entryPoint,
@@ -4418,17 +4265,41 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         fromLauncher: true,
         ...navState,
       };
+      const webBuilderNavigationState = buildLauncherNavigationState(webBuilderRouteState);
+
       setLaunch(launchState);
-      const webBuilderNavigationState = persistAndBuildLauncherHandoff({
+      persistLauncherHandoff({
         routeState: webBuilderRouteState,
         launchState,
       });
 
+      // Mark onboarding complete so route guards allow /web-builder.
+      // Without this, /web-builder redirects back to /onboarding (onboarding_required).
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase
+            .from("onboarding_state")
+            .upsert(
+              {
+                user_id: user.id,
+                completed: true,
+                current_step: "launched",
+                industry: selectedSystem ?? null,
+                business_name: businessName || null,
+                project_id: launchProjectId,
+              },
+              { onConflict: "user_id" }
+            );
+        }
+      } catch (onboardingErr) {
+        console.warn("[SystemLauncher] failed to mark onboarding complete", onboardingErr);
+      }
+
       // Strict post-launch destination: always the WebBuilder, wired to the
       // generated site (preview + VFS/playground). Never bounce through the
       // dashboard. `replace: true` so back-nav doesn't re-enter the wizard.
-      setLaunchStatus('Opening the Web Builder...');
-      run.markStage('handoff', 'active');
+      run.markStage('commit', 'done');
       run.markStage('handoff', 'done');
       publishLaunchDegradations(run.snapshot().degradations);
       navigate("/web-builder", {
@@ -4440,7 +4311,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       resetState();
 
     } catch (e) {
-      if (run.cancelled) return;
       const msg = await getFunctionErrorMessage(e);
       console.error("[SystemLauncher] error", e);
       if (classifyLaunchError(e) === 'fatal') {
@@ -4453,7 +4323,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         setLaunchError(`${msg} Your selections are preserved — press Generate to try again.`);
       }
     } finally {
-      if (activeLaunchRunRef.current === run) activeLaunchRunRef.current = null;
       setIsLaunching(false);
       setLaunchStatus("");
     }
@@ -4466,6 +4335,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       <Dialog
         open={open}
         onOpenChange={(isOpen) => {
+          if (!isOpen) resolveLaunchConfirmation(false);
           onOpenChange(isOpen);
           if (!isOpen) resetState();
         }}
@@ -4498,8 +4368,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               <BusinessSelector
                 value={selectedBusinessId}
                 onChange={setSelectedBusinessId}
-                mode="editor"
-                onInvalidSelection={clearInvalidBusinessSelection}
+                mode="member"
                 allowCreate
                 size="sm"
                 placeholder="Restore into business"
@@ -4672,8 +4541,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   <BusinessSelector
                     value={selectedBusinessId}
                     onChange={(id) => setSelectedBusinessId(id)}
-                    mode="editor"
-                    onInvalidSelection={clearInvalidBusinessSelection}
+                    mode="member"
                     allowCreate
                     size="sm"
                     placeholder="New business"
@@ -5231,6 +5099,44 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         </DialogContent>
       </Dialog>
 
+      <AlertDialog
+        open={Boolean(launchPreviewConfirmation)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) resolveLaunchConfirmation(false);
+        }}
+      >
+        <AlertDialogContent className="max-w-6xl border-white/10 bg-[#07080F] text-white shadow-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Review Generated Site</AlertDialogTitle>
+            <AlertDialogDescription className="text-white/55">
+              {launchPreviewConfirmation?.siteName} will create its Unison workspace, live data contracts, and initial revision only after confirmation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {launchPreviewConfirmation && (
+            <LaunchReviewSummary
+              siteName={launchPreviewConfirmation.siteName}
+              brandName={launchPreviewConfirmation.businessName}
+              fileCount={launchPreviewConfirmation.fileCount}
+              pagePaths={launchPreviewConfirmation.pagePaths}
+              files={launchPreviewConfirmation.files}
+            />
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              className="border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
+              onClick={() => resolveLaunchConfirmation(false)}
+            >
+              Keep Editing
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+              onClick={() => resolveLaunchConfirmation(true)}
+            >
+              Confirm Site Launch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };

@@ -33,9 +33,7 @@ import type { PlaygroundState } from './playground';
 import type { ThemeTokens } from '@/sections/types';
 import type { CompiledContract } from './contractCompiler';
 import { PreviewGate, PublishGate, type GateVerdict } from './gates';
-import type { WizardMergeContext } from '@/services/wizardMergeContext';
-import { projectSurgicalCommit } from './surgicalProjection';
-import type { SiteBundleSnapshot } from './canonicalPipeline';
+import { readWizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 
 // ============================================================================
 // Commit Source — every legal caller MUST identify itself.
@@ -45,13 +43,10 @@ export type CommitSource =
   | 'wizard-launch'        // Wizard Launcher → first build
   | 'ai-builder'           // Lane B AI assistant patch
   | 'playground-edit'      // User-driven Creator Playground edit
-  | 'surgical-edit'        // File-only AI patch projected onto an existing snapshot
   | 'republish'            // Republish without structural change
   | 'system-restore';      // Restore from snapshot / undo
 
 export interface CommitInput {
-  /** Existing snapshot — required for source === 'surgical-edit'. */
-  siteBundleSnapshot?: SiteBundleSnapshot | null;
   /** Wizard selections — required for source === 'wizard-launch'. */
   selections?: WizardSelections;
   /** Updated playground — required for every other source. */
@@ -66,8 +61,6 @@ export interface CommitInput {
   selectedThemeId?: string;
   themePresetId?: string;
   themeTokens?: ThemeTokens;
-  /** One validated identity carrier for the Wizard → Stage 4b → seal path. */
-  mergeContext?: WizardMergeContext;
   /**
    * Optional pre-compiled contract. When provided we run PreviewGate +
    * PublishGate and surface their verdict on the result.
@@ -114,9 +107,7 @@ export function commitToPipeline(
     result =
       source === 'wizard-launch'
         ? runWizardLaunch(input)
-        : source === 'surgical-edit'
-          ? runSurgicalEdit(input)
-          : runRecompile(input);
+        : runRecompile(input);
   } finally {
     endCommitContext();
   }
@@ -154,26 +145,19 @@ function runWizardLaunch(input: CommitInput): CanonicalPipelineResult {
       "[commitToPipeline] source 'wizard-launch' requires `selections`.",
     );
   }
+  // The launcher creates the constrained AI plan after its first structural
+  // compile. Revision commits receive that plan in the VFS, so recover it
+  // here and promote it into the next canonical snapshot instead of leaving
+  // it as an unowned launcher file.
+  const interactionManifest =
+    input.selections.interactionManifest ||
+    readWizardInteractionManifest(input.existingVfsFiles ?? {});
   return executeCanonicalPipeline(
-    input.selections,
+    interactionManifest
+      ? { ...input.selections, interactionManifest }
+      : input.selections,
     input.existingVfsFiles ?? {},
-    input.mergeContext,
   );
-}
-
-function runSurgicalEdit(input: CommitInput): CanonicalPipelineResult {
-  if (!input.siteBundleSnapshot) {
-    throw new Error(
-      "[commitToPipeline] source 'surgical-edit' requires `siteBundleSnapshot`.",
-    );
-  }
-  return projectSurgicalCommit({
-    siteBundleSnapshot: input.siteBundleSnapshot,
-    vfsFiles: input.existingVfsFiles ?? {},
-    playground: input.playground,
-    businessName: input.businessName,
-    industry: input.industry,
-  });
 }
 
 function runRecompile(input: CommitInput): CanonicalPipelineResult {

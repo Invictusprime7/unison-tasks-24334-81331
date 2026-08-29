@@ -15,27 +15,7 @@
  * before the artifact is sealed.
  */
 
-/**
- * Type-only imports are erased at runtime (the preview synthesizes a
- * declaration module for them), so they never break an import closure.
- */
-function isTypeOnlyImportStatement(statement: string): boolean {
-  if (/^\s*(?:import|export)\s+type\b/.test(statement)) return true;
-  const named = statement.match(/\{([^}]*)\}/)?.[1];
-  if (!named) return false;
-  const specifiers = named.split(',').map((entry) => entry.trim()).filter(Boolean);
-  return specifiers.length > 0 && specifiers.every((entry) => /^type\s+/.test(entry));
-}
-
 const MODULE_EXTENSIONS = ['.tsx', '.jsx', '.ts', '.js'] as const;
-
-/**
- * `Home.sections` is a dotted module NAME, not a file with a `.sections`
- * extension. Only a known extension short-circuits extension probing.
- */
-export function hasExplicitModuleExtension(path: string): boolean {
-  return /\.(tsx|jsx|ts|js|mjs|cjs|json|css|scss|less|svg|png|jpe?g|webp|gif|avif|woff2?)$/i.test(path);
-}
 
 /** Files Lane A / Stage 4b owns. Lane B may never overwrite these. */
 const LANE_A_AUTHORITY_PATHS = new Set([
@@ -111,18 +91,13 @@ function resolveRelativeModule(
   }
   resolved = `/${stack.join('/')}`;
 
-  // NOTE: a trailing dotted segment is NOT necessarily a file extension.
-  // Canonical wizard pages import their section map as "./Home.sections"
-  // (file: Home.sections.ts). Only treat the suffix as an extension when it is
-  // a real module/asset extension, otherwise keep probing with extensions.
-  const candidates = hasExplicitModuleExtension(resolved)
+  const candidates = /\.\w+$/.test(resolved)
     ? [resolved]
     : [
         resolved,
         ...MODULE_EXTENSIONS.map((ext) => `${resolved}${ext}`),
         ...MODULE_EXTENSIONS.map((ext) => `${resolved}/index${ext}`),
       ];
-
 
   return candidates.find((candidate) => existingPaths.has(candidate)) || null;
 }
@@ -161,9 +136,6 @@ export function findUnresolvedLocalImports(
     while ((match = importRegex.exec(content)) !== null) {
       const importPath = match[1];
       if (/\.(css|scss|less|svg|png|jpe?g|webp|gif)$/i.test(importPath)) continue;
-      // Type-only imports are erased at runtime; the preview synthesizes a
-      // declaration module for them, so they never break the import closure.
-      if (isTypeOnlyImportStatement(match[0])) continue;
       if (resolveRelativeModule(filePath, importPath, existingPaths)) continue;
       unresolved.push({ filePath, importPath });
     }

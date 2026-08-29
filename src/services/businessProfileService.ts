@@ -89,30 +89,9 @@ export async function loadBusinessProfile(
     .maybeSingle();
   if (error) {
     console.warn('[businessProfileService] load failed', error);
-    return loadPublicBusinessProfile('id', businessId);
+    return null;
   }
-  if (!data) return loadPublicBusinessProfile('id', businessId);
-  return rowToProfile(data as unknown as BusinessRow);
-}
-
-/**
- * Storefront projection. Anonymous visitors may only read the safe public
- * columns (never phone/email/notification/owner/settings), so generated sites
- * hydrate from `businesses_public` when the member read is not permitted.
- */
-const PUBLIC_SELECT_COLS =
-  'id, name, slug, industry, tagline, description, logo_url, brand_color, website, timezone, address, hours, social_links, updated_at';
-
-async function loadPublicBusinessProfile(
-  column: 'id' | 'slug',
-  value: string,
-): Promise<BusinessProfileDTO | null> {
-  const { data, error } = await supabase
-    .from('businesses_public' as never)
-    .select(PUBLIC_SELECT_COLS)
-    .eq(column, value)
-    .maybeSingle();
-  if (error || !data) return null;
+  if (!data) return null;
   return rowToProfile(data as unknown as BusinessRow);
 }
 
@@ -125,7 +104,7 @@ export async function loadBusinessProfileBySlug(
     .select(SELECT_COLS)
     .eq('slug', slug)
     .maybeSingle();
-  if (error || !data) return loadPublicBusinessProfile('slug', slug);
+  if (error || !data) return null;
   return rowToProfile(data as unknown as BusinessRow);
 }
 

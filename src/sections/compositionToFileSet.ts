@@ -36,7 +36,6 @@ import {
   type ResolvedPageComposition,
 } from '@/platform/core/resolvedComposition';
 import type { WizardDesignIntervention, WizardMotionRecipe } from '@/services/wizardDesignIntervention';
-import { applyMediaToSections } from '@/platform/core/mediaResolver';
 import { getLayoutForVariantId, getVariantById } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';
 import { clampVariantToPack, resolveArtDirectionPack, resolveHeroPresentation } from '@/sections/variants';
@@ -282,7 +281,7 @@ export default function Hero({ props }: { props: any }) {
 
   if (fullBleed) {
     return (
- <section data-ut-variant="hero:full-bleed" className="ut-section relative flex min-h-[var(--ut-hero-block)] items-center overflow-hidden bg-foreground" style={{ paddingTop: HERO_TOP_PADDING }}>
+      <section data-ut-variant="hero:full-bleed" className="relative flex min-h-[var(--ut-hero-block)] items-center overflow-hidden bg-foreground pb-36" style={{ paddingTop: HERO_TOP_PADDING }}>
         {media && <img src={media} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover" />}
         <div className="absolute inset-0 bg-foreground/70" />
         <div className={shellClass + ' relative z-10 text-left'}>{content}</div>
@@ -292,7 +291,7 @@ export default function Hero({ props }: { props: any }) {
 
   if (split) {
     return (
- <section data-ut-variant="hero:split-image" className="ut-section bg-background" style={{ paddingTop: HERO_TOP_PADDING }}>
+      <section data-ut-variant="hero:split-image" className="bg-background pb-24" style={{ paddingTop: HERO_TOP_PADDING }}>
         <div className={shellClass + ' grid items-center gap-10 md:grid-cols-2 lg:gap-20'}>
           <div className="text-left">{content}</div>
           {media && <div className="ut-media-frame min-h-[var(--ut-hero-media-block)]"><img src={media} alt="" className="block min-h-[var(--ut-hero-media-block)] h-full w-full object-cover" /></div>}
@@ -302,7 +301,7 @@ export default function Hero({ props }: { props: any }) {
   }
 
   return (
- <section data-ut-variant="hero:centered" className="ut-section bg-background" style={{ paddingTop: HERO_TOP_PADDING }}>
+    <section data-ut-variant="hero:centered" className="bg-background pb-24" style={{ paddingTop: HERO_TOP_PADDING }}>
       <div className={shellClass + ' text-center'}>
         {content}
         {media && <img src={media} alt="" className="mx-auto mt-12 block max-h-[var(--ut-hero-media-max)] w-full max-w-5xl rounded-[var(--radius)] border border-border object-cover" />}
@@ -325,7 +324,7 @@ export default function Services({ props }: { props: any }) {
 
   if (layout === 'alternating') {
     return (
- <section data-ut-variant="services:alternating" className="ut-section bg-background">
+      <section data-ut-variant="services:alternating" className="bg-background py-24">
         <div className={shellClass}>
           {intro}
           <div className="flex flex-col gap-16 lg:gap-20">
@@ -349,7 +348,7 @@ export default function Services({ props }: { props: any }) {
 
   if (layout === 'list') {
     return (
- <section data-ut-variant="services:compact-list" className="ut-section bg-muted">
+      <section data-ut-variant="services:compact-list" className="bg-muted py-24">
         <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
           {intro}
           <div className="flex flex-col gap-4">
@@ -367,10 +366,10 @@ export default function Services({ props }: { props: any }) {
   }
 
   return (
- <section data-ut-variant="services:card-grid" className="ut-section bg-background">
+    <section data-ut-variant="services:card-grid" className="bg-background py-24">
       <div className={shellClass}>
         {intro}
-        <div className={'ut-grid grid gap-6 ' + (items.length <= 1 ? 'max-w-2xl mx-auto' : items.length === 2 ? 'sm:grid-cols-2' : items.length === 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+        <div className="ut-grid grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item: any, index: number) => (
             <div key={index} className={cardClass + ' p-8'}>
               {item.image && <img src={item.image} alt={item.title || ''} className="mb-5 aspect-[4/3] w-full rounded-[var(--radius)] object-cover" />}
@@ -400,7 +399,7 @@ export default function Testimonials({ props }: { props: any }) {
   if (layout === 'single' && items[0]) {
     const featured = items[0];
     return (
- <section data-ut-variant="testimonials:featured" className="ut-section bg-muted">
+      <section data-ut-variant="testimonials:featured" className="bg-muted py-24">
         <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
           {intro}
           <figure className={cardClass + ' border-t-4 border-t-accent p-8 text-center sm:p-16'}>
@@ -415,7 +414,7 @@ export default function Testimonials({ props }: { props: any }) {
 
   if (layout === 'carousel') {
     return (
- <section data-ut-variant="testimonials:carousel" className="ut-section bg-background">
+      <section data-ut-variant="testimonials:carousel" className="bg-background py-24">
         <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
           {intro}
           <div className="flex snap-x gap-6 overflow-x-auto pb-4">
@@ -427,7 +426,7 @@ export default function Testimonials({ props }: { props: any }) {
   }
 
   return (
- <section data-ut-variant="testimonials:grid" className="ut-section bg-background">
+    <section data-ut-variant="testimonials:grid" className="bg-background py-24">
       <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
         {intro}
         <div className="ut-grid ut-grid-2 grid gap-6 md:grid-cols-2">
@@ -453,7 +452,7 @@ export default function CTA({ props }: { props: any }) {
   const { headline, description, ctas = [], layout = 'centered', backgroundImage } = props;
   if (layout === 'split') {
     return (
- <section data-ut-variant="cta:split-card" className="ut-section bg-background">
+      <section data-ut-variant="cta:split-card" className="bg-background py-24">
         <div className="relative mx-auto grid w-[var(--ut-shell-width)] items-center gap-8 overflow-hidden rounded-[var(--radius)] bg-foreground p-8 text-background sm:p-16 md:grid-cols-2">
           {backgroundImage && <img src={backgroundImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-25" />}
           <div className="relative"><h2 className="mb-4 font-heading text-3xl font-semibold sm:text-5xl">{headline}</h2>{description && <p className="font-body text-lg leading-relaxed text-background/75">{description}</p>}</div>
@@ -464,14 +463,14 @@ export default function CTA({ props }: { props: any }) {
   }
   if (layout === 'banner') {
     return (
- <section data-ut-variant="cta:banner" className="ut-section relative overflow-hidden bg-primary text-center text-primary-foreground">
+      <section data-ut-variant="cta:banner" className="relative overflow-hidden bg-primary py-24 text-center text-primary-foreground">
         {backgroundImage && <img src={backgroundImage} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-20" />}
         <div className="relative mx-auto w-full max-w-7xl px-5 sm:px-8"><h2 className="mb-4 font-heading text-3xl font-semibold sm:text-5xl">{headline}</h2>{description && <p className="mx-auto mb-8 max-w-2xl font-body text-lg text-primary-foreground/85">{description}</p>}<div className="flex flex-wrap justify-center gap-4">{ctas.map((cta: any, index: number) => <a key={index} href={cta.href || '#'} data-ut-intent={cta.intent} className={cta.variant === 'outline' ? outlineButtonClass + ' border-primary-foreground/60 text-primary-foreground hover:bg-primary-foreground/10' : primaryButtonClass + ' bg-primary-foreground text-primary'}>{cta.label}</a>)}</div></div>
       </section>
     );
   }
   return (
- <section data-ut-variant="cta:centered" className="ut-section border-y border-border bg-muted text-center">
+    <section data-ut-variant="cta:centered" className="border-y border-border bg-muted py-24 text-center">
       <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
         <h2 className="mb-4 font-heading text-4xl font-semibold text-foreground">{headline}</h2>
         {description && <p className="mx-auto mb-8 max-w-2xl font-body text-lg text-muted-foreground">{description}</p>}
@@ -502,7 +501,7 @@ export default function Contact({ props }: { props: any }) {
 
   if (resolvedLayout === 'split-card') {
     return (
- <section data-ut-variant="contact:split-card" className="ut-section bg-background">
+      <section data-ut-variant="contact:split-card" className="bg-background py-24">
         <div className="mx-auto w-full max-w-6xl px-5 sm:px-8">
           {headline && <div className="mb-12 max-w-2xl"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{description && <p className="font-body text-lg leading-relaxed text-muted-foreground">{description}</p>}</div>}
           <div className="grid items-stretch gap-6 md:grid-cols-2">
@@ -521,7 +520,7 @@ export default function Contact({ props }: { props: any }) {
 
   if (resolvedLayout === 'minimal-inline') {
     return (
- <section data-ut-variant="contact:minimal-inline" className="ut-section bg-muted text-center">
+      <section data-ut-variant="contact:minimal-inline" className="bg-muted py-24 text-center">
         <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
           {headline && <h2 className="mb-3 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>}
           {description && <p className="mx-auto mb-8 max-w-xl font-body text-muted-foreground">{description}</p>}
@@ -532,7 +531,7 @@ export default function Contact({ props }: { props: any }) {
   }
 
   return (
- <section data-ut-variant="contact:centered" className="ut-section bg-muted">
+    <section data-ut-variant="contact:centered" className="bg-muted py-24">
       <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
         {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{description && <p className="font-body text-lg text-muted-foreground">{description}</p>}</div>}
         <form data-demo-form="true" data-ut-intent={submitIntent} className="mx-auto flex max-w-lg flex-col gap-4">
@@ -559,7 +558,7 @@ export default function Footer({ props }: { props: any }) {
 
   if (resolvedLayout === 'centered-minimal') {
     return (
- <footer data-ut-variant="footer:centered-minimal" className="ut-section border-t border-border bg-background text-center">
+      <footer data-ut-variant="footer:centered-minimal" className="border-t border-border bg-background py-12 text-center">
         <div className={shellClass}><h3 className="mb-4 font-heading text-xl font-semibold text-foreground">{brand}</h3><nav className="mb-6 flex flex-wrap justify-center gap-5">{footerLinks.map((link: any, index: number) => <a key={index} href={link.href} className="font-body text-sm text-muted-foreground no-underline hover:text-foreground">{link.label}</a>)}</nav><p className="font-body text-xs text-muted-foreground">{copyright || '© ' + new Date().getFullYear() + ' ' + brand + '. All rights reserved.'}</p></div>
       </footer>
     );
@@ -567,7 +566,7 @@ export default function Footer({ props }: { props: any }) {
 
   if (resolvedLayout === 'dark-band') {
     return (
- <footer data-ut-variant="footer:dark-band" className="ut-section bg-foreground text-background">
+      <footer data-ut-variant="footer:dark-band" className="bg-foreground pb-8 pt-16 text-background">
         <div className={shellClass}>
           <div className="mb-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4"><div><h3 className="mb-3 font-heading text-2xl font-semibold">{brand}</h3>{newsletter && <form data-demo-form="true" data-ut-intent="newsletter.subscribe" className="flex gap-2"><input type="email" aria-label="Email address" placeholder="Email address" className={inputClass} /><button type="submit" className={buttonClass}>Subscribe</button></form>}</div>{columns.map((column: any, index: number) => <div key={index}><h4 className="mb-3 font-heading text-xs font-semibold uppercase text-background/70">{column.title}</h4><div className="flex flex-col gap-2">{column.links.map((link: any, linkIndex: number) => <a key={linkIndex} href={link.href} className="font-body text-sm text-background/70 no-underline hover:text-background">{link.label}</a>)}</div></div>)}</div>
           <div className="flex flex-wrap justify-between gap-4 border-t border-background/15 pt-6"><p className="font-body text-xs text-background/60">{copyright || '© ' + new Date().getFullYear() + ' ' + brand + '. All rights reserved.'}</p>{socials.length > 0 && <div className="flex gap-3">{socials.map((social: any, index: number) => <a key={index} href={social.url || '#'} aria-label={social.platform} className="inline-flex text-background/80"><SocialIcon platform={social.platform} size={16} /></a>)}</div>}</div>
@@ -577,7 +576,7 @@ export default function Footer({ props }: { props: any }) {
   }
 
   return (
- <footer data-ut-variant="footer:columns" className="ut-section border-t border-border bg-card text-card-foreground">
+    <footer data-ut-variant="footer:columns" className="border-t border-border bg-card pb-8 pt-16 text-card-foreground">
       <div className={shellClass}>
         <div className="ut-footer-grid mb-12 grid gap-12 sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -601,7 +600,7 @@ const STATS_MODULE = `import React from 'react';
 export default function Stats({ props }: { props: any }) {
   const { headline, items = [] } = props;
   return (
- <section className="ut-section border-y border-border/50 bg-muted">
+    <section className="border-y border-border/50 bg-muted py-24">
       <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
         {headline && <h2 className="mb-12 text-center font-heading text-3xl font-semibold text-foreground">{headline}</h2>}
         <div className="flex flex-wrap justify-center gap-16">{items.map((stat: any, index: number) => <div key={index} className="text-center"><div className="font-heading text-5xl font-semibold leading-none text-primary">{stat.value}</div><div className="mt-2 font-body text-xs uppercase text-muted-foreground">{stat.label}</div></div>)}</div>
@@ -616,7 +615,7 @@ const TEAM_MODULE = `import React from 'react';
 export default function Team({ props }: { props: any }) {
   const { headline, subheadline, members = [] } = props;
   return (
- <section className="ut-section bg-background">
+    <section className="bg-background py-24">
       <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
         {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
         <div className="ut-grid grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
@@ -634,7 +633,7 @@ export default function FAQ({ props }: { props: any }) {
   const { headline, subheadline, items = [] } = props;
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   return (
- <section className="ut-section bg-background">
+    <section className="bg-background py-24">
       <div className="mx-auto w-full max-w-4xl px-5 sm:px-8">
         {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
         <div className="flex flex-col gap-3">
@@ -717,7 +716,7 @@ export default function Gallery({ props }: { props: any }) {
 
   if (layout === 'mosaic' || layout === 'editorial-mosaic') {
     return (
- <section data-ut-variant="gallery:editorial-mosaic" className="ut-section bg-background">
+      <section data-ut-variant="gallery:editorial-mosaic" className="bg-background py-24">
         <div className={shellClass}>
           {intro}{filters}
           <div className="grid auto-rows-[var(--ut-tile-block)] grid-cols-2 gap-4 lg:grid-cols-4">
@@ -731,7 +730,7 @@ export default function Gallery({ props }: { props: any }) {
 
   if (layout === 'masonry') {
     return (
- <section data-ut-variant="gallery:masonry" className="ut-section bg-background">
+      <section data-ut-variant="gallery:masonry" className="bg-background py-24">
         <div className={shellClass}>
           {intro}{filters}
           <div style={{ columnCount: Math.min(columns, 4), columnGap: '1rem' }}>
@@ -747,7 +746,7 @@ export default function Gallery({ props }: { props: any }) {
 
   if (layout === 'lightbox' || layout === 'lightbox-grid') {
     return (
- <section data-ut-variant="gallery:lightbox-grid" className="ut-section bg-background">
+      <section data-ut-variant="gallery:lightbox-grid" className="bg-background py-24">
         <div className={shellClass}>
           {intro}{filters}
           <div className={'grid gap-3 ' + colClass}>
@@ -761,7 +760,7 @@ export default function Gallery({ props }: { props: any }) {
 
   if (layout === 'feature-split') {
     return (
- <section data-ut-variant="gallery:feature-split" className="ut-section bg-background">
+      <section data-ut-variant="gallery:feature-split" className="bg-background py-24">
         <div className={shellClass}>
           {intro}{filters}
           <div className="grid gap-4 lg:grid-cols-2">
@@ -778,7 +777,7 @@ export default function Gallery({ props }: { props: any }) {
 
   if (layout === 'reel' || layout === 'horizontal-reel') {
     return (
- <section data-ut-variant="gallery:horizontal-reel" className="ut-section bg-background">
+      <section data-ut-variant="gallery:horizontal-reel" className="bg-background py-24">
         <div className={shellClass}>{intro}{filters}</div>
         <div className="flex snap-x gap-4 overflow-x-auto px-5 pb-4 sm:px-8">
           {visible.map((item, index) => (
@@ -791,7 +790,7 @@ export default function Gallery({ props }: { props: any }) {
   }
 
   return (
- <section data-ut-variant="gallery:cinematic-grid" className="ut-section bg-background">
+    <section data-ut-variant="gallery:cinematic-grid" className="bg-background py-24">
       <div className={shellClass}>
         {intro}{filters}
         <div className={'grid gap-5 ' + colClass}>
@@ -833,7 +832,7 @@ export default function Pricing({ props }: { props: any }) {
 
   if (layout === 'accordion') {
     return (
- <section data-ut-variant="pricing:accordion" className="ut-section bg-muted">
+      <section data-ut-variant="pricing:accordion" className="bg-muted py-24">
         <div className={shellClass}>
           {intro}
           <div className="mx-auto max-w-3xl">
@@ -861,7 +860,7 @@ export default function Pricing({ props }: { props: any }) {
   if (layout === 'comparison' || layout === 'matrix') {
     const rows = Array.from(new Set(list.flatMap((tier) => tier.features.map(featureLabel)).filter(Boolean)));
     return (
- <section data-ut-variant="pricing:comparison" className="ut-section bg-muted">
+      <section data-ut-variant="pricing:comparison" className="bg-muted py-24">
         <div className={shellClass}>
           {intro}
           <div className="overflow-x-auto rounded-[var(--radius)] border border-border bg-card">
@@ -899,7 +898,7 @@ export default function Pricing({ props }: { props: any }) {
   }
 
   return (
- <section data-ut-variant="pricing:tiers" className="ut-section bg-muted">
+    <section data-ut-variant="pricing:tiers" className="bg-muted py-24">
       <div className={shellClass}>
         {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
         <div className={'grid items-start gap-6 ' + columnClass}>
@@ -949,14 +948,14 @@ export default function About({ props }: { props: any }) {
 
   if (layout === 'centered' || !image) {
     return (
- <section data-ut-variant="about:centered" className="ut-section bg-background">
+      <section data-ut-variant="about:centered" className="bg-background py-24">
         <div className={shellClass + ' max-w-3xl text-center'}>{copy}</div>
       </section>
     );
   }
 
   return (
- <section data-ut-variant={layout === 'text-right' ? 'about:media-left' : 'about:media-right'} className="ut-section bg-background">
+    <section data-ut-variant={layout === 'text-right' ? 'about:media-left' : 'about:media-right'} className="bg-background py-24">
       <div className={shellClass + ' grid items-center gap-10 md:grid-cols-2 lg:gap-16'}>
         <div className={layout === 'text-right' ? 'md:order-2' : ''}>{copy}</div>
         <div className={(layout === 'text-right' ? 'md:order-1 ' : '') + 'ut-media-frame overflow-hidden rounded-[var(--radius)] border border-border'}>
@@ -974,7 +973,7 @@ export default function LogoCloud({ props }: { props: any }) {
   const { headline, logos = [], items = [] } = props;
   const list = (Array.isArray(logos) && logos.length ? logos : items) || [];
   return (
- <section data-ut-variant="logo-cloud:row" className="ut-section border-y border-border/50 bg-muted">
+    <section data-ut-variant="logo-cloud:row" className="border-y border-border/50 bg-muted py-16">
       <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
         {headline && <p className="mb-10 text-center font-body text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{headline}</p>}
         <div className="flex flex-wrap items-center justify-center gap-x-14 gap-y-8">
@@ -995,7 +994,7 @@ export default function BlogPreview({ props }: { props: any }) {
   const { headline, subheadline, posts = [], items = [] } = props;
   const list = (Array.isArray(posts) && posts.length ? posts : items) || [];
   return (
- <section data-ut-variant="blog-preview:grid" className="ut-section bg-background">
+    <section data-ut-variant="blog-preview:grid" className="bg-background py-24">
       <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
         {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
@@ -1022,7 +1021,7 @@ const BEFORE_AFTER_MODULE = `import React from 'react';
 export default function BeforeAfter({ props }: { props: any }) {
   const { headline, subheadline, items = [] } = props;
   return (
- <section data-ut-variant="before-after:pairs" className="ut-section bg-muted">
+    <section data-ut-variant="before-after:pairs" className="bg-muted py-24">
       <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
         {headline && <div className="mb-12 text-center"><h2 className="mb-4 font-heading text-3xl font-semibold text-foreground sm:text-4xl">{headline}</h2>{subheadline && <p className="mx-auto max-w-2xl font-body text-lg text-muted-foreground">{subheadline}</p>}</div>}
         <div className="grid gap-8 sm:grid-cols-2">
@@ -1056,7 +1055,7 @@ export default function Features({ props }: { props: any }) {
   const iconLeft = layout === 'icon-left';
   const centered = layout === 'minimal-centered';
   return (
- <section data-ut-variant={'features:' + (layout || 'grid')} className="ut-section bg-background">
+    <section data-ut-variant={'features:' + (layout || 'grid')} className="bg-background py-24">
       <div className="mx-auto w-full max-w-7xl px-5 sm:px-8">
         {headline && (
           <div className={centered ? 'mb-14 text-center' : 'mb-14 max-w-2xl'}>
@@ -1064,7 +1063,7 @@ export default function Features({ props }: { props: any }) {
             {subheadline && <p className="font-body text-lg text-muted-foreground">{subheadline}</p>}
           </div>
         )}
-        <div className={'grid gap-10 ' + (iconLeft || items.length === 2 ? 'sm:grid-cols-2' : items.length === 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : items.length <= 1 ? 'max-w-2xl' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+        <div className={'grid gap-10 ' + (iconLeft ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
           {items.map((item: any, index: number) => (
             <div key={index} className={iconLeft ? 'flex gap-4' : (centered ? 'text-center' : '')}>
               <div className={'mb-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius)] bg-primary/10 font-heading text-base font-semibold text-primary ' + (centered ? 'mx-auto' : '')}>
@@ -1428,29 +1427,6 @@ function applyDesignVariants(
   };
 }
 
-/**
- * Canonical media authority — every image-capable section ships with real,
- * high-resolution imagery derived from the sealed generation seed. Author or
- * template supplied URLs always win; this only fills the empty slots that used
- * to render as text-only voids.
- */
-function withResolvedMedia(
-  template: TemplateComposition,
-  pageFilePath: string,
-  designIntervention?: DesignInterventionSlice,
-): TemplateComposition {
-  const seed = designIntervention?.seed;
-  if (!seed) return template;
-  return {
-    ...template,
-    sections: applyMediaToSections(template.sections as never[], {
-      seed,
-      industry: designIntervention?.industry,
-      pageScope: pageFilePath,
-    }) as typeof template.sections,
-  };
-}
-
 function motionRecipesBySection(
   designIntervention?: DesignInterventionSlice,
 ): Partial<Record<string, WizardMotionRecipe>> {
@@ -1587,11 +1563,7 @@ export function resolvePageComposition(
   pageFilePath: string,
   options?: { designIntervention?: DesignInterventionSlice },
 ): ResolvedPageComposition {
-  const projected = withResolvedMedia(
-    applyDesignVariants(template, options?.designIntervention),
-    pageFilePath,
-    options?.designIntervention,
-  );
+  const projected = applyDesignVariants(template, options?.designIntervention);
   const sections = resolveSnapshotSectionLayouts(projected);
   const motion = motionRecipesBySection(options?.designIntervention);
 
@@ -1638,11 +1610,7 @@ export function compositionToReactFileSet(
     designIntervention?: DesignInterventionSlice;
   },
 ): Record<string, string> {
-  const projectedTemplate = withResolvedMedia(
-    applyDesignVariants(template, options?.designIntervention),
-    pageFilePath,
-    options?.designIntervention,
-  );
+  const projectedTemplate = applyDesignVariants(template, options?.designIntervention);
   const sectionMap = sectionMapModule(projectedTemplate, pageFilePath);
   const sectionMapImport = `./${sectionMap.path.split('/').pop()?.replace(/\.ts$/, '')}`;
   const files: Record<string, string> = {

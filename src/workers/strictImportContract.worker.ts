@@ -21,7 +21,6 @@ workerScope.onmessage = (event) => {
     const files = prepareSandpackFiles(request.files, {
       entryPoint: request.entryPoint,
       themePresetId: request.themePresetId,
-      aesthetic: request.aesthetic || undefined,
       strict: true,
     });
     workerScope.postMessage({ requestId: request.requestId, ok: true, files });

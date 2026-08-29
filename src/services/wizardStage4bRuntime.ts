@@ -4,16 +4,14 @@ import {
   type CommitResult,
 } from '@/platform/core';
 import type { WizardSelections } from '@/types/playground';
-import type { WizardMergeContext } from '@/services/wizardMergeContext';
 
-export interface WizardLaneAWorkerRequest {
+export interface WizardStage4bWorkerRequest {
   requestId: string;
   selections: WizardSelections;
   existingVfsFiles: Record<string, string>;
-  mergeContext: WizardMergeContext;
 }
 
-export type WizardLaneAWorkerResponse =
+export type WizardStage4bWorkerResponse =
   | {
       requestId: string;
       ok: true;
@@ -29,53 +27,51 @@ export type WizardLaneAWorkerResponse =
       };
     };
 
-interface WizardLaneAWorkerLike {
-  onmessage: ((event: MessageEvent<WizardLaneAWorkerResponse>) => void) | null;
+interface WizardStage4bWorkerLike {
+  onmessage: ((event: MessageEvent<WizardStage4bWorkerResponse>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
-  postMessage(message: WizardLaneAWorkerRequest): void;
+  postMessage(message: WizardStage4bWorkerRequest): void;
   terminate(): void;
 }
 
-export interface RunWizardLaneAOptions {
+export interface RunWizardStage4bOptions {
   selections: WizardSelections;
-  mergeContext: WizardMergeContext;
   existingVfsFiles?: Record<string, string>;
   signal?: AbortSignal;
   yieldToHost?: () => Promise<void>;
-  workerFactory?: () => WizardLaneAWorkerLike;
+  workerFactory?: () => WizardStage4bWorkerLike;
   fallbackCommit?: (
     selections: WizardSelections,
     existingVfsFiles: Record<string, string>,
-    mergeContext: WizardMergeContext,
   ) => CommitResult;
   now?: () => number;
 }
 
-export interface WizardLaneAResult {
+export interface WizardStage4bResult {
   pipelineResult: CommitResult;
   execution: 'worker' | 'main-thread-fallback';
   durationMs: number;
 }
 
-class WizardLaneAWorkerBootstrapError extends Error {
+class WizardStage4bWorkerBootstrapError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'WizardLaneAWorkerBootstrapError';
+    this.name = 'WizardStage4bWorkerBootstrapError';
   }
 }
 
-function defaultWorkerFactory(): WizardLaneAWorkerLike {
+function defaultWorkerFactory(): WizardStage4bWorkerLike {
   if (typeof Worker === 'undefined') {
-    throw new WizardLaneAWorkerBootstrapError('Module workers are unavailable in this runtime.');
+    throw new WizardStage4bWorkerBootstrapError('Module workers are unavailable in this runtime.');
   }
   try {
     return new Worker(new URL('../workers/wizardStage4b.worker.ts', import.meta.url), {
       type: 'module',
-      name: 'unison-wizard-lane-a',
+      name: 'unison-wizard-stage-4b',
     });
   } catch (error) {
-    throw new WizardLaneAWorkerBootstrapError(
-      error instanceof Error ? error.message : 'The Wizard Lane A worker could not start.',
+    throw new WizardStage4bWorkerBootstrapError(
+      error instanceof Error ? error.message : 'The Wizard Stage 4b worker could not start.',
     );
   }
 }
@@ -89,12 +85,12 @@ function createRequestId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  return `lane_a_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  return `stage4b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function runLaneAWorker(
-  worker: WizardLaneAWorkerLike,
-  request: WizardLaneAWorkerRequest,
+function runStage4bWorker(
+  worker: WizardStage4bWorkerLike,
+  request: WizardStage4bWorkerRequest,
   signal?: AbortSignal,
 ): Promise<CommitResult> {
   return new Promise((resolve, reject) => {
@@ -122,7 +118,7 @@ function runLaneAWorker(
         return;
       }
       if (!('error' in response)) {
-        settle(() => reject(new Error('Wizard Lane A returned an invalid worker response.')));
+        settle(() => reject(new Error('Wizard Stage 4b returned an invalid worker response.')));
         return;
       }
       const error = new Error(response.error.message);
@@ -132,8 +128,8 @@ function runLaneAWorker(
     };
     worker.onerror = (event) => {
       event.preventDefault?.();
-      settle(() => reject(new WizardLaneAWorkerBootstrapError(
-        event.message || 'The Wizard Lane A worker could not start.',
+      settle(() => reject(new WizardStage4bWorkerBootstrapError(
+        event.message || 'The Wizard Stage 4b worker could not start.',
       )));
     };
 
@@ -146,37 +142,36 @@ function runLaneAWorker(
     try {
       worker.postMessage(request);
     } catch (error) {
-      settle(() => reject(new WizardLaneAWorkerBootstrapError(
-        error instanceof Error ? error.message : 'The Wizard Lane A request could not be sent.',
+      settle(() => reject(new WizardStage4bWorkerBootstrapError(
+        error instanceof Error ? error.message : 'The Wizard Stage 4b request could not be sent.',
       )));
     }
   });
 }
 
 /**
- * Execute deterministic Wizard Lane A without blocking the launcher UI.
+ * Execute deterministic Wizard Stage 4b without blocking the launcher UI.
  * Pipeline/contract errors are returned directly; only worker bootstrap
  * failures use the compatibility fallback so a restrictive browser or CSP
  * cannot prevent a first-attempt launch.
  */
-export async function runWizardLaneA({
+export async function runWizardStage4b({
   selections,
-  mergeContext,
   existingVfsFiles = {},
   signal,
   yieldToHost = () => Promise.resolve(),
   workerFactory = defaultWorkerFactory,
-  fallbackCommit = (fallbackSelections, fallbackFiles, fallbackMergeContext) => commitToPipeline(
-    { selections: fallbackSelections, existingVfsFiles: fallbackFiles, mergeContext: fallbackMergeContext },
+  fallbackCommit = (fallbackSelections, fallbackFiles) => commitToPipeline(
+    { selections: fallbackSelections, existingVfsFiles: fallbackFiles },
     'wizard-launch',
   ),
   now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
-}: RunWizardLaneAOptions): Promise<WizardLaneAResult> {
+}: RunWizardStage4bOptions): Promise<WizardStage4bResult> {
   const startedAt = now();
   await yieldToHost();
   if (signal?.aborted) throw toAbortError(signal);
 
-  console.info('[WizardLaneA] compile started', {
+  console.info('[WizardStage4b] compile started', {
     pageCount: selections.requestedPages?.length ?? 0,
     templateId: selections.templateId ?? null,
     themePresetId: selections.themePresetId ?? null,
@@ -184,28 +179,27 @@ export async function runWizardLaneA({
 
   try {
     const worker = workerFactory();
-    const pipelineResult = await runLaneAWorker(worker, {
+    const pipelineResult = await runStage4bWorker(worker, {
       requestId: createRequestId(),
       selections,
       existingVfsFiles,
-      mergeContext,
     }, signal);
     publishPipelineCommit(pipelineResult);
     const durationMs = Math.max(0, now() - startedAt);
-    console.info('[WizardLaneA] compile completed', { execution: 'worker', durationMs });
+    console.info('[WizardStage4b] compile completed', { execution: 'worker', durationMs });
     return { pipelineResult, execution: 'worker', durationMs };
   } catch (error) {
-    if (!(error instanceof WizardLaneAWorkerBootstrapError)) throw error;
-    console.warn('[WizardLaneA] worker unavailable; using compatibility fallback', {
+    if (!(error instanceof WizardStage4bWorkerBootstrapError)) throw error;
+    console.warn('[WizardStage4b] worker unavailable; using compatibility fallback', {
       error: error.message,
     });
   }
 
   await yieldToHost();
   if (signal?.aborted) throw toAbortError(signal);
-  const pipelineResult = fallbackCommit(selections, existingVfsFiles, mergeContext);
+  const pipelineResult = fallbackCommit(selections, existingVfsFiles);
   const durationMs = Math.max(0, now() - startedAt);
-  console.info('[WizardLaneA] compile completed', {
+  console.info('[WizardStage4b] compile completed', {
     execution: 'main-thread-fallback',
     durationMs,
   });

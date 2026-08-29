@@ -51,10 +51,11 @@ function prepareLaunchFiles(config: LaunchToSandpackConfig) {
     injectCssIfMissing: false,
   });
 
-  // Normalization is authoritative for preview input. Re-merging the raw VFS
-  // here used to overwrite repaired files (and could reintroduce duplicate,
-  // non-canonical paths) immediately before Sandpack compilation.
   const files: SandpackFiles = { ...normalizedFiles };
+
+  for (const [path, content] of Object.entries(sourceVfsFiles)) {
+    files[path] = content;
+  }
 
   // ── Theme CSS authority ──────────────────────────────────────────────
   // Snapshot wins only when existing CSS lacks the expected token shape
@@ -149,7 +150,6 @@ export async function launchStateToSandpackFilesAsync(
     files,
     entryPoint,
     themePresetId: resolution.themePresetId,
-    aesthetic: launchState.aesthetic,
     signal: options.signal,
     fallbackCompute: (fallbackFiles, fallbackEntryPoint, fallbackThemePresetId) => prepareSandpackFiles(fallbackFiles, {
       entryPoint: fallbackEntryPoint,

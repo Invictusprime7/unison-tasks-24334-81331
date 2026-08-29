@@ -1,15 +1,15 @@
-import { commitToPipeline } from '@/platform/core/commitToPipeline';
+import { commitToPipeline } from '@/platform/core';
 import type {
-  WizardLaneAWorkerRequest,
-  WizardLaneAWorkerResponse,
+  WizardStage4bWorkerRequest,
+  WizardStage4bWorkerResponse,
 } from '@/services/wizardStage4bRuntime';
 
-interface WizardLaneAWorkerScope {
-  onmessage: ((event: MessageEvent<WizardLaneAWorkerRequest>) => void) | null;
-  postMessage(message: WizardLaneAWorkerResponse): void;
+interface WizardStage4bWorkerScope {
+  onmessage: ((event: MessageEvent<WizardStage4bWorkerRequest>) => void) | null;
+  postMessage(message: WizardStage4bWorkerResponse): void;
 }
 
-const workerScope = self as unknown as WizardLaneAWorkerScope;
+const workerScope = self as unknown as WizardStage4bWorkerScope;
 
 workerScope.onmessage = (event) => {
   const request = event.data;
@@ -18,7 +18,6 @@ workerScope.onmessage = (event) => {
       {
         selections: request.selections,
         existingVfsFiles: request.existingVfsFiles,
-        mergeContext: request.mergeContext,
       },
       'wizard-launch',
     );

@@ -22,7 +22,6 @@
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
 import { LAUNCHER_BASE_THEME } from '@/sections/themes';
 import { isSandpackAllowedImport } from '@/utils/sandpackDependencies';
-import { isLucideIconName } from '@/utils/lucideIconNames';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
 import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
@@ -32,9 +31,6 @@ import { isLiveEditedVfsPath, resolveSnapshot } from '@/services/snapshotProject
 import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedChrome';
 import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
-import { stripCanonicalTokenOverrides } from '@/utils/generatedTokenGuard';
-import { normalizeCanonicalVfsFiles, normalizeCanonicalVfsPath } from '@/utils/canonicalVfsPath';
-import { restorePublishedRuntimeModule } from '@/services/publishedRuntimeModule';
 
 const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
 
@@ -2131,6 +2127,7 @@ function createProxyApp(targetPath: string): string {
   const importPath = toRelativeSandpackImport('/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
 
   return `import React from 'react';
+import { HashRouter } from 'react-router-dom';
 import * as PreviewEntryModule from '${importPath}';
 
 // Robust component discovery: prefer default export, then find first PascalCase function/class component
@@ -2188,9 +2185,11 @@ export default function App() {
     }, React.createElement('h2', { style: { fontSize: 18, marginBottom: 8 } }, 'No renderable component found'), React.createElement('p', { style: { color: '#888', fontSize: 14 } }, 'The entry file does not export a valid React component. Check that your component uses "export default" or a named PascalCase export.'), React.createElement('p', { style: { color: '#aaa', fontSize: 12, marginTop: 12 } }, 'Source: ${targetPath}')));
   }
 
-  // NOTE: no router here. /index.tsx mounts the single canonical hash router
-  // via __RouterGuard; wrapping again triggers the nested-router error.
-  return React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry));
+  return React.createElement(
+    HashRouter,
+    null,
+    React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry))
+  );
 }
 `;
 }
@@ -3880,59 +3879,7 @@ function escapeRegExp(s: string): string {
  * Otherwise drop the offending import so downstream synthesis inserts a
  * placeholder rather than crashing render.
  */
-/**
- * Strip nested <Router> hosts from every VFS module.
- *
- * DEFAULT_INDEX (always installed at /index.tsx) wraps <App /> in a
- * __RouterGuard that mounts the single canonical <HashRouter>. Any additional
- * BrowserRouter/HashRouter/MemoryRouter inside App.tsx or a page component
- * either throws ("You cannot render a <Router> inside another <Router>") or
- * silently desyncs from `hashchange`. <Routes>/<Route>/<Link>/<Navigate> are
- * preserved so multi-page navigation keeps working inside the guard's router.
- *
- * Exported so the shared preflight tail can run it BEFORE the compile-safe
- * gate — the validated bundle must be the bundle that compiles.
- */
-export function stripNestedRouterHosts(sandpackFiles: Record<string, string>): void {
-  for (const [filePath, content] of Object.entries(sandpackFiles)) {
-    if (typeof content !== 'string') continue;
-    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
-    if (filePath === '/index.tsx' || filePath === '/index.jsx') continue;
-    if (
-      filePath === '/hooks-shim.ts' ||
-      filePath === '/lib-utils-shim.ts' ||
-      filePath === '/ui-shim.tsx'
-    ) continue;
-
-    const aliasMatch = content.match(/(?:BrowserRouter|HashRouter|MemoryRouter)\s+as\s+(\w+)/);
-    const routerAlias = aliasMatch ? aliasMatch[1] : null;
-
-    const routerTags = ['BrowserRouter', 'HashRouter', 'MemoryRouter'];
-    if (routerAlias && !routerTags.includes(routerAlias)) routerTags.push(routerAlias);
-    const routerTagPattern = routerTags.join('|');
-    const tagRegex = new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, '');
-    if (!tagRegex.test(content)) continue;
-
-    const fixed = content
-      .replace(
-        /import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g,
-        (match) => {
-          const keepTokens = ['Routes', 'Route', 'Link', 'Navigate', 'useNavigate', 'useLocation', 'useParams', 'NavLink', 'Outlet'];
-          const otherImports = match.match(new RegExp(`\\b(?:${keepTokens.join('|')})\\b`, 'g'));
-          if (otherImports && otherImports.length > 0) {
-            return `import { ${Array.from(new Set(otherImports)).join(', ')} } from 'react-router-dom';\n`;
-          }
-          return '';
-        },
-      )
-      .replace(new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, 'g'), '')
-      .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
-
-    if (fixed !== content) sandpackFiles[filePath] = fixed;
-  }
-}
-
-export function rewriteSelfReferencingImports(sandpackFiles: Record<string, string>): void {
+function rewriteSelfReferencingImports(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
   const importRegex = /^(\s*import\s+[\s\S]+?\s+from\s+['"])(\.\.?\/[^'"]+)(['"];?)/gm;
 
@@ -3990,7 +3937,7 @@ function toRelativeFromDir(fromDir: string, toPath: string): string {
  * This ensures `generateMissingComponents` (which only scans import statements)
  * will then synthesize the actual component file.
  */
-export function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): void {
+function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
 
   for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
@@ -4085,20 +4032,12 @@ export function autoInjectMissingJsxImports(sandpackFiles: Record<string, string
   }
 }
 
-function hasExplicitModuleExtension(path: string): boolean {
-  return /\.(tsx|jsx|ts|js|mjs|cjs|json|css|scss|less|svg|png|jpe?g|webp|gif|avif|woff2?)$/i.test(path);
-}
-
 function resolveRelativeModuleTarget(
   filePath: string,
   rawImportPath: string,
   existingPaths: Set<string>,
 ): string | null {
-  const extensions = [
-    '.tsx', '.jsx', '.ts', '.js', '.mjs', '.cjs',
-    '.json', '.css', '.scss', '.less',
-    '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif',
-  ];
+  const extensions = ['.tsx', '.jsx', '.ts', '.js'];
   const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
   let resolved = rawImportPath.startsWith('/')
     ? rawImportPath
@@ -4112,7 +4051,7 @@ function resolveRelativeModuleTarget(
   }
 
   resolved = '/' + stack.join('/');
-  const candidates = hasExplicitModuleExtension(resolved)
+  const candidates = /\.\w+$/.test(resolved)
     ? [resolved]
     : [
         resolved,
@@ -4202,13 +4141,13 @@ function computeModuleExports(content: string): {
   return { hasDefault, named, primaryName, hasStarReExport };
 }
 
-export function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
+function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
 
   for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
 
-    const namedImportRegex = /import\s+\{([^{}]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    const namedImportRegex = /import\s+\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{([^}]*)\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let content = originalContent;
 
@@ -4318,6 +4257,65 @@ export function repairLocalImportContracts(sandpackFiles: Record<string, string>
     });
 
     if (content !== originalContent) sandpackFiles[filePath] = content;
+  }
+}
+
+function assertLocalJsxImportContracts(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+  const violations: Array<{ filePath: string; message: string }> = [];
+
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
+
+    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    let namedMatch: RegExpExecArray | null;
+    while ((namedMatch = namedImportRegex.exec(content)) !== null) {
+      const targetPath = resolveRelativeModuleTarget(filePath, namedMatch[2], existingPaths);
+      if (!targetPath) continue;
+      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
+      if (moduleExports.hasStarReExport) continue;
+
+      for (const part of namedMatch[1].split(',').map((item) => item.trim()).filter(Boolean)) {
+        const [imported, localAlias] = part.split(/\s+as\s+/).map((item) => item.trim());
+        const local = localAlias || imported;
+        if (
+          /^[A-Z]/.test(imported) &&
+          new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content) &&
+          !moduleExports.named.has(imported)
+        ) {
+          const available = [...moduleExports.named].join(', ') || (moduleExports.hasDefault ? 'default' : 'none');
+          violations.push({
+            filePath,
+            message: `${filePath} imports JSX component "${imported}" from "${namedMatch[2]}", but ${targetPath} does not export it (available: ${available}).`,
+          });
+        }
+      }
+    }
+
+    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{[^}]*\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    let defaultMatch: RegExpExecArray | null;
+    while ((defaultMatch = defaultImportRegex.exec(content)) !== null) {
+      const local = defaultMatch[1];
+      if (!new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)) continue;
+      const targetPath = resolveRelativeModuleTarget(filePath, defaultMatch[2], existingPaths);
+      if (!targetPath) continue;
+      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
+      if (!moduleExports.hasDefault && !moduleExports.hasStarReExport) {
+        const available = [...moduleExports.named].join(', ') || 'none';
+        violations.push({
+          filePath,
+          message: `${filePath} default-imports JSX component "${local}" from "${defaultMatch[2]}", but ${targetPath} has no default export (named exports: ${available}).`,
+        });
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    throw new PreviewPipelineError(
+      'prep',
+      `VFS JSX import/export incompatibility: ${violations.map(({ message }) => message).join(' ')}`,
+      { blockedFiles: [...new Set(violations.map(({ filePath }) => filePath))] },
+    );
   }
 }
 
@@ -4448,97 +4446,6 @@ function buildCanonicalWizardChromeModules(): Record<string, string> {
  * can find and replace it. This matches the no-op default-export safety net in
  * `repairLocalImportContracts`.
  */
-/**
- * Type-only imports (`import type { X } from './x'` or `import { type X }`)
- * are erased at runtime, so a missing target must never fail a wizard launch.
- * We satisfy them with a permissive declaration module instead.
- */
-export function isTypeOnlyImportStatement(statement: string): boolean {
-  if (/^\s*import\s+type\b/.test(statement)) return true;
-  const named = statement.match(/\{([^}]*)\}/)?.[1];
-  if (!named) return false;
-  const specifiers = named.split(',').map((entry) => entry.trim()).filter(Boolean);
-  return specifiers.length > 0 && specifiers.every((entry) => /^type\s+/.test(entry));
-}
-
-export function buildTypeOnlyModuleSource(statement: string, importPath: string): string {
-  const named = statement.match(/\{([^}]*)\}/)?.[1] ?? '';
-  const names = named
-    .split(',')
-    .map((entry) => entry.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0]?.trim())
-    .filter((name): name is string => !!name && /^[A-Za-z_$][\w$]*$/.test(name));
-  const lines = [
-    `// Auto-synthesized type module for unresolved type-only import "${importPath}".`,
-    ...names.map((name) => `export type ${name} = Record<string, unknown>;`),
-    'export {};',
-    '',
-  ];
-  return lines.join('\n');
-}
-
-/**
- * Lane B frequently writes `import CalendarPlus from './components/CalendarPlus'`
- * for what is actually a lucide-react icon. The module never exists, so the
- * wizard preview dies in the strict missing-module gate. Rewrite those imports
- * to the real icon package instead of failing (or synthesizing an empty stub).
- */
-export function rewriteLucideIconLocalImports(
-  sandpackFiles: Record<string, string>,
-): void {
-  const existingPaths = new Set(Object.keys(sandpackFiles));
-
-  for (const [filePath, content] of Object.entries(sandpackFiles)) {
-    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
-
-    let next = content;
-    const importRegex = /import\s+([\w*{},\s]+?)\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    let match: RegExpExecArray | null;
-    const rewrites: Array<{ statement: string; replacement: string }> = [];
-
-    while ((match = importRegex.exec(content)) !== null) {
-      const [statement, clause, rawImportPath] = match;
-      if (/\.(css|scss|less|json|svg|png|jpe?g|webp|gif)$/i.test(rawImportPath)) continue;
-      if (resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths)) continue;
-
-      const basename = (rawImportPath.split('/').pop() || '').replace(/\.(tsx?|jsx?)$/i, '');
-      const defaultName = clause.match(/^\s*([A-Za-z_$][\w$]*)\s*(?:,|$)/)?.[1];
-      const namedNames = (clause.match(/\{([^}]*)\}/)?.[1] ?? '')
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean);
-
-      const specifiers: string[] = [];
-      if (defaultName && isLucideIconName(basename)) {
-        specifiers.push(defaultName === basename ? basename : `${basename} as ${defaultName}`);
-      }
-      for (const entry of namedNames) {
-        const [source, alias] = entry.split(/\s+as\s+/).map((part) => part.trim());
-        if (!source || !isLucideIconName(source)) continue;
-        specifiers.push(alias ? `${source} as ${alias}` : source);
-      }
-      if (specifiers.length === 0) continue;
-
-      // Only rewrite when EVERY binding in the statement resolved to an icon.
-      const bindingCount = (defaultName ? 1 : 0) + namedNames.length;
-      if (specifiers.length !== bindingCount) continue;
-
-      rewrites.push({
-        statement,
-        replacement: `import { ${specifiers.join(', ')} } from 'lucide-react';`,
-      });
-    }
-
-    for (const { statement, replacement } of rewrites) {
-      next = next.split(statement).join(replacement);
-      console.warn(
-        `[sandpackFilePrep] Rewrote unresolved local icon import to lucide-react in ${filePath}: ${statement.trim()}`,
-      );
-    }
-
-    if (next !== content) sandpackFiles[filePath] = next;
-  }
-}
-
 function synthesizeMissingLocalImports(
   sandpackFiles: Record<string, string>,
   options: {
@@ -4546,7 +4453,6 @@ function synthesizeMissingLocalImports(
     themeModule?: string | null;
     iconModule?: string | null;
     sharedModules?: Record<string, string>;
-    canonicalOnly?: boolean;
   } = {},
 ): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
@@ -4579,12 +4485,12 @@ function synthesizeMissingLocalImports(
         else if (p !== '.' && p !== '') stack.push(p);
       }
       resolved = '/' + stack.join('/');
-      const writePath = hasExplicitModuleExtension(resolved) ? resolved : `${resolved}.tsx`;
+      const writePath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
       if (existingPaths.has(writePath)) continue;
       if (extensions.some((ext) => existingPaths.has(resolved + ext))) continue;
 
       if (/(^|\/)theme$/i.test(resolved) && options.themeModule) {
-        const themePath = hasExplicitModuleExtension(resolved) ? resolved : `${resolved}.ts`;
+        const themePath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.ts`;
         sandpackFiles[themePath] = options.themeModule;
         existingPaths.add(themePath);
         console.warn(
@@ -4613,18 +4519,6 @@ function synthesizeMissingLocalImports(
         continue;
       }
 
-      if (options.canonicalOnly) continue;
-
-      if (isTypeOnlyImportStatement(match[0])) {
-        const typePath = hasExplicitModuleExtension(resolved) ? resolved : `${resolved}.ts`;
-        sandpackFiles[typePath] = buildTypeOnlyModuleSource(match[0], rawImportPath);
-        existingPaths.add(typePath);
-        console.warn(
-          `[sandpackFilePrep] Synthesized type-only module ${typePath} for erased import "${rawImportPath}" in ${filePath}`,
-        );
-        continue;
-      }
-
       if (options.failOnMissingImport) {
         throw new PreviewPipelineError(
           'prep',
@@ -4632,7 +4526,6 @@ function synthesizeMissingLocalImports(
           { blockedFiles: [filePath], recoverableByRelaunch: true },
         );
       }
-
 
       // Derive a component name from the import statement (default OR first named).
       const stmt = match[0];
@@ -4821,7 +4714,7 @@ function generateMissingComponents(sandpackFiles: Record<string, string>): void 
       const candidates = [resolved, ...extensions.map(ext => resolved + ext)];
       if (candidates.some(c => existingPaths.has(c))) continue;
 
-      const targetPath = hasExplicitModuleExtension(resolved) ? resolved : `${resolved}.tsx`;
+      const targetPath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
       if (existingPaths.has(targetPath)) continue;
 
       const importStatement = im[0];
@@ -5037,164 +4930,6 @@ function collectTopLevelBindingNames(code: string): Set<string> {
 }
 
 /**
- * Repair: duplicate top-level declarations of the same identifier.
- *
- * A Lane B page body merged onto a canonical page scaffold can end up with two
- * top-level `Home` declarations (e.g. a scaffold `const Home` plus the authored
- * `const Home: React.FC`). Babel hard-fails with "Identifier 'Home' has already
- * been declared" *before* any preview renders, and Sandpack's own error path
- * then crashes trying to mutate the frozen SyntaxError ("Cannot assign to read
- * only property 'message'"), hiding the real cause.
- *
- * The LAST declaration wins (it is the authored/most recent one). Earlier
- * duplicates are renamed to `Name__dup<n>` and stripped of their `export` /
- * `export default` keywords so references and the default export bind to the
- * surviving declaration.
- */
-export function dedupeTopLevelDeclarations(code: string): string {
-  const declRe = /^(export\s+default\s+|export\s+)?(?:async\s+)?(const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/;
-  const lines = code.split('\n');
-  const occurrences = new Map<string, number[]>();
-
-  for (let i = 0; i < lines.length; i++) {
-    const match = declRe.exec(lines[i]);
-    if (!match) continue;
-    const name = match[3];
-    const list = occurrences.get(name);
-    if (list) list.push(i);
-    else occurrences.set(name, [i]);
-  }
-
-  let changed = false;
-  for (const [name, indices] of occurrences) {
-    if (indices.length < 2) continue;
-    // Keep the last declaration; neutralize the earlier ones.
-    indices.slice(0, -1).forEach((lineIndex, dupIndex) => {
-      const original = lines[lineIndex];
-      const match = declRe.exec(original);
-      if (!match) return;
-      const alias = `${name}__dup${dupIndex + 1}`;
-      let next = original.slice(match[0].length);
-      const keyword = match[2];
-      next = `${keyword} ${alias}${next}`;
-      lines[lineIndex] = next;
-      changed = true;
-    });
-  }
-
-  // ── Import-vs-declaration collisions ────────────────────────────────────
-  // A merged page body frequently ends up importing the very component it also
-  // declares (`import Home from './Home'` + `const Home: React.FC = ...`), or a
-  // chrome wrapper's body copy retains the wrapper's import. Babel reports the
-  // *declaration* line as "already been declared", so the earlier import is the
-  // real duplicate. The local declaration is authoritative — drop the colliding
-  // import binding (and the whole statement when nothing else is bound).
-  const declaredNames = new Set(occurrences.keys());
-  let result = changed ? lines.join('\n') : code;
-  if (declaredNames.size === 0) return result;
-
-  // Match the complete import statement rather than one line. Generated icon
-  // imports are commonly formatted across several lines, and `Home` is both a
-  // valid lucide icon and the conventional page component name:
-  //   import { ArrowRight, Home } from 'lucide-react';
-  //   const Home: React.FC = ...
-  // Babel rejects the module before any later runtime repair can execute.
-  const importRe = /(^|\n)([ \t]*import\s+(?!type\b)([\s\S]*?)\s+from\s+(['"][^'"]+['"])\s*;?)(?=\s*(?:\n|$))/g;
-  result = result.replace(importRe, (statement, prefix: string, _full: string, clause: string, source: string) => {
-    const namedMatch = clause.match(/\{([\s\S]*?)\}/);
-    const originalNamed = (namedMatch?.[1] ?? '').split(',').map((spec) => spec.trim()).filter(Boolean);
-    const keptNamed = originalNamed.filter((spec) => {
-      const parts = spec.split(/\s+as\s+/i);
-      const local = parts[parts.length - 1]?.trim() ?? '';
-      return !declaredNames.has(local);
-    });
-    const namedChanged = keptNamed.length !== originalNamed.length;
-
-    const defaultPart = clause.replace(/\{[\s\S]*?\}/, '').replace(/,\s*$/, '').trim();
-    const defaultLocal = /^\*\s+as\s+/.test(defaultPart)
-      ? defaultPart.replace(/^\*\s+as\s+/, '').trim()
-      : defaultPart;
-    const dropDefault = Boolean(defaultLocal) && declaredNames.has(defaultLocal);
-
-    if (!namedChanged && !dropDefault) return statement;
-
-    changed = true;
-    const parts: string[] = [];
-    if (defaultPart && !dropDefault) parts.push(defaultPart);
-    if (keptNamed.length > 0) parts.push(`{ ${keptNamed.join(', ')} }`);
-    return parts.length > 0
-      ? `${prefix}import ${parts.join(', ')} from ${source};`
-      : `${prefix}import ${source};`;
-  });
-
-  return changed ? result : code;
-}
-
-const LUCIDE_FALLBACK_DECL = `const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`;
-
-/**
- * AI-authored pages frequently reference lucide icons (e.g. `<Icon icon={CalendarPlus} />`)
- * without importing them — and the duplicate-declaration deduper can also strip a colliding
- * import binding. Detect icon-named identifiers that have no declaration in the file and
- * inject safe namespace lookups with a fallback glyph.
- */
-export function injectMissingLucideIcons(code: string): string {
-  if (typeof code !== 'string' || !code) return code;
-
-  // Identifiers used in the body (declaration lines removed to avoid self-matching).
-  const bodyWithoutDecls = code.replace(/^(?:import\s+.*|const\s+\w+\s*=).*$/gm, '');
-  const usedIdentifiers = new Set<string>();
-  const identRe = /\b([A-Z][a-zA-Z0-9]+)\b/g;
-  let idMatch: RegExpExecArray | null;
-  while ((idMatch = identRe.exec(bodyWithoutDecls)) !== null) {
-    usedIdentifiers.add(idMatch[1]);
-  }
-
-  // Icons passed through prop expressions (`icon={X}`, `Icon={X}`, `as={X}`) can live on a
-  // line that the crude declaration filter above removed — scan the raw source for those too.
-  const propRe = /\b(?:icon|Icon|as|leftIcon|rightIcon|startIcon|endIcon)\s*=\s*\{\s*([A-Z][a-zA-Z0-9]+)\s*\}/g;
-  let propMatch: RegExpExecArray | null;
-  while ((propMatch = propRe.exec(code)) !== null) {
-    usedIdentifiers.add(propMatch[1]);
-  }
-
-  const missingIcons: string[] = [];
-  for (const name of usedIdentifiers) {
-    if (!isLucideIconName(name)) continue;
-    // Skip anything already declared (import, const/let/var, function, class).
-    const declRe = new RegExp(
-      `(?:import\\s+[^;]*\\b${name}\\b|(?:const|let|var)\\s+${name}\\s*=|function\\s+${name}\\b|class\\s+${name}\\b)`,
-      'm',
-    );
-    if (!declRe.test(code)) missingIcons.push(name);
-  }
-
-  if (missingIcons.length === 0) return code;
-
-  const injections: string[] = [];
-  if (!code.includes("import * as __LucideIcons from 'lucide-react'")) {
-    injections.push(`import * as __LucideIcons from 'lucide-react';`);
-  }
-  // The fallback must be declared above every lookup line, otherwise TDZ crashes.
-  if (!code.includes('const __LucideFallback =')) {
-    injections.push(LUCIDE_FALLBACK_DECL);
-  }
-  for (const name of missingIcons) {
-    injections.push(`const ${name} = __LucideIcons['${name}'] || __LucideFallback;`);
-  }
-
-  const fallbackDeclMatch = code.match(/^const __LucideFallback\s*=.*$/m);
-  if (fallbackDeclMatch?.index !== undefined) {
-    const fallbackLineEnd = code.indexOf('\n', fallbackDeclMatch.index);
-    const insertAt = fallbackLineEnd === -1 ? code.length : fallbackLineEnd + 1;
-    return code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
-  }
-  const insertAt = findSafeImportInsertionPoint(code);
-  return code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
-}
-
-
-/**
  * Process code to strip/transform imports that Sandpack can't resolve.
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
  */
@@ -5202,27 +4937,6 @@ export function processCode(code: string, filePath: string): string {
   if (!/\.(tsx?|jsx?|mjs)$/.test(filePath)) {
     return code;
   }
-
-  // Collapse duplicate top-level declarations before any other transform so a
-  // merged page body can never hard-fail Babel with "already been declared".
-  code = dedupeTopLevelDeclarations(code);
-
-  // Stage 4b owns the canonical design tokens. Inline re-declarations authored
-  // by Lane B (`style={{ '--primary': 'hsl(var(--primary))' }}`) are cyclic and
-  // blank out every themed utility below them — strip them before compile.
-  {
-    const guarded = stripCanonicalTokenOverrides(code);
-    if (guarded.strippedTokens > 0 || guarded.strippedAttrClasses > 0) {
-      console.warn('[sandpackFilePrep] stripped generated token overrides', {
-        filePath,
-        tokens: guarded.strippedTokens,
-        attrClasses: guarded.strippedAttrClasses,
-      });
-    }
-    code = guarded.code;
-  }
-
-
 
   // ── Repair: strip dangling/unterminated import openers ─────────────────
   // AI generation (or an earlier repair pass) sometimes leaves a truncated
@@ -5435,14 +5149,85 @@ export function processCode(code: string, filePath: string): string {
   }
 
   // ── Auto-inject missing lucide icon references ────────────────────────
-  // Defensive: a stale worker chunk (or any future refactor) must never be able
-  // to halt the whole preview compile over icon repair.
-  try {
-    code = injectMissingLucideIcons(code);
-  } catch (iconErr) {
-    console.warn('[sandpackFilePrep] lucide icon injection skipped', iconErr);
+  // AI sometimes uses lucide icon names (e.g. `icon: Database`) without
+  // importing them. Detect PascalCase identifiers that look like lucide
+  // icons but have no declaration, and inject safe proxy declarations.
+  const COMMON_LUCIDE_ICONS = new Set([
+    'Activity','AlertCircle','AlertTriangle','Archive','ArrowDown','ArrowLeft',
+    'ArrowRight','ArrowUp','Award','BarChart','Bell','Bookmark','Box','Briefcase',
+    'Calendar','Camera','Check','CheckCircle','ChevronDown','ChevronLeft',
+    'ChevronRight','ChevronUp','Circle','Clock','Cloud','Code','Coffee',
+    'Cpu','CreditCard','Database','Download','Edit','ExternalLink','Eye',
+    'EyeOff','Facebook','File','FileText','Film','Filter','Flag','Folder',
+    'Gift','Github','Globe','Grid','Hash','Heart','HelpCircle','Home',
+    'Image','Inbox','Info','Instagram','Key','Layers','Layout','Link',
+    'List','Loader','Lock','LogIn','LogOut','Mail','Map','MapPin','Menu',
+    'MessageCircle','MessageSquare','Mic','Monitor','Moon','MoreHorizontal',
+    'MoreVertical','Move','Music','Navigation','Package','Paperclip','Pause',
+    'PenTool','Phone','PieChart','Play','Plus','Pocket','Power','Printer',
+    'Radio','RefreshCw','Repeat','RotateCw','Rss','Save','Search','Send',
+    'Server','Settings','Share','Shield','ShoppingBag','ShoppingCart','Sidebar',
+    'Slash','Sliders','Smartphone','Speaker','Square','Star','Sun','Sunrise',
+    'Sunset','Tablet','Tag','Target','Terminal','ThumbsDown','ThumbsUp',
+    'ToggleLeft','ToggleRight','Tool','Trash','TrendingDown','TrendingUp',
+    'Triangle','Truck','Tv','Twitter','Type','Umbrella','Underline','Unlock',
+    'Upload','User','UserCheck','UserPlus','UserX','Users','Video','Voicemail',
+    'Volume','Watch','Wifi','Wind','X','XCircle','Youtube','Zap','ZapOff',
+    'Rocket','Sparkles','Wand','Bot','Brain','Lightbulb','Flame','Crown',
+    'Gem','HandHeart','Headphones','Languages','Laugh','PaintBucket','Palette',
+    'Puzzle','Receipt','Scale','ScrollText','Shrub','Wrench',
+  ]);
+
+  // Find all PascalCase identifiers used in the body (outside imports/declarations)
+  const bodyWithoutDecls = code.replace(/^(?:import\s+.*|const\s+\w+\s*=).*$/gm, '');
+  const usedIdentifiers = new Set<string>();
+  const identRe = /\b([A-Z][a-zA-Z0-9]+)\b/g;
+  let idMatch: RegExpExecArray | null;
+  while ((idMatch = identRe.exec(bodyWithoutDecls)) !== null) {
+    usedIdentifiers.add(idMatch[1]);
   }
 
+  // Check which are missing declarations
+  const missingIcons: string[] = [];
+  for (const name of usedIdentifiers) {
+    if (!COMMON_LUCIDE_ICONS.has(name)) continue;
+    // Check if already declared (import, const, function, class)
+    const declRe = new RegExp(`(?:import\\s+.*\\b${name}\\b|const\\s+${name}\\s*=|function\\s+${name}\\b|class\\s+${name}\\b)`, 'm');
+    if (!declRe.test(code)) {
+      missingIcons.push(name);
+    }
+  }
+
+  if (missingIcons.length > 0) {
+    // Inject lucide proxy declarations for missing icons
+    const hasLucideNamespace = code.includes("import * as __LucideIcons from 'lucide-react'");
+    const hasFallbackDecl = code.includes('const __LucideFallback =');
+    const injections: string[] = [];
+    if (!hasLucideNamespace) {
+      injections.push(`import * as __LucideIcons from 'lucide-react';`);
+    }
+    // Always ensure fallback is declared BEFORE lookup lines we emit, even if
+    // the namespace import already exists — otherwise lookups TDZ-crash on
+    // `__LucideFallback`.
+    if (!hasFallbackDecl) {
+      injections.push(`const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`);
+    }
+    for (const name of missingIcons) {
+      injections.push(`const ${name} = __LucideIcons['${name}'] || __LucideFallback;`);
+    }
+    // Insert after the fallback declaration when it already exists; otherwise
+    // insert after the last import. This preserves the invariant that every
+    // `const Icon = ... || __LucideFallback` line appears below the fallback.
+    const fallbackDeclMatch = code.match(/^const __LucideFallback\s*=.*$/m);
+    if (fallbackDeclMatch?.index !== undefined) {
+      const fallbackLineEnd = code.indexOf('\n', fallbackDeclMatch.index);
+      const insertAt = fallbackLineEnd === -1 ? code.length : fallbackLineEnd + 1;
+      code = code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
+    } else {
+      const insertAt = findSafeImportInsertionPoint(code);
+      code = code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
+    }
+  }
 
   // ── Safe framer-motion imports ─────────────────────────────────────────
   // The AI frequently imports { motion, AnimatePresence } from 'framer-motion'.
@@ -5583,28 +5368,6 @@ export function processCode(code: string, filePath: string): string {
     ),
   );
 
-  // Cover re-exports, multiline imports, and dynamic imports as well as the
-  // ordinary single-line aliases above. The persisted VFS uses `/src`, while
-  // Sandpack receives those files flattened at its root.
-  processed = processed.replace(
-    /(\b(?:from|import\s*\()\s*['"])@\/([^'"\n]+)(['"]\s*\)?)/g,
-    (_match, prefix, modulePath, suffix) => (
-      `${prefix}${aliasModuleToRelativeImport(filePath, `@/${modulePath}`)}${suffix}`
-    ),
-  );
-  processed = processed.replace(
-    /(\b(?:from|import\s*\()\s*['"])\/src\/([^'"\n]+)(['"]\s*\)?)/g,
-    (_match, prefix, modulePath, suffix) => (
-      `${prefix}${toRelativeSandpackImport(filePath, `/${modulePath}`)}${suffix}`
-    ),
-  );
-  processed = processed.replace(
-    /(\bimport\s*['"])\/src\/([^'"\n]+)(['"])/g,
-    (_match, prefix, modulePath, suffix) => (
-      `${prefix}${toRelativeSandpackImport(filePath, `/${modulePath}`)}${suffix}`
-    ),
-  );
-
   // Process remaining imports — strip unresolvable npm packages to prevent Sandpack crashes
 
   // Generated Unison Radix facades re-export the external primitive. Sandpack
@@ -5700,7 +5463,19 @@ export function processCode(code: string, filePath: string): string {
  * Normalize raw launcher/wizard VFS files before handing off to the Web Builder.
  * Ensures consistent paths, entry files, and CSS tokens.
  */
-const normalizeLauncherPath = normalizeCanonicalVfsPath;
+function normalizeLauncherPath(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+
+  if (/^\/(App|main|index)\.(tsx|jsx|ts|js)$/.test(normalized) || normalized === '/index.css') {
+    return `/src${normalized}`;
+  }
+
+  if (/^\/(pages|components|styles)\//.test(normalized)) {
+    return `/src${normalized}`;
+  }
+
+  return normalized;
+}
 
 function isBootstrapSourceEntry(path?: string | null): boolean {
   return !!path && /\/(main|index)\.(tsx|jsx|ts|js)$/.test(path);
@@ -5789,12 +5564,10 @@ export function normalizeLauncherFiles(
   }
 
   const out: Record<string, string> = {};
-  const canonicalResolvedFiles = restorePublishedRuntimeModule(
-    normalizeCanonicalVfsFiles(resolvedFiles),
-  );
 
   // Normalize all paths to have leading slash
-  for (const [normalized, content] of Object.entries(canonicalResolvedFiles)) {
+  for (const [path, content] of Object.entries(resolvedFiles)) {
+    const normalized = normalizeLauncherPath(path);
     // Sanitize image URLs and enforce contrast in all files
     let sanitized = content;
     if (/\.(tsx?|jsx?|css)$/.test(normalized)) {
@@ -6143,25 +5916,7 @@ export function prepareSandpackFiles(
   // actual files and merge them into the VFS instead of treating the JSON
   // string as source code.
   // ═══════════════════════════════════════════════════════════════════════════
-  // Legacy chrome-split artifacts (`/src/pages/HomeBody.tsx`) are no longer
-  // produced: one page = one file. Strip any that survive in cached drafts so
-  // they can never re-enter the bundle as a phantom route module.
-  const legacyBodyModules = Object.keys(files).filter((p) => /Body\.(tsx|jsx)$/.test(p));
-  if (legacyBodyModules.length > 0) {
-    const pruned = { ...files };
-    for (const bodyPath of legacyBodyModules) {
-      const pagePath = bodyPath.replace(/Body\.(tsx|jsx)$/, '.$1');
-      const wrapper = pruned[pagePath];
-      // Collapse the wrapper back into a single page module.
-      if (typeof wrapper === 'string' && /from\s+['"]\.\/[A-Za-z0-9_]+Body['"]/.test(wrapper)) {
-        pruned[pagePath] = pruned[bodyPath];
-      }
-      delete pruned[bodyPath];
-    }
-    files = pruned;
-  }
-
-  let resolvedFiles = restorePublishedRuntimeModule(files);
+  let resolvedFiles = files;
   const fileKeys = Object.keys(files);
 
   // Case 1: The entire VFS has a single file whose content is a JSON files wrapper
@@ -6237,7 +5992,6 @@ export function prepareSandpackFiles(
   let hasIndex = false;
   let hasCSS = false;
   const componentFilePaths: string[] = [];
-  const sandpackSourcePaths = new Map<string, string>();
 
   console.log('[sandpackFilePrep] Input VFS files:', Object.keys(finalFiles));
 
@@ -6247,7 +6001,7 @@ export function prepareSandpackFiles(
     // Skip files Sandpack doesn't need
     if (normalizedPath.includes('node_modules') ||
         normalizedPath.includes('/.') ||
-        normalizedPath === '/package.json' ||
+        normalizedPath.endsWith('.json') ||
         normalizedPath.endsWith('.config.ts') ||
         normalizedPath.endsWith('.config.js')) {
       continue;
@@ -6338,26 +6092,7 @@ export function prepareSandpackFiles(
     processedContent = processCode(processedContent, normalizedPath);
     processedContent = repairBrokenImageUrls(processedContent);
     processedContent = injectPreviewNavBridge(processedContent, normalizedPath);
-
-    const existingSourcePath = sandpackSourcePaths.get(normalizedPath);
-    const existingContent = sandpackFiles[normalizedPath];
-    if (
-      existingSourcePath !== undefined &&
-      existingSourcePath !== path &&
-      existingContent !== processedContent
-    ) {
-      throw new PreviewPipelineError(
-        'prep',
-        `Canonical VFS paths "${existingSourcePath}" and "${path}" both map to Sandpack module "${normalizedPath}"; refusing an order-dependent overwrite.`,
-        {
-          blockedFiles: [existingSourcePath, path],
-          recoverableByRelaunch: true,
-        },
-      );
-    }
-
     sandpackFiles[normalizedPath] = processedContent;
-    sandpackSourcePaths.set(normalizedPath, path);
 
     if (/\.(tsx?|jsx?)$/.test(normalizedPath) && normalizedPath !== '/hooks-shim.ts' && !/(^|\/)unison\//i.test(normalizedPath)) {
       componentFilePaths.push(normalizedPath);
@@ -6518,8 +6253,54 @@ export function prepareSandpackFiles(
 
 
   // ── SAFETY: Strip Router wrappers from ALL VFS files ──
-  stripNestedRouterHosts(sandpackFiles);
+  // DEFAULT_INDEX (always installed at /index.tsx) wraps <App /> in a
+  // __RouterGuard that mounts a single canonical <HashRouter>. Any additional
+  // <BrowserRouter>/<HashRouter>/<MemoryRouter> inside App.tsx or page
+  // components creates a nested-router situation. In React Router v6 the
+  // inner router either throws ("You cannot render a <Router> inside another
+  // <Router>") or silently desyncs from `hashchange` — clicks update the URL
+  // but routes never re-render and the preview-nav-bridge appears
+  // "disconnected" (matches the wizard-handoff regression). Strip routers from
+  // EVERY *.tsx/*.jsx file so the RouterGuard is the sole router host.
+  // <Routes>/<Route>/<Link>/<Navigate> are preserved so the canonical wizard
+  // App.tsx — `<HashRouter><Routes>…</Routes></HashRouter>` — becomes
+  // `<Routes>…</Routes>` inside the guard's router and multi-page navigation
+  // (plus the INTENT_TRIGGER → navigateToBuilderPage round-trip) works again.
+  for (const [filePath, content] of Object.entries(sandpackFiles)) {
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+    if (filePath === '/index.tsx' || filePath === '/index.jsx') continue;
+    if (filePath === '/hooks-shim.ts' || filePath === '/lib-utils-shim.ts' || filePath === '/ui-shim.tsx') continue;
 
+    // Detect aliased router imports like `BrowserRouter as Router`
+    const aliasMatch = content.match(/(?:BrowserRouter|HashRouter|MemoryRouter)\s+as\s+(\w+)/);
+    const routerAlias = aliasMatch ? aliasMatch[1] : null;
+
+    // Build list of all Router-like tag names to strip
+    const routerTags = ['BrowserRouter', 'HashRouter', 'MemoryRouter'];
+    if (routerAlias && !routerTags.includes(routerAlias)) {
+      routerTags.push(routerAlias);
+    }
+    const routerTagPattern = routerTags.join('|');
+    const tagRegex = new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, '');
+
+    if (tagRegex.test(content)) {
+      const fixed = content
+        .replace(/import\s*\{[^}]*(?:BrowserRouter|HashRouter|MemoryRouter)[^}]*\}\s*from\s*['"]react-router-dom['"];?\n?/g, (match) => {
+          // Keep non-Router imports from the same line
+          const keepTokens = ['Routes', 'Route', 'Link', 'Navigate', 'useNavigate', 'useLocation', 'useParams', 'NavLink', 'Outlet'];
+          const otherImports = match.match(new RegExp(`\\b(?:${keepTokens.join('|')})\\b`, 'g'));
+          if (otherImports && otherImports.length > 0) {
+            return `import { ${Array.from(new Set(otherImports)).join(', ')} } from 'react-router-dom';\n`;
+          }
+          return '';
+        })
+        .replace(new RegExp(`<(?:${routerTagPattern})(?:\\s[^>]*)?>`, 'g'), '')
+        .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
+      if (fixed !== content) {
+        sandpackFiles[filePath] = fixed;
+      }
+    }
+  }
 
   // ── REWRITE self-referencing relative imports ──
   // AI often writes `import Services from './Services'` inside
@@ -6531,23 +6312,13 @@ export function prepareSandpackFiles(
   // ── AUTO-INJECT imports for JSX-used but un-imported components ──
   autoInjectMissingJsxImports(sandpackFiles);
 
-  // Unresolved local imports that are actually lucide icons become real
-  // lucide-react imports instead of killing the wizard preview.
-  rewriteLucideIconLocalImports(sandpackFiles);
-
-  // Restore only approved Wizard-owned modules before generic closure. This
-  // prevents the usage-derived ladder from synthesizing a competing theme,
-  // icon, or shared-chrome module at a different extension.
-  synthesizeMissingLocalImports(sandpackFiles, {
-    themeModule: buildCanonicalThemeModule(resolvedPresetId || cssResolution.themePresetId),
-    iconModule: buildCanonicalIconModule(),
-    sharedModules: buildCanonicalWizardChromeModules(),
-    canonicalOnly: true,
-  });
-
-  // Projection-only from here: acceptance happened at generation time and the
-  // snapshot is sealed. Prep must not re-run a closure ladder or author
-  // modules the generator never produced.
+  // Missing relative imports must surface as preview diagnostics. Do not
+  // synthesize fallback/template components into wizard-generated sites.
+  // EXCEPTION: the in-builder AI Builder commonly writes a file that
+  // references a sibling module before creating it. To prevent
+  // "Could not find module" crashes from killing the preview, we synthesize
+  // a minimal `() => null` placeholder (NOT a fake chip). Authors see the
+  // empty slot and replace it on the next turn.
   synthesizeMissingLocalImports(
     sandpackFiles,
     {
@@ -6558,7 +6329,6 @@ export function prepareSandpackFiles(
     },
   );
 
-
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (/\.(tsx?|jsx?)$/.test(filePath)) {
       sandpackFiles[filePath] = repairMalformedDefaultExportClosures(content);
@@ -6566,6 +6336,7 @@ export function prepareSandpackFiles(
   }
 
   repairLocalImportContracts(sandpackFiles);
+  assertLocalJsxImportContracts(sandpackFiles);
 
 
   // ── SAFETY: Validate App.tsx has a default export ──
@@ -6603,6 +6374,7 @@ export function prepareSandpackFiles(
   // possible. Reconcile again, then fail with the exact file/symbol pair before
   // React receives an undefined JSX element type.
   repairLocalImportContracts(sandpackFiles);
+  assertLocalJsxImportContracts(sandpackFiles);
 
   // ── CLEANUP: Remove unused imports from VFS files ──
   // AI often imports components/icons it doesn't actually use in the template,

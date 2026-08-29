@@ -552,19 +552,16 @@ export default function Gallery(){ const image: StaticImageData | string = '/gal
     expect(prepared['/unison/ui.tsx']).toBeUndefined();
   });
 
-  it('never authors a missing export during projection — acceptance owns that', () => {
-    const prepared = prepareSandpackFiles({
+  it('surfaces the exact Contact import/export incompatibility before an undefined JSX render', () => {
+    expect(() => prepareSandpackFiles({
       ...foundation.files,
       '/src/App.tsx': "import Contact from './pages/Contact'; export default function App(){ return <Contact />; }",
       '/src/pages/Contact.tsx': "import { ContactCard } from '../components/ContactParts'; export default function Contact(){ return <ContactCard />; }",
       '/src/components/ContactParts.tsx': 'export function Address(){ return <address />; } export function Hours(){ return <aside />; }',
       '/src/index.css': ':root { --primary: 0 0% 10%; }',
-    }, { strict: true, entryPoint: '/src/App.tsx' });
-
-    // Prep is projection-only: it must not invent ContactCard. A page importing
-    // an export that does not exist is rejected at generation time and the page
-    // is regenerated or dropped whole.
-    expect(prepared['/components/ContactParts.tsx']).not.toContain('export function ContactCard');
+    }, { strict: true, entryPoint: '/src/App.tsx' })).toThrow(
+      /Contact\.tsx imports JSX component "ContactCard".*does not export it.*Address, Hours/i,
+    );
   });
 
   it('never splices the Lucide icon fallback shim into a dangling incomplete import statement', async () => {

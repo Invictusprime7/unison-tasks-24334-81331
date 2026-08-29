@@ -12,11 +12,6 @@ Restores the same revision and selected page.
 **Status:** Assessed Real (call-site trace, not a live browser run) — 2026-08-13.
 See Stage 0 in `roadmap-state.md`.
 
-2026-08-27 implementation evidence: the Wizard now seals only after Lane A,
-Lane B, Stage 4b, whole-candidate compile-safe acceptance, and Preview smoke.
-The full local suite passes, but no live launch/redirect/refresh/reopen run was
-performed, so this status is not promoted.
-
 ## 2. AI or manual edit -> validated commit -> cloud persistence -> refresh -> deterministic rollback
 
 **Status:** Unknown — not assessed this cycle. `vfsCommitService.ts`'s
@@ -59,11 +54,6 @@ a real booking from that overlay, since the overlay's simple form cannot
 supply the `componentId`/`slot`/`serviceId`/`slotId` contract `site-runtime`
 requires). Full adapter/router parity across Sandpack preview, external
 preview, Docker preview, and production has not been assessed.
-
-2026-08-27 implementation evidence: Wizard admission now requires the final
-post-Stage-4b snapshot to pass compile-safe and Preview smoke checks. No live
-approved-preview-to-published comparison was performed, so parity remains
-Partial.
 
 ## 6. Agency owner/staff/client -> only explicitly assigned businesses, projects, and operations are visible
 

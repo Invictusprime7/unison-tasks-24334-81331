@@ -10,37 +10,9 @@ import { THEME_PRESETS } from "@/components/onboarding/themePresets";
 import { themePresetToThemeTokens } from "@/components/onboarding/themePresetToTokens";
 import { buildThemedIndexCss } from "@/components/onboarding/themePresetToIndexCss";
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
-import { buildTemplateLayoutContract } from '@/services/templateLayoutContract';
-import { createWizardMergeContext } from '@/services/wizardMergeContext';
 
 describe("launchStateToSandpackFiles", () => {
-  it('does not reintroduce raw launcher paths after canonical normalization', () => {
-    const launchState = createLaunchState({
-      systemType: 'store',
-      systemName: 'Store',
-      businessName: 'Vela',
-      templateName: 'Storefront',
-      templateCategory: 'store',
-      vfsFiles: {
-        '/App.tsx': "import Home from './pages/Home'; export default function App() { return <Home />; }",
-        '/pages/Home.tsx': 'export default function Home() { return <main>Normalized</main>; }',
-        '/index.css': ':root { --primary: 221 83% 53%; }',
-      },
-      preloadedIntents: [],
-    });
-
-    const previewFiles = launchStateToSandpackFiles({
-      launchState,
-      vfsFiles: launchState.vfsFiles,
-    });
-
-    expect(previewFiles['/App.tsx']).toContain("from './pages/Home'");
-    expect(previewFiles['/pages/Home.tsx']).toContain('Normalized');
-    expect(previewFiles['/src/App.tsx']).toBeUndefined();
-    expect(previewFiles['/src/pages/Home.tsx']).toBeUndefined();
-  });
-
-  it('projects a sealed wizard bundle without re-running route acceptance', () => {
+  it('blocks a wizard preview when Sandpack disconnects a registered route from its router', () => {
     const snapshot = {
       snapshotId: 'snap_route_reachability',
       businessName: 'Vela',
@@ -65,13 +37,11 @@ describe("launchStateToSandpackFiles", () => {
       },
     };
 
-    // Route reachability is decided once, at generation time. Preview is a
-    // projection of the sealed snapshot and no longer re-judges it.
     expect(() => buildPreviewArtifacts({
       sourceFiles: {
         '/.unison/site-bundle-snapshot.json': JSON.stringify(snapshot),
       },
-    })).not.toThrow();
+    })).toThrow(/disconnected from \/App\.tsx/);
   });
 
   it('keeps every generated runtime file, including public assets, in the Sandpack overlay', () => {
@@ -120,7 +90,7 @@ describe("launchStateToSandpackFiles", () => {
 
     expect(() => buildPreviewArtifacts({
       sourceFiles: { '/.unison/site-bundle-snapshot.json': JSON.stringify(snapshot) },
-    })).toThrow(/refusing an order-dependent overwrite/);
+    })).toThrow(/refusing to drop either generated file/);
   });
 
   it("merges the lightweight preview runtime with final artifact imports while preserving themePresetId CSS", () => {
@@ -511,22 +481,11 @@ describe("launchStateToSandpackFiles", () => {
       expect(pipeline.compileResult.vfsFiles[page.filePath!]).toMatch(/export\s+default\b/);
     }
     expect(pipeline.compileResult.vfsFiles['/src/App.tsx']).toContain('<Routes>');
-    const composition = getCompositionsBySystemType('booking')
-      .find((candidate) => candidate.id === templateId)!;
-    const mergeContext = createWizardMergeContext({
-      industry: wizardSelections.industryOverlay,
-      templateId,
-      themePresetId: wizardSelections.themePresetId,
-      themeTokens: wizardSelections.themeTokens,
-      templateLayoutContract: buildTemplateLayoutContract(composition),
-    });
-    const laneBPages = Object.fromEntries(
-      Object.values(pipeline.siteBundleSnapshot.pageRegistry.pages)
-        .map((page) => [page.filePath!, pipeline.compileResult.vfsFiles[page.filePath!]]),
-    );
 
     const artifacts = buildCanonicalLaunchArtifacts({
-      generatedFiles: laneBPages,
+      generatedFiles: {
+        "/src/App.tsx": "export default function App(){ return <main>Generated Home</main>; }",
+      },
       preferredEntryPoint: "/src/App.tsx",
       siteBundleSnapshot: pipeline.siteBundleSnapshot,
       compiledPlayground: pipeline.compileResult,
@@ -540,7 +499,6 @@ describe("launchStateToSandpackFiles", () => {
       aesthetic: "modern",
       backendRequired: false,
       wizardSelections,
-      mergeContext,
     });
 
     expect(artifacts.files["/src/pages/Services.tsx"]).toBeTruthy();

@@ -35,17 +35,17 @@ export const SHADCN_LIBRARY_CSS_MARKER = 'SHADCN LIBRARY: canonical Stage 4b fou
 export function buildGeometryScale(presetId?: string): string {
   switch (presetId) {
     case 'minimalist':
-      return '--ut-nav-block: 4rem; --ut-hero-block: 56vh; --ut-hero-space-top: clamp(3.5rem, 5vw, 4.5rem); --ut-hero-media-block: 18rem; --ut-hero-media-max: 30rem; --ut-media-block: 15rem; --ut-media-block-lg: 18rem; --ut-tile-block: 12.5rem; --ut-overlay-block: 82vh; --ut-eyebrow-size: 0.6875rem;';
+      return '--ut-nav-block: 4.25rem; --ut-hero-block: 64vh; --ut-hero-space-top: clamp(5rem, 7vw, 6rem); --ut-hero-media-block: 18rem; --ut-hero-media-max: 30rem; --ut-media-block: 15rem; --ut-media-block-lg: 18rem; --ut-tile-block: 12.5rem; --ut-overlay-block: 82vh; --ut-eyebrow-size: 0.6875rem;';
     case 'editorial':
-      return '--ut-nav-block: 5rem; --ut-hero-block: 68vh; --ut-hero-space-top: clamp(4.5rem, 7vw, 6rem); --ut-hero-media-block: 22rem; --ut-hero-media-max: 36rem; --ut-media-block: 17rem; --ut-media-block-lg: 22rem; --ut-tile-block: 15rem; --ut-overlay-block: 80vh; --ut-eyebrow-size: 0.7rem;';
+      return '--ut-nav-block: 5rem; --ut-hero-block: 78vh; --ut-hero-space-top: clamp(6rem, 9vw, 7.5rem); --ut-hero-media-block: 22rem; --ut-hero-media-max: 36rem; --ut-media-block: 17rem; --ut-media-block-lg: 22rem; --ut-tile-block: 15rem; --ut-overlay-block: 80vh; --ut-eyebrow-size: 0.7rem;';
     case 'bold':
-      return '--ut-nav-block: 4.75rem; --ut-hero-block: 74vh; --ut-hero-space-top: clamp(4.25rem, 6.5vw, 5.75rem); --ut-hero-media-block: 22rem; --ut-hero-media-max: 36rem; --ut-media-block: 17.5rem; --ut-media-block-lg: 22rem; --ut-tile-block: 15rem; --ut-overlay-block: 78vh; --ut-eyebrow-size: 0.75rem;';
+      return '--ut-nav-block: 4.75rem; --ut-hero-block: 84vh; --ut-hero-space-top: clamp(6rem, 9vw, 7rem); --ut-hero-media-block: 22rem; --ut-hero-media-max: 36rem; --ut-media-block: 17.5rem; --ut-media-block-lg: 22rem; --ut-tile-block: 15rem; --ut-overlay-block: 78vh; --ut-eyebrow-size: 0.75rem;';
     case 'futuristic':
-      return '--ut-nav-block: 4.5rem; --ut-hero-block: 66vh; --ut-hero-space-top: clamp(4rem, 6vw, 5.25rem); --ut-hero-media-block: 21rem; --ut-hero-media-max: 34rem; --ut-media-block: 16.5rem; --ut-media-block-lg: 21rem; --ut-tile-block: 14rem; --ut-overlay-block: 78vh; --ut-eyebrow-size: 0.6875rem;';
+      return '--ut-nav-block: 4.5rem; --ut-hero-block: 80vh; --ut-hero-space-top: clamp(5.5rem, 8vw, 7rem); --ut-hero-media-block: 21rem; --ut-hero-media-max: 34rem; --ut-media-block: 16.5rem; --ut-media-block-lg: 21rem; --ut-tile-block: 14rem; --ut-overlay-block: 78vh; --ut-eyebrow-size: 0.6875rem;';
     case 'organic':
-      return '--ut-nav-block: 4.5rem; --ut-hero-block: 64vh; --ut-hero-space-top: clamp(4rem, 6vw, 5.25rem); --ut-hero-media-block: 20rem; --ut-hero-media-max: 34rem; --ut-media-block: 16.25rem; --ut-media-block-lg: 20rem; --ut-tile-block: 14rem; --ut-overlay-block: 80vh; --ut-eyebrow-size: 0.6875rem;';
+      return '--ut-nav-block: 4.5rem; --ut-hero-block: 74vh; --ut-hero-space-top: clamp(5.5rem, 8vw, 6.75rem); --ut-hero-media-block: 20rem; --ut-hero-media-max: 34rem; --ut-media-block: 16.25rem; --ut-media-block-lg: 20rem; --ut-tile-block: 14rem; --ut-overlay-block: 80vh; --ut-eyebrow-size: 0.6875rem;';
     default:
-      return '--ut-nav-block: 4.5rem; --ut-hero-block: 62vh; --ut-hero-space-top: clamp(3.75rem, 5.5vw, 5rem); --ut-hero-media-block: 20rem; --ut-hero-media-max: 33.75rem; --ut-media-block: 16.25rem; --ut-media-block-lg: 20rem; --ut-tile-block: 13.75rem; --ut-overlay-block: 78vh; --ut-eyebrow-size: 0.6875rem;';
+      return '--ut-nav-block: 4.5rem; --ut-hero-block: 72vh; --ut-hero-space-top: clamp(5.5rem, 8vw, 6.5rem); --ut-hero-media-block: 20rem; --ut-hero-media-max: 33.75rem; --ut-media-block: 16.25rem; --ut-media-block-lg: 20rem; --ut-tile-block: 13.75rem; --ut-overlay-block: 78vh; --ut-eyebrow-size: 0.6875rem;';
   }
 }
 
@@ -53,17 +53,17 @@ function buildProfessionalGeometry(presetId?: string): string {
   const scale = buildGeometryScale(presetId);
   switch (presetId) {
     case 'minimalist':
-      return `--ut-surface-shadow: none; --ut-surface-shadow-hover: none; --ut-surface-lift: 0px; --ut-section-space: clamp(2.75rem, 4.5vw, 4.5rem); ${scale}`;
+      return `--ut-surface-shadow: none; --ut-surface-shadow-hover: none; --ut-surface-lift: 0px; --ut-section-space: clamp(4rem, 7vw, 7rem); ${scale}`;
     case 'editorial':
-      return `--ut-surface-shadow: 0 1px 2px hsl(var(--foreground) / 0.05); --ut-surface-shadow-hover: 0 5px 16px hsl(var(--foreground) / 0.08); --ut-surface-lift: -1px; --ut-section-space: clamp(4rem, 6.5vw, 6.75rem); ${scale}`;
+      return `--ut-surface-shadow: 0 1px 2px hsl(var(--foreground) / 0.05); --ut-surface-shadow-hover: 0 5px 16px hsl(var(--foreground) / 0.08); --ut-surface-lift: -1px; --ut-section-space: clamp(4.5rem, 8vw, 8rem); ${scale}`;
     case 'futuristic':
-      return `--ut-surface-shadow: 0 0 0 1px hsl(var(--primary) / 0.18), 0 8px 20px hsl(var(--foreground) / 0.18); --ut-surface-shadow-hover: 0 0 0 1px hsl(var(--primary) / 0.34), 0 12px 28px hsl(var(--primary) / 0.16); --ut-surface-lift: -2px; --ut-section-space: clamp(3.25rem, 5vw, 5.25rem); ${scale}`;
+      return `--ut-surface-shadow: 0 0 0 1px hsl(var(--primary) / 0.18), 0 8px 20px hsl(var(--foreground) / 0.18); --ut-surface-shadow-hover: 0 0 0 1px hsl(var(--primary) / 0.34), 0 12px 28px hsl(var(--primary) / 0.16); --ut-surface-lift: -2px; --ut-section-space: clamp(4rem, 7vw, 7rem); ${scale}`;
     case 'organic':
-      return `--ut-surface-shadow: 0 4px 14px hsl(var(--foreground) / 0.07); --ut-surface-shadow-hover: 0 10px 24px hsl(var(--foreground) / 0.1); --ut-surface-lift: -2px; --ut-section-space: clamp(3.75rem, 6vw, 6rem); ${scale}`;
+      return `--ut-surface-shadow: 0 4px 14px hsl(var(--foreground) / 0.07); --ut-surface-shadow-hover: 0 10px 24px hsl(var(--foreground) / 0.1); --ut-surface-lift: -2px; --ut-section-space: clamp(4.5rem, 8vw, 7.5rem); ${scale}`;
     case 'bold':
-      return `--ut-surface-shadow: 4px 4px 0 hsl(var(--foreground)); --ut-surface-shadow-hover: 6px 6px 0 hsl(var(--foreground)); --ut-surface-lift: -2px; --ut-section-space: clamp(3.5rem, 5.5vw, 5.75rem); ${scale}`;
+      return `--ut-surface-shadow: 4px 4px 0 hsl(var(--foreground)); --ut-surface-shadow-hover: 6px 6px 0 hsl(var(--foreground)); --ut-surface-lift: -2px; --ut-section-space: clamp(4rem, 7vw, 7rem); ${scale}`;
     default:
-      return `--ut-surface-shadow: 0 2px 10px hsl(var(--foreground) / 0.08); --ut-surface-shadow-hover: 0 8px 20px hsl(var(--foreground) / 0.12); --ut-surface-lift: -2px; --ut-section-space: clamp(3.25rem, 5vw, 5.25rem); ${scale}`;
+      return `--ut-surface-shadow: 0 2px 10px hsl(var(--foreground) / 0.08); --ut-surface-shadow-hover: 0 8px 20px hsl(var(--foreground) / 0.12); --ut-surface-lift: -2px; --ut-section-space: clamp(4rem, 7vw, 7rem); ${scale}`;
   }
 }
 

@@ -12,6 +12,31 @@ The new Lane B hard-seal in `SystemLauncher.tsx` (AI-authored page bodies, modul
 
 These are parallel authorities. Under the hard-seal policy they must either be retired or explicitly gated so they cannot mask a failed/missing AI-authored page.
 
+## Where Lane A + Stage 4b wire in
+
+Lane A / Stage 4b is not a fallback; it is the deterministic base layer that exists before Lane B runs. The wiring is:
+
+```text
+Stage 4b (Lane A)                    Lane B (AI)
+─────────────────                    ───────────
+page registry                        page bodies
+router (/src/App.tsx)                companion modules
+theme CSS (/src/index.css)           authored sections
+UI foundation (/src/unison/ui/*)     
+snapshot scaffold (page placeholders)
+         │                                   │
+         └────────────► merge ◄──────────────┘
+                        │
+        buildCanonicalLaunchArtifacts
+        mergeGeneratedVfsWithCanonicalSnapshot
+                        │
+              sealed SiteBundleSnapshot
+```
+
+`mergeGeneratedVfsWithCanonicalSnapshot` is the single merge point. It always preserves Stage 4b authority for router, theme, UI foundation, and registry metadata, and overlays Lane B output on top. The only place the Stage 4b scaffold can become a **page-body fallback** is when `allowCanonicalPageFallback` is true and a registered page is missing from Lane B output. The hard-seal policy turns that off for wizard launches.
+
+This plan therefore does **not** remove Lane A / Stage 4b. It removes the uncontrolled fallbacks that let the Stage 4b scaffold (or a downstream synthesized module) silently replace missing or malformed Lane B content.
+
 ## Implementation
 
 1. **Make canonical page fallback opt-in, not default**

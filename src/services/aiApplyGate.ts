@@ -110,6 +110,7 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
       current: {
         vfsFiles: ctx.beforeFiles,
         siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
+        playground: ctx.playground ?? undefined,
         activePagePath: ctx.activePagePath,
       },
       patch,
@@ -157,6 +158,7 @@ export async function persistAiCommit(ctx: AiCommitContext): Promise<CommitMutat
     current: {
       vfsFiles: ctx.beforeFiles,
       siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
+      playground: ctx.playground ?? undefined,
       activePagePath: ctx.activePagePath,
     },
     patch,

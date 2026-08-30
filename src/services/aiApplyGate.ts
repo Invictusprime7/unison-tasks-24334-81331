@@ -28,6 +28,7 @@ import {
 import { legacyFilesToPatchPlan } from '@/types/patchPlan';
 import type { BuilderIdentity } from '@/types/builderIdentity';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
+import type { PlaygroundState } from '@/platform/core/playground';
 
 export interface AiCommitContext {
   businessId: string;
@@ -38,6 +39,11 @@ export interface AiCommitContext {
   beforeFiles: Record<string, string>;
   nextFiles: Record<string, string>;
   snapshotForPreflight?: SiteBundleSnapshot | null;
+  /**
+   * Canonical playground state. Required — `commitToPipeline` rejects every
+   * non-wizard commit that arrives without it.
+   */
+  playground?: PlaygroundState | null;
   activePagePath: string;
 }
 
@@ -104,6 +110,7 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
       current: {
         vfsFiles: ctx.beforeFiles,
         siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
+        playground: ctx.playground ?? undefined,
         activePagePath: ctx.activePagePath,
       },
       patch,
@@ -151,6 +158,7 @@ export async function persistAiCommit(ctx: AiCommitContext): Promise<CommitMutat
     current: {
       vfsFiles: ctx.beforeFiles,
       siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
+      playground: ctx.playground ?? undefined,
       activePagePath: ctx.activePagePath,
     },
     patch,

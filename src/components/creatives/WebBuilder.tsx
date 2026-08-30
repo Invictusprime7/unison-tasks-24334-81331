@@ -6654,6 +6654,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         beforeFiles,
                         nextFiles: proposedFiles,
                         snapshotForPreflight,
+                        playground: {
+                          pageRegistry: creatorPlayground.pageRegistry,
+                          creatorData: creatorPlayground.creatorData,
+                          calendars: snapshotForPreflight?.calendars ?? {},
+                          popups: snapshotForPreflight?.popups ?? {},
+                        } as never,
                         activePagePath,
                       }
                     : null;
@@ -7126,6 +7132,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       beforeFiles,
                       nextFiles: proposedFiles,
                       snapshotForPreflight,
+                      playground: {
+                        pageRegistry: creatorPlayground.pageRegistry,
+                        creatorData: creatorPlayground.creatorData,
+                        calendars: snapshotForPreflight?.calendars ?? {},
+                        popups: snapshotForPreflight?.popups ?? {},
+                      } as never,
                       activePagePath,
                     }
                   : null;

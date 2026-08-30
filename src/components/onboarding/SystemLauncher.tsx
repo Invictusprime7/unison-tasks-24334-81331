@@ -160,6 +160,8 @@ import {
   scopeLaneBBatchFiles,
   findUnresolvedLocalImports,
   describeUnresolvedImports,
+  resolveMissingModulePath,
+  groupUnresolvedByFile,
 } from '@/services/laneBCompanionModules';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';

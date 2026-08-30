@@ -4131,18 +4131,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // prep refuses to synthesize placeholders for wizard drafts, so a page
       // importing an unauthored companion would otherwise surface as a
       // PreviewPipelineError after handoff (preview falls back to scaffold).
+      // Invariant assertion only: module closure is already enforced during
+      // generation (AI completion turns + hard failure). Reaching here with an
+      // unresolved import means the merge itself dropped a module, so fail
+      // loudly instead of emitting a second degradation toast.
       const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);
       if (preSealUnresolvedImports.length > 0) {
-        launchReliabilityMode = 'lane-b-degraded';
-        for (const item of preSealUnresolvedImports.slice(0, 3)) {
-          run.degrade(
-            'preflight',
-            'lane_b.unresolved_module',
-            `${item.filePath.split('/').pop()} references a module that was not generated ("${item.importPath}") — regenerate that page from the AI panel.`,
-            describeUnresolvedImports(preSealUnresolvedImports),
-          );
-        }
-        console.warn('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
+        console.error('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
+        throw new LaunchFatalError(
+          `Site generation could not seal a valid module graph (${describeUnresolvedImports(preSealUnresolvedImports)}). Retry the launch.`,
+        );
       }
 
 

@@ -59,6 +59,7 @@ import {
   createLaunchRun,
   classifyLaunchError,
   publishLaunchDegradations,
+  LaunchFatalError,
   type LaunchRun,
 } from "@/services/launch/launchRun";
 import { toast } from "sonner";

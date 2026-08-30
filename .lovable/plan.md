@@ -40,3 +40,33 @@ The same unresolved imports are then reported again by the pre-seal check, produ
 ## Technical scope
 
 Primary files: `src/components/onboarding/SystemLauncher.tsx`, `src/services/laneBCompanionModules.ts`, and Wizard/Lane B regression tests. No new generation pipeline or fallback authority will be introduced.
+
+## Addendum — prompt gaps and universal module context
+
+### Principle
+Industry constrains **intent semantics only** (book vs donate vs checkout). It must never constrain
+**modules, components, layout families, or styling**. Presentational capability is universal and shared
+across industries; gating it degrades page quality and causes unresolved-module reverts.
+
+### Changes
+
+6. **Inject a complete module inventory into every Lane B turn**
+   - Build a `moduleContext` block from the accepted Stage 4b artifact: every existing VFS path, its
+     exported symbols, and the `@/unison/ui` foundation surface with exact export names and prop shapes.
+   - State the import contract explicitly: which paths may be imported as-is, and that any other relative
+     import must be authored in the same response.
+   - Include the same inventory in generation, batch, and repair turns — not only the first pass.
+
+7. **Companion-aware repair prompt**
+   - Replace "Return ONLY this file" with "Return the page plus every module it imports."
+   - Pass exact unresolved import specifiers and their resolved target VFS paths from
+     `resolveMissingModulePath()` / `groupUnresolvedByFile()`.
+
+8. **De-gate presentation from industry**
+   - Audit industry profiles and recovery helpers so `forbidden` applies to intents only.
+   - No industry may reduce the available section families, art-direction primitives, animation, or
+     component vocabulary; art direction stays theme-first.
+
+9. **Coverage**
+   - Test that the module inventory is present in first-pass, batch, and repair payloads.
+   - Test that two different industries with the same theme retain identical module/styling availability.

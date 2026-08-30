@@ -75,14 +75,19 @@ let builderRefreshInFlight: Promise<BuilderSession | null> | null = null;
 let recentBuilderRefresh: { session: BuilderSession; refreshedAt: number } | null = null;
 const BUILDER_REFRESH_REUSE_MS = 10_000;
 
-async function refreshBuilderSession(): Promise<BuilderSession | null> {
-  if (
+async function refreshBuilderSession(force = false): Promise<BuilderSession | null> {
+  if (force) {
+    // A 401 means the currently cached token was rejected by the server: reusing
+    // it would replay the same failure. Drop the reuse window and mint a new one.
+    recentBuilderRefresh = null;
+  } else if (
     recentBuilderRefresh?.session
     && Date.now() - recentBuilderRefresh.refreshedAt < BUILDER_REFRESH_REUSE_MS
   ) {
     return recentBuilderRefresh.session;
   }
   if (builderRefreshInFlight) return builderRefreshInFlight;
+
 
   builderRefreshInFlight = (async () => {
     const beforeRefresh = (await supabase.auth.getSession()).data.session;

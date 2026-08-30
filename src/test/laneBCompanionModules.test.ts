@@ -5,6 +5,7 @@ import {
   scopeLaneBBatchFiles,
   findUnresolvedLocalImports,
   isLaneAAuthorityPath,
+  buildModuleInventoryDirective,
 } from '@/services/laneBCompanionModules';
 
 describe('Lane B companion modules', () => {

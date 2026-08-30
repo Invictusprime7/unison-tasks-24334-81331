@@ -295,6 +295,10 @@ export async function runBuilderTurn<TResponse = any>(
     const { data: sessionData } = await supabase.auth.getSession();
     const session = sessionData.session;
     const expiresAt = (session?.expires_at ?? 0) * 1000;
+    if (forceRefresh && session) {
+      // The server rejected this exact token — invalidate the memoized verdict.
+      builderTokenChecks.delete(session.access_token);
+    }
     if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
       // `getSession()` is a local read: a token minted by a different project
       // ref, or invalidated by a signing-key rotation, still looks "valid" here
@@ -304,7 +308,7 @@ export async function runBuilderTurn<TResponse = any>(
         return session.access_token;
       }
     }
-    const refreshedSession = await refreshBuilderSession();
+    const refreshedSession = await refreshBuilderSession(forceRefresh);
     if (!refreshedSession) return null;
     if (await isTokenAcceptedByAuth(refreshedSession.access_token)) {
       return refreshedSession.access_token;
@@ -315,6 +319,7 @@ export async function runBuilderTurn<TResponse = any>(
     await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
     return null;
   };
+
 
 
   const invokeWithSignal = async (

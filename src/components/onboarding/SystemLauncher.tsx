@@ -162,6 +162,7 @@ import {
   describeUnresolvedImports,
   resolveMissingModulePath,
   groupUnresolvedByFile,
+  buildModuleInventoryDirective,
 } from '@/services/laneBCompanionModules';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';

@@ -3819,6 +3819,55 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ];
       }
 
+      // ── Module closure (generation runtime) ────────────────────────────
+      // Every AI-authored file must resolve each of its local imports against
+      // the merged VFS. Anything still dangling is deterministically repaired
+      // by reverting that file to its Stage 4b baseline (which is import
+      // closed) or dropping an unreferenced AI companion — the launch never
+      // seals a VFS whose modules cannot resolve.
+      for (let closurePass = 0; closurePass < 3; closurePass += 1) {
+        const unresolved = findUnresolvedLocalImports(
+          { ...siteBundleSnapshot.vfsFiles, ...aiSourcedFiles },
+          Object.keys(aiSourcedFiles),
+        );
+        if (unresolved.length === 0) break;
+
+        const revertedForClosure: string[] = [];
+        const droppedForClosure: string[] = [];
+        for (const [filePath, importPaths] of Object.entries(groupUnresolvedByFile(unresolved))) {
+          const baseline =
+            siteBundleSnapshot.vfsFiles[filePath] ??
+            siteBundleSnapshot.vfsFiles[filePath.replace(/^\//, '')];
+          if (typeof baseline === 'string' && baseline.trim()) {
+            aiSourcedFiles[filePath] = baseline;
+            revertedForClosure.push(filePath);
+          } else {
+            delete aiSourcedFiles[filePath];
+            droppedForClosure.push(filePath);
+          }
+          console.warn('[SystemLauncher] Module closure repair', {
+            filePath,
+            missingModules: importPaths.map((importPath) =>
+              resolveMissingModulePath(filePath, importPath),
+            ),
+          });
+        }
+
+        if (revertedForClosure.length > 0 || droppedForClosure.length > 0) {
+          launchReliabilityMode = 'lane-b-degraded';
+          run.degrade(
+            'enrich',
+            'lane_b.unresolved_module',
+            `${revertedForClosure.length + droppedForClosure.length} generated file(s) referenced modules that were not authored — those pages use your wizard template content.`,
+            describeUnresolvedImports(unresolved),
+          );
+          wizardGenerationGaps.scaffoldFilledPaths = [
+            ...(wizardGenerationGaps.scaffoldFilledPaths || []),
+            ...revertedForClosure,
+          ];
+        }
+      }
+
       const presentationAssessment = assessWizardPagePresentations({
         aiFiles: aiSourcedFiles,
         canonicalFiles: siteBundleSnapshot.vfsFiles,

@@ -18,7 +18,10 @@ describe('Wizard Lane B first-attempt pipeline', () => {
     expect(launcher).toContain('batchOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS');
     expect(launcher).toContain('const batchPrompt = buildFirstAttemptPrompt(batch);');
     expect(launcher).toContain('wizardSeed: scopeWizardSeedToPageFiles(wizardSeed, batch)');
-    expect(launcher).toContain('requestedPaths.has(path)');
+    // Batch responses are scoped through the companion-module contract, which
+    // keeps the requested pages plus the supporting modules they import.
+    expect(launcher).toContain('scopeLaneBBatchFiles(');
+    expect(launcher).toContain('findUnresolvedLocalImports(');
   });
 
   it('keeps the Edge authoring prompt aligned with client acceptance', () => {

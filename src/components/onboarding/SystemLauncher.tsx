@@ -3074,49 +3074,29 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         }
       }
       // ── Strict wizard-only gate ────────────────────────────────────────
-      // System Launcher runtime must be authored by the 4-step wizard seed via
-      // Lane B. Do NOT complete missing/invalid AI output from the canonical
-      // scaffold here — that is the minimal fallback path that was masking dead
-      // SiteBundle/orchestration token breaks in production.
-      // ── AI enrichment is optional by contract ──────────────────────────
-      // The deterministic seed produced by the 4-step wizard (industry
-      // composition + selected template + theme tokens + selected pages) is a
-      // complete, valid SiteBundleSnapshot on its own. This is NOT the minimal
-      // preset fallback — it is the wizard's own seed. So when Lane B fails
-      // (rate limit, transport, timeout, contract miss) we degrade to that seed
-      // and keep the journey moving instead of stranding the user.
-      const seedGenerationResult = (): typeof generationResult => ({
+      // Lane B is the sole author of page bodies. A failed or unusable first
+      // turn is a RECOVERY INPUT for the per-page completion loop below — it is
+      // never permission to substitute Stage 4b scaffold bodies. Stage 4b keeps
+      // authority over router, registry, theme CSS, UI foundation and runtime
+      // metadata only.
+      const emptyGenerationResult = (): typeof generationResult => ({
         structured: {} as LauncherPayload,
         sanitized: {
-          files: { ...siteBundleSnapshot.vfsFiles },
+          files: {},
           rejected: [],
-          notes: ['wizard-seed-degraded'],
+          notes: ['lane-b-first-turn-unusable'],
         } as unknown as SanitizedGeneratedFiles,
       });
       if (aiError) {
-        launchReliabilityMode = 'lane-b-degraded';
         const details = await getFunctionErrorMessage(aiError);
-        run.degrade(
-          'enrich',
-          isRateLimitError(aiError) ? 'enrich.rate_limited' : 'enrich.failed',
-          isRateLimitError(aiError)
-            ? 'AI copy polish was skipped because the providers were busy — your pages use the wizard template content.'
-            : 'AI copy polish was skipped — your pages use the wizard template content.',
-          details,
-        );
-        generationResult = seedGenerationResult();
+        console.warn('[SystemLauncher] Lane B first turn failed; recovering per page', details);
+        generationResult = emptyGenerationResult();
       }
       if (!generationResult) {
-        launchReliabilityMode = 'lane-b-degraded';
         const reason = lastPayloadIssue?.qualityReason
           || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'AI returned no usable wizard files');
-        run.degrade(
-          'enrich',
-          'enrich.contract_miss',
-          'AI copy polish did not meet the generation contract — your pages use the wizard template content.',
-          reason,
-        );
-        generationResult = seedGenerationResult();
+        console.warn('[SystemLauncher] Lane B first turn missed the contract; recovering per page', reason);
+        generationResult = emptyGenerationResult();
       }
 
       let aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;

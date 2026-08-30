@@ -37,6 +37,19 @@ snapshot scaffold (page placeholders)
 
 This plan therefore does **not** remove Lane A / Stage 4b. It removes the uncontrolled fallbacks that let the Stage 4b scaffold (or a downstream synthesized module) silently replace missing or malformed Lane B content.
 
+### Why a snapshot scaffold exists, and what it does not affect
+
+The scaffold is not a theme fallback. Theme CSS is emitted separately and unconditionally: the launcher always writes `themedIndexCss` into `/src/index.css`, and the merge treats that path as Stage-4b-owned. A scaffold-backed page therefore never changes the wizard's Style-card tokens, typography, geometry, or art-direction pack — those live in CSS variables and in the sealed `artDirectionPackId`.
+
+What the scaffold does degrade is **content and composition depth**: generic section copy instead of AI-authored, industry-specific copy. That is exactly the failure the toast reported, and exactly what this plan removes.
+
+The scaffold still has two legitimate jobs that keep it in the pipeline:
+
+1. It gives Lane B a structurally valid starting artifact (registry, router, page paths, foundation imports) so AI authors into a known module graph rather than inventing one.
+2. It backs non-wizard flows (imports, playground recompiles, restores) where no Lane B turn runs at all.
+
+After this plan, the scaffold keeps both jobs and loses the third one it should never have had: standing in for a failed AI page in a wizard launch.
+
 ## Implementation
 
 1. **Make canonical page fallback opt-in, not default**

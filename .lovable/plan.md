@@ -1,103 +1,88 @@
-# Audit and retire parallel fallback authorities
+# Replace the scaffold page tier with a token + primitive design system
 
-## Root cause
+## The real problem
 
-The new Lane B hard-seal in `SystemLauncher.tsx` (AI-authored page bodies, module-closure turns, fatal unresolved imports, `allowCanonicalPageFallback: false`) is the only caller that actually honors it. Every other entry point that produces a preview or persists a draft still has independent fallback logic that can silently replace AI-authored content with scaffold/template content:
+The scaffold does two unrelated jobs today:
 
-- `buildCanonicalLaunchArtifacts` defaults `allowCanonicalPageFallback` to **true**, and `SystemsAIPanel.tsx` (5 calls) and `WebBuilder.tsx` (1 call) omit the flag.
-- `aiSitePreflightRepair.ts` quarantines unparseable AI files into on-brand template sections unless `strictPreflight` is set.
-- `sandpackFilePrep.ts` `synthesizeMissingLocalImports` fabricates empty placeholder components (or auto-injects industry section chips) for missing local modules unless `failOnMissingImport` is true.
-- `canonicalLaunchVfs.ts` still restores a legacy `RevealGroup` module as a compatibility bridge.
-- `launchRun.ts` still documents the old "degrade to deterministic seed" contract, even though Lane B authorship failures are now fatal.
+1. **Contract job (good):** it establishes the page registry, deterministic router, theme CSS tokens, and the `@/unison/ui` foundation — the structural and visual contract Lane B authors against.
+2. **Body job (bad):** it also ships a full generic page body for every route. That body exists only so something can render when AI output is missing or broken.
 
-These are parallel authorities. Under the hard-seal policy they must either be retired or explicitly gated so they cannot mask a failed/missing AI-authored page.
+Job 2 is what produces every failure we have chased: "AI copy polish was skipped", competing chrome, pages that look interchangeable across industries, and silently scaffold-backed drafts. It is a *content* fallback masquerading as infrastructure.
 
-## Where Lane A + Stage 4b wire in
+The fix is not "make the scaffold better." It is to delete the body tier and make job 1 strong enough that AI output is reliably good on the first pass.
 
-Lane A / Stage 4b is not a fallback; it is the deterministic base layer that exists before Lane B runs. The wiring is:
+## How Lovable / Wix-class builders actually do it
 
-```text
-Stage 4b (Lane A)                    Lane B (AI)
-─────────────────                    ───────────
-page registry                        page bodies
-router (/src/App.tsx)                companion modules
-theme CSS (/src/index.css)           authored sections
-UI foundation (/src/unison/ui/*)     
-snapshot scaffold (page placeholders)
-         │                                   │
-         └────────────► merge ◄──────────────┘
-                        │
-        buildCanonicalLaunchArtifacts
-        mergeGeneratedVfsWithCanonicalSnapshot
-                        │
-              sealed SiteBundleSnapshot
-```
+They do not pre-generate a page and let the model overwrite it. Three things carry the quality instead:
 
-`mergeGeneratedVfsWithCanonicalSnapshot` is the single merge point. It always preserves Stage 4b authority for router, theme, UI foundation, and registry metadata, and overlays Lane B output on top. The only place the Stage 4b scaffold can become a **page-body fallback** is when `allowCanonicalPageFallback` is true and a registered page is missing from Lane B output. The hard-seal policy turns that off for wizard launches.
+**1. A typed primitive library, not free-form TSX.**
+The model composes from a fixed, well-designed component vocabulary (`Section`, `Container`, `Stack`, `Grid`, `Eyebrow`, `Heading`, `Body`, `Card`, `Media`, `CTAGroup`, `Stat`, `Quote`, `Field`). Every primitive already encodes correct spacing rhythm, responsive behavior, and token consumption. The model chooses *arrangement and copy*; it cannot choose bad geometry, because there are no raw `div`s with arbitrary classes in its vocabulary. This is exactly what Radix-plus-tokens buys you: unstyled behavior primitives underneath, token-driven styling above, and the model only ever picks from the styled layer.
 
-This plan therefore does **not** remove Lane A / Stage 4b. It removes the uncontrolled fallbacks that let the Stage 4b scaffold (or a downstream synthesized module) silently replace missing or malformed Lane B content.
+**2. Tokens as a typed, AI-visible contract — not as CSS text.**
+The theme is not "a stylesheet the model reads." It is a structured object the model receives in its prompt: scale steps, surface levels, radius ladder, motion durations, gradient recipes, density. The model references token *names*, never values. Arbitrary values (`text-[42px]`, `bg-[#0b0b12]`) are rejected at validation. That is what makes theme swaps real: the same authored page renders correctly under a different pack because nothing hardcoded a value.
 
-### Why a snapshot scaffold exists, and what it does not affect
+**3. Composition slots resolved before authoring.**
+The section list, order, and role per page are decided deterministically (industry + template + art-direction pack). The model receives "Home: hero-split, proof-band, service-grid×3, testimonial-spotlight, cta-banner" and fills each slot. It never invents page structure, so it cannot produce a thin or duplicated page — and there is no need for a scaffold body to guarantee depth.
 
-The scaffold is not a theme fallback. Theme CSS is emitted separately and unconditionally: the launcher always writes `themedIndexCss` into `/src/index.css`, and the merge treats that path as Stage-4b-owned. A scaffold-backed page therefore never changes the wizard's Style-card tokens, typography, geometry, or art-direction pack — those live in CSS variables and in the sealed `artDirectionPackId`.
+The critical difference from our current pipeline: **quality is enforced by the vocabulary and the validator, not by a fallback page.** When output fails validation, it is regenerated against the same contract — never replaced by generic content.
 
-What the scaffold does degrade is **content and composition depth**: generic section copy instead of AI-authored, industry-specific copy. That is exactly the failure the toast reported, and exactly what this plan removes.
+## Is this the right direction for this pipeline?
 
-The scaffold still has two legitimate jobs that keep it in the pipeline:
-
-1. It gives Lane B a structurally valid starting artifact (registry, router, page paths, foundation imports) so AI authors into a known module graph rather than inventing one.
-2. It backs non-wizard flows (imports, playground recompiles, restores) where no Lane B turn runs at all.
-
-After this plan, the scaffold keeps both jobs and loses the third one it should never have had: standing in for a failed AI page in a wizard launch.
+Yes, and most of it already exists here. We have art-direction packs, `themePresetToIndexCss`, `generatedUiFoundation`, resolved composition, the presentation guard, and the module-inventory directive. What is missing is that the primitive layer is thin, the token contract reaches the model mostly as CSS text, and the scaffold body tier still exists as an escape hatch. This plan closes those three gaps rather than introducing a new system.
 
 ## Implementation
 
-1. **Make canonical page fallback opt-in, not default**
-   - Change `mergeGeneratedVfsWithCanonicalSnapshot` in `src/services/canonicalLaunchVfs.ts` so the fallback gate requires `options.allowCanonicalPageFallback === true`.
-   - Update every `buildCanonicalLaunchArtifacts` call site:
-     - `src/components/onboarding/SystemLauncher.tsx` — keep `allowCanonicalPageFallback: false`.
-     - `src/components/onboarding/SystemsAIPanel.tsx` (5 calls) — pass `allowCanonicalPageFallback: false` and `strictPreflight: true`.
-     - `src/components/creatives/WebBuilder.tsx` (1 call) — pass `allowCanonicalPageFallback: false`.
-     - `src/services/export/importUnisonSiteZip.ts` — keep `false`.
-   - Any future caller that genuinely needs a scaffold fallback must now pass an explicit `true`.
+### Phase 1 — Make the token contract typed and AI-visible
 
-2. **Make preflight quarantine fatal for wizard/AI-generated output**
-   - `aiSitePreflightRepair.ts` currently always falls back to `renderQuarantineComponent`. Add an `allowQuarantine?: boolean` option (default `true` for editor safety, `false` for strict launch).
-   - In `canonicalLaunchVfs.ts`, tie quarantine allowance to `allowCanonicalPageFallback`: when page fallback is disabled, quarantine is also disallowed. The existing `strictPreflight` throw already blocks quarantined files; ensure it is always set for wizard/AI launch paths.
-   - Audit all `runPreflightRepair` / `runPreflightRepairSteps` callers and route them through the same strict flag.
+- Emit a `ThemeContract` object alongside the CSS from the resolved art-direction pack: type scale steps, surface levels, radius ladder, spacing rhythm, motion durations, gradient recipes, density, hero geometry.
+- Seal it into `SiteBundleSnapshot.meta` next to `artDirectionPackId` and persist it as `/.unison/theme-contract.json`.
+- Inject the contract into every Lane B turn (first pass, batch, completion, repair) as named tokens with allowed usage, replacing the current CSS-blob framing.
+- Extend the existing geometry lint so any arbitrary value or raw hex in generated TSX is a validation failure, not a warning.
 
-3. **Disable silent local-import synthesis for wizard-originated VFS**
-   - In `src/utils/sandpackFilePrep.ts`, detect wizard-originated files (`/.unison/site-bundle-snapshot.json`, `/.unison/wizard-seed.json`, or `appContext.source === 'wizard-launch'`).
-   - For wizard drafts, set `failOnMissingImport: true` by default in `prepareSandpackFiles` / `normalizeLauncherFiles`.
-   - Remove or gate `generateIndustryContextualComponent` so it cannot inject section content for missing modules; under the hard-seal contract a missing module must surface as an error, not be auto-authored.
+### Phase 2 — Expand the primitive library into a real composition vocabulary
 
-4. **Remove or narrow the legacy RevealGroup bridge**
-   - `restoreLegacyRevealGroupModules` in `src/services/canonicalLaunchVfs.ts` synthesizes a missing module. Either remove it if no active snapshot needs it, or scope it to pre-seal snapshots only (do not apply to new wizard launches).
+- Grow `@/unison/ui` from a foundation into a typed section-composition kit: layout primitives (`Section`, `Container`, `Stack`, `Grid`, `Split`), content primitives (`Eyebrow`, `Heading`, `Body`, `Stat`, `Quote`, `Badge`), and surface primitives (`Card`, `Panel`, `Media`, `CTAGroup`).
+- Every primitive consumes tokens only; none accepts arbitrary class overrides for geometry or color.
+- Keep Radix underneath for behavior (dialog, popover, tabs, accordion, slot) with the tolerant slot wrapper already in place.
+- Regenerate the module-inventory directive from this kit with exact prop shapes so the model sees the full vocabulary every turn.
 
-5. **Align `LaunchRun` with the hard-seal contract**
-   - Update `src/services/launch/launchRun.ts` comments and stage behavior: Lane B authorship failures are fatal, not degradations. Keep generic degradation for non-authorship concerns (image gen, backend wiring, backend provisioning).
+### Phase 3 — Ship a composition plan instead of a scaffold body
 
-6. **Audit `SystemsAIPanel.tsx` and `WebBuilder.tsx` for fallback UX**
-   - Ensure chip/freeform flows do not open the builder when `buildCanonicalLaunchArtifacts` throws. Surface the error in a toast instead of persisting a scaffold-backed draft.
-   - Ensure `WebBuilder.tsx` recompilation does not silently degrade to canonical page bodies when playground edits fail.
+- For each page, emit the resolved section list (slot id, semantic role, variant family, media policy, intent slots) as data.
+- Lane B receives the plan and authors one primitive-composed component per slot plus the page shell.
+- Stage 4b stops emitting page bodies entirely. It emits: registry, router, theme CSS, theme contract, primitive kit, composition plan.
 
-7. **Regression coverage**
-   - `buildCanonicalLaunchArtifacts` without `allowCanonicalPageFallback: true` does not substitute a canonical page body.
-   - `prepareSandpackFiles` fails on missing local imports for a wizard draft.
-   - `runPreflightRepair` in strict mode throws for quarantined files.
-   - All non-launcher callers pass the new strict flags.
+### Phase 4 — Retire every body-substitution fallback
 
-8. **Verification**
-   - TypeScript typecheck, focused tests, full test suite, pipeline-bypass lint, and build diagnostics.
+- `mergeGeneratedVfsWithCanonicalSnapshot`: canonical page fallback becomes opt-in (`=== true`), and no wizard path opts in.
+- `SystemsAIPanel.tsx` (5 calls) and `WebBuilder.tsx` (1 call) pass `allowCanonicalPageFallback: false` and `strictPreflight: true`.
+- `aiSitePreflightRepair.ts`: add `allowQuarantine`, default off for launch paths — an unparseable page triggers a Lane B repair turn, not an industry template section.
+- `sandpackFilePrep.ts`: `failOnMissingImport: true` by default for wizard-originated VFS; remove `generateIndustryContextualComponent` as a missing-module resolver.
+- Narrow or remove the legacy `RevealGroup` bridge in `canonicalLaunchVfs.ts`.
+- `launchRun.ts`: align stage semantics so authorship failures are fatal while non-authorship concerns still degrade.
+
+### Phase 5 — Validation replaces fallback
+
+- Validate authored pages against the composition plan: every slot filled, correct role, no duplicate chrome, token-only styling, import closure.
+- On failure, run a bounded targeted regeneration for the failing slot only.
+- If regeneration cannot satisfy the contract, fail the launch with a specific diagnostic. Never seal substituted content.
+
+### Phase 6 — Coverage and verification
+
+- Same theme + two industries produce identical primitive/token availability and different copy and intents only.
+- Same industry + two themes produce visibly different geometry, type scale, and motion from tokens alone.
+- Missing slot, arbitrary-value styling, unresolved import, and duplicate chrome each fail validation and trigger targeted repair.
+- Typecheck, full test suite, pipeline-bypass lint, build diagnostics.
+
+## Sequencing
+
+Phases 1 and 2 are the quality fix and are independently shippable. Phase 3 makes the scaffold body removable. Phase 4 removes it. Phases 5 and 6 lock it in. Nothing here removes Lane A / Stage 4b — it narrows Stage 4b to contract authority and makes that contract strong enough that a content fallback is no longer needed.
 
 ## Technical scope
 
-Primary files:
-- `src/services/canonicalLaunchVfs.ts`
-- `src/components/onboarding/SystemsAIPanel.tsx`
-- `src/components/creatives/WebBuilder.tsx`
-- `src/services/aiSitePreflightRepair.ts`
-- `src/utils/sandpackFilePrep.ts`
-- `src/services/launch/launchRun.ts`
-
-No new generation pipeline or fallback authority will be introduced.
+- `src/components/onboarding/themePresetToIndexCss.ts`, `artDirectionPacks.ts` — theme contract emission
+- `src/platform/core/generatedUiFoundation.ts`, `@/unison/ui` — primitive kit
+- `src/platform/core/resolvedComposition.ts`, `compositionToFileSet.ts` — composition plan
+- `src/services/canonicalLaunchVfs.ts`, `aiSitePreflightRepair.ts`, `src/utils/sandpackFilePrep.ts` — fallback removal
+- `src/components/onboarding/SystemLauncher.tsx`, `SystemsAIPanel.tsx`, `src/components/creatives/WebBuilder.tsx` — call-site gating
+- `src/services/wizardPresentationGuard.ts`, `laneBCompanionModules.ts` — validation and prompt context

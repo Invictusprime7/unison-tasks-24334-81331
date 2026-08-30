@@ -150,3 +150,30 @@ export function describeUnresolvedImports(items: UnresolvedLocalImport[]): strin
     .map((item) => `${item.filePath} → "${item.importPath}"`)
     .join(', ');
 }
+
+/**
+ * Absolute VFS path Lane B must author to satisfy an unresolved relative
+ * import. Extension-less imports resolve to a `.tsx` module by convention.
+ */
+export function resolveMissingModulePath(filePath: string, importPath: string): string {
+  const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
+  const joined = importPath.startsWith('/') ? importPath : `${dir}/${importPath}`;
+  const stack: string[] = [];
+  for (const part of joined.split('/')) {
+    if (part === '..') stack.pop();
+    else if (part !== '.' && part !== '') stack.push(part);
+  }
+  const resolved = `/${stack.join('/')}`;
+  return /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
+}
+
+/** Group unresolved imports by the file that declares them. */
+export function groupUnresolvedByFile(
+  items: UnresolvedLocalImport[],
+): Record<string, string[]> {
+  const grouped: Record<string, string[]> = {};
+  for (const item of items) {
+    (grouped[item.filePath] ||= []).push(item.importPath);
+  }
+  return grouped;
+}

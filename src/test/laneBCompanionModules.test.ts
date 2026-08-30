@@ -5,6 +5,7 @@ import {
   scopeLaneBBatchFiles,
   findUnresolvedLocalImports,
   isLaneAAuthorityPath,
+  buildModuleInventoryDirective,
 } from '@/services/laneBCompanionModules';
 
 describe('Lane B companion modules', () => {
@@ -78,6 +79,51 @@ describe('SystemLauncher Lane B merge wiring', () => {
 
   it('closes the local import contract before sealing the artifact', () => {
     expect(launcherSource).toContain('const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);');
-    expect(launcherSource).toContain("'lane_b.unresolved_module'");
+    // Unresolved modules are a hard failure, not another degradation toast.
+    expect(launcherSource).not.toContain("'lane_b.unresolved_module'");
+  });
+
+  it('never substitutes Stage 4b page bodies for failed AI authorship', () => {
+    expect(launcherSource).not.toContain('seedGenerationResult');
+    expect(launcherSource).not.toContain("'enrich.pages_from_seed'");
+    expect(launcherSource).toContain('Lane B failed to author registered pages');
+  });
+
+  it('recovers missing companion modules with an AI completion turn', () => {
+    expect(launcherSource).toContain('LANE B MODULE CLOSURE TURN');
+    expect(launcherSource).toContain('const authorMissingModules = async (');
+  });
+
+  it('injects the module inventory into Lane B turns', () => {
+    expect(launcherSource).toContain('buildModuleInventoryDirective({');
+    expect(launcherSource).not.toContain('Return ONLY this file in the WizardSeed multi-file JSON contract.');
+  });
+});
+
+describe('module inventory directive', () => {
+  it('lists existing modules, states the import contract and keeps styling universal', () => {
+    const directive = buildModuleInventoryDirective({
+      files: {
+        '/src/pages/Home.tsx': 'export default function Home() { return null; }',
+        '/src/pages/components/Hero.tsx': 'export const Hero = () => null;',
+        '/src/index.css': ':root{}',
+      },
+      targetPaths: ['/src/pages/About.tsx'],
+      aliasImports: ['@/unison/ui/button'],
+    });
+
+    expect(directive).toContain('/src/pages/components/Hero.tsx');
+    expect(directive).toContain('Hero');
+    expect(directive).not.toContain('/src/index.css');
+    expect(directive).toContain('@/unison/ui/button');
+    expect(directive).toContain('SAME response');
+    expect(directive).toMatch(/available for EVERY industry/i);
+  });
+
+  it('is industry-neutral: the same modules are offered regardless of industry', () => {
+    const files = { '/src/pages/components/Gallery.tsx': 'export const Gallery = () => null;' };
+    expect(buildModuleInventoryDirective({ files })).toEqual(
+      buildModuleInventoryDirective({ files }),
+    );
   });
 });

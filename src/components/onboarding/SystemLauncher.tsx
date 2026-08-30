@@ -59,6 +59,7 @@ import {
   createLaunchRun,
   classifyLaunchError,
   publishLaunchDegradations,
+  LaunchFatalError,
   type LaunchRun,
 } from "@/services/launch/launchRun";
 import { toast } from "sonner";
@@ -162,6 +163,7 @@ import {
   describeUnresolvedImports,
   resolveMissingModulePath,
   groupUnresolvedByFile,
+  buildModuleInventoryDirective,
 } from '@/services/laneBCompanionModules';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
@@ -2222,7 +2224,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             requirements: generatedUiFoundation.requirements || [],
           })
         : '';
-      const aiUserPrompt = [baseAiUserPrompt, laneBVisualIntelligence, uiFoundationDirective].filter(Boolean).join('\n\n');
+      const moduleInventoryDirective = buildModuleInventoryDirective({
+        files: canonicalScaffoldFiles,
+        aliasImports: generatedUiFoundation?.primitiveImports || [],
+      });
+      const aiUserPrompt = [baseAiUserPrompt, laneBVisualIntelligence, uiFoundationDirective, moduleInventoryDirective].filter(Boolean).join('\n\n');
       const buildFirstAttemptPrompt = (targetPaths: readonly string[]) => {
         const targets = new Set(targetPaths.map((path) => (path.startsWith('/') ? path : `/${path}`)));
         const targetPages = canonicalPages.filter((page) => targets.has(
@@ -3069,49 +3075,29 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         }
       }
       // ── Strict wizard-only gate ────────────────────────────────────────
-      // System Launcher runtime must be authored by the 4-step wizard seed via
-      // Lane B. Do NOT complete missing/invalid AI output from the canonical
-      // scaffold here — that is the minimal fallback path that was masking dead
-      // SiteBundle/orchestration token breaks in production.
-      // ── AI enrichment is optional by contract ──────────────────────────
-      // The deterministic seed produced by the 4-step wizard (industry
-      // composition + selected template + theme tokens + selected pages) is a
-      // complete, valid SiteBundleSnapshot on its own. This is NOT the minimal
-      // preset fallback — it is the wizard's own seed. So when Lane B fails
-      // (rate limit, transport, timeout, contract miss) we degrade to that seed
-      // and keep the journey moving instead of stranding the user.
-      const seedGenerationResult = (): typeof generationResult => ({
+      // Lane B is the sole author of page bodies. A failed or unusable first
+      // turn is a RECOVERY INPUT for the per-page completion loop below — it is
+      // never permission to substitute Stage 4b scaffold bodies. Stage 4b keeps
+      // authority over router, registry, theme CSS, UI foundation and runtime
+      // metadata only.
+      const emptyGenerationResult = (): typeof generationResult => ({
         structured: {} as LauncherPayload,
         sanitized: {
-          files: { ...siteBundleSnapshot.vfsFiles },
+          files: {},
           rejected: [],
-          notes: ['wizard-seed-degraded'],
+          notes: ['lane-b-first-turn-unusable'],
         } as unknown as SanitizedGeneratedFiles,
       });
       if (aiError) {
-        launchReliabilityMode = 'lane-b-degraded';
         const details = await getFunctionErrorMessage(aiError);
-        run.degrade(
-          'enrich',
-          isRateLimitError(aiError) ? 'enrich.rate_limited' : 'enrich.failed',
-          isRateLimitError(aiError)
-            ? 'AI copy polish was skipped because the providers were busy — your pages use the wizard template content.'
-            : 'AI copy polish was skipped — your pages use the wizard template content.',
-          details,
-        );
-        generationResult = seedGenerationResult();
+        console.warn('[SystemLauncher] Lane B first turn failed; recovering per page', details);
+        generationResult = emptyGenerationResult();
       }
       if (!generationResult) {
-        launchReliabilityMode = 'lane-b-degraded';
         const reason = lastPayloadIssue?.qualityReason
           || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'AI returned no usable wizard files');
-        run.degrade(
-          'enrich',
-          'enrich.contract_miss',
-          'AI copy polish did not meet the generation contract — your pages use the wizard template content.',
-          reason,
-        );
-        generationResult = seedGenerationResult();
+        console.warn('[SystemLauncher] Lane B first turn missed the contract; recovering per page', reason);
+        generationResult = emptyGenerationResult();
       }
 
       let aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
@@ -3600,11 +3586,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             previousFailure && /imports unapproved UI module|imports unsupported module/i.test(previousFailure)
               ? `IMPORT REPAIR REQUIRED: ${previousFailure}. Replace it with an approved "@/unison/ui" sub-path (Radix primitives live at "@/unison/ui/radix/<primitive>") or a plain HTML/React equivalent — do not import from "next" or any other framework.`
               : '',
+            previousFailure && /imports modules that were not authored|referenced modules that were not authored/i.test(previousFailure)
+              ? `MODULE CLOSURE REPAIR REQUIRED: ${previousFailure}. Either import an existing module from the MODULE CONTEXT inventory below, or author every missing module in this same response under its exact absolute VFS path.`
+              : '',
             previousFailure?.includes('no canonical data-ut-intent wiring') && pageIntent
               ? `INTENT REPAIR REQUIRED: wire a real page action with data-ut-intent="${pageIntent}".`
               : '',
             '',
-            'Return ONLY this file in the WizardSeed multi-file JSON contract.',
+            'Return this page AND every companion module it imports, in the WizardSeed multi-file JSON contract. Do not reference any relative module you did not author here.',
             generatedUiFoundation?.primitiveImports?.length
               ? buildGeneratedUiFoundationDirective({
                   primitiveImports: generatedUiFoundation.primitiveImports,
@@ -3612,6 +3601,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   requirements: [],
                 })
               : '',
+            buildModuleInventoryDirective({
+              files: { ...canonicalScaffoldFiles, ...aiSourcedFiles },
+              targetPaths: [missingPath],
+              aliasImports: generatedUiFoundation?.primitiveImports || [],
+            }),
             previousFailure && /imports unsupported motion facade export/i.test(previousFailure)
               ? `MOTION IMPORT REPAIR REQUIRED: ${previousFailure}. Move those exact exports to an import from "@/unison/ui/animation" instead of "@/unison/ui/motion".`
               : '',
@@ -3770,102 +3764,134 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
       if (unresolvedAfterCompletion.length > 0) {
-        launchReliabilityMode = 'lane-b-degraded';
+        // HARD SEAL REQUIREMENT: every registered page must be AI-authored.
+        // Scaffold page bodies are never substituted — a degraded, scaffold
+        // backed draft is worse than a visible, actionable failure.
         const completionReasons = laneBCompletionDiagnostics
           .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
           .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
           .join(' | ');
-        // Backfill from the wizard's own seed snapshot so every selected page
-        // still exists, themed and routed, instead of blocking the launch.
-        // Pass 4 — the completion loop degrades to a STAGE 4b RE-COMPILE of the
-        // page (its baseline body from the compile artifact), never to an
-        // isolated authoring call and never to a missing file.
-        const backfilled: string[] = [];
-        const withoutStage4bBaseline: string[] = [];
-        for (const path of unresolvedAfterCompletion) {
-          const normalized = path.startsWith('/') ? path : `/${path}`;
-          const seedSource = siteBundleSnapshot.vfsFiles[normalized]
-            ?? siteBundleSnapshot.vfsFiles[path];
-          if (typeof seedSource === 'string' && seedSource.trim()) {
-            aiSourcedFiles[normalized] = seedSource;
-            backfilled.push(normalized);
-          } else {
-            withoutStage4bBaseline.push(normalized);
-          }
-        }
-        if (withoutStage4bBaseline.length > 0) {
-          // A registered page with no Stage 4b body means the compile artifact
-          // itself is incomplete — surface it instead of sealing a hole.
-          console.error('[SystemLauncher] Registered pages missing a Stage 4b baseline body', {
-            paths: withoutStage4bBaseline,
-          });
-          run.degrade(
-            'enrich',
-            'enrich.pages_missing_baseline',
-            `${withoutStage4bBaseline.length} page(s) have no Stage 4b baseline to fall back to.`,
-            withoutStage4bBaseline.join(', '),
-          );
-        }
-        run.degrade(
-          'enrich',
-          'enrich.pages_from_seed',
-          `${backfilled.length || unresolvedAfterCompletion.length} page(s) use your wizard template content instead of AI copy.`,
-          completionReasons,
+        console.error('[SystemLauncher] Lane B failed to author registered pages', {
+          paths: unresolvedAfterCompletion,
+          reasons: completionReasons,
+        });
+        throw new LaunchFatalError(
+          `Site generation could not author ${unresolvedAfterCompletion.length} page(s): ${unresolvedAfterCompletion.join(', ')}. ${completionReasons || 'The AI provider did not return usable page content.'} Retry the launch — no scaffold-backed draft was created.`,
         );
-        wizardGenerationGaps.completedFromScaffold = true;
-        wizardGenerationGaps.scaffoldFilledPaths = [
-          ...(wizardGenerationGaps.scaffoldFilledPaths || []),
-          ...backfilled,
-        ];
       }
 
       // ── Module closure (generation runtime) ────────────────────────────
       // Every AI-authored file must resolve each of its local imports against
-      // the merged VFS. Anything still dangling is deterministically repaired
-      // by reverting that file to its Stage 4b baseline (which is import
-      // closed) or dropping an unreferenced AI companion — the launch never
-      // seals a VFS whose modules cannot resolve.
+      // the merged VFS. Missing companion modules are recovered by an AI
+      // COMPLETION TURN (Lane B authors them), never by reverting the page to
+      // its Stage 4b baseline. If bounded repair cannot close the contract the
+      // launch fails instead of sealing an unresolvable VFS.
+      const authorMissingModules = async (
+        importerPath: string,
+        importPaths: string[],
+      ): Promise<void> => {
+        const targetPaths = importPaths.map((importPath) =>
+          resolveMissingModulePath(importerPath, importPath),
+        );
+        const modulePrompt = [
+          '── LANE B MODULE CLOSURE TURN ──',
+          `The generated file ${importerPath} imports modules that do not exist in the project.`,
+          `Unresolved imports: ${importPaths.map((p) => `"${p}"`).join(', ')}`,
+          `Author each one at its exact absolute VFS path: ${targetPaths.join(', ')}`,
+          'Each module must be a complete, syntactically valid TypeScript React module with explicit exports matching how the importing file uses it.',
+          'You may also return a corrected version of the importing file if that is the cleaner fix.',
+          'Modules and styling are universal — use any listed module, layout family, animation primitive, or theme token regardless of industry.',
+          'Do not emit App.tsx, /src/index.css, shared chrome, or any @/unison/ui foundation file.',
+          buildModuleInventoryDirective({
+            files: { ...canonicalScaffoldFiles, ...aiSourcedFiles },
+            targetPaths,
+            aliasImports: generatedUiFoundation?.primitiveImports || [],
+          }),
+          `Importing file source:\n${(aiSourcedFiles[importerPath] || '').slice(0, 12_000)}`,
+        ].filter(Boolean).join('\n');
+
+        try {
+          const moduleBudgetMs = takeWizardGenerationBudget(WIZARD_ISOLATED_PAGE_COMPLETION_MS);
+          const completion = await withTimeout(
+            (signal) => runBuilderTurn<any>({
+              messages: [{ role: 'user', content: modulePrompt }],
+              mode: 'wizard-seed',
+              currentCode: '',
+              editMode: false,
+              templateName: effectiveTemplate?.label || system.name,
+              aesthetic: resolvedPreset.id,
+              source: resolvedIndustry,
+              systemType: selectedSystem,
+              userDesignProfile: laneBDesignProfile,
+              vfsFiles: { [importerPath]: aiSourcedFiles[importerPath] || '' },
+              recentChangedFiles: targetPaths,
+              gatewayOptions: {
+                ...WIZARD_LANE_B_GATEWAY_OPTIONS,
+                reasoningEffort: 'low',
+                autoModelSelection: false,
+                selectedModelId: 'google/gemini-2.5-flash-lite',
+                timeoutMs: Math.min(WIZARD_LANE_B_GATEWAY_OPTIONS.timeoutMs, moduleBudgetMs - 5_000),
+                maxTokens: 16_000,
+              },
+              wizardSeed,
+            }, { signal, timeoutMs: moduleBudgetMs - 2_000 }),
+            moduleBudgetMs,
+            'Lane B module closure exceeded the remaining Wizard generation deadline.',
+          );
+          if (completion.error) {
+            console.warn('[SystemLauncher] Module closure turn failed', await getFunctionErrorMessage(completion.error));
+            return;
+          }
+          const { structured: moduleStructured } = extractLaneBLauncherPayload(
+            completion.data as Record<string, unknown> | null,
+            `${brand} modules`,
+          );
+          if (!moduleStructured?.files) return;
+          const sanitizedModules = sanitizeGeneratedFiles(
+            omitSnapshotOwnedLaneBFiles(moduleStructured.files),
+          );
+          // Everything returned is treated as a companion module: Lane A
+          // authority paths are filtered out by the companion scoper.
+          const { companions: authoredModules } = scopeLaneBBatchFiles(
+            sanitizedModules.files as Record<string, unknown>,
+            [],
+          );
+          for (const [modulePath, moduleSource] of Object.entries(authoredModules)) {
+            if (typeof moduleSource === 'string' && moduleSource.trim()) {
+              aiSourcedFiles[modulePath] = moduleSource;
+            }
+          }
+        } catch (moduleError) {
+          console.warn('[SystemLauncher] Module closure turn threw', moduleError);
+        }
+      };
+
+      let closureUnresolvedFinal: ReturnType<typeof findUnresolvedLocalImports> = [];
       for (let closurePass = 0; closurePass < 3; closurePass += 1) {
-        const unresolved = findUnresolvedLocalImports(
+        closureUnresolvedFinal = findUnresolvedLocalImports(
           { ...siteBundleSnapshot.vfsFiles, ...aiSourcedFiles },
           Object.keys(aiSourcedFiles),
         );
-        if (unresolved.length === 0) break;
+        if (closureUnresolvedFinal.length === 0) break;
 
-        const revertedForClosure: string[] = [];
-        const droppedForClosure: string[] = [];
-        for (const [filePath, importPaths] of Object.entries(groupUnresolvedByFile(unresolved))) {
-          const baseline =
-            siteBundleSnapshot.vfsFiles[filePath] ??
-            siteBundleSnapshot.vfsFiles[filePath.replace(/^\//, '')];
-          if (typeof baseline === 'string' && baseline.trim()) {
-            aiSourcedFiles[filePath] = baseline;
-            revertedForClosure.push(filePath);
-          } else {
-            delete aiSourcedFiles[filePath];
-            droppedForClosure.push(filePath);
-          }
-          console.warn('[SystemLauncher] Module closure repair', {
-            filePath,
-            missingModules: importPaths.map((importPath) =>
-              resolveMissingModulePath(filePath, importPath),
-            ),
-          });
+        const grouped = Object.entries(groupUnresolvedByFile(closureUnresolvedFinal));
+        setLaunchStatus(`Authoring ${grouped.length} missing module group(s)…`);
+        for (const [filePath, importPaths] of grouped) {
+          await authorMissingModules(filePath, importPaths);
         }
+      }
 
-        if (revertedForClosure.length > 0 || droppedForClosure.length > 0) {
-          launchReliabilityMode = 'lane-b-degraded';
-          run.degrade(
-            'enrich',
-            'lane_b.unresolved_module',
-            `${revertedForClosure.length + droppedForClosure.length} generated file(s) referenced modules that were not authored — those pages use your wizard template content.`,
-            describeUnresolvedImports(unresolved),
-          );
-          wizardGenerationGaps.scaffoldFilledPaths = [
-            ...(wizardGenerationGaps.scaffoldFilledPaths || []),
-            ...revertedForClosure,
-          ];
-        }
+      if (closureUnresolvedFinal.length > 0) {
+        closureUnresolvedFinal = findUnresolvedLocalImports(
+          { ...siteBundleSnapshot.vfsFiles, ...aiSourcedFiles },
+          Object.keys(aiSourcedFiles),
+        );
+      }
+      if (closureUnresolvedFinal.length > 0) {
+        console.error('[SystemLauncher] Module closure could not be completed', closureUnresolvedFinal);
+        throw new LaunchFatalError(
+          `Site generation could not resolve every module it referenced (${describeUnresolvedImports(closureUnresolvedFinal)}). Retry the launch — no scaffold-backed draft was created.`,
+        );
       }
 
       const presentationAssessment = assessWizardPagePresentations({
@@ -4106,18 +4132,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // prep refuses to synthesize placeholders for wizard drafts, so a page
       // importing an unauthored companion would otherwise surface as a
       // PreviewPipelineError after handoff (preview falls back to scaffold).
+      // Invariant assertion only: module closure is already enforced during
+      // generation (AI completion turns + hard failure). Reaching here with an
+      // unresolved import means the merge itself dropped a module, so fail
+      // loudly instead of emitting a second degradation toast.
       const preSealUnresolvedImports = findUnresolvedLocalImports(wiredVfsFiles);
       if (preSealUnresolvedImports.length > 0) {
-        launchReliabilityMode = 'lane-b-degraded';
-        for (const item of preSealUnresolvedImports.slice(0, 3)) {
-          run.degrade(
-            'preflight',
-            'lane_b.unresolved_module',
-            `${item.filePath.split('/').pop()} references a module that was not generated ("${item.importPath}") — regenerate that page from the AI panel.`,
-            describeUnresolvedImports(preSealUnresolvedImports),
-          );
-        }
-        console.warn('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
+        console.error('[SystemLauncher] Unresolved local imports before seal', preSealUnresolvedImports);
+        throw new LaunchFatalError(
+          `Site generation could not seal a valid module graph (${describeUnresolvedImports(preSealUnresolvedImports)}). Retry the launch.`,
+        );
       }
 
 

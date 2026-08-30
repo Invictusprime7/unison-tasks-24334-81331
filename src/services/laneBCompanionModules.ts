@@ -177,3 +177,85 @@ export function groupUnresolvedByFile(
   }
   return grouped;
 }
+
+// ── Module context (prompt) ────────────────────────────────────────────────
+
+const EXPORT_PATTERN =
+  /export\s+(?:default\s+(?:function\s+)?(\w+)?|(?:async\s+)?function\s+(\w+)|const\s+(\w+)|class\s+(\w+)|\{([^}]+)\})/g;
+
+/** Exported symbol names declared by a module source. */
+export function extractModuleExports(source: string): string[] {
+  const names = new Set<string>();
+  EXPORT_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = EXPORT_PATTERN.exec(source))) {
+    const [, defaultName, fnName, constName, className, braced] = match;
+    if (braced) {
+      for (const part of braced.split(',')) {
+        const name = part.trim().split(/\s+as\s+/i).pop()?.trim();
+        if (name) names.add(name);
+      }
+      continue;
+    }
+    const name = defaultName || fnName || constName || className;
+    if (name) names.add(name);
+    if (/export\s+default/.test(match[0])) names.add('default');
+  }
+  return Array.from(names);
+}
+
+export interface ModuleInventoryOptions {
+  /** Every file currently present in the merged VFS (Stage 4b + accepted AI). */
+  files: Record<string, string>;
+  /** Absolute VFS paths this turn is expected to author. */
+  targetPaths?: readonly string[];
+  /** Approved alias import roots (e.g. `@/unison/ui` sub-paths). */
+  aliasImports?: readonly string[];
+  maxEntries?: number;
+}
+
+/**
+ * Full module context for a Lane B turn.
+ *
+ * Lane B repeatedly imported modules that do not exist because it was never
+ * shown what *does* exist. This inventory is injected into every Lane B turn
+ * (first pass, batch, page completion, module closure) so the model can either
+ * import a real module or author the companion in the same response.
+ *
+ * Deliberately industry-neutral: module and styling availability is universal.
+ * Industry constrains intent semantics only — never which components, layout
+ * families, or style primitives a page may use.
+ */
+export function buildModuleInventoryDirective(options: ModuleInventoryOptions): string {
+  const { files, targetPaths = [], aliasImports = [], maxEntries = 60 } = options;
+  const targets = new Set(targetPaths.map(normalizeVfsPath));
+
+  const entries = Object.entries(files)
+    .map(([path, source]) => [normalizeVfsPath(path), source] as const)
+    .filter(([path, source]) =>
+      typeof source === 'string' &&
+      path.startsWith('/src/') &&
+      /\.(tsx|jsx|ts|js)$/i.test(path) &&
+      !targets.has(path))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(0, maxEntries)
+    .map(([path, source]) => {
+      const exported = extractModuleExports(source).slice(0, 8);
+      return `- ${path}${exported.length ? ` → exports: ${exported.join(', ')}` : ''}`;
+    });
+
+  return [
+    '── MODULE CONTEXT (AUTHORITATIVE VFS INVENTORY) ──',
+    'These modules already exist and may be imported exactly as listed:',
+    entries.join('\n') || '- (no existing source modules yet)',
+    aliasImports.length
+      ? `Approved alias imports: ${aliasImports.join(', ')}`
+      : '',
+    'IMPORT CONTRACT (hard requirement):',
+    '1. Import only from the paths listed above, approved "@/unison/ui" sub-paths, "react", "lucide-react", or the motion facade.',
+    '2. Any other relative import MUST be authored by you in the SAME response, as an additional entry in the "files" object, using its full absolute VFS path.',
+    '3. Never import a module you did not list above and did not author in this response.',
+    '4. Every module you author must be syntactically complete with explicit exports.',
+    'STYLING/COMPONENT SCOPE: every listed module, layout family, animation primitive, and style token is available for EVERY industry. Industry affects copy and intent semantics only — never which components or styles you may use.',
+  ].filter(Boolean).join('\n');
+}

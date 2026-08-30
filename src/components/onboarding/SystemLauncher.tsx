@@ -3585,11 +3585,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             previousFailure && /imports unapproved UI module|imports unsupported module/i.test(previousFailure)
               ? `IMPORT REPAIR REQUIRED: ${previousFailure}. Replace it with an approved "@/unison/ui" sub-path (Radix primitives live at "@/unison/ui/radix/<primitive>") or a plain HTML/React equivalent — do not import from "next" or any other framework.`
               : '',
+            previousFailure && /imports modules that were not authored|referenced modules that were not authored/i.test(previousFailure)
+              ? `MODULE CLOSURE REPAIR REQUIRED: ${previousFailure}. Either import an existing module from the MODULE CONTEXT inventory below, or author every missing module in this same response under its exact absolute VFS path.`
+              : '',
             previousFailure?.includes('no canonical data-ut-intent wiring') && pageIntent
               ? `INTENT REPAIR REQUIRED: wire a real page action with data-ut-intent="${pageIntent}".`
               : '',
             '',
-            'Return ONLY this file in the WizardSeed multi-file JSON contract.',
+            'Return this page AND every companion module it imports, in the WizardSeed multi-file JSON contract. Do not reference any relative module you did not author here.',
             generatedUiFoundation?.primitiveImports?.length
               ? buildGeneratedUiFoundationDirective({
                   primitiveImports: generatedUiFoundation.primitiveImports,
@@ -3597,6 +3600,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   requirements: [],
                 })
               : '',
+            buildModuleInventoryDirective({
+              files: { ...canonicalScaffoldFiles, ...aiSourcedFiles },
+              targetPaths: [missingPath],
+              aliasImports: generatedUiFoundation?.primitiveImports || [],
+            }),
             previousFailure && /imports unsupported motion facade export/i.test(previousFailure)
               ? `MOTION IMPORT REPAIR REQUIRED: ${previousFailure}. Move those exact exports to an import from "@/unison/ui/animation" instead of "@/unison/ui/motion".`
               : '',

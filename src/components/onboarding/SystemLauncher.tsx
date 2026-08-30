@@ -2223,7 +2223,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             requirements: generatedUiFoundation.requirements || [],
           })
         : '';
-      const aiUserPrompt = [baseAiUserPrompt, laneBVisualIntelligence, uiFoundationDirective].filter(Boolean).join('\n\n');
+      const moduleInventoryDirective = buildModuleInventoryDirective({
+        files: canonicalScaffoldFiles,
+        aliasImports: generatedUiFoundation?.primitiveImports || [],
+      });
+      const aiUserPrompt = [baseAiUserPrompt, laneBVisualIntelligence, uiFoundationDirective, moduleInventoryDirective].filter(Boolean).join('\n\n');
       const buildFirstAttemptPrompt = (targetPaths: readonly string[]) => {
         const targets = new Set(targetPaths.map((path) => (path.startsWith('/') ? path : `/${path}`)));
         const targetPages = canonicalPages.filter((page) => targets.has(

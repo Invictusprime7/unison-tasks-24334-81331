@@ -74,7 +74,30 @@ Yes, and most of it already exists here. We have art-direction packs, `themePres
 - Missing slot, arbitrary-value styling, unresolved import, and duplicate chrome each fail validation and trigger targeted repair.
 - Typecheck, full test suite, pipeline-bypass lint, build diagnostics.
 
+## Parallel authorities to retire (audited)
+
+This plan only works if nothing else can author or substitute a page body. Each item below is a currently-live parallel path; each is removed or demoted as part of the phase named, and none is left as a runtime toggle a caller could flip back on.
+
+| Parallel path | Where | Disposition | Phase |
+| --- | --- | --- | --- |
+| Canonical page fallback fills missing Lane B bodies from scaffold | `canonicalLaunchVfs.ts` (`allowCanonicalPageFallback`) | Opt-in `=== true`; no wizard/AI caller opts in | 4 |
+| Callers that omit the flag and inherit fallback | `SystemsAIPanel.tsx` (5 calls), `WebBuilder.tsx` (1 call) | Pass explicit `false` + `strictPreflight: true` | 4 |
+| Quarantine swaps invalid AI files for template sections | `aiSitePreflightRepair.ts`, `aiSiteQuarantineScaffolds.ts` | `allowQuarantine` off for launch; triggers repair turn instead | 4 |
+| Missing local imports synthesized at preview time | `sandpackFilePrep.ts` (`generateIndustryContextualComponent`, placeholder injection) | Removed as a resolver; `failOnMissingImport: true` for wizard VFS | 4 |
+| Legacy `RevealGroup` compatibility module synthesis | `canonicalLaunchVfs.ts` | Primitive kit exports it; bridge deleted | 2, 4 |
+| Generic "degrade to deterministic seed" stage semantics | `launch/launchRun.ts` | Authorship stages become fatal-only; degradation reserved for non-authorship stages | 4 |
+| Launcher degradations for missing pages / entry files | `SystemLauncher.tsx` (`sealedMissingPageFiles`, post-commit entry repair) | Replaced by targeted regeneration, then fatal | 5 |
+| Stage 4b page-body emission | `compositionToFileSet.ts` | Deleted; Stage 4b emits contract artifacts only | 3 |
+| Overlapping import guidance in two places | `generatedUiFoundation.ts` and `laneBCompanionModules.ts` | Single generated directive derived from the primitive kit | 2 |
+| Theme reaching the model as CSS text in some turns, contract in others | Lane B prompt builders | One typed `ThemeContract` injected in every turn | 1 |
+
+Rules that keep them from returning:
+- No new fallback may author or replace a page body. Resilience is allowed only for regeneration, retry, and diagnostics.
+- Extend the pipeline-bypass lint with a rule that fails on any new call site enabling canonical page fallback, quarantine, or import synthesis on a wizard-originated path.
+- Every removal ships with a regression test asserting the failure mode is now a thrown `LaunchFatalError` with a specific diagnostic, not a silent substitution.
+
 ## Sequencing
+
 
 Phases 1 and 2 are the quality fix and are independently shippable. Phase 3 makes the scaffold body removable. Phase 4 removes it. Phases 5 and 6 lock it in. Nothing here removes Lane A / Stage 4b — it narrows Stage 4b to contract authority and makes that contract strong enough that a content fallback is no longer needed.
 

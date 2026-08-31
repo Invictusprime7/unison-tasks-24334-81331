@@ -623,14 +623,12 @@ export function Grid({ columns = 3, gap = 'tight', className, ...props }: GridPr
 }
 
 export interface SplitProps extends Div {
-  /** Which side carries the visual weight. */
-  lead?: 'start' | 'end';
-  /** Flip the visual order on large screens without changing DOM order. */
+  /** Flip the visual order without changing DOM/reading order. */
   reverse?: boolean;
   align?: 'start' | 'center';
 }
 
-export function Split({ lead = 'start', reverse = false, align = 'center', className, children, ...props }: SplitProps) {
+export function Split({ reverse = false, align = 'center', className, children, ...props }: SplitProps) {
   const items = React.Children.toArray(children);
   return (
     <div
@@ -638,7 +636,6 @@ export function Split({ lead = 'start', reverse = false, align = 'center', class
         'grid grid-cols-1 lg:grid-cols-[var(--ut-hero-columns)]',
         'gap-[var(--ut-block-gap)]',
         align === 'center' ? 'items-center' : 'items-start',
-        lead === 'end' && 'lg:[direction:rtl] lg:*:[direction:ltr]',
         className,
       )}
       {...props}
@@ -835,7 +832,7 @@ export function Panel({ tone = 'surface', interactive = false, padded = true, cl
         'border border-[length:var(--ut-border-weight)] rounded-[var(--ut-radius-lg)]',
         panelTone[tone],
         padded && 'p-[var(--ut-card-padding)]',
-        interactive && 'transition-all duration-[var(--ut-motion-duration)] ease-[var(--ut-motion-ease)] hover:shadow-[var(--ut-surface-elevation-hover)] hover:-translate-y-[var(--ut-hover-lift)]',
+        interactive && 'transition-all duration-[var(--ut-motion-duration)] ease-[var(--ut-motion-ease)] hover:shadow-[var(--ut-surface-elevation-hover)] hover:translate-y-[var(--ut-hover-lift)]',
         className,
       )}
       {...props}

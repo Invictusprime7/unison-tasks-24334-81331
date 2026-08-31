@@ -300,13 +300,14 @@ export async function runBuilderTurn<TResponse = any>(
    * 401 "Invalid or expired token". Refresh proactively when the session is
    * within 60s of expiry, and force a refresh after a 401.
    */
-  const getAccessToken = async (forceRefresh = false): Promise<string | null> => {
+  const getAccessToken = async (rejectedToken?: string): Promise<string | null> => {
+    const forceRefresh = !!rejectedToken;
     const { data: sessionData } = await supabase.auth.getSession();
     const session = sessionData.session;
     const expiresAt = (session?.expires_at ?? 0) * 1000;
     if (forceRefresh && session) {
       // The server rejected this exact token — invalidate the memoized verdict.
-      builderTokenChecks.delete(session.access_token);
+      builderTokenChecks.delete(rejectedToken!);
     }
     if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
       // `getSession()` is a local read: a token minted by a different project
@@ -317,7 +318,14 @@ export async function runBuilderTurn<TResponse = any>(
         return session.access_token;
       }
     }
-    const refreshedSession = await refreshBuilderSession(forceRefresh);
+    if (forceRefresh && session && session.access_token !== rejectedToken) {
+      // A sibling batch already rotated the session after our token was
+      // rejected: use it rather than forcing another rotation.
+      if (await isTokenAcceptedByAuth(session.access_token)) {
+        return session.access_token;
+      }
+    }
+    const refreshedSession = await refreshBuilderSession(forceRefresh, rejectedToken);
     if (!refreshedSession) return null;
     if (await isTokenAcceptedByAuth(refreshedSession.access_token)) {
       return refreshedSession.access_token;
@@ -334,8 +342,9 @@ export async function runBuilderTurn<TResponse = any>(
   const invokeWithSignal = async (
     payload: Record<string, unknown>,
     signal: AbortSignal,
-    forceRefresh = false,
+    rejectedToken?: string,
   ) => {
+
     if (!isSupabaseEnvConfigured) {
       throw new Error("Builder backend configuration is unavailable");
     }

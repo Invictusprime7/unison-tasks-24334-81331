@@ -381,6 +381,15 @@ export function executeCanonicalPipeline(
     sellsProducts: selections.sellsProducts,
   }).files;
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
+  // Typed, machine-readable projection of the sealed art-direction pack. This
+  // is the single theme context every AI turn reads — never raw compiled CSS.
+  Object.assign(
+    compileResult.vfsFiles,
+    buildThemeContractFiles({
+      artDirectionPackId: designIntervention.artDirectionPackId,
+      themePresetId,
+    }),
+  );
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
   const siteBundleSnapshot = projectToSiteBundleSnapshot(

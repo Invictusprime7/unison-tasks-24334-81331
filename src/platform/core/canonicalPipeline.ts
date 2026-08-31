@@ -206,6 +206,16 @@ export interface SiteBundleSnapshotMeta {
     manifestPath: '/.unison/ui-manifest.json';
     importRoot: '@/unison/ui';
   };
+  /**
+   * Chain-of-custody for the typed theme contract sidecar. The contract itself
+   * is deterministically re-derivable from `artDirectionPackId`; this stamp
+   * records that Stage 4b emitted it and where consumers should re-emit it.
+   */
+  themeContract?: {
+    version: string;
+    contractPath: '/.unison/theme-contract.json';
+    artDirectionPackId: string;
+  };
   /** Bounded connected-gateway research and route-specific generation plan. */
   generationBrief?: WizardGenerationBrief;
   /** Deterministic composition, interaction, and motion recipes for this launch. */

@@ -29,7 +29,7 @@ import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeS
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
 import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
 
-import { ensureGeneratedUiFoundation, GENERATED_UI_BARREL_EXPORTS } from '@/platform/core/generatedUiFoundation';
+import { ensureGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
 import {
   WIZARD_FOOTER_PATH,
   WIZARD_NAVBAR_PATH,
@@ -152,40 +152,6 @@ function normalizeLegacyRevealGroupImports(files: Record<string, string>): Recor
       LEGACY_REVEAL_GROUP_IMPORT,
       (statement, specifier: string) => statement.replace(specifier, '@/unison/ui/motion'),
     );
-  }
-  return normalized;
-}
-
-const RELATIVE_NAMED_IMPORT = /\bimport\s+\{([^}]+)\}\s+from\s+['"](\.{1,2}\/[^'"]+)['"]/g;
-
-/**
- * Normalize relative imports of foundation primitives (e.g. `./components/Stat`)
- * onto the canonical `@/unison/ui` barrel. Only rewrites when EVERY named import
- * is a foundation export AND the referenced module was never authored — so a
- * genuine local module still resolves, and genuinely missing modules still fail
- * strict preflight instead of being synthesized.
- */
-export function normalizeFoundationLocalImports(files: Record<string, string>): Record<string, string> {
-  const authoredBaseNames = new Set(
-    Object.keys(files)
-      .map((filePath) => filePath.replace(/\.(?:tsx|ts|jsx|js)$/i, '').split('/').pop() || '')
-      .filter(Boolean),
-  );
-  const normalized = { ...files };
-  for (const [filePath, source] of Object.entries(files)) {
-    if (!/\.(?:tsx|jsx)$/i.test(filePath)) continue;
-    const next = source.replace(RELATIVE_NAMED_IMPORT, (statement, names: string, specifier: string) => {
-      const imported = names
-        .split(',')
-        .map((name) => name.split(/\s+as\s+/)[0].replace(/^type\s+/, '').trim())
-        .filter(Boolean);
-      if (imported.length === 0) return statement;
-      if (!imported.every((name) => GENERATED_UI_BARREL_EXPORTS.has(name))) return statement;
-      const base = specifier.replace(/\.(?:tsx|ts|jsx|js)$/i, '').split('/').pop() || '';
-      if (authoredBaseNames.has(base)) return statement;
-      return statement.replace(specifier, '@/unison/ui');
-    });
-    if (next !== source) normalized[filePath] = next;
   }
   return normalized;
 }

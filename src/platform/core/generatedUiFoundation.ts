@@ -1112,6 +1112,51 @@ export const GENERATED_UI_BARREL_EXPORTS: ReadonlySet<string> = new Set([
   'Slot', 'Slottable',
 ]);
 
+
+const RELATIVE_NAMED_IMPORT = /\bimport\s+\{([^}]+)\}\s+from\s+['"](\.{1,2}\/[^'"]+)['"]/g;
+const RELATIVE_DEFAULT_IMPORT = /\bimport\s+([A-Z][A-Za-z0-9_]*)\s+from\s+['"](\.{1,2}\/[^'"]+)['"]/g;
+
+/**
+ * Normalize relative imports of foundation primitives (e.g. `./components/Stat`
+ * or a default-imported `./components/StaggerGroup`) onto the canonical
+ * `@/unison/ui` barrel. Only rewrites when EVERY imported binding is a
+ * foundation export AND the referenced module was never authored, so genuine
+ * local modules keep resolving and genuinely missing modules still fail strict
+ * preflight instead of being synthesized.
+ */
+export function normalizeFoundationLocalImports(files: Record<string, string>): Record<string, string> {
+  const authoredBaseNames = new Set(
+    Object.keys(files)
+      .map((filePath) => (filePath.replace(/\.(?:tsx|ts|jsx|js)$/i, '').split('/').pop() || ''))
+      .filter(Boolean),
+  );
+  const missingModule = (specifier: string) => {
+    const base = specifier.replace(/\.(?:tsx|ts|jsx|js)$/i, '').split('/').pop() || '';
+    return base ? !authoredBaseNames.has(base) : false;
+  };
+  const normalized = { ...files };
+  for (const [filePath, source] of Object.entries(files)) {
+    if (!/\.(?:tsx|jsx)$/i.test(filePath)) continue;
+    let next = source.replace(RELATIVE_NAMED_IMPORT, (statement, names: string, specifier: string) => {
+      const imported = names
+        .split(',')
+        .map((name) => name.split(/\s+as\s+/)[0].replace(/^type\s+/, '').trim())
+        .filter(Boolean);
+      if (imported.length === 0) return statement;
+      if (!imported.every((name) => GENERATED_UI_BARREL_EXPORTS.has(name))) return statement;
+      if (!missingModule(specifier)) return statement;
+      return statement.replace(specifier, '@/unison/ui');
+    });
+    next = next.replace(RELATIVE_DEFAULT_IMPORT, (statement, name: string, specifier: string) => {
+      if (!GENERATED_UI_BARREL_EXPORTS.has(name)) return statement;
+      if (!missingModule(specifier)) return statement;
+      return `import { ${name} } from '@/unison/ui'`;
+    });
+    if (next !== source) normalized[filePath] = next;
+  }
+  return normalized;
+}
+
 export function buildGeneratedUiFoundation(
   options: GeneratedUiFoundationOptions,
 ): GeneratedUiFoundation {

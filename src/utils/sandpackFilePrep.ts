@@ -30,7 +30,7 @@ import { PreviewPipelineError } from '@/services/previewPipelineError';
 import { isLiveEditedVfsPath, resolveSnapshot } from '@/services/snapshotProjector';
 import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedChrome';
 import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
-import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
+import { buildGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
 
 const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
 
@@ -4093,8 +4093,11 @@ export function prepareSandpackFiles(
   // actual files and merge them into the VFS instead of treating the JSON
   // string as source code.
   // ═══════════════════════════════════════════════════════════════════════════
-  let resolvedFiles = files;
-  const fileKeys = Object.keys(files);
+  // Foundation primitives imported from an unauthored relative path are an
+  // import-specifier mistake, not a missing module: point them at the canonical
+  // barrel before any unresolved-import enforcement runs.
+  let resolvedFiles = normalizeFoundationLocalImports(files);
+  const fileKeys = Object.keys(resolvedFiles);
 
   // Case 1: The entire VFS has a single file whose content is a JSON files wrapper
   // e.g. { "/App.tsx": '{"files":{"src/App.tsx":"import React..."}}' }

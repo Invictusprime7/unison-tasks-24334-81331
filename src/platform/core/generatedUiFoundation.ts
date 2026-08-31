@@ -347,7 +347,7 @@ import { Slot as RadixSlot, Slottable } from '@radix-ui/react-slot';
 export { Slottable };
 
 /**
- * Radix's Slot throws when \`asChild\` receives text, fragments, or multiple
+ * Radix's Slot throws when `asChild` receives text, fragments, or multiple
  * children (a very common shape in generated pages: icon + label).
  * This wrapper degrades to a plain <span> instead of crashing the preview.
  */
@@ -418,7 +418,7 @@ export function styles(...classNames: Array<string | false | null | undefined>) 
 ${UNISON_VFS_STYLE_BRIDGE}`,
   '/src/unison/ui/index.ts': `${marker}
 // Root barrel: MUST re-export the full public surface of every foundation
-// module. A partial barrel resolves to \`undefined\` at runtime and surfaces as
+// module. A partial barrel resolves to `undefined` at runtime and surfaces as
 // "Element type is invalid" in the preview.
 export { Button, IconButton, type ButtonProps, type IconButtonProps } from './button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
@@ -515,7 +515,7 @@ import { cn } from './cn';
 /**
  * COMPOSITION VOCABULARY — layout.
  * Every primitive consumes theme tokens. None accepts geometry or color
- * literals: pass \`className\` only for token-backed or standard-scale
+ * literals: pass `className` only for token-backed or standard-scale
  * utilities. This is what keeps an authored page correct under any style card.
  */
 
@@ -654,8 +654,8 @@ export function Bleed({ className, ...props }: Div) {
 export function Divider({ className, ...props }: Div) {
   return <div aria-hidden className={cn('h-px w-full bg-[image:var(--ut-gradient-divider)]', className)} {...props} />;
 }
-\`,
-    '/src/unison/ui/content.tsx': \`${marker}
+`,
+    '/src/unison/ui/content.tsx': `${marker}
 import * as React from 'react';
 import { cn } from './cn';
 
@@ -796,8 +796,8 @@ export function SectionHeader({ eyebrow, title, lead, align = 'start', level = 2
     </div>
   );
 }
-\`,
-    '/src/unison/ui/surface.tsx': \`${marker}
+`,
+    '/src/unison/ui/surface.tsx': `${marker}
 import * as React from 'react';
 import { cn } from './cn';
 
@@ -893,8 +893,8 @@ export function FeaturePanel({ title, description, icon, media, actions, classNa
     </Panel>
   );
 }
-\`,
-    '/src/unison/ui/form-fields.tsx': \`${marker}
+`,
+    '/src/unison/ui/form-fields.tsx': `${marker}
 import * as React from 'react';
   import * as LabelPrimitive from './radix/label';
 import { cn } from './cn';

@@ -4499,6 +4499,12 @@ export function prepareSandpackFiles(
   // "Could not find module" crashes from killing the preview, we synthesize
   // a minimal `() => null` placeholder (NOT a fake chip). Authors see the
   // empty slot and replace it on the next turn.
+  // Foundation primitives imported from an unauthored relative path are an
+  // import-specifier mistake, not a missing module. Normalize them onto the
+  // canonical barrel here too: sandpackFiles may be projected from the sealed
+  // snapshot rather than the argument map.
+  Object.assign(sandpackFiles, normalizeFoundationLocalImports(sandpackFiles));
+
   synthesizeMissingLocalImports(
     sandpackFiles,
     {

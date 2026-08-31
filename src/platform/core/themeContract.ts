@@ -321,6 +321,21 @@ export function buildThemeContractDirectiveFor(input: BuildThemeContractInput): 
 }
 
 /**
+ * Read the sealed contract out of the canonical VFS. Stage 4b always emits it,
+ * so a missing/stale file means the caller is holding a pre-contract snapshot —
+ * we derive from the sealed pack id rather than dropping theme context.
+ */
+export function buildThemeContractDirectiveFromFiles(
+  files: Record<string, string> | null | undefined,
+  fallback?: BuildThemeContractInput,
+): string {
+  const contract = readThemeContract(files);
+  if (contract) return buildThemeContractDirective(contract);
+  if (!fallback?.artDirectionPackId) return '';
+  return buildThemeContractDirectiveFor(fallback);
+}
+
+/**
  * Guards against a pack gaining a token that the contract never describes —
  * an undocumented token is invisible to the model, which is how hardcoded
  * literals creep back in. Used by the pack test suite.

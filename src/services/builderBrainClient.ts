@@ -75,18 +75,27 @@ let builderRefreshInFlight: Promise<BuilderSession | null> | null = null;
 let recentBuilderRefresh: { session: BuilderSession; refreshedAt: number } | null = null;
 const BUILDER_REFRESH_REUSE_MS = 10_000;
 
-async function refreshBuilderSession(force = false): Promise<BuilderSession | null> {
+async function refreshBuilderSession(
+  force = false,
+  rejectedToken?: string,
+): Promise<BuilderSession | null> {
+  const recent = recentBuilderRefresh;
+  const recentIsFresh = !!recent?.session
+    && Date.now() - recent.refreshedAt < BUILDER_REFRESH_REUSE_MS;
   if (force) {
-    // A 401 means the currently cached token was rejected by the server: reusing
-    // it would replay the same failure. Drop the reuse window and mint a new one.
+    // A 401 means *that* access token was rejected. If a sibling request has
+    // already rotated the session since, reuse the newer token instead of
+    // rotating again: concurrent rotations invalidate each other's refresh
+    // tokens and cascade every batch into a hard sign-out.
+    if (recentIsFresh && recent!.session!.access_token !== rejectedToken) {
+      return recent!.session;
+    }
     recentBuilderRefresh = null;
-  } else if (
-    recentBuilderRefresh?.session
-    && Date.now() - recentBuilderRefresh.refreshedAt < BUILDER_REFRESH_REUSE_MS
-  ) {
-    return recentBuilderRefresh.session;
+  } else if (recentIsFresh) {
+    return recent!.session;
   }
   if (builderRefreshInFlight) return builderRefreshInFlight;
+
 
 
   builderRefreshInFlight = (async () => {
@@ -291,13 +300,14 @@ export async function runBuilderTurn<TResponse = any>(
    * 401 "Invalid or expired token". Refresh proactively when the session is
    * within 60s of expiry, and force a refresh after a 401.
    */
-  const getAccessToken = async (forceRefresh = false): Promise<string | null> => {
+  const getAccessToken = async (rejectedToken?: string): Promise<string | null> => {
+    const forceRefresh = !!rejectedToken;
     const { data: sessionData } = await supabase.auth.getSession();
     const session = sessionData.session;
     const expiresAt = (session?.expires_at ?? 0) * 1000;
     if (forceRefresh && session) {
       // The server rejected this exact token — invalidate the memoized verdict.
-      builderTokenChecks.delete(session.access_token);
+      builderTokenChecks.delete(rejectedToken!);
     }
     if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
       // `getSession()` is a local read: a token minted by a different project
@@ -308,7 +318,14 @@ export async function runBuilderTurn<TResponse = any>(
         return session.access_token;
       }
     }
-    const refreshedSession = await refreshBuilderSession(forceRefresh);
+    if (forceRefresh && session && session.access_token !== rejectedToken) {
+      // A sibling batch already rotated the session after our token was
+      // rejected: use it rather than forcing another rotation.
+      if (await isTokenAcceptedByAuth(session.access_token)) {
+        return session.access_token;
+      }
+    }
+    const refreshedSession = await refreshBuilderSession(forceRefresh, rejectedToken);
     if (!refreshedSession) return null;
     if (await isTokenAcceptedByAuth(refreshedSession.access_token)) {
       return refreshedSession.access_token;
@@ -325,14 +342,15 @@ export async function runBuilderTurn<TResponse = any>(
   const invokeWithSignal = async (
     payload: Record<string, unknown>,
     signal: AbortSignal,
-    forceRefresh = false,
+    rejectedToken?: string,
   ) => {
+
     if (!isSupabaseEnvConfigured) {
       throw new Error("Builder backend configuration is unavailable");
     }
     const url = SUPABASE_URL.replace(/\/$/, "");
     const anon = SUPABASE_PUBLISHABLE_KEY;
-    const token = await getAccessToken(forceRefresh);
+    const token = await getAccessToken(rejectedToken);
     if (!token) {
       return {
         data: null,
@@ -355,15 +373,17 @@ export async function runBuilderTurn<TResponse = any>(
     const text = await response.text();
     let data: TResponse | null = null;
     try { data = text ? JSON.parse(text) as TResponse : null; } catch { data = null; }
-    if (response.ok) return { data, error: null };
+    if (response.ok) return { data, error: null, usedToken: token };
     const parsedError = data as { error?: string } | null;
     return {
       data,
+      usedToken: token,
       error: Object.assign(
         new Error(parsedError?.error || `AI generation failed (${response.status})`),
         { context: { status: response.status, body: text } },
       ),
     };
+
   };
 
 
@@ -412,17 +432,21 @@ export async function runBuilderTurn<TResponse = any>(
         () => attemptController.abort(new DOMException("Builder turn deadline exceeded", "TimeoutError")),
         Math.max(1, remainingMs()),
       );
-      let { data, error } = await invokeWithSignal(sentPayload, attemptController.signal);
+      let { data, error, usedToken } = await invokeWithSignal(sentPayload, attemptController.signal);
       // Expired JWT: refresh once and replay immediately (does not consume a
-      // transport retry — the edge function never ran the model).
+      // transport retry — the edge function never ran the model). Pass the
+      // rejected token so concurrent batches converge on one rotation instead
+      // of invalidating each other's refresh tokens.
       if (
         error &&
         (error as { context?: { status?: number } }).context?.status === 401 &&
+        usedToken &&
         !attemptController.signal.aborted
       ) {
         console.warn("[builderBrainClient] 401 from edge function — refreshing session and retrying once");
-        ({ data, error } = await invokeWithSignal(sentPayload, attemptController.signal, true));
+        ({ data, error } = await invokeWithSignal(sentPayload, attemptController.signal, usedToken));
       }
+
       clearTimeout(attemptTimer);
       options.signal?.removeEventListener("abort", onOuterAbort);
 

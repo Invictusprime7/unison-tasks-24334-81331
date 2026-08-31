@@ -529,6 +529,13 @@ export function recompileFromPlayground(
   });
   Object.assign(compileResult.vfsFiles, uiFoundation.files);
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
+  Object.assign(
+    compileResult.vfsFiles,
+    buildThemeContractFiles({
+      artDirectionPackId: recompileArtDirectionPackId,
+      themePresetId,
+    }),
+  );
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,

@@ -350,7 +350,7 @@ export async function runBuilderTurn<TResponse = any>(
     }
     const url = SUPABASE_URL.replace(/\/$/, "");
     const anon = SUPABASE_PUBLISHABLE_KEY;
-    const token = await getAccessToken(forceRefresh);
+    const token = await getAccessToken(rejectedToken);
     if (!token) {
       return {
         data: null,

@@ -373,15 +373,17 @@ export async function runBuilderTurn<TResponse = any>(
     const text = await response.text();
     let data: TResponse | null = null;
     try { data = text ? JSON.parse(text) as TResponse : null; } catch { data = null; }
-    if (response.ok) return { data, error: null };
+    if (response.ok) return { data, error: null, usedToken: token };
     const parsedError = data as { error?: string } | null;
     return {
       data,
+      usedToken: token,
       error: Object.assign(
         new Error(parsedError?.error || `AI generation failed (${response.status})`),
         { context: { status: response.status, body: text } },
       ),
     };
+
   };
 
 

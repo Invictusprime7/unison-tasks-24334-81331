@@ -16,7 +16,7 @@
 const HARD_CODED_COLOR_VALUE = /\b(?:rgb|rgba|hsl|hsla)\(\s*(?!var\()[^)]*\)|#[0-9a-f]{3,8}\b/gi;
 
 const COLOR_UTILITY =
-  /\b(bg|text|border|ring|fill|stroke|from|via|to)-(\[(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla)\([^\]]+\))\]|(?:white|black|slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\d{2,3})?)(\/\d+)?\b/gi;
+  /\b(bg|text|border|ring|fill|stroke|from|via|to)-(\[(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla)\([^\]]+\))\]|(?:white|black|slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\d{2,3})?)(\/\d+)?(?![\w-])/gi;
 
 const NEUTRAL_HUES = new Set([
   'white',

@@ -349,7 +349,10 @@ describe("buildCanonicalLaunchArtifacts", () => {
       interactions: [{ target: { kind: 'interactive' as const, value: 'hero-cta' }, effect: 'hover-lift' as const }],
     };
     const artifacts = buildCanonicalLaunchArtifacts({
-      generatedFiles: {},
+      generatedFiles: {
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
+      },
+
       preferredEntryPoint: '/src/App.tsx',
       siteBundleSnapshot: snapshot,
       compiledPlayground: { vfsFiles: snapshot.vfsFiles },
@@ -443,7 +446,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
   });
 
-  it("can block canonical page fallback so wizard launches cannot mask missing Lane B pages", () => {
+  it("fails the launch when Lane B omits a registered page instead of masking it with a canonical body", () => {
     const snapshot = createSnapshot();
     const aboutPage = {
       ...snapshot.pageRegistry.pages[snapshot.pageRegistry.homePageId!],
@@ -457,7 +460,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     snapshot.vfsFiles["/src/pages/About.tsx"] =
       "export default function About(){ return <div>Canonical About Fallback</div>; }";
 
-    const artifacts = buildCanonicalLaunchArtifacts({
+    expect(() => buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/pages/Home.tsx": "export default function Home(){ return <main>Wizard Home</main>; }",
       },
@@ -475,12 +478,9 @@ describe("buildCanonicalLaunchArtifacts", () => {
       industry: "agency",
       aesthetic: "modern",
       backendRequired: false,
-    });
-
-    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Wizard Home");
-    expect(artifacts.files["/src/pages/About.tsx"]).toBeUndefined();
-    expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
+    })).toThrow(/did not author 1 registered page/);
   });
+
 
   it("refuses to persist a quarantined wizard page when strict preflight is enabled", () => {
     const snapshot = createSnapshot();

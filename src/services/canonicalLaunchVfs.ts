@@ -40,6 +40,11 @@ import {
 } from './wizardSharedChrome';
 import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import {
+  validateRegisteredPageCompilation,
+  formatPageCompilerViolations,
+} from './registeredPageCompilerGate';
+
+import {
   BUSINESS_PROFILE_HYDRATION_MODULE,
   BUSINESS_PROFILE_HYDRATION_PATH,
 } from '@/sections/businessProfileHydrationModule';
@@ -344,12 +349,27 @@ function serializeSiteBundleSnapshot(siteBundleSnapshot?: SiteBundleSnapshot) {
   };
 }
 
+export type MergedPageProvenance = 'lane-b' | 'lane-b-app-rebase' | 'canonical-fallback' | 'missing';
+
+export interface CanonicalMergeOptions {
+  allowCanonicalPageFallback?: boolean;
+  /**
+   * M1 authority gate. When `true`, the merge refuses to return a VFS that is
+   * missing a body for any registered page instead of deferring the failure to
+   * the snapshot projector.
+   */
+  requireRegisteredPageClosure?: boolean;
+  /** Optional sink receiving `pageFilePath -> provenance` for merge auditing. */
+  provenanceSink?: Record<string, MergedPageProvenance>;
+}
+
 export function mergeGeneratedVfsWithCanonicalSnapshot(
   generatedFiles: Record<string, string>,
   canonicalFiles: Record<string, string>,
   snapshot: SiteBundleSnapshot,
-  options: { allowCanonicalPageFallback?: boolean } = {},
-): Record<string, string> {
+  options: CanonicalMergeOptions = {},
+) {
+
   const registryPages = Object.values(snapshot.pageRegistry.pages);
   const normalizePath = (path: string) => (path.startsWith('/') ? path : `/${path}`);
   const pathVariants = (path: string): string[] => {
@@ -428,16 +448,16 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
   for (const [path, content] of Object.entries(generatedFiles)) {
     const normalizedPath = normalizePath(path);
-    // Stage 4b owns the UI foundation, the theme contract and its own
-    // composition descriptors. Lane B may read these, never replace them.
+    // Stage 4b owns the UI foundation, the theme contract and ALL canonical
+    // `/.unison/**` metadata. Lane B may read these, never replace them.
     if (
       normalizedPath.startsWith('/src/unison/ui/') ||
       normalizedPath.startsWith(`${RESOLVED_COMPOSITION_ROOT}/`) ||
-      normalizedPath === '/.unison/ui-manifest.json' ||
-      normalizedPath === '/.unison/design-intervention.json'
+      normalizedPath.startsWith('/.unison/')
     ) {
       continue;
     }
+
     const shouldMoveLegacyAppIntoHome =
       (normalizedPath === '/src/App.tsx' || normalizedPath === '/App.tsx') &&
       generatedAppCanSeedHome;
@@ -488,6 +508,11 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     merged[normalizedPath] = content;
   }
 
+  const missingRegisteredPages: string[] = [];
+  const recordProvenance = (pagePath: string, provenance: MergedPageProvenance) => {
+    if (options.provenanceSink) options.provenanceSink[pagePath] = provenance;
+  };
+
   for (const page of registryPages) {
     if (!page.filePath) continue;
     const normalizedPagePath = normalizePath(page.filePath);
@@ -502,12 +527,17 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     ) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = existingMergedPage;
+      recordProvenance(
+        normalizedPagePath,
+        readGenerated(page.filePath) ? 'lane-b' : 'lane-b-app-rebase',
+      );
       continue;
     }
 
     if (generatedPage && !isMinimalPreviewFallbackSource(generatedPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = generatedPage;
+      recordProvenance(normalizedPagePath, 'lane-b');
       continue;
     }
 
@@ -517,11 +547,26 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
     if (options.allowCanonicalPageFallback === true && canonicalPage && !isMinimalPreviewFallbackSource(canonicalPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = canonicalPage;
+      recordProvenance(normalizedPagePath, 'canonical-fallback');
       continue;
     }
 
     removePathVariants(merged, page.filePath);
+    recordProvenance(normalizedPagePath, 'missing');
+    missingRegisteredPages.push(normalizedPagePath);
   }
+
+  // M1 — exact registry-to-Lane-B page closure. A launch may never silently
+  // omit a selected page; callers that enforce closure fail here with the
+  // exact page list instead of surfacing a blank route downstream.
+  if (options.requireRegisteredPageClosure === true && missingRegisteredPages.length > 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `Lane B did not author ${missingRegisteredPages.length} registered page(s): ${missingRegisteredPages.join(', ')}. Refusing to seal an incomplete site.`,
+      { blockedFiles: missingRegisteredPages, recoverableByRelaunch: true },
+    );
+  }
+
 
 
   // ── Single chrome authority: the page body ──────────────────────────────
@@ -780,13 +825,21 @@ function* buildCanonicalLaunchArtifactSteps(
   }
 
   yield;
+  const mergeProvenance: Record<string, MergedPageProvenance> = {};
   const mergedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
     ? mergeGeneratedVfsWithCanonicalSnapshot(safeFiles, canonicalFiles, input.siteBundleSnapshot, {
         allowCanonicalPageFallback: input.allowCanonicalPageFallback,
+        // M1: a wizard launch may never seal without every registered page.
+        requireRegisteredPageClosure: input.allowCanonicalPageFallback !== true,
+        provenanceSink: mergeProvenance,
         // Lane B owns registered page bodies. Snapshot topology owns the
         // registry/router/bindings and Stage 4b owns /src/index.css.
       })
     : { ...safeFiles };
+  if (Object.keys(mergeProvenance).length > 0) {
+    console.info('[canonicalLaunchVfs] merge provenance', mergeProvenance);
+  }
+
   Object.assign(mergedFiles, normalizeLegacyRevealGroupImports(mergedFiles));
   Object.assign(mergedFiles, normalizeFoundationLocalImports(mergedFiles));
 
@@ -814,6 +867,27 @@ function* buildCanonicalLaunchArtifactSteps(
   mergedFiles[BUSINESS_PROFILE_HYDRATION_PATH] = BUSINESS_PROFILE_HYDRATION_MODULE;
   mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
   mergedFiles[PUBLISHED_ACTION_RUNTIME_PATH] = PUBLISHED_ACTION_RUNTIME_MODULE;
+
+  // ── M4 compiler gate ───────────────────────────────────────────────────
+  // Mutation-free structural assertion: every registered page must compile in
+  // the supported Sandpack runtime (default export, supported UI facade
+  // symbols, legal hook placement). Structural failures block the seal;
+  // presentation quality is scored separately.
+  if (input.siteBundleSnapshot && mergeWithCanonicalSnapshot && input.allowCanonicalPageFallback !== true) {
+    const gate = validateRegisteredPageCompilation(mergedFiles, input.siteBundleSnapshot);
+    if (!gate.ok) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `Registered pages failed the generated-page compiler gate: ${formatPageCompilerViolations(gate.violations)}`,
+        {
+          blockedFiles: Array.from(new Set(gate.violations.map((violation) => violation.filePath))),
+          recoverableByRelaunch: true,
+        },
+      );
+    }
+  }
+
+
 
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);

@@ -482,7 +482,10 @@ describe("launchStateToSandpackFiles", () => {
     }
     expect(pipeline.compileResult.vfsFiles['/src/App.tsx']).toContain('<Routes>');
 
-    const artifacts = buildCanonicalLaunchArtifacts({
+    // Routes come from the registry; page BODIES are Lane B's alone. An
+    // unauthored registered page is a fatal launch failure (M1 closure) —
+    // never scaffold-substituted and never silently dropped.
+    expect(() => buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/App.tsx": "export default function App(){ return <main>Generated Home</main>; }",
       },
@@ -499,15 +502,9 @@ describe("launchStateToSandpackFiles", () => {
       aesthetic: "modern",
       backendRequired: false,
       wizardSelections,
-    });
-
-    // Routes come from the registry; page BODIES are Lane B's alone, so an
-    // unauthored page is absent rather than scaffold-substituted.
-    expect(artifacts.files["/src/pages/Services.tsx"]).toBeFalsy();
-    expect(artifacts.files["/src/App.tsx"]).toContain('path="/services"');
-    expect(artifacts.files["/src/pages/Booking.tsx"]).toBeFalsy();
-    expect(artifacts.files["/src/App.tsx"]).not.toContain('path="/booking"');
+    })).toThrow(/did not author \d+ registered page/);
   });
+
 
   it('rejects an unknown wizard template instead of substituting an industry scaffold', () => {
     const modern = THEME_PRESETS.find((preset) => preset.id === 'modern');

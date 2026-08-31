@@ -1148,6 +1148,8 @@ export function normalizeFoundationLocalImports(files: Record<string, string>): 
       return statement.replace(specifier, '@/unison/ui');
     });
     next = next.replace(RELATIVE_DEFAULT_IMPORT, (statement, name: string, specifier: string) => {
+      // `Icon` keeps its dedicated canonical-module restore path.
+      if (name === 'Icon') return statement;
       if (!GENERATED_UI_BARREL_EXPORTS.has(name)) return statement;
       if (!missingModule(specifier)) return statement;
       return `import { ${name} } from '@/unison/ui'`;

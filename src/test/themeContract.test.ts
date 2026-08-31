@@ -69,7 +69,7 @@ describe('theme contract', () => {
 
 describe('composition vocabulary', () => {
   it('ships the layout/content/surface primitive modules in the foundation', () => {
-    const foundation = buildGeneratedUiFoundation({ industry: 'general' });
+    const foundation = buildGeneratedUiFoundation({ industry: 'general', themePresetId: 'aurora' });
     for (const path of [
       '/src/unison/ui/layout.tsx',
       '/src/unison/ui/content.tsx',
@@ -83,7 +83,7 @@ describe('composition vocabulary', () => {
   });
 
   it('re-exports the primitives from the root barrel', () => {
-    const foundation = buildGeneratedUiFoundation({ industry: 'general' });
+    const foundation = buildGeneratedUiFoundation({ industry: 'general', themePresetId: 'aurora' });
     const barrel = foundation.files['/src/unison/ui/index.ts'] || '';
     for (const symbol of ['Section', 'Container', 'Stack', 'Grid', 'Split', 'Heading', 'SectionHeader', 'Panel', 'MediaFrame', 'FeaturePanel']) {
       expect(barrel, `barrel must export ${symbol}`).toContain(symbol);
@@ -91,7 +91,7 @@ describe('composition vocabulary', () => {
   });
 
   it('puts the vocabulary in front of the model on every foundation directive', () => {
-    const foundation = buildGeneratedUiFoundation({ industry: 'general' });
+    const foundation = buildGeneratedUiFoundation({ industry: 'general', themePresetId: 'aurora' });
     const directive = buildGeneratedUiFoundationDirective({
       primitiveImports: foundation.manifest.primitiveImports,
       iconLibrary: foundation.manifest.iconLibrary,

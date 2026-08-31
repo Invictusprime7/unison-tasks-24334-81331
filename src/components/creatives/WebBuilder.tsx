@@ -3680,7 +3680,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       themePresetId: effectiveThemePresetId,
       backendRequired: effectiveRouteState?.runtimeManifest?.backendRequired ?? false,
       wizardSelections: effectiveRouteState?.wizardSelections || undefined,
+      // Builder edits never fall back to a scaffold page body.
+      allowCanonicalPageFallback: false,
+      strictPreflight: true,
     });
+
 
     return {
       vfsFiles: launchArtifacts.files,

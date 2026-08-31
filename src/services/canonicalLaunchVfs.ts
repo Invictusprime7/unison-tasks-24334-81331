@@ -64,9 +64,6 @@ export const PUBLISHED_RUNTIME_MODULE_PATH = '/src/unison/publishedRuntime.ts';
 export const GENERATED_SITE_RUNTIME_MANIFEST_MODULE_PATH = '/src/unison/generatedSiteRuntimeManifest.ts';
 
 const LEGACY_REVEAL_GROUP_IMPORT = /\bimport\s+(?:type\s+)?[^;\n]+?\s+from\s+['"](\.?\.?\/(?:[^'"]*\/)?components\/RevealGroup)['"];?/g;
-const LEGACY_REVEAL_GROUP_MODULE = `export { RevealGroup } from '../../unison/ui/motion';
-export { RevealGroup as default } from '../../unison/ui/motion';
-`;
 
 export interface PublishedRuntimeConfig {
   version: '1.0';
@@ -126,42 +123,37 @@ export interface BuildCanonicalLaunchArtifactsInput {
   /** Capability set that authorizes generated component runtime contracts. */
   enabledCapabilities?: readonly CapabilityId[];
   /**
-   * When false, registered page modules must come from generatedFiles. The
-   * canonical snapshot may still provide router/root support, but its page
-   * scaffold cannot silently fill missing Lane B output.
+   * OPT-IN ONLY (`true`). Registered page modules must come from generatedFiles;
+   * the canonical snapshot may still provide router/root support, but its page
+   * scaffold never silently fills missing Lane B output. No wizard/AI caller
+   * opts in — this exists for non-authoring importers alone.
    */
   allowCanonicalPageFallback?: boolean;
   /** Throw if internal preflight has to quarantine generated code. */
   strictPreflight?: boolean;
 }
 
-function resolveRelativeVfsModulePath(filePath: string, importPath: string): string {
-  const pathParts = filePath.split('/').filter(Boolean);
-  pathParts.pop();
-  for (const segment of importPath.split('/')) {
-    if (!segment || segment === '.') continue;
-    if (segment === '..') pathParts.pop();
-    else pathParts.push(segment);
-  }
-  return `/${pathParts.join('/')}.tsx`;
-}
-
 /**
- * Preserve the real motion facade for older page generators that emitted a
- * relative RevealGroup import. This is a compatibility bridge, not a general
- * missing-module fallback: all other unresolved modules still fail strict VFS
- * preflight with a useful diagnostic.
+ * Normalize the legacy relative `components/RevealGroup` import emitted by
+ * older page generators onto the canonical primitive kit. This rewrites an
+ * import specifier only — it never synthesizes a module, so every other
+ * unresolved import still fails strict VFS preflight with a diagnostic.
  */
-function restoreLegacyRevealGroupModules(files: Record<string, string>): Record<string, string> {
-  const restored = { ...files };
+function normalizeLegacyRevealGroupImports(files: Record<string, string>): Record<string, string> {
+  const normalized = { ...files };
   for (const [filePath, source] of Object.entries(files)) {
     if (!/\.(?:tsx|jsx)$/i.test(filePath)) continue;
-    for (const match of source.matchAll(LEGACY_REVEAL_GROUP_IMPORT)) {
-      const modulePath = resolveRelativeVfsModulePath(filePath, match[1]);
-      if (!restored[modulePath]) restored[modulePath] = LEGACY_REVEAL_GROUP_MODULE;
+    if (!LEGACY_REVEAL_GROUP_IMPORT.test(source)) {
+      LEGACY_REVEAL_GROUP_IMPORT.lastIndex = 0;
+      continue;
     }
+    LEGACY_REVEAL_GROUP_IMPORT.lastIndex = 0;
+    normalized[filePath] = source.replace(
+      LEGACY_REVEAL_GROUP_IMPORT,
+      (statement, specifier: string) => statement.replace(specifier, '@/unison/ui/motion'),
+    );
   }
-  return restored;
+  return normalized;
 }
 
 export function buildPublishedRuntimeConfig(
@@ -517,10 +509,10 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       continue;
     }
 
-    // Canonical page fallback is a DEGRADED path only. Wizard final merges pass
-    // allowCanonicalPageFallback:false so a missing Lane B page surfaces as an
-    // incomplete launch instead of being masked by a Stage 4b scaffold body.
-    if (options.allowCanonicalPageFallback !== false && canonicalPage && !isMinimalPreviewFallbackSource(canonicalPage)) {
+    // Canonical page fallback is OPT-IN ONLY (`=== true`). No wizard or AI
+    // path opts in: a missing Lane B page must surface as an incomplete launch
+    // instead of being masked by a Stage 4b scaffold body.
+    if (options.allowCanonicalPageFallback === true && canonicalPage && !isMinimalPreviewFallbackSource(canonicalPage)) {
       removePathVariants(merged, page.filePath);
       merged[normalizedPagePath] = canonicalPage;
       continue;
@@ -750,6 +742,9 @@ function* buildCanonicalLaunchArtifactSteps(
   try {
     finalRepair = yield* runPreflightRepairSteps(filesAfterStrip, {
       context: { industry: input.industry, brand: input.businessName },
+      // Strict launch paths never accept an industry template section in place
+      // of an unparseable AI file — the launch fails and a repair turn runs.
+      allowQuarantine: input.strictPreflight !== true,
     });
   } catch (error) {
     console.warn('[canonicalLaunchVfs] Final preflight syntax repair failed; continuing', error);
@@ -790,7 +785,7 @@ function* buildCanonicalLaunchArtifactSteps(
         // registry/router/bindings and Stage 4b owns /src/index.css.
       })
     : { ...safeFiles };
-  Object.assign(mergedFiles, restoreLegacyRevealGroupModules(mergedFiles));
+  Object.assign(mergedFiles, normalizeLegacyRevealGroupImports(mergedFiles));
   mergedFiles[BUSINESS_PROFILE_HYDRATION_PATH] = BUSINESS_PROFILE_HYDRATION_MODULE;
   mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
   mergedFiles[PUBLISHED_ACTION_RUNTIME_PATH] = PUBLISHED_ACTION_RUNTIME_MODULE;

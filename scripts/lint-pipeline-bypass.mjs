@@ -117,6 +117,55 @@ export function findDesignResolutionViolations(text, fileName = 'source.ts') {
   return usages;
 }
 
+// Pass 6 — no body substitution. Nothing may re-enable canonical page
+// fallback, quarantine scaffolds, or preview import synthesis on a
+// wizard-originated path. Resilience is allowed for regeneration, retry and
+// diagnostics only — never for authoring or replacing a page body.
+const BODY_SUBSTITUTION_RULES = [
+  { property: 'allowCanonicalPageFallback', forbiddenValue: true },
+  { property: 'allowQuarantine', forbiddenValue: true },
+  { property: 'failOnMissingImport', forbiddenValue: false },
+];
+const BODY_SUBSTITUTION_ALLOWLIST = new Set([
+  // Non-authoring importer of an already-authored external site.
+  'src/services/export/importUnisonSiteZip.ts',
+]);
+
+export function findBodySubstitutionViolations(text, fileName = 'source.ts') {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const usages = [];
+  function visit(node) {
+    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name)) {
+      const rule = BODY_SUBSTITUTION_RULES.find((r) => r.name === node.name.text || r.property === node.name.text);
+      if (rule) {
+        const literal =
+          node.initializer.kind === ts.SyntaxKind.TrueKeyword
+            ? true
+            : node.initializer.kind === ts.SyntaxKind.FalseKeyword
+              ? false
+              : null;
+        if (literal === rule.forbiddenValue) {
+          const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+          usages.push({
+            line: position.line + 1,
+            symbol: `${rule.property}: ${String(rule.forbiddenValue)}`,
+            text: sourceFile.text.slice(node.getStart(sourceFile), node.getEnd()),
+          });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return usages;
+}
+
 // These modules predate the revision-backed writer migration. Keep this list
 // deliberately small and shrink it as each writer moves behind commitMutation.
 const BUILDER_DRAFT_MUTATION_ALLOWLIST = new Map([
@@ -235,6 +284,15 @@ function collectViolations(dir) {
 
       if (!isDesignResolutionOwner(rel) && DESIGN_RESOLUTION_SYMBOLS.some((sym) => text.includes(sym))) {
         for (const usage of findDesignResolutionViolations(text, full)) {
+          violations.push({ file: rel, ...usage });
+        }
+      }
+
+      if (
+        !BODY_SUBSTITUTION_ALLOWLIST.has(rel) &&
+        BODY_SUBSTITUTION_RULES.some((rule) => text.includes(rule.property))
+      ) {
+        for (const usage of findBodySubstitutionViolations(text, full)) {
           violations.push({ file: rel, ...usage });
         }
       }

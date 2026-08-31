@@ -51,6 +51,12 @@ export interface PreflightOptions {
    * with no trailing-suffix search, so the pipeline can never spin.
    */
   budgetMs?: number;
+  /**
+   * When false, an unparseable file is left exactly as authored and reported as
+   * `quarantined` so the caller can fail the launch and run a targeted repair
+   * turn. Launch paths never substitute an industry template section.
+   */
+  allowQuarantine?: boolean;
 }
 
 const PARSE_OPTS = {
@@ -410,7 +416,9 @@ export function* runPreflightRepairSteps(
       reports.push({ path, status: 'repaired', passes: applied });
       repaired++;
     } else {
-      out[path] = deriveQuarantineComponent(path, lastError, ctx);
+      out[path] = options.allowQuarantine === false
+        ? source
+        : deriveQuarantineComponent(path, lastError, ctx);
       reports.push({ path, status: 'quarantined', passes: applied, finalError: lastError });
       quarantined++;
     }

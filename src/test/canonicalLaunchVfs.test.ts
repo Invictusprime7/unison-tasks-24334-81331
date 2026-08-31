@@ -164,18 +164,25 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(merged["/.unison/compositions/src/pages/Home.json"]).toContain("hero:full-bleed");
   });
 
-  it("only falls back to the canonical page body when Lane B produced nothing", () => {
+  it("never substitutes the canonical page body unless a caller explicitly opts in", () => {
     const snapshot = createSnapshot();
     snapshot.vfsFiles["/src/pages/Home.tsx"] =
       "export default function Home(){ return <main>Canonical composed home</main>; }";
 
-    const degraded = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot);
-    expect(degraded["/src/pages/Home.tsx"]).toContain("Canonical composed home");
+    // Default (flag omitted) is now strict: no body substitution.
+    const defaults = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot);
+    expect(defaults["/src/pages/Home.tsx"]).toBeUndefined();
 
     const strict = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot, {
       allowCanonicalPageFallback: false,
     });
     expect(strict["/src/pages/Home.tsx"]).toBeUndefined();
+
+    // Opt-in remains only for non-authoring importers.
+    const optedIn = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot, {
+      allowCanonicalPageFallback: true,
+    });
+    expect(optedIn["/src/pages/Home.tsx"]).toContain("Canonical composed home");
   });
 
   it("uses LaunchState VFS when the builder preview mounts before VFS import", () => {
@@ -509,7 +516,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     })).toThrow(/Wizard runtime preflight failed before persistence:.*Home\.tsx imports JSX component "MissingHero".*HeroTitle, HeroCopy/i);
   });
 
-  it('restores the canonical RevealGroup facade for legacy relative page imports', () => {
+  it('normalizes the legacy relative RevealGroup import onto the primitive kit', () => {
     const snapshot = createSnapshot();
 
     const artifacts = buildCanonicalLaunchArtifacts({
@@ -526,7 +533,8 @@ describe("buildCanonicalLaunchArtifacts", () => {
       strictPreflight: true,
     });
 
-    expect(artifacts.files['/src/pages/components/RevealGroup.tsx'])
-      .toContain("from '../../unison/ui/motion'");
+    expect(artifacts.files['/src/pages/components/RevealGroup.tsx']).toBeUndefined();
+    expect(artifacts.files['/src/pages/Faq.tsx']).toContain("from '@/unison/ui/motion'");
+    expect(artifacts.files['/src/pages/Faq.tsx']).not.toContain("./components/RevealGroup");
   });
 });

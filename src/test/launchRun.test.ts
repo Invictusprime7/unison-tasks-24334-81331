@@ -7,28 +7,42 @@ import {
 } from '@/services/launch/launchRun';
 
 describe('launchRun', () => {
-  it('degrades a failing stage and keeps the journey going', async () => {
+  it('degrades a failing non-authorship stage and keeps the journey going', async () => {
     const run = createLaunchRun();
-    const value = await run.stage('enrich', async () => {
+    const value = await run.stage('commit', async () => {
       throw new Error('429 rate limited');
-    }, { fallback: () => 'seed-files', degradeCode: 'enrich.rate_limited', degradeMessage: 'AI skipped' });
+    }, { fallback: () => 'retry-later', degradeCode: 'commit.rate_limited', degradeMessage: 'Save deferred' });
 
-    expect(value).toBe('seed-files');
+    expect(value).toBe('retry-later');
     const snap = run.snapshot();
     expect(snap.degradations).toHaveLength(1);
-    expect(snap.degradations[0].code).toBe('enrich.rate_limited');
-    expect(snap.stages.find((s) => s.name === 'enrich')?.status).toBe('degraded');
+    expect(snap.degradations[0].code).toBe('commit.rate_limited');
+    expect(snap.stages.find((s) => s.name === 'commit')?.status).toBe('degraded');
     expect(snap.fatal).toBeNull();
   });
 
-  it('degrades a stalled stage via its own watchdog', async () => {
+  it('never degrades an authorship stage, even with a fallback', async () => {
     const run = createLaunchRun();
-    const value = await run.stage('enrich', () => new Promise(() => undefined), {
+    await expect(
+      run.stage('enrich', async () => {
+        throw new Error('429 rate limited');
+      }, { fallback: () => 'seed-files' }),
+    ).rejects.toThrow(/429 rate limited/);
+
+    const snap = run.snapshot();
+    expect(snap.degradations).toHaveLength(0);
+    expect(snap.stages.find((s) => s.name === 'enrich')?.status).toBe('failed');
+    expect(snap.fatal).toMatch(/429 rate limited/);
+  });
+
+  it('degrades a stalled non-authorship stage via its own watchdog', async () => {
+    const run = createLaunchRun();
+    const value = await run.stage('commit', () => new Promise(() => undefined), {
       timeoutMs: 20,
-      fallback: () => 'seed-files',
+      fallback: () => 'retry-later',
     });
-    expect(value).toBe('seed-files');
-    expect(run.snapshot().degradations[0].stage).toBe('enrich');
+    expect(value).toBe('retry-later');
+    expect(run.snapshot().degradations[0].stage).toBe('commit');
   });
 
   it('treats session loss as fatal and everything else as degraded', async () => {

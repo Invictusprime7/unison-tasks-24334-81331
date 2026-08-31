@@ -170,6 +170,18 @@ export interface LaunchRun {
   yieldToHost: typeof yieldToHost;
 }
 
+/**
+ * Authorship stages own the page bodies (Lane B generation + the canonical
+ * merge/preflight that seals them). A failure here can never be degraded away:
+ * degradation would mean sealing content nobody authored. Non-authorship
+ * stages (plan, commit, handoff) may still degrade with an explicit fallback.
+ */
+const AUTHORSHIP_STAGES: ReadonlySet<LaunchStageName> = new Set<LaunchStageName>([
+  'seed',
+  'enrich',
+  'preflight',
+]);
+
 export function createLaunchRun(options: LaunchRunOptions = {}): LaunchRun {
   const controller = new AbortController();
   const stageOrder: LaunchStageName[] = ['plan', 'seed', 'enrich', 'preflight', 'commit', 'handoff'];
@@ -236,6 +248,14 @@ export function createLaunchRun(options: LaunchRunOptions = {}): LaunchRun {
         fatal = launchErrorMessage(error);
         setStatus(name, 'failed');
         throw error;
+      }
+      if (AUTHORSHIP_STAGES.has(name)) {
+        // No fallback is honoured for authorship stages, even if a caller
+        // passes one — substituting a page body is not a recovery.
+        const message = launchErrorMessage(error);
+        fatal = message;
+        setStatus(name, 'failed');
+        throw new LaunchFatalError(message);
       }
       if (!opts.fallback) {
         setStatus(name, 'failed');

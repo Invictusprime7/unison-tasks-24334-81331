@@ -21,10 +21,22 @@ export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
   industry?: string;
   brand?: string;
+  /**
+   * `repair` (default) may mutate source. `acceptance` is validation-only:
+   * nothing is written back, and any file the repair pipeline *would* have
+   * changed is reported as a violation instead.
+   */
+  mode?: 'repair' | 'acceptance';
 }
 
 export interface RunFullPreflightResult {
   files: Record<string, string>;
+  /** True when this pass changed any source file (repair mode only). */
+  mutated: boolean;
+  mutatedFiles: string[];
+  /** Acceptance mode: files that still require mutation and cannot be sealed. */
+  violations: string[];
+  mode: 'repair' | 'acceptance';
   stages: {
     earlyRepair: 'ok' | 'skipped' | 'failed';
     navWiring: 'ok' | 'skipped' | 'failed';
@@ -38,8 +50,9 @@ export function runFullPreflight(
   inputFiles: Record<string, string>,
   options: RunFullPreflightOptions = {},
 ): RunFullPreflightResult {
-  const { siteBundleSnapshot = null, industry, brand } = options;
+  const { siteBundleSnapshot = null, industry, brand, mode = 'repair' } = options;
   const ctx = { industry, brand };
+
 
   // 1) Early syntax repair
   let files = inputFiles;
@@ -112,8 +125,39 @@ export function runFullPreflight(
     finalRepair = 'failed';
   }
 
+  const mutatedFiles = Object.keys(files).filter((p) => files[p] !== inputFiles[p]);
+  const mutated = mutatedFiles.length > 0 || Object.keys(files).length !== Object.keys(inputFiles).length;
+
+  if (mode === 'acceptance') {
+    // Validation-only: nothing this pass produced may reach the seal.
+    if (mutated) {
+      console.warn('[runFullPreflight] acceptance pass found unresolved defects', { mutatedFiles });
+    }
+    return {
+      files: inputFiles,
+      mutated: false,
+      mutatedFiles: [],
+      violations: mutatedFiles,
+      mode,
+      stages: {
+        earlyRepair,
+        navWiring,
+        forbiddenStrip: { stripped, forbidden },
+        requiredIntentClosure: {
+          injected: requiredIntentClosure.injected,
+          missing: requiredIntentClosure.missing,
+        },
+        finalRepair,
+      },
+    };
+  }
+
   return {
     files,
+    mutated,
+    mutatedFiles,
+    violations: [],
+    mode,
     stages: {
       earlyRepair,
       navWiring,
@@ -126,3 +170,4 @@ export function runFullPreflight(
     },
   };
 }
+

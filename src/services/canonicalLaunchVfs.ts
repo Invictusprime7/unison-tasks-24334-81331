@@ -28,6 +28,8 @@ import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencie
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
 import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
+import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
+
 
 import { ensureGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
 import {
@@ -787,9 +789,32 @@ function* buildCanonicalLaunchArtifactSteps(
     : { ...safeFiles };
   Object.assign(mergedFiles, normalizeLegacyRevealGroupImports(mergedFiles));
   Object.assign(mergedFiles, normalizeFoundationLocalImports(mergedFiles));
+
+  // ── Stage 4b re-finalization ───────────────────────────────────────────
+  // Any repair performed after Stage 4b (syntax repair, binding/nav wiring,
+  // forbidden-intent stripping) can reintroduce unthemed literals. Re-apply
+  // the semantic theme finalizer exactly once so the sealed artifact has
+  // always passed Stage 4b *after* its last source mutation. Bounded to one
+  // pass: the finalizer is idempotent.
+  const sourceMutatedAfterStage4b =
+    (finalRepair?.repairedCount ?? 0) > 0 ||
+    (preflight?.wired ?? 0) > 0 ||
+    forbidden.length > 0;
+  if (sourceMutatedAfterStage4b) {
+    const refinalized = normalizeWizardThemeTokens(mergedFiles);
+    Object.assign(mergedFiles, refinalized.files);
+    if (refinalized.changedFiles.length > 0 || refinalized.residualLiterals.length > 0) {
+      console.info('[canonicalLaunchVfs] Stage 4b re-finalization after post-merge repair', {
+        changedFiles: refinalized.changedFiles,
+        residualLiterals: refinalized.residualLiterals.slice(0, 10),
+      });
+    }
+  }
+
   mergedFiles[BUSINESS_PROFILE_HYDRATION_PATH] = BUSINESS_PROFILE_HYDRATION_MODULE;
   mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
   mergedFiles[PUBLISHED_ACTION_RUNTIME_PATH] = PUBLISHED_ACTION_RUNTIME_MODULE;
+
 
   const entryPoint = resolveLauncherEntryPoint(mergedFiles, input.preferredEntryPoint);
   const appContext = buildRuntimeAppContext(

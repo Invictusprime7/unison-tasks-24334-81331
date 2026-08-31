@@ -9,8 +9,8 @@ import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
  * owner of global theme tokens and CSS.
  */
 
-export const GENERATED_UI_FOUNDATION_VERSION = '1.2' as const;
-const LEGACY_GENERATED_UI_FOUNDATION_VERSIONS = new Set(['1.1']);
+export const GENERATED_UI_FOUNDATION_VERSION = '1.3' as const;
+const LEGACY_GENERATED_UI_FOUNDATION_VERSIONS = new Set(['1.1', '1.2']);
 
 export type GeneratedUiLayoutRecipe =
   | 'floating-navbar'

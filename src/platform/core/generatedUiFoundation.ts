@@ -101,10 +101,36 @@ export function buildGeneratedUiFoundationDirective(
     '  - "@/unison/ui/motion" exports ONLY Reveal, RevealGroup, Stagger, StaggerItem, and the MotionRecipe type — nothing else.',
     '  - "@/unison/ui/animation" is the full framer-motion re-export (motion, AnimatePresence, useReducedMotion, useScroll, useInView, etc.) — use this facade for any raw framer-motion export not in the @/unison/ui/motion list above.',
     'Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally. Use plain <img alt="..."> for images, not a framework-specific Image component.',
+    COMPOSITION_VOCABULARY_DIRECTIVE,
     requirementsList ? 'Manifest requirements for this snapshot:' : '',
     requirementsList,
   ].filter(Boolean).join('\n');
 }
+
+/**
+ * The composition vocabulary, with exact prop shapes. Quality comes from
+ * composing THESE — not from raw <div> + arbitrary utilities — because each
+ * one already encodes the sealed pack's rhythm, measure, surface and motion.
+ */
+export const COMPOSITION_VOCABULARY_DIRECTIVE = [
+  '── COMPOSITION VOCABULARY (compose from these; they own the aesthetic) ──',
+  'Layout — "@/unison/ui/layout" (also on the root barrel):',
+  '  - <Section tone="default|muted|accent|gradient|inverted" wash?={boolean} flush?={boolean} as?="section|header|footer|aside|div"> — one per page band; applies the pack\'s vertical rhythm. Never hand-roll section padding.',
+  '  - <Container width="measure|content|wide|full"> — horizontal gutter + max width. Every Section body goes inside one.',
+  '  - <Stack gap="tight|block|section" direction="vertical|horizontal" align="start|center|end|stretch" wrap?={boolean}> — flex rhythm.',
+  '  - <Grid columns={2|3|4} gap="tight|block|section"> — responsive grid; already steps 1 → 2 → N.',
+  '  - <Split reverse?={boolean} align="start|center"> — two-column editorial/media split on the pack\'s hero column ratio.',
+  '  - <Divider /> — token gradient rule. <Bleed> — full-width band.',
+  'Content — "@/unison/ui/content":',
+  '  - <Eyebrow>, <Heading level={1|2|3|4} size="display|title|subtitle" gradient?={boolean}>, <Lead>, <Body>, <Badge>',
+  '  - <Stat value label hint?>, <Quote attribution? role? media?>, <CTAGroup>',
+  '  - <SectionHeader eyebrow? title lead? align="start|center" level? size?> — the standard section intro cluster.',
+  'Surfaces — "@/unison/ui/surface":',
+  '  - <Panel tone="surface|gradient|outline|plain" interactive?={boolean} padded?={boolean}>',
+  '  - <MediaFrame src alt ratio="media|hero|square" loading? overlay?>',
+  '  - <FeaturePanel title description? icon? media? actions?> — the standard offering/feature card.',
+  'Rules: exactly ONE <h1> per page (a single <Heading level={1}>). Use <Section> for every band and <Container> inside it. Pass className only for standard Tailwind scale utilities or var(--ut-*)/var(--radius) arbitrary values — never a raw px/rem/vh/vw/#hex literal.',
+].join('\n');
 
 const REQUIRED_GENERATED_UI_FOUNDATION_PATHS = [
   '/.unison/ui-manifest.json',

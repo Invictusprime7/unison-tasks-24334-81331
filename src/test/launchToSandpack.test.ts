@@ -501,7 +501,9 @@ describe("launchStateToSandpackFiles", () => {
       wizardSelections,
     });
 
-    expect(artifacts.files["/src/pages/Services.tsx"]).toBeTruthy();
+    // Routes come from the registry; page BODIES are Lane B's alone, so an
+    // unauthored page is absent rather than scaffold-substituted.
+    expect(artifacts.files["/src/pages/Services.tsx"]).toBeFalsy();
     expect(artifacts.files["/src/App.tsx"]).toContain('path="/services"');
     expect(artifacts.files["/src/pages/Booking.tsx"]).toBeFalsy();
     expect(artifacts.files["/src/App.tsx"]).not.toContain('path="/booking"');

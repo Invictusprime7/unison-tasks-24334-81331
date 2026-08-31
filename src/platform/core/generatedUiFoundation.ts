@@ -111,11 +111,14 @@ const REQUIRED_GENERATED_UI_FOUNDATION_PATHS = [
   '/src/unison/ui/index.ts',
   '/src/unison/ui/button.tsx',
   '/src/unison/ui/card.tsx',
+  '/src/unison/ui/content.tsx',
   '/src/unison/ui/icons.ts',
+  '/src/unison/ui/layout.tsx',
   '/src/unison/ui/media.tsx',
   '/src/unison/ui/motion.tsx',
   '/src/unison/ui/navigation.tsx',
   '/src/unison/ui/recipes.tsx',
+  '/src/unison/ui/surface.tsx',
   '/src/unison/ui/tailwind.css',
 ] as const;
 

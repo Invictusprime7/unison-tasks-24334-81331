@@ -29,7 +29,7 @@ import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeS
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
 import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
 
-import { ensureGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
+import { ensureGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
 import {
   WIZARD_FOOTER_PATH,
   WIZARD_NAVBAR_PATH,
@@ -786,6 +786,7 @@ function* buildCanonicalLaunchArtifactSteps(
       })
     : { ...safeFiles };
   Object.assign(mergedFiles, normalizeLegacyRevealGroupImports(mergedFiles));
+  Object.assign(mergedFiles, normalizeFoundationLocalImports(mergedFiles));
   mergedFiles[BUSINESS_PROFILE_HYDRATION_PATH] = BUSINESS_PROFILE_HYDRATION_MODULE;
   mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
   mergedFiles[PUBLISHED_ACTION_RUNTIME_PATH] = PUBLISHED_ACTION_RUNTIME_MODULE;

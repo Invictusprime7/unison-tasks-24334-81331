@@ -320,7 +320,7 @@ export function buildWizardGenerationBrief(input: {
     },
     chrome: {
       owner: 'page-body',
-      rule: 'Each page body owns its chrome and must render EXACTLY ONE navigation landmark and EXACTLY ONE footer. The router renders routes only — it adds no navbar and no footer. Never emit /src/sections/SiteNavbar.tsx or /src/sections/SiteFooter.tsx, never render a second <nav>/<header> nav bar or a second <footer>, and keep the nav links identical to the registered routes below.',
+      rule: 'Each page body owns its chrome and must render EXACTLY ONE navigation landmark and EXACTLY ONE footer. Start every page with <FloatingNavbar brand={...} links={...} ctaLabel={...} /> imported from "@/unison/ui" (or a single hand-authored <nav>) and end it with exactly one <footer> element — a page with no navigation landmark is rejected. The router renders routes only — it adds no navbar and no footer. Never emit /src/sections/SiteNavbar.tsx or /src/sections/SiteFooter.tsx, never render a second <nav>/<header> nav bar or a second <footer>, and keep the nav links identical to the registered routes below.',
       routes: routes.map((route) => ({ path: route.path, label: route.title })),
     },
     ui: {

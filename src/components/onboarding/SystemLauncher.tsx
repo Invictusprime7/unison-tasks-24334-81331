@@ -3125,6 +3125,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           console.warn('[SystemLauncher] Lane B Home rejected by the presentation quality gate', {
             templateId: templateLayoutContract.templateId,
             reason: homeAssessment.rejections[0]?.reason,
+            chromeTags: Array.from(new Set(
+              (aiSourcedFiles[canonicalHomePath] || '').match(/<[A-Za-z][A-Za-z0-9]*/g) || [],
+            )).slice(0, 40).join(' '),
           });
         }
       }

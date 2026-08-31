@@ -215,7 +215,12 @@ export function getMissingCanonicalChromeRoutes(
  * quality gate, drift watcher — assert "exactly one navbar, exactly one footer".
  */
 export function countPageChromeLandmarks(source: string): { navbars: number; footers: number } {
-  const navbars = (source.match(/<(?:nav\b|SiteNavbar\b|Navbar\b)/g) || []).length;
-  const footers = (source.match(/<(?:footer\b|SiteFooter\b|Footer\b)/g) || []).length;
+  // Foundation chrome primitives (e.g. `<FloatingNavbar />` from
+  // `@/unison/ui`) are legitimate navigation landmarks: they render the
+  // `<header>/<nav>` markup themselves. Counting only literal `<nav>` made the
+  // quality gate contradict the UI foundation it hands to Lane B.
+  const navbars = (source.match(/<(?:nav\b|[A-Z][A-Za-z]*(?:Navbar|NavBar|Navigation)\b|SiteHeader\b)/g) || []).length;
+  const footers = (source.match(/<(?:footer\b|[A-Z][A-Za-z]*Footer\b)/g) || []).length;
   return { navbars, footers };
 }
+

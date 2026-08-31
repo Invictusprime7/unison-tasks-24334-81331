@@ -98,7 +98,7 @@ export function buildGeneratedUiFoundationDirective(
     'Two similarly-named facade pairs are easy to confuse — use exactly the right one:',
     `  - "@/unison/ui/icons" (plural) is a full ${manifest.iconLibrary} re-export: import any icon name directly from it, e.g. import { Camera, X } from "@/unison/ui/icons". Never nest a sub-path under it.`,
     '  - "@/unison/ui/icon" (singular) exports only the <Icon icon={...} /> wrapper component, not raw icon glyphs.',
-    '  - "@/unison/ui/motion" exports ONLY Reveal, RevealGroup, Stagger, StaggerItem, and the MotionRecipe type — nothing else.',
+    '  - "@/unison/ui/motion" exports ONLY Reveal, RevealGroup, StaggerGroup, Stagger, StaggerItem, and the MotionRecipe type — nothing else.',
     '  - "@/unison/ui/animation" is the full framer-motion re-export (motion, AnimatePresence, useReducedMotion, useScroll, useInView, etc.) — use this facade for any raw framer-motion export not in the @/unison/ui/motion list above.',
     'Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally. Use plain <img alt="..."> for images, not a framework-specific Image component.',
     COMPOSITION_VOCABULARY_DIRECTIVE,
@@ -206,7 +206,7 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
     'Import FormGrid/FormFields, FormField, Input, Textarea, Select, Checkbox, FieldLabel, FormHint, and FormError from @/unison/ui/form-fields or @/unison/ui; never invent flat input/textarea/select/checkbox/label modules.',
     'Use Button variants or IconButton for actions; icon-only actions require an accessible label.',
     'Use responsive Tailwind variants and preserve data-ut-intent attributes on actionable controls.',
-    'For @/unison/ui/motion, use only Reveal, RevealGroup, Stagger, StaggerItem, and MotionRecipe.',
+    'For @/unison/ui/motion, use only Reveal, RevealGroup, StaggerGroup, Stagger, StaggerItem, and MotionRecipe.',
     'Import `cn` only from `@/unison/ui` — never from `@/unison/lib/utils` or any other path.',
     'Never import `@/unison/ui/tailwind.css` from a page; it is already applied globally in /src/index.css.',
     'COMPOSE FROM THE VOCABULARY. Build every section from the composition primitives — Section, Container, Stack, Grid, Split, Eyebrow, Heading, Body, Lead, Stat, Quote, Badge, Panel, MediaFrame, CTAGroup — instead of raw <div> + arbitrary utility soup. They already encode this theme\'s rhythm, measure, surface treatment and responsive behaviour, so a page built from them stays correct under any style card.',
@@ -331,6 +331,7 @@ export function StaggerChild({ children, className }: StaggerProps) {
 export const Stagger = StaggerContainer;
 export const StaggerItem = StaggerChild;
 export const RevealGroup = StaggerContainer;
+export const StaggerGroup = StaggerContainer;
 `,
     '/src/unison/ui/icons.ts': `${marker}
 import * as React from 'react';
@@ -452,11 +453,11 @@ export { cn } from './cn';
 export { Section, Container, Stack, Grid, Split, Bleed, Divider, type SectionProps, type SectionTone, type ContainerWidth, type StackProps, type StackGap, type GridProps, type SplitProps } from './layout';
 export { Eyebrow, Heading, Lead, Body, Badge, Stat, Quote, CTAGroup, SectionHeader, type HeadingProps, type HeadingLevel, type HeadingSize, type StatProps, type QuoteProps, type SectionHeaderProps } from './content';
 export { Panel, MediaFrame, FeaturePanel, type PanelProps, type PanelTone, type MediaFrameProps, type FeaturePanelProps } from './surface';
-export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, FormError } from './form-fields';
+export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, FormError, Form, FormItem, FormControl, FormDescription, FormMessage } from './form-fields';
 export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
 export { ImageLightbox } from './media';
-export { Reveal, RevealGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';
+export { Reveal, RevealGroup, StaggerGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';
 export { FloatingNavbar, type NavigationLink } from './navigation';
 export { BentoFeatureGrid, FeatureCard } from './recipes';
 export { colorStyles, componentStyles, motionStyles, styles, typography } from './styles';
@@ -982,6 +983,19 @@ export const Label = FieldLabel;
 export const FormLabel = FieldLabel;
 export const TextInput = Input;
 export const TextArea = Textarea;
+
+/** shadcn-style <Form> wrapper: a plain semantic form element. */
+export function Form({ className, ...props }: React.FormHTMLAttributes<HTMLFormElement>) {
+  return <form className={cn('grid gap-4', className)} {...props} />;
+}
+
+export function FormItem({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('grid gap-2', className)} {...props} />;
+}
+
+export const FormControl = FormItem;
+export const FormDescription = FormHint;
+export const FormMessage = FormError;
 `,
 
     '/src/unison/ui/icon.tsx': `${marker}
@@ -1034,6 +1048,13 @@ export function RevealGroup({ children, className }: { children: React.ReactNode
   return <Stagger className={className}>{children}</Stagger>;
 }
 
+// Naming synonyms accepted by the facade so a generated page never fails on
+// vocabulary alone. Behaviourally identical to Stagger.
+export function StaggerGroup({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <Stagger className={className}>{children}</Stagger>;
+}
+
+
 export function StaggerItem({ children, className }: { children: React.ReactNode; className?: string }) {
   const reduceMotion = useReducedMotion();
   // Self-animating so items still reveal when Stagger is layout-transparent.
@@ -1069,6 +1090,27 @@ export function FeatureCard({ title, description, media, className }: { title: s
     '/.unison/ui-manifest.json': JSON.stringify(manifest, null, 2),
   };
 }
+
+/**
+ * Named exports available from the `@/unison/ui` root barrel. Used by canonical
+ * merge to normalize a generated page that imported a foundation primitive from
+ * a relative path it never authored (e.g. `./components/Stat`).
+ */
+export const GENERATED_UI_BARREL_EXPORTS: ReadonlySet<string> = new Set([
+  'Button', 'IconButton',
+  'Card', 'CardHeader', 'CardTitle', 'CardDescription', 'CardContent', 'CardFooter',
+  'cn',
+  'Section', 'Container', 'Stack', 'Grid', 'Split', 'Bleed', 'Divider',
+  'Eyebrow', 'Heading', 'Lead', 'Body', 'Badge', 'Stat', 'Quote', 'CTAGroup', 'SectionHeader',
+  'Panel', 'MediaFrame', 'FeaturePanel',
+  'FieldLabel', 'Label', 'FormLabel', 'Input', 'TextInput', 'Textarea', 'TextArea',
+  'Select', 'Checkbox', 'FormField', 'FormFields', 'FormGrid', 'FormHint', 'FormError',
+  'Form', 'FormItem', 'FormControl', 'FormDescription', 'FormMessage',
+  'Icon', 'ImageLightbox',
+  'Reveal', 'RevealGroup', 'StaggerGroup', 'Stagger', 'StaggerItem',
+  'FloatingNavbar', 'BentoFeatureGrid', 'FeatureCard',
+  'Slot', 'Slottable',
+]);
 
 export function buildGeneratedUiFoundation(
   options: GeneratedUiFoundationOptions,
@@ -1342,7 +1384,7 @@ export function validateGeneratedUiContract(
   });
   const importPattern = /(?:\bimport\s+(?:type\s+)?(?:[\s\S]*?)\s+from\s*|\bexport\s+(?:[\s\S]*?)\s+from\s*|\bimport\s*)['"]([^'"]+)['"]/g;
   const motionImportPattern = /\bimport\s+(?:type\s+)?\{([^}]+)\}\s+from\s*['"]@\/unison\/ui\/motion['"];?/g;
-  const supportedMotionExports = new Set(['Reveal', 'RevealGroup', 'Stagger', 'StaggerItem', 'MotionRecipe']);
+  const supportedMotionExports = new Set(['Reveal', 'RevealGroup', 'StaggerGroup', 'Stagger', 'StaggerItem', 'MotionRecipe']);
 
   for (const [path, source] of generatedSources) {
     if (source.includes('dangerouslySetInnerHTML')) {
@@ -1379,7 +1421,7 @@ export function validateGeneratedUiContract(
       if (unsupported.length > 0) {
         violations.push(
           `${path} imports unsupported motion facade export(s): ${unsupported.join(', ')}. ` +
-          'Use only Reveal, RevealGroup, Stagger, StaggerItem, and MotionRecipe from @/unison/ui/motion.',
+          'Use only Reveal, RevealGroup, StaggerGroup, Stagger, StaggerItem, and MotionRecipe from @/unison/ui/motion.',
         );
       }
     }

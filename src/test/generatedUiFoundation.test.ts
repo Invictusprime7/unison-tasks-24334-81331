@@ -43,7 +43,7 @@ describe('generated UI foundation', () => {
     expect(foundation.files['/src/unison/ui/motion.tsx']).toContain('export function RevealGroup');
     expect(foundation.files['/src/unison/ui/animation.ts']).toContain('export function StaggerContainer');
     expect(foundation.files['/src/unison/ui/animation.ts']).toContain('export function StaggerChild');
-    expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Reveal, RevealGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';");
+    expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Reveal, RevealGroup, StaggerGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';");
     // Root barrel must expose the full surface of every foundation module, or
     // a page importing e.g. CardHeader from '@/unison/ui' renders undefined.
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';");
@@ -86,7 +86,7 @@ describe('generated UI foundation', () => {
     // The two confusable facade pairs must be explicitly disambiguated.
     expect(directive).toContain('"@/unison/ui/icons" (plural) is a full lucide-react re-export');
     expect(directive).toContain('"@/unison/ui/icon" (singular) exports only the <Icon icon={...} /> wrapper component');
-    expect(directive).toContain('"@/unison/ui/motion" exports ONLY Reveal, RevealGroup, Stagger, StaggerItem, and the MotionRecipe type');
+    expect(directive).toContain('"@/unison/ui/motion" exports ONLY Reveal, RevealGroup, StaggerGroup, Stagger, StaggerItem, and the MotionRecipe type');
     expect(directive).toContain('"@/unison/ui/animation" is the full framer-motion re-export');
     expect(directive).toContain('Never import from "next", any "next/*" module, "gatsby", or "remix"');
     expect(directive).toContain('never from a flat "@/unison/ui/input"');

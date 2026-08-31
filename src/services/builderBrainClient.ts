@@ -75,18 +75,27 @@ let builderRefreshInFlight: Promise<BuilderSession | null> | null = null;
 let recentBuilderRefresh: { session: BuilderSession; refreshedAt: number } | null = null;
 const BUILDER_REFRESH_REUSE_MS = 10_000;
 
-async function refreshBuilderSession(force = false): Promise<BuilderSession | null> {
+async function refreshBuilderSession(
+  force = false,
+  rejectedToken?: string,
+): Promise<BuilderSession | null> {
+  const recent = recentBuilderRefresh;
+  const recentIsFresh = !!recent?.session
+    && Date.now() - recent.refreshedAt < BUILDER_REFRESH_REUSE_MS;
   if (force) {
-    // A 401 means the currently cached token was rejected by the server: reusing
-    // it would replay the same failure. Drop the reuse window and mint a new one.
+    // A 401 means *that* access token was rejected. If a sibling request has
+    // already rotated the session since, reuse the newer token instead of
+    // rotating again: concurrent rotations invalidate each other's refresh
+    // tokens and cascade every batch into a hard sign-out.
+    if (recentIsFresh && recent!.session!.access_token !== rejectedToken) {
+      return recent!.session;
+    }
     recentBuilderRefresh = null;
-  } else if (
-    recentBuilderRefresh?.session
-    && Date.now() - recentBuilderRefresh.refreshedAt < BUILDER_REFRESH_REUSE_MS
-  ) {
-    return recentBuilderRefresh.session;
+  } else if (recentIsFresh) {
+    return recent!.session;
   }
   if (builderRefreshInFlight) return builderRefreshInFlight;
+
 
 
   builderRefreshInFlight = (async () => {

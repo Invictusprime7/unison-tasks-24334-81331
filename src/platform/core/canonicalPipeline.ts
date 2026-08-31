@@ -55,6 +55,7 @@ import {
   GENERATED_UI_FOUNDATION_VERSION,
   type GeneratedUiManifest,
 } from './generatedUiFoundation';
+import { buildThemeContractFiles } from './themeContract';
 import {
   buildWizardDesignIntervention,
   readWizardDesignIntervention,

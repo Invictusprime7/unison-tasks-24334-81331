@@ -704,6 +704,13 @@ function projectToSiteBundleSnapshot(
         manifestPath: '/.unison/ui-manifest.json',
         importRoot: uiFoundation.importRoot,
       } : undefined,
+      themeContract: readThemeContract(compileResult.vfsFiles)
+        ? {
+            version: THEME_CONTRACT_VERSION,
+            contractPath: THEME_CONTRACT_PATH,
+            artDirectionPackId: readThemeContract(compileResult.vfsFiles)!.artDirectionPackId,
+          }
+        : undefined,
       generationBrief,
       designIntervention,
     },

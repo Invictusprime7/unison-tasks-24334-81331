@@ -183,6 +183,7 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
     'For @/unison/ui/motion, use only Reveal, RevealGroup, Stagger, StaggerItem, and MotionRecipe.',
     'Import `cn` only from `@/unison/ui` — never from `@/unison/lib/utils` or any other path.',
     'Never import `@/unison/ui/tailwind.css` from a page; it is already applied globally in /src/index.css.',
+    'COMPOSE FROM THE VOCABULARY. Build every section from the composition primitives — Section, Container, Stack, Grid, Split, Eyebrow, Heading, Body, Lead, Stat, Quote, Badge, Panel, MediaFrame, CTAGroup — instead of raw <div> + arbitrary utility soup. They already encode this theme\'s rhythm, measure, surface treatment and responsive behaviour, so a page built from them stays correct under any style card.',
   ];
 
   if (options.needsBooking) requirements.push('Include an intent-bound booking CTA or form.');

@@ -164,6 +164,11 @@ import {
   resolveMissingModulePath,
   groupUnresolvedByFile,
   buildModuleInventoryDirective,
+}
+from '@/services/laneBCompanionModules';
+import { buildThemeContractDirectiveFromFiles } from '@/platform/core/themeContract';
+import {
+  __UNUSED_ANCHOR__,
 } from '@/services/laneBCompanionModules';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';

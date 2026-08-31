@@ -56,6 +56,12 @@ import {
   type GeneratedUiManifest,
 } from './generatedUiFoundation';
 import {
+  buildThemeContractFiles,
+  readThemeContract,
+  THEME_CONTRACT_PATH,
+  THEME_CONTRACT_VERSION,
+} from './themeContract';
+import {
   buildWizardDesignIntervention,
   readWizardDesignIntervention,
   type WizardDesignIntervention,
@@ -204,6 +210,16 @@ export interface SiteBundleSnapshotMeta {
     version: typeof GENERATED_UI_FOUNDATION_VERSION;
     manifestPath: '/.unison/ui-manifest.json';
     importRoot: '@/unison/ui';
+  };
+  /**
+   * Chain-of-custody for the typed theme contract sidecar. The contract itself
+   * is deterministically re-derivable from `artDirectionPackId`; this stamp
+   * records that Stage 4b emitted it and where consumers should re-emit it.
+   */
+  themeContract?: {
+    version: string;
+    contractPath: '/.unison/theme-contract.json';
+    artDirectionPackId: string;
   };
   /** Bounded connected-gateway research and route-specific generation plan. */
   generationBrief?: WizardGenerationBrief;
@@ -381,6 +397,15 @@ export function executeCanonicalPipeline(
     sellsProducts: selections.sellsProducts,
   }).files;
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
+  // Typed, machine-readable projection of the sealed art-direction pack. This
+  // is the single theme context every AI turn reads — never raw compiled CSS.
+  Object.assign(
+    compileResult.vfsFiles,
+    buildThemeContractFiles({
+      artDirectionPackId: designIntervention.artDirectionPackId,
+      themePresetId,
+    }),
+  );
 
   // Stage 5: Project to SiteBundleSnapshot (the single source of truth)
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
@@ -520,6 +545,13 @@ export function recompileFromPlayground(
   });
   Object.assign(compileResult.vfsFiles, uiFoundation.files);
   compileResult.vfsFiles['/.unison/design-intervention.json'] = JSON.stringify(designIntervention, null, 2);
+  Object.assign(
+    compileResult.vfsFiles,
+    buildThemeContractFiles({
+      artDirectionPackId: recompileArtDirectionPackId,
+      themePresetId,
+    }),
+  );
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,
@@ -677,6 +709,13 @@ function projectToSiteBundleSnapshot(
         manifestPath: '/.unison/ui-manifest.json',
         importRoot: uiFoundation.importRoot,
       } : undefined,
+      themeContract: readThemeContract(compileResult.vfsFiles)
+        ? {
+            version: THEME_CONTRACT_VERSION,
+            contractPath: THEME_CONTRACT_PATH,
+            artDirectionPackId: readThemeContract(compileResult.vfsFiles)!.artDirectionPackId,
+          }
+        : undefined,
       generationBrief,
       designIntervention,
     },

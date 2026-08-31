@@ -165,6 +165,7 @@ import {
   groupUnresolvedByFile,
   buildModuleInventoryDirective,
 } from '@/services/laneBCompanionModules';
+import { buildThemeContractDirectiveFromFiles } from '@/platform/core/themeContract';
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
@@ -2228,7 +2229,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         files: canonicalScaffoldFiles,
         aliasImports: generatedUiFoundation?.primitiveImports || [],
       });
-      const aiUserPrompt = [baseAiUserPrompt, laneBVisualIntelligence, uiFoundationDirective, moduleInventoryDirective].filter(Boolean).join('\n\n');
+      // The sealed theme contract is injected into EVERY Lane B turn so no turn
+      // ever has to infer the aesthetic from a compiled CSS blob.
+      const themeContractDirective = buildThemeContractDirectiveFromFiles(canonicalScaffoldFiles, {
+        artDirectionPackId: siteBundleSnapshot.meta.artDirectionPackId,
+        themePresetId: siteBundleSnapshot.meta.themePresetId,
+      });
+      const aiUserPrompt = [baseAiUserPrompt, themeContractDirective, laneBVisualIntelligence, uiFoundationDirective, moduleInventoryDirective].filter(Boolean).join('\n\n');
       const buildFirstAttemptPrompt = (targetPaths: readonly string[]) => {
         const targets = new Set(targetPaths.map((path) => (path.startsWith('/') ? path : `/${path}`)));
         const targetPages = canonicalPages.filter((page) => targets.has(
@@ -3606,6 +3613,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               targetPaths: [missingPath],
               aliasImports: generatedUiFoundation?.primitiveImports || [],
             }),
+            buildThemeContractDirectiveFromFiles(canonicalScaffoldFiles),
             previousFailure && /imports unsupported motion facade export/i.test(previousFailure)
               ? `MOTION IMPORT REPAIR REQUIRED: ${previousFailure}. Move those exact exports to an import from "@/unison/ui/animation" instead of "@/unison/ui/motion".`
               : '',
@@ -3807,6 +3815,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             targetPaths,
             aliasImports: generatedUiFoundation?.primitiveImports || [],
           }),
+          buildThemeContractDirectiveFromFiles(canonicalScaffoldFiles),
           `Importing file source:\n${(aiSourcedFiles[importerPath] || '').slice(0, 12_000)}`,
         ].filter(Boolean).join('\n');
 

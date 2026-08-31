@@ -373,7 +373,7 @@ import { Slot as RadixSlot, Slottable } from '@radix-ui/react-slot';
 export { Slottable };
 
 /**
- * Radix's Slot throws when `asChild` receives text, fragments, or multiple
+ * Radix's Slot throws when \`asChild\` receives text, fragments, or multiple
  * children (a very common shape in generated pages: icon + label).
  * This wrapper degrades to a plain <span> instead of crashing the preview.
  */
@@ -444,7 +444,7 @@ export function styles(...classNames: Array<string | false | null | undefined>) 
 ${UNISON_VFS_STYLE_BRIDGE}`,
   '/src/unison/ui/index.ts': `${marker}
 // Root barrel: MUST re-export the full public surface of every foundation
-// module. A partial barrel resolves to `undefined` at runtime and surfaces as
+// module. A partial barrel resolves to \`undefined\` at runtime and surfaces as
 // "Element type is invalid" in the preview.
 export { Button, IconButton, type ButtonProps, type IconButtonProps } from './button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
@@ -544,7 +544,7 @@ import { cn } from './cn';
 /**
  * COMPOSITION VOCABULARY — layout.
  * Every primitive consumes theme tokens. None accepts geometry or color
- * literals: pass `className` only for token-backed or standard-scale
+ * literals: pass \`className\` only for token-backed or standard-scale
  * utilities. This is what keeps an authored page correct under any style card.
  */
 

@@ -508,7 +508,393 @@ export function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDiv
   return <div className={cn('flex items-center p-5 pt-0 sm:p-6 sm:pt-0', className)} {...props} />;
 }
 `,
-    '/src/unison/ui/form-fields.tsx': `${marker}
+    '/src/unison/ui/layout.tsx': `${marker}
+import * as React from 'react';
+import { cn } from './cn';
+
+/**
+ * COMPOSITION VOCABULARY — layout.
+ * Every primitive consumes theme tokens. None accepts geometry or color
+ * literals: pass \`className\` only for token-backed or standard-scale
+ * utilities. This is what keeps an authored page correct under any style card.
+ */
+
+type Div = React.HTMLAttributes<HTMLDivElement>;
+
+export type SectionTone = 'default' | 'muted' | 'accent' | 'gradient' | 'inverted';
+
+const sectionTone: Record<SectionTone, string> = {
+  default: 'bg-background text-foreground',
+  muted: 'bg-muted text-foreground',
+  accent: 'bg-accent text-accent-foreground',
+  gradient: 'bg-[image:var(--ut-gradient-panel)] text-foreground',
+  inverted: 'bg-primary text-primary-foreground',
+};
+
+export interface SectionProps extends React.HTMLAttributes<HTMLElement> {
+  tone?: SectionTone;
+  /** Renders the wash defined by the pack's accent policy behind the content. */
+  wash?: boolean;
+  /** Collapse the vertical rhythm (for tightly-paired bands). */
+  flush?: boolean;
+  as?: 'section' | 'header' | 'footer' | 'aside' | 'div';
+}
+
+export function Section({ tone = 'default', wash = false, flush = false, as: Tag = 'section', className, children, ...props }: SectionProps) {
+  return (
+    <Tag
+      className={cn(
+        'relative w-full',
+        flush ? 'py-0' : 'py-[var(--ut-rhythm-space)]',
+        sectionTone[tone],
+        className,
+      )}
+      {...props}
+    >
+      {wash && <div aria-hidden className="pointer-events-none absolute inset-0 bg-[image:var(--ut-accent-wash)]" />}
+      <div className="relative">{children}</div>
+    </Tag>
+  );
+}
+
+export type ContainerWidth = 'measure' | 'content' | 'wide' | 'full';
+
+const containerWidth: Record<ContainerWidth, string> = {
+  measure: 'max-w-[var(--ut-measure)]',
+  content: 'max-w-[var(--ut-content-width)]',
+  wide: 'max-w-[var(--ut-shell-width)]',
+  full: 'max-w-none',
+};
+
+export function Container({ width = 'content', className, ...props }: Div & { width?: ContainerWidth }) {
+  return <div className={cn('mx-auto w-full px-[var(--ut-inline-gutter)]', containerWidth[width], className)} {...props} />;
+}
+
+export type StackGap = 'tight' | 'block' | 'section';
+
+const stackGap: Record<StackGap, string> = {
+  tight: 'gap-[var(--ut-stack-gap)]',
+  block: 'gap-[var(--ut-block-gap)]',
+  section: 'gap-[var(--ut-rhythm-space)]',
+};
+
+export interface StackProps extends Div {
+  gap?: StackGap;
+  align?: 'start' | 'center' | 'end' | 'stretch';
+  direction?: 'vertical' | 'horizontal';
+  wrap?: boolean;
+}
+
+export function Stack({ gap = 'block', align = 'stretch', direction = 'vertical', wrap = false, className, ...props }: StackProps) {
+  return (
+    <div
+      className={cn(
+        'flex',
+        direction === 'vertical' ? 'flex-col' : 'flex-row',
+        wrap && 'flex-wrap',
+        stackGap[gap],
+        align === 'start' && 'items-start',
+        align === 'center' && 'items-center',
+        align === 'end' && 'items-end',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export interface GridProps extends Div {
+  /** Column count at the large breakpoint. Responsive steps are automatic. */
+  columns?: 2 | 3 | 4;
+  gap?: StackGap;
+}
+
+const gridColumns: Record<2 | 3 | 4, string> = {
+  2: 'sm:grid-cols-2',
+  3: 'sm:grid-cols-2 lg:grid-cols-3',
+  4: 'sm:grid-cols-2 lg:grid-cols-4',
+};
+
+export function Grid({ columns = 3, gap = 'tight', className, ...props }: GridProps) {
+  return <div className={cn('grid grid-cols-1', gridColumns[columns], stackGap[gap], className)} {...props} />;
+}
+
+export interface SplitProps extends Div {
+  /** Which side carries the visual weight. */
+  lead?: 'start' | 'end';
+  /** Flip the visual order on large screens without changing DOM order. */
+  reverse?: boolean;
+  align?: 'start' | 'center';
+}
+
+export function Split({ lead = 'start', reverse = false, align = 'center', className, children, ...props }: SplitProps) {
+  const items = React.Children.toArray(children);
+  return (
+    <div
+      className={cn(
+        'grid grid-cols-1 lg:grid-cols-[var(--ut-hero-columns)]',
+        'gap-[var(--ut-block-gap)]',
+        align === 'center' ? 'items-center' : 'items-start',
+        lead === 'end' && 'lg:[direction:rtl] lg:*:[direction:ltr]',
+        className,
+      )}
+      {...props}
+    >
+      {reverse ? [...items].reverse() : items}
+    </div>
+  );
+}
+
+/** Full-bleed band that escapes the container without breaking the rhythm. */
+export function Bleed({ className, ...props }: Div) {
+  return <div className={cn('relative w-full', className)} {...props} />;
+}
+
+/** Token-driven horizontal rule using the pack's divider gradient. */
+export function Divider({ className, ...props }: Div) {
+  return <div aria-hidden className={cn('h-px w-full bg-[image:var(--ut-gradient-divider)]', className)} {...props} />;
+}
+\`,
+    '/src/unison/ui/content.tsx': \`${marker}
+import * as React from 'react';
+import { cn } from './cn';
+
+/**
+ * COMPOSITION VOCABULARY — content.
+ * Type sizes, tracking and transforms come from the sealed art-direction
+ * tokens, so the same authored copy re-renders correctly under a new pack.
+ */
+
+export function Eyebrow({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return (
+    <p
+      className={cn(
+        'font-body text-xs font-semibold text-primary',
+        'tracking-[var(--ut-eyebrow-tracking)] [text-transform:var(--ut-eyebrow-transform)]',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export type HeadingLevel = 1 | 2 | 3 | 4;
+export type HeadingSize = 'display' | 'title' | 'subtitle';
+
+const headingSize: Record<HeadingSize, string> = {
+  display: 'text-[length:var(--ut-type-display)] leading-[var(--ut-display-leading)] font-[number:var(--ut-weight-display)]',
+  title: 'text-[length:var(--ut-type-title)] leading-tight font-[number:var(--ut-weight-display)]',
+  subtitle: 'text-xl font-semibold leading-snug',
+};
+
+export interface HeadingProps extends React.HTMLAttributes<HTMLHeadingElement> {
+  level?: HeadingLevel;
+  size?: HeadingSize;
+  /** Fill the headline with the pack's gradient text recipe. */
+  gradient?: boolean;
+}
+
+export function Heading({ level = 2, size = 'title', gradient = false, className, ...props }: HeadingProps) {
+  const Tag = ('h' + level) as 'h1' | 'h2' | 'h3' | 'h4';
+  return (
+    <Tag
+      className={cn(
+        'font-heading text-foreground',
+        'tracking-[var(--ut-heading-tracking)] [text-transform:var(--ut-heading-transform)]',
+        headingSize[size],
+        gradient && 'bg-[image:var(--ut-gradient-text)] bg-clip-text text-transparent',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function Lead({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn('font-body text-[length:var(--ut-type-lead)] leading-relaxed text-muted-foreground max-w-[var(--ut-measure)]', className)} {...props} />;
+}
+
+export function Body({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn('font-body text-base leading-7 text-muted-foreground max-w-[var(--ut-measure)]', className)} {...props} />;
+}
+
+export function Badge({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 border',
+        'rounded-[var(--ut-pill-radius)] bg-[var(--ut-pill-fill)] border-[color:var(--ut-pill-stroke)] text-[color:var(--ut-pill-color)]',
+        'p-[var(--ut-pill-padding)] tracking-[var(--ut-pill-tracking)] [text-transform:var(--ut-pill-transform)] font-[number:var(--ut-pill-weight)]',
+        'text-xs',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export interface StatProps extends React.HTMLAttributes<HTMLDivElement> {
+  value: React.ReactNode;
+  label: React.ReactNode;
+  hint?: React.ReactNode;
+}
+
+export function Stat({ value, label, hint, className, ...props }: StatProps) {
+  return (
+    <div className={cn('flex flex-col gap-1', className)} {...props}>
+      <span className="font-heading text-[length:var(--ut-type-title)] font-[number:var(--ut-weight-display)] leading-none text-foreground">{value}</span>
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      {hint && <span className="text-sm text-muted-foreground">{hint}</span>}
+    </div>
+  );
+}
+
+export interface QuoteProps extends React.HTMLAttributes<HTMLElement> {
+  attribution?: React.ReactNode;
+  role?: string;
+  media?: React.ReactNode;
+}
+
+export function Quote({ attribution, role, media, className, children, ...props }: QuoteProps) {
+  return (
+    <figure className={cn('flex flex-col gap-[var(--ut-stack-gap)]', className)} {...props}>
+      <blockquote className="font-heading text-[length:var(--ut-type-lead)] leading-relaxed text-foreground">{children}</blockquote>
+      {(attribution || media) && (
+        <figcaption className="flex items-center gap-3 text-sm">
+          {media}
+          <span className="flex flex-col">
+            {attribution && <span className="font-medium text-foreground">{attribution}</span>}
+            {role && <span className="text-muted-foreground">{role}</span>}
+          </span>
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
+/** Groups primary/secondary actions with the pack's rhythm and wrapping. */
+export function CTAGroup({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('flex flex-wrap items-center gap-3', className)} {...props} />;
+}
+
+/** Heading cluster used at the top of a section: eyebrow + heading + lead. */
+export interface SectionHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
+  eyebrow?: React.ReactNode;
+  title: React.ReactNode;
+  lead?: React.ReactNode;
+  align?: 'start' | 'center';
+  level?: HeadingLevel;
+  size?: HeadingSize;
+}
+
+export function SectionHeader({ eyebrow, title, lead, align = 'start', level = 2, size = 'title', className, ...props }: SectionHeaderProps) {
+  return (
+    <div className={cn('flex flex-col gap-3', align === 'center' && 'items-center text-center', className)} {...props}>
+      {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
+      <Heading level={level} size={size}>{title}</Heading>
+      {lead && <Lead className={cn(align === 'center' && 'mx-auto')}>{lead}</Lead>}
+    </div>
+  );
+}
+\`,
+    '/src/unison/ui/surface.tsx': \`${marker}
+import * as React from 'react';
+import { cn } from './cn';
+
+/**
+ * COMPOSITION VOCABULARY — surfaces and media.
+ * Fill, stroke, elevation, radius and media filtering all come from the
+ * pack's surface + media treatment tokens.
+ */
+
+type Div = React.HTMLAttributes<HTMLDivElement>;
+
+export type PanelTone = 'surface' | 'gradient' | 'outline' | 'plain';
+
+export interface PanelProps extends Div {
+  tone?: PanelTone;
+  /** Adds the pack's hover elevation and lift. */
+  interactive?: boolean;
+  padded?: boolean;
+}
+
+const panelTone: Record<PanelTone, string> = {
+  surface: 'bg-[var(--ut-surface-fill)] border-[color:var(--ut-surface-stroke)] shadow-[var(--ut-surface-elevation)]',
+  gradient: 'bg-[image:var(--ut-gradient-panel)] border-[color:var(--ut-surface-stroke)]',
+  outline: 'bg-transparent border-border',
+  plain: 'bg-transparent border-transparent',
+};
+
+export function Panel({ tone = 'surface', interactive = false, padded = true, className, ...props }: PanelProps) {
+  return (
+    <div
+      className={cn(
+        'border border-[length:var(--ut-border-weight)] rounded-[var(--ut-radius-lg)]',
+        panelTone[tone],
+        padded && 'p-[var(--ut-card-padding)]',
+        interactive && 'transition-all duration-[var(--ut-motion-duration)] ease-[var(--ut-motion-ease)] hover:shadow-[var(--ut-surface-elevation-hover)] hover:-translate-y-[var(--ut-hover-lift)]',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export interface MediaFrameProps extends React.HTMLAttributes<HTMLDivElement> {
+  src: string;
+  alt: string;
+  /** Aspect ratio token to honour. Defaults to the pack's media ratio. */
+  ratio?: 'media' | 'hero' | 'square';
+  loading?: 'lazy' | 'eager';
+  overlay?: React.ReactNode;
+}
+
+const mediaRatio = {
+  media: 'aspect-[var(--ut-media-ratio)]',
+  hero: 'aspect-[var(--ut-hero-media-ratio)]',
+  square: 'aspect-square',
+} as const;
+
+export function MediaFrame({ src, alt, ratio = 'media', loading = 'lazy', overlay, className, ...props }: MediaFrameProps) {
+  return (
+    <div
+      className={cn(
+        'relative w-full overflow-hidden rounded-[var(--ut-media-frame-radius)]',
+        mediaRatio[ratio],
+        className,
+      )}
+      {...props}
+    >
+      <img src={src} alt={alt} loading={loading} className="size-full object-cover [filter:var(--ut-media-filter)]" />
+      {overlay && <div className="absolute inset-0">{overlay}</div>}
+    </div>
+  );
+}
+
+/** A card built from the vocabulary: media, header cluster and actions. */
+export interface FeaturePanelProps extends Omit<PanelProps, 'title'> {
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  icon?: React.ReactNode;
+  media?: React.ReactNode;
+  actions?: React.ReactNode;
+}
+
+export function FeaturePanel({ title, description, icon, media, actions, className, ...props }: FeaturePanelProps) {
+  return (
+    <Panel interactive className={cn('flex h-full flex-col gap-[var(--ut-stack-gap)]', className)} {...props}>
+      {media}
+      {icon && <span className="inline-flex size-11 items-center justify-center rounded-[var(--ut-radius-base)] bg-accent text-accent-foreground">{icon}</span>}
+      <div className="flex flex-col gap-2">
+        <h3 className="font-heading text-lg font-semibold text-foreground">{title}</h3>
+        {description && <p className="text-sm leading-6 text-muted-foreground">{description}</p>}
+      </div>
+      {actions && <div className="mt-auto flex flex-wrap gap-2 pt-2">{actions}</div>}
+    </Panel>
+  );
+}
+\`,
+    '/src/unison/ui/form-fields.tsx': \`${marker}
 import * as React from 'react';
   import * as LabelPrimitive from './radix/label';
 import { cn } from './cn';

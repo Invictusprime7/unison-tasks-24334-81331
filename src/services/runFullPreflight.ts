@@ -21,10 +21,22 @@ export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
   industry?: string;
   brand?: string;
+  /**
+   * `repair` (default) may mutate source. `acceptance` is validation-only:
+   * nothing is written back, and any file the repair pipeline *would* have
+   * changed is reported as a violation instead.
+   */
+  mode?: 'repair' | 'acceptance';
 }
 
 export interface RunFullPreflightResult {
   files: Record<string, string>;
+  /** True when this pass changed any source file (repair mode only). */
+  mutated: boolean;
+  mutatedFiles: string[];
+  /** Acceptance mode: files that still require mutation and cannot be sealed. */
+  violations: string[];
+  mode: 'repair' | 'acceptance';
   stages: {
     earlyRepair: 'ok' | 'skipped' | 'failed';
     navWiring: 'ok' | 'skipped' | 'failed';
@@ -38,8 +50,9 @@ export function runFullPreflight(
   inputFiles: Record<string, string>,
   options: RunFullPreflightOptions = {},
 ): RunFullPreflightResult {
-  const { siteBundleSnapshot = null, industry, brand } = options;
+  const { siteBundleSnapshot = null, industry, brand, mode = 'repair' } = options;
   const ctx = { industry, brand };
+
 
   // 1) Early syntax repair
   let files = inputFiles;

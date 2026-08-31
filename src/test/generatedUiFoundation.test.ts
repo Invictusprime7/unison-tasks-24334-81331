@@ -47,7 +47,7 @@ describe('generated UI foundation', () => {
     // Root barrel must expose the full surface of every foundation module, or
     // a page importing e.g. CardHeader from '@/unison/ui' renders undefined.
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';");
-    expect(foundation.files['/src/unison/ui/index.ts']).toContain("FormField, FormFields, FormGrid, FormHint, FormError } from './form-fields';");
+    expect(foundation.files['/src/unison/ui/index.ts']).toContain("FormField, FormFields, FormGrid, FormHint, FormError, Form, FormItem, FormControl, FormDescription, FormMessage } from './form-fields';");
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { Slot, Slottable } from './radix/slot';");
     expect(foundation.files['/src/unison/ui/index.ts']).toContain("export { cn } from './cn';");
     // Animation aliases must stay layout-transparent like motion.tsx Stagger.

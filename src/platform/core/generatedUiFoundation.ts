@@ -1007,6 +1007,7 @@ export function Icon({ icon: Glyph, className, label }: { icon: LucideIcon; clas
 }
 `,
     '/src/unison/ui/media.tsx': `${marker}
+import * as React from 'react';
   import * as Dialog from './radix/dialog';
   import { Expand } from './icons';
 import { cn } from './cn';

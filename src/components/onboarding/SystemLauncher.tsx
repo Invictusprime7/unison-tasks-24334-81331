@@ -4005,10 +4005,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         ),
 
       });
+      // First-turn Home rejections are RECOVERY INPUT only. By this point the
+      // per-page completion loop and module closure have run, so the final
+      // verdict comes from the post-completion assessment — a stale first-turn
+      // reject must not mark an otherwise healthy Home as degraded.
+      const staleHomeRejections = homeQualityRejections.filter(
+        (path) => presentationAssessment.rejectedPaths.includes(path),
+      );
       const qualityRejectedPaths = Array.from(new Set([
-        ...homeQualityRejections,
+        ...staleHomeRejections,
         ...presentationAssessment.rejectedPaths,
       ]));
+
       if (qualityRejectedPaths.length > 0) {
         // Degraded, not overridden: Lane B stays the page-body author and the
         // launch records which pages missed the visual contract.

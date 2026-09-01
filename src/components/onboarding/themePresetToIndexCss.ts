@@ -13,107 +13,22 @@
 import type { ThemePreset } from './themePresets';
 import type { ThemeTokens } from '@/sections/types';
 import { themePresetToThemeTokens } from './themePresetToTokens';
-import {
-  buildArtDirectionCssDeclarations,
-  buildEntranceKeyframes,
-  buildArtDirectionTokens,
-  resolveArtDirectionPack,
-  type ArtDirectionResolutionInput,
-} from '@/sections/variants/artDirectionPacks';
+import { buildThemePresetFinalCssOverride } from '@/services/themeGeometryContract';
 
-export const SHADCN_LIBRARY_CSS_MARKER = 'SHADCN LIBRARY: canonical Stage 4b foundation';
-
-
-/**
- * Canonical geometry token layer.
- *
- * Generated sections must never hardcode block sizes, hero heights, media
- * heights or micro type sizes — every geometric decision is declared here as a
- * design token so the selected style card (and only the selected style card)
- * owns the site's proportions.
- */
-export function buildGeometryScale(presetId?: string): string {
-  switch (presetId) {
-    case 'minimalist':
-      return '--ut-nav-block: 4.25rem; --ut-hero-block: 64vh; --ut-hero-space-top: clamp(5rem, 7vw, 6rem); --ut-hero-media-block: 18rem; --ut-hero-media-max: 30rem; --ut-media-block: 15rem; --ut-media-block-lg: 18rem; --ut-tile-block: 12.5rem; --ut-overlay-block: 82vh; --ut-eyebrow-size: 0.6875rem;';
-    case 'editorial':
-      return '--ut-nav-block: 5rem; --ut-hero-block: 78vh; --ut-hero-space-top: clamp(6rem, 9vw, 7.5rem); --ut-hero-media-block: 22rem; --ut-hero-media-max: 36rem; --ut-media-block: 17rem; --ut-media-block-lg: 22rem; --ut-tile-block: 15rem; --ut-overlay-block: 80vh; --ut-eyebrow-size: 0.7rem;';
-    case 'bold':
-      return '--ut-nav-block: 4.75rem; --ut-hero-block: 84vh; --ut-hero-space-top: clamp(6rem, 9vw, 7rem); --ut-hero-media-block: 22rem; --ut-hero-media-max: 36rem; --ut-media-block: 17.5rem; --ut-media-block-lg: 22rem; --ut-tile-block: 15rem; --ut-overlay-block: 78vh; --ut-eyebrow-size: 0.75rem;';
-    case 'futuristic':
-      return '--ut-nav-block: 4.5rem; --ut-hero-block: 80vh; --ut-hero-space-top: clamp(5.5rem, 8vw, 7rem); --ut-hero-media-block: 21rem; --ut-hero-media-max: 34rem; --ut-media-block: 16.5rem; --ut-media-block-lg: 21rem; --ut-tile-block: 14rem; --ut-overlay-block: 78vh; --ut-eyebrow-size: 0.6875rem;';
-    case 'organic':
-      return '--ut-nav-block: 4.5rem; --ut-hero-block: 74vh; --ut-hero-space-top: clamp(5.5rem, 8vw, 6.75rem); --ut-hero-media-block: 20rem; --ut-hero-media-max: 34rem; --ut-media-block: 16.25rem; --ut-media-block-lg: 20rem; --ut-tile-block: 14rem; --ut-overlay-block: 80vh; --ut-eyebrow-size: 0.6875rem;';
-    default:
-      return '--ut-nav-block: 4.5rem; --ut-hero-block: 72vh; --ut-hero-space-top: clamp(5.5rem, 8vw, 6.5rem); --ut-hero-media-block: 20rem; --ut-hero-media-max: 33.75rem; --ut-media-block: 16.25rem; --ut-media-block-lg: 20rem; --ut-tile-block: 13.75rem; --ut-overlay-block: 78vh; --ut-eyebrow-size: 0.6875rem;';
-  }
-}
-
-function buildProfessionalGeometry(presetId?: string): string {
-  const scale = buildGeometryScale(presetId);
-  switch (presetId) {
-    case 'minimalist':
-      return `--ut-surface-shadow: none; --ut-surface-shadow-hover: none; --ut-surface-lift: 0px; --ut-section-space: clamp(4rem, 7vw, 7rem); ${scale}`;
-    case 'editorial':
-      return `--ut-surface-shadow: 0 1px 2px hsl(var(--foreground) / 0.05); --ut-surface-shadow-hover: 0 5px 16px hsl(var(--foreground) / 0.08); --ut-surface-lift: -1px; --ut-section-space: clamp(4.5rem, 8vw, 8rem); ${scale}`;
-    case 'futuristic':
-      return `--ut-surface-shadow: 0 0 0 1px hsl(var(--primary) / 0.18), 0 8px 20px hsl(var(--foreground) / 0.18); --ut-surface-shadow-hover: 0 0 0 1px hsl(var(--primary) / 0.34), 0 12px 28px hsl(var(--primary) / 0.16); --ut-surface-lift: -2px; --ut-section-space: clamp(4rem, 7vw, 7rem); ${scale}`;
-    case 'organic':
-      return `--ut-surface-shadow: 0 4px 14px hsl(var(--foreground) / 0.07); --ut-surface-shadow-hover: 0 10px 24px hsl(var(--foreground) / 0.1); --ut-surface-lift: -2px; --ut-section-space: clamp(4.5rem, 8vw, 7.5rem); ${scale}`;
-    case 'bold':
-      return `--ut-surface-shadow: 4px 4px 0 hsl(var(--foreground)); --ut-surface-shadow-hover: 6px 6px 0 hsl(var(--foreground)); --ut-surface-lift: -2px; --ut-section-space: clamp(4rem, 7vw, 7rem); ${scale}`;
-    default:
-      return `--ut-surface-shadow: 0 2px 10px hsl(var(--foreground) / 0.08); --ut-surface-shadow-hover: 0 8px 20px hsl(var(--foreground) / 0.12); --ut-surface-lift: -2px; --ut-section-space: clamp(4rem, 7vw, 7rem); ${scale}`;
-  }
-}
-
-
-/**
- * Metadata accepted by the themed CSS builder. `artDirectionPackId` is the
- * SEALED pack from `meta.artDirectionPackId` — when present it wins and no
- * re-derivation happens, which is what keeps CSS, compiler, Lane B and export
- * on one truth.
- */
-export interface ThemedIndexCssMetadata {
-  presetId?: string;
-  label?: string;
-  headingFont?: string;
-  bodyFont?: string;
-  artDirectionPackId?: string | null;
-  industry?: string | null;
-  seed?: string | null;
-}
-
-export function buildThemedIndexCss(
-  preset: ThemePreset,
-  artDirection: Omit<ArtDirectionResolutionInput, 'themePresetId'> = {},
-): string {
+export function buildThemedIndexCss(preset: ThemePreset): string {
   return buildThemedIndexCssFromTokens(themePresetToThemeTokens(preset), {
     presetId: preset.id,
     label: preset.label,
     headingFont: preset.typography.headingFont,
     bodyFont: preset.typography.bodyFont,
-    artDirectionPackId: artDirection.sealedPackId,
-    industry: artDirection.industry,
-    seed: artDirection.seed,
   });
 }
 
 export function buildThemedIndexCssFromTokens(
   tokens: ThemeTokens,
-  metadata: ThemedIndexCssMetadata = {},
+  metadata: { presetId?: string; label?: string; headingFont?: string; bodyFont?: string } = {},
 ): string {
   const c = tokens.colors;
-  const professionalGeometry = buildProfessionalGeometry(metadata.presetId);
-  const artDirectionPack = resolveArtDirectionPack({
-    sealedPackId: metadata.artDirectionPackId,
-    themePresetId: metadata.presetId,
-    industry: metadata.industry,
-    seed: metadata.seed,
-  });
-  const artDirection = buildArtDirectionCssDeclarations(artDirectionPack);
-  const entrance = buildEntranceKeyframes(artDirectionPack);
-
 
   // Web-font import for the exact typography injected by the selected card.
   const fontFamilies = Array.from(
@@ -127,7 +42,6 @@ export function buildThemedIndexCssFromTokens(
   const fontsImport = `@import url('https://fonts.googleapis.com/css2?${fontFamilies}&display=swap');`;
 
   return `${fontsImport}
-@import './unison/ui/tailwind.css';
 /* WIZARD THEME: ${metadata.label || 'selected style card'} (Stage 4b HSL token injection) */
 @tailwind base;
 @tailwind components;
@@ -156,236 +70,10 @@ export function buildThemedIndexCssFromTokens(
   --radius: ${tokens.radius};
   --ut-glass-surface: hsl(var(--card) / 0.68);
   --ut-glass-border: hsl(var(--border) / 0.58);
-  --ut-glass-shadow: var(--ut-surface-shadow);
-  --ut-content-width: 72rem;
-  --ut-gutter: 1.25rem;
-  --ut-touch-target: 2.75rem;
-  --ut-shell-width: min(100% - (var(--ut-gutter) * 2), var(--ut-content-width));
-  --ut-carousel-card: min(26.25rem, 85vw);
-  --ut-panel-width: min(22rem, calc(100vw - (var(--ut-gutter) * 2)));
-  --ut-control-radius: calc(var(--radius) - 0.125rem);
-  --ut-media-radius: var(--radius);
-
-  ${professionalGeometry}
-
-  /* ART DIRECTION: ${artDirectionPack.name} — ${artDirectionPack.description} */
-  ${artDirection}
-  /* The pack owns radius language; the theme card owns colour + typography. */
-  --radius: var(--ut-radius-base);
-
+  --ut-glass-shadow: hsl(var(--foreground) / 0.12);
   /* Tailwind CDN reads these via theme.fontFamily.heading / body */
-  /* The style card picks the family; the art-direction pack owns the fallback
-     character (serif / grotesk / mono), weights and display leading. */
-  --font-heading: ${tokens.typography.headingFont}, var(--ut-font-display-stack);
-  --font-body: ${tokens.typography.bodyFont}, var(--ut-font-body-stack);
-}
-
-/* ${SHADCN_LIBRARY_CSS_MARKER}
-   The wizard's generated VFS may use local shadcn primitives or the preview
-   shim. Both consume these semantic tokens, never a separate preset. */
-@layer base {
-  ::selection {
-    background: hsl(var(--primary) / 0.22);
-    color: hsl(var(--foreground));
-  }
-
-  :where(button, a, input, textarea, select, [role="button"]):focus-visible {
-    outline: 2px solid hsl(var(--ring));
-    outline-offset: 2px;
-  }
-
-  :where(input, textarea, select) {
-    background: hsl(var(--background));
-    color: hsl(var(--foreground));
-    border-color: hsl(var(--input));
-  }
-
-  :where(input, textarea, select)::placeholder {
-    color: hsl(var(--muted-foreground));
-    opacity: 1;
-  }
-}
-
-@layer components {
-  .ut-shadcn-button {
-    display: inline-flex;
-    min-height: 2.5rem;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    border: 1px solid transparent;
-    border-radius: calc(var(--radius) - 0.125rem);
-    background: hsl(var(--primary));
-    color: hsl(var(--primary-foreground));
-    padding: 0.5rem 1rem;
-    font-family: var(--font-body);
-    font-size: 0.875rem;
-    font-weight: 600;
-    line-height: 1.25rem;
-    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
-  }
-  .ut-shadcn-button:hover { background: hsl(var(--primary) / 0.9); }
-  .ut-shadcn-button:disabled { cursor: not-allowed; opacity: 0.5; }
-  .ut-shadcn-button--outline { background: hsl(var(--background)); border-color: hsl(var(--input)); color: hsl(var(--foreground)); }
-  .ut-shadcn-button--outline:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
-  .ut-shadcn-button--secondary { background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); }
-  .ut-shadcn-button--ghost { background: transparent; color: hsl(var(--foreground)); }
-  .ut-shadcn-button--ghost:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
-
-  .ut-shadcn-card,
-  .ut-shadcn-popover,
-  .ut-shadcn-dialog-content {
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius);
-    background: hsl(var(--card));
-    color: hsl(var(--card-foreground));
-    box-shadow: var(--ut-surface-shadow);
-  }
-  .ut-shadcn-card { padding: 1.5rem; }
-  .ut-foundation-card {
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius);
-    background: hsl(var(--card));
-    box-shadow: var(--ut-surface-shadow);
-    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
-  }
-  .ut-foundation-card:hover { transform: translateY(var(--ut-surface-lift)); box-shadow: var(--ut-surface-shadow-hover); border-color: hsl(var(--primary) / 0.32); }
-  .ut-content { width: min(100% - 2.5rem, var(--ut-content-width)); margin-inline: auto; }
-  .ut-section { padding-block: var(--ut-section-space); }
-  .ut-media-frame { overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: var(--ut-media-radius); background: hsl(var(--muted)); }
-
-  /* --- Art direction primitives (pack-owned, token-only) ---------------- */
-  .ut-rhythm { padding-block: var(--ut-rhythm-space); }
-  .ut-display {
-    font-size: var(--ut-type-display);
-    letter-spacing: var(--ut-heading-tracking);
-    text-transform: var(--ut-heading-transform);
-    line-height: 1.04;
-  }
-  .ut-title {
-    font-size: var(--ut-type-title);
-    letter-spacing: var(--ut-heading-tracking);
-    text-transform: var(--ut-heading-transform);
-    line-height: 1.14;
-  }
-  .ut-lead { font-size: var(--ut-type-lead); line-height: 1.55; }
-  .ut-measure { max-width: var(--ut-measure); }
-  .ut-surface {
-    background: var(--ut-surface-fill);
-    border: var(--ut-border-weight) solid var(--ut-surface-stroke);
-    border-radius: var(--ut-radius-base);
-    box-shadow: var(--ut-surface-elevation);
-    transition: transform var(--ut-motion-duration) var(--ut-motion-ease),
-      box-shadow var(--ut-motion-duration) var(--ut-motion-ease);
-  }
-  .ut-surface:hover { box-shadow: var(--ut-surface-elevation-hover); }
-  .ut-accent-wash { background-image: var(--ut-accent-wash); }
-  .ut-media {
-    overflow: hidden;
-    border-radius: var(--ut-media-frame-radius);
-    aspect-ratio: var(--ut-media-ratio);
-    background: hsl(var(--muted));
-  }
-  .ut-media > img, .ut-media > video {
-    width: 100%; height: 100%; object-fit: cover;
-    filter: var(--ut-media-filter);
-  }
-  .ut-display { font-weight: var(--ut-weight-display); line-height: var(--ut-display-leading); }
-  .ut-eyebrow {
-    display: inline-block;
-    font-size: var(--ut-eyebrow-size, 0.75rem);
-    letter-spacing: var(--ut-eyebrow-tracking);
-    text-transform: var(--ut-eyebrow-transform);
-    color: hsl(var(--primary));
-  }
-
-  /* Pills / badges / tags — shape language is pack-owned. */
-  .ut-pill {
-    display: inline-flex; align-items: center; gap: 0.375rem;
-    border-radius: var(--ut-pill-radius);
-    background: var(--ut-pill-fill);
-    border: var(--ut-border-weight) solid var(--ut-pill-stroke);
-    color: var(--ut-pill-color);
-    padding: var(--ut-pill-padding);
-    letter-spacing: var(--ut-pill-tracking);
-    text-transform: var(--ut-pill-transform);
-    font-weight: var(--ut-pill-weight);
-    font-size: 0.75rem;
-    line-height: 1.2;
-    transition: transform var(--ut-motion-duration) var(--ut-motion-ease);
-  }
-  .ut-pill:hover { transform: translateY(var(--ut-hover-lift)); }
-
-  /* Gradient language */
-  .ut-gradient-hero { background-image: var(--ut-gradient-hero); }
-  .ut-gradient-panel { background-image: var(--ut-gradient-panel); }
-  .ut-gradient-text {
-    background-image: var(--ut-gradient-text);
-    -webkit-background-clip: text; background-clip: text;
-    color: transparent;
-  }
-  .ut-divider { height: var(--ut-border-weight); background-image: var(--ut-gradient-divider); border: 0; }
-
-  /* Spacing density */
-  .ut-grid { display: grid; gap: var(--ut-grid-gap); }
-  .ut-stack { display: flex; flex-direction: column; gap: var(--ut-stack-gap); }
-  .ut-block { display: flex; flex-direction: column; gap: var(--ut-block-gap); }
-  .ut-pad { padding: var(--ut-card-padding); }
-
-  /* Hero composition */
-  .ut-hero {
-    display: grid;
-    grid-template-columns: var(--ut-hero-columns);
-    align-content: var(--ut-hero-justify);
-    align-items: center;
-    gap: var(--ut-grid-gap);
-    min-height: var(--ut-hero-min-height);
-    padding-block: var(--ut-hero-pad-block);
-    text-align: var(--ut-hero-text-align);
-    background-image: var(--ut-gradient-hero);
-  }
-  @media (max-width: 768px) { .ut-hero { grid-template-columns: 1fr; } }
-  .ut-hero-media { aspect-ratio: var(--ut-hero-media-ratio); overflow: hidden; border-radius: var(--ut-media-frame-radius); }
-  .ut-hero-media > img, .ut-hero-media > video { width: 100%; height: 100%; object-fit: cover; filter: var(--ut-media-filter); }
-
-  .ut-reveal {
-    animation: ut-reveal var(--ut-motion-duration) var(--ut-motion-ease) both;
-  }
-  .ut-reveal-2 { animation-delay: var(--ut-motion-stagger); }
-  .ut-reveal-3 { animation-delay: calc(var(--ut-motion-stagger) * 2); }
-  .ut-reveal-4 { animation-delay: calc(var(--ut-motion-stagger) * 3); }
-  @keyframes ut-reveal {
-    from { ${entrance.from} }
-    to { ${entrance.to} }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ut-reveal { animation: none; }
-    .ut-surface, .ut-pill { transition: none; }
-  }
-
-  .ut-shadcn-popover,
-  .ut-shadcn-dialog-content { background: hsl(var(--popover)); color: hsl(var(--popover-foreground)); }
-  .ut-shadcn-dialog-overlay { background: hsl(var(--foreground) / 0.42); }
-
-  .ut-shadcn-input,
-  .ut-shadcn-textarea,
-  .ut-shadcn-select {
-    display: flex;
-    width: 100%;
-    min-height: 2.5rem;
-    border: 1px solid hsl(var(--input));
-    border-radius: calc(var(--radius) - 0.125rem);
-    background: hsl(var(--background));
-    color: hsl(var(--foreground));
-    padding: 0.5rem 0.75rem;
-    font-family: var(--font-body);
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-  }
-  .ut-shadcn-textarea { min-height: 6rem; resize: vertical; }
-  .ut-shadcn-tabs-list { display: inline-flex; gap: 0.25rem; border-radius: var(--radius); background: hsl(var(--muted)); padding: 0.25rem; }
-  .ut-shadcn-tabs-trigger { border-radius: calc(var(--radius) - 0.125rem); color: hsl(var(--muted-foreground)); padding: 0.5rem 0.75rem; font-size: 0.875rem; font-weight: 500; }
-  .ut-shadcn-tabs-trigger[data-state="active"] { background: hsl(var(--background)); color: hsl(var(--foreground)); box-shadow: 0 1px 3px hsl(var(--foreground) / 0.12); }
+  --font-heading: ${tokens.typography.headingFont};
+  --font-body: ${tokens.typography.bodyFont};
 }
 
 * { border-color: hsl(var(--border)); }
@@ -394,7 +82,7 @@ html, body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: var(--font-body);
-  font-weight: var(--ut-weight-body, ${tokens.typography.bodyWeight});
+  font-weight: ${tokens.typography.bodyWeight};
   margin: 0;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -403,10 +91,10 @@ html, body {
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
-  font-weight: var(--ut-weight-display, ${tokens.typography.headingWeight});
+  font-weight: ${tokens.typography.headingWeight};
   color: hsl(var(--foreground));
-  letter-spacing: var(--ut-heading-tracking, -0.02em);
-  line-height: var(--ut-display-leading, 1.15);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 /* Tailwind utility shortcuts that often appear in AI output */
@@ -421,9 +109,9 @@ h1, h2, h3, h4, h5, h6 {
    ============================================================ */
 
 /* Layout */
-.container-wide { max-width: var(--ut-content-width); margin-left: auto; margin-right: auto; padding-left: 1rem; padding-right: 1rem; }
-.section-spacing { padding: var(--ut-section-space) 1rem; }
-@media (min-width: 768px) { .section-spacing { padding-left: 2rem; padding-right: 2rem; } }
+.container-wide { max-width: 1200px; margin-left: auto; margin-right: auto; padding-left: 1rem; padding-right: 1rem; }
+.section-spacing { padding: 5rem 1rem; }
+@media (min-width: 768px) { .section-spacing { padding: 7rem 2rem; } }
 
 /* Typography scale */
 .headline-xl { font-family: var(--font-heading); font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 1rem; }
@@ -436,14 +124,14 @@ h1, h2, h3, h4, h5, h6 {
 /* Buttons */
 .btn-primary {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  background: hsl(var(--primary));
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
   color: hsl(var(--primary-foreground));
   font-weight: 600; padding: 0.75rem 1.5rem; border-radius: var(--radius);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
-  box-shadow: var(--ut-surface-shadow);
+  box-shadow: 0 4px 14px hsl(var(--primary) / 0.25);
   border: none; cursor: pointer;
 }
-  .btn-primary:hover { transform: translateY(var(--ut-surface-lift)); box-shadow: var(--ut-surface-shadow-hover); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 22px hsl(var(--primary) / 0.35); }
 .btn-secondary {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   background: transparent; border: 1.5px solid hsl(var(--border));
@@ -460,10 +148,9 @@ h1, h2, h3, h4, h5, h6 {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   padding: 2rem;
-  box-shadow: var(--ut-surface-shadow);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
 }
-  .card:hover { transform: translateY(var(--ut-surface-lift)); border-color: hsl(var(--primary) / 0.4); box-shadow: var(--ut-surface-shadow-hover); }
+.card:hover { transform: translateY(-4px); border-color: hsl(var(--primary) / 0.4); box-shadow: 0 12px 32px hsl(var(--foreground) / 0.08); }
 
 /* Glass */
 .glass {
@@ -482,7 +169,10 @@ h1, h2, h3, h4, h5, h6 {
 }
 .unison-runtime-glass {
   min-height: 100vh;
-  background: hsl(var(--background));
+  background:
+    radial-gradient(circle at 8% 0%, hsl(var(--primary) / 0.12), transparent 32rem),
+    radial-gradient(circle at 92% 12%, hsl(var(--accent) / 0.10), transparent 30rem),
+    hsl(var(--background));
 }
 .ut-glass,
 .ut-glass-card,
@@ -517,7 +207,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Micro-interactions */
 .hover-lift { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease; }
-  .hover-lift:hover { transform: translateY(var(--ut-surface-lift)); box-shadow: var(--ut-surface-shadow-hover); }
+.hover-lift:hover { transform: translateY(-6px); box-shadow: 0 20px 40px hsl(var(--foreground) / 0.12); }
 .button-press { transition: transform 0.1s ease; }
 .button-press:active { transform: scale(0.97); }
 
@@ -545,34 +235,6 @@ p { margin: 0 0 1rem; line-height: 1.65; }
 img { max-width: 100%; height: auto; display: block; }
 a { color: inherit; text-decoration: none; }
 ul, ol { padding-left: 1.25rem; }
+${buildThemePresetFinalCssOverride(metadata.presetId)}
 `;
-}
-
-/**
- * Aesthetic-resolved token map for the selected style card AND its resolved
- * art direction pack. Consumed by the AI generation brief so Lane B styles
- * with tokens only — it is the exact vocabulary emitted into /src/index.css.
- */
-export function resolveGeometryTokens(
-  presetId?: string,
-  artDirection: ArtDirectionResolutionInput = {},
-): Record<string, string> {
-  const shared = '--ut-content-width: 72rem; --ut-gutter: 1.25rem; --ut-touch-target: 2.75rem; --ut-shell-width: min(100% - (var(--ut-gutter) * 2), var(--ut-content-width)); --ut-carousel-card: min(26.25rem, 85vw); --ut-panel-width: min(22rem, calc(100vw - (var(--ut-gutter) * 2))); --ut-control-radius: calc(var(--radius) - 0.125rem); --ut-media-radius: var(--radius);';
-  const declarations = `${buildProfessionalGeometry(presetId)} ${shared}`;
-
-  const tokens: Record<string, string> = {};
-  for (const declaration of declarations.split(';')) {
-    const index = declaration.indexOf(':');
-    if (index < 0) continue;
-    const name = declaration.slice(0, index).trim();
-    const value = declaration.slice(index + 1).trim();
-    if (name.startsWith('--ut-') && value) tokens[name] = value;
-  }
-
-  const pack = resolveArtDirectionPack({
-    ...artDirection,
-    themePresetId: artDirection.themePresetId ?? presetId,
-  });
-  return { ...tokens, ...buildArtDirectionTokens(pack) };
-
 }

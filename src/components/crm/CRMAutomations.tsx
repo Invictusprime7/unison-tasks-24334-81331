@@ -62,12 +62,7 @@ const actionTypes = [
   { value: "trigger_webhook", label: "Trigger Webhook" },
 ];
 
-interface CRMAutomationsProps {
-  businessId: string;
-  projectId: string;
-}
-
-export function CRMAutomations({ businessId, projectId }: CRMAutomationsProps) {
+export function CRMAutomations() {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -80,15 +75,13 @@ export function CRMAutomations({ businessId, projectId }: CRMAutomationsProps) {
 
   useEffect(() => {
     fetchAutomations();
-  }, [businessId, projectId]);
+  }, []);
 
   async function fetchAutomations() {
     try {
       const { data, error } = await supabase
         .from("crm_automations")
         .select("*")
-        .eq("business_id", businessId)
-        .eq("project_id", projectId)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -118,21 +111,12 @@ export function CRMAutomations({ businessId, projectId }: CRMAutomationsProps) {
         const { error } = await supabase
           .from("crm_automations")
           .update(automationData)
-          .eq("id", editingAutomation.id)
-          .eq("business_id", businessId)
-          .eq("project_id", projectId);
+          .eq("id", editingAutomation.id);
 
         if (error) throw error;
         toast.success("Automation updated");
       } else {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error("Authentication required");
-        const { error } = await supabase.from("crm_automations").insert({
-          ...automationData,
-          user_id: user.id,
-          business_id: businessId,
-          project_id: projectId,
-        });
+        const { error } = await supabase.from("crm_automations").insert(automationData);
 
         if (error) throw error;
         toast.success("Automation created");
@@ -153,9 +137,7 @@ export function CRMAutomations({ businessId, projectId }: CRMAutomationsProps) {
       const { error } = await supabase
         .from("crm_automations")
         .update({ is_active: isActive })
-        .eq("id", id)
-        .eq("business_id", businessId)
-        .eq("project_id", projectId);
+        .eq("id", id);
 
       if (error) throw error;
       toast.success(isActive ? "Automation activated" : "Automation deactivated");
@@ -170,12 +152,7 @@ export function CRMAutomations({ businessId, projectId }: CRMAutomationsProps) {
     if (!confirm("Delete this automation?")) return;
 
     try {
-      const { error } = await supabase
-        .from("crm_automations")
-        .delete()
-        .eq("id", id)
-        .eq("business_id", businessId)
-        .eq("project_id", projectId);
+      const { error } = await supabase.from("crm_automations").delete().eq("id", id);
       if (error) throw error;
       toast.success("Automation deleted");
       fetchAutomations();

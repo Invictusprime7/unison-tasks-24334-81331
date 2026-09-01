@@ -7,11 +7,10 @@
  */
 
 import type { RuntimeManifest } from '@/types/runtimeManifest';
-import { GENERATED_RUNTIME_PROFILE } from '@/platform/core/generatedRuntimeCapabilities';
 
 const BASE_DEPS: Record<string, string> = {
-  react: GENERATED_RUNTIME_PROFILE.react,
-  'react-dom': GENERATED_RUNTIME_PROFILE.reactDom,
+  react: '^18.3.1',
+  'react-dom': '^18.3.1',
   'react-router-dom': '^6.26.2',
   'lucide-react': '^0.462.0',
   'framer-motion': '^11.11.11',
@@ -20,8 +19,8 @@ const BASE_DEPS: Record<string, string> = {
 };
 
 const BASE_DEV_DEPS: Record<string, string> = {
-  '@types/react': GENERATED_RUNTIME_PROFILE.reactTypes,
-  '@types/react-dom': GENERATED_RUNTIME_PROFILE.reactDomTypes,
+  '@types/react': '^18.3.12',
+  '@types/react-dom': '^18.3.1',
   '@vitejs/plugin-react': '^4.3.3',
   autoprefixer: '^10.4.20',
   postcss: '^8.4.47',

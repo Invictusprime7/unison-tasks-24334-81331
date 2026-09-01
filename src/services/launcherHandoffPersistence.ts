@@ -68,16 +68,6 @@ function compactVfsFiles(value: unknown): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function readSnapshotVfs(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const files = (value as { vfsFiles?: unknown }).vfsFiles;
-  if (!files || typeof files !== 'object' || Array.isArray(files)) return undefined;
-  const record = files as Record<string, unknown>;
-  return Object.values(record).every((content) => typeof content === 'string')
-    ? record as Record<string, string>
-    : undefined;
-}
-
 function upsertJsonFile(files: Record<string, string>, path: string, value: unknown) {
   if (files[path] || value === undefined || value === null) return;
   try {
@@ -99,13 +89,7 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   // recompile + readiness surfaces don't see "dead" tokens/seeds when the
   // primary sessionStorage write hit quota and we fell through to this trimmed
   // fallback payload.
-  // The snapshot VFS is the canonical post-Lane-B artifact. Persist exactly
-  // one compact VFS copy, sourced from it whenever it is available. Using the
-  // outer route VFS here allowed a template preset to outlive the snapshot
-  // after session-storage recovery.
-  const snapshotVfs = readSnapshotVfs(routeState.siteBundleSnapshot);
-  const hasSnapshotVfs = !!snapshotVfs && Object.keys(snapshotVfs).length > 0;
-  const compactFiles = compactVfsFiles(hasSnapshotVfs ? snapshotVfs : routeState.vfsFiles) || {};
+  const compactFiles = compactVfsFiles(routeState.vfsFiles) || {};
   upsertJsonFile(compactFiles, '/.unison/runtime-manifest.json', routeState.runtimeManifest);
   upsertJsonFile(compactFiles, '/.unison/canonical-playground.json', routeState.canonicalPlayground || routeState.materializedPlayground);
   upsertJsonFile(compactFiles, '/.unison/wizard-seed.json', routeState.wizardSeed);
@@ -135,7 +119,6 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
     runtimeManifest: routeState.runtimeManifest,
     vfsFiles: compactFiles,
     siteBundleSnapshot: snapshot,
-    snapshotVfsCompacted: hasSnapshotVfs,
     canonicalPlayground: routeState.canonicalPlayground,
     materializedPlayground: hasDurableWizardFiles ? routeState.materializedPlayground : undefined,
     compiledPlayground,
@@ -151,9 +134,19 @@ function buildFallbackRouteState(routeState: Record<string, unknown>) {
   } satisfies Record<string, unknown>;
 }
 
-function persistCompactLauncherHandoff(compactRouteState: Record<string, unknown>) {
+export function persistLauncherHandoff(args: {
+  routeState: Record<string, unknown>;
+  launchState?: LaunchState;
+}) {
   if (!storageAvailable()) return;
+
   const createdAt = new Date().toISOString();
+  // A handoff used to stringify routeState plus launchState, while each one
+  // held VFS, snapshot VFS, and compiled VFS copies. Large Lane B sites then
+  // blocked the main thread immediately after navigate('/web-builder'). Keep
+  // exactly one compact VFS copy for refresh recovery; LaunchContext owns the
+  // live in-memory copy during the same SPA navigation.
+  const compactRouteState = buildFallbackRouteState(args.routeState);
   const baseSnapshot: LauncherHandoffSnapshot = {
     targetPath: '/web-builder',
     createdAt,
@@ -170,32 +163,6 @@ function persistCompactLauncherHandoff(compactRouteState: Record<string, unknown
       // Non-fatal: normal in-memory route state still carries the handoff.
     }
   }
-}
-
-export function persistLauncherHandoff(args: {
-  routeState: Record<string, unknown>;
-  launchState?: LaunchState;
-}) {
-  // A handoff used to stringify routeState plus launchState, while each one
-  // held VFS, snapshot VFS, and compiled VFS copies. Large Lane B sites then
-  // blocked the main thread immediately after navigate('/web-builder'). Keep
-  // exactly one compact VFS copy for refresh recovery; LaunchContext owns the
-  // live in-memory copy during the same SPA navigation.
-  persistCompactLauncherHandoff(buildFallbackRouteState(args.routeState));
-}
-
-/**
- * Build the history and recovery payload once. The Wizard previously walked
- * and serialized the same full VFS twice immediately before Builder mount,
- * which could block the main thread during the route transition.
- */
-export function persistAndBuildLauncherHandoff(args: {
-  routeState: Record<string, unknown>;
-  launchState?: LaunchState;
-}): Record<string, unknown> {
-  const compactRouteState = buildFallbackRouteState(args.routeState);
-  persistCompactLauncherHandoff(compactRouteState);
-  return compactRouteState;
 }
 
 /**

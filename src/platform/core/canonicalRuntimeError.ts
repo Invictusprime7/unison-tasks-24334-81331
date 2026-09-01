@@ -18,7 +18,6 @@ export type CanonicalRuntimeSurface =
 
 export type CanonicalRuntimeCode =
   | 'MISSING_SNAPSHOT'
-  | 'UNSEALED_SNAPSHOT'
   | 'MISSING_THEME_PRESET'
   | 'MISSING_SYSTEM_ID'
   | 'LEGACY_FALLBACK_BLOCKED';

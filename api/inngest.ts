@@ -15,15 +15,14 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { serve } from "inngest/express";
-import { inngest } from "../src/lib/inngest.js";
-import { inngestFunctions } from "../src/lib/inngest-workflows.js";
-import { applyApiSecurityHeaders, handlePreflight, sendError } from './_lib/security.js';
+import { serve } from "inngest/vercel";
+import { inngest } from "../src/lib/inngest";
+import { inngestFunctions } from "../src/lib/inngest-workflows";
+import { applyApiSecurityHeaders, handlePreflight, sendError } from './_lib/security';
 
-// Vercel Functions expose an Express-compatible request/response contract.
-// Inngest v3.54 no longer exports `inngest/vercel`; its Express adapter is the
-// supported handler for Vercel's Express-like Node functions.
-const inngestServeHandler = serve({
+// Create the Inngest serve handler with all workflow functions
+// Using Vercel adapter - exports GET, POST, PUT directly
+export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: inngestFunctions,
 });
@@ -51,11 +50,35 @@ export default async function inngestHandler(
     return;
   }
 
+  // Convert VercelRequest to standard Request and use the appropriate method handler
   try {
-    if (!['GET', 'POST', 'PUT'].includes(req.method || '')) {
+    const url = new URL(req.url || '/', `https://${req.headers.host || 'localhost'}`);
+    const headers = new Headers(req.headers as HeadersInit);
+    headers.set('x-request-id', requestId);
+    const request = new Request(url.toString(), {
+      method: req.method,
+      headers,
+      body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+    });
+
+    let response: Response;
+    if (req.method === 'GET') {
+      response = await GET(request);
+    } else if (req.method === 'POST') {
+      response = await POST(request);
+    } else if (req.method === 'PUT') {
+      response = await PUT(request);
+    } else {
       return sendError(res, 405, 'Method not allowed', requestId);
     }
-    return await inngestServeHandler(req, res);
+
+    // Convert Response back to Vercel format
+    const body = await response.text();
+    res.status(response.status);
+    response.headers.forEach((value, key) => {
+      res.setHeader(key, value);
+    });
+    return res.send(body);
   } catch (error) {
     console.error('Inngest handler error:', error);
     return sendError(res, 500, 'Internal server error', requestId);

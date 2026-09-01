@@ -418,20 +418,12 @@ export function hydratePlaygroundFromVFS(
   const allContent: string[] = [];
   
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
-    // Only process page-like files. The `/src/pages/{Word}.tsx` pattern is
-    // the ONLY canonical page-file shape the registry/router/topology-closure
-    // checks understand. Files that merely happen to live under a "/pages/"
-    // segment but don't match it (e.g. a stray companion file with an
-    // embedded dot like `/src/pages/Home.sections.tsx`) must NOT be treated
-    // as pages — doing so mangles the component name (`Home.sections` →
-    // `Homesections` after the dot is stripped) and produces an
-    // unclassified, unroutable BuilderPage that permanently blocks
-    // `assertWizardTopologyClosure` on every future save/recompile.
+    // Only process page-like files
     const isPage = filePath.match(/^\/src\/pages\/(\w+)\.(tsx|jsx)$/i) 
       || filePath.match(/^\/src\/App\.(tsx|jsx)$/i)
       || filePath === "/src/App.tsx";
     
-    if (!isPage) continue;
+    if (!isPage && !filePath.includes("/pages/")) continue;
     
     allContent.push(content);
     

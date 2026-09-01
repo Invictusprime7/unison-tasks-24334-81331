@@ -1,10 +1,9 @@
 /**
  * BusinessCatalogEditor — Milestone 3 (M3) Business Center CRUD surface.
  *
- * Given a section contract (e.g. "ServicesGrid" → services resource), renders
- * a browsable/editable list scoped to the active business. Reads and writes
- * route through cmsRecordService; the server resolves physical tables and
- * applies permission checks.
+ * Given a section contract (e.g. "ServicesGrid" → services table), renders
+ * a browsable/editable list of rows scoped to the selected business. All
+ * writes flow directly through Supabase; RLS enforces business membership.
  *
  * Field schemas are declared per table below so we can support every catalog
  * source in `sectionDataContracts.ts` without hand-rolling seven pages.
@@ -39,13 +38,6 @@ import {
   type CatalogFieldType,
   type CatalogSurface,
 } from '@/platform/core/catalogSurfaceRegistry';
-import { loadBusinessMemberships } from '@/services/businessMembership';
-import {
-  createCmsRecord,
-  listCmsRecords,
-  removeCmsRecord,
-  updateCmsRecord,
-} from '@/services/cmsRecordService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Editor schema (derived from the canonical catalogSurfaceRegistry — the
@@ -56,7 +48,7 @@ type FieldType = CatalogFieldType;
 type FieldSpec = CatalogFieldSpec;
 
 interface TableSchema {
-  resource: string;
+  table: string;
   titleField: string;
   subtitleField?: string;
   imageField?: string;
@@ -68,7 +60,7 @@ interface TableSchema {
 function schemaFromSurface(surface: CatalogSurface): TableSchema {
   const f = surface.fields;
   return {
-    resource: surface.surfaceId,
+    table: surface.sourceTable,
     titleField: f.title,
     subtitleField: f.category ?? f.description,
     imageField: f.image,
@@ -139,8 +131,8 @@ interface Props {
 export function BusinessCatalogEditor({ sectionType }: Props) {
   const contract: SectionDataContract | undefined = SECTION_DATA_CONTRACTS[sectionType];
   const surface = useMemo(
-    () => getCatalogSurface(sectionType),
-    [sectionType],
+    () => getCatalogSurface(sectionType) ?? (contract ? getCatalogSurface(contract.sourceTable) : null),
+    [sectionType, contract],
   );
   const schema = useMemo(() => (surface ? schemaFromSurface(surface) : null), [surface]);
 
@@ -154,38 +146,31 @@ export function BusinessCatalogEditor({ sectionType }: Props) {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // ── Load businesses the caller can access through the membership service ──
+  // ── Load businesses the caller is a member of ─────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const list = user
-        ? (await loadBusinessMemberships(user.id)).map((business) => ({
-            id: business.businessId,
-            name: business.name,
-          }))
-        : [];
+      const { data, error } = await supabase
+        .from('businesses' as never)
+        .select('id, name')
+        .order('created_at', { ascending: false });
       if (cancelled) return;
-      if (!user) {
+      if (error) {
+        console.warn('[BusinessCatalogEditor] load businesses failed', error);
         toast.error('Could not load your businesses');
         setLoading(false);
         return;
       }
+      const list = (data ?? []) as unknown as BusinessRow[];
       setBusinesses(list);
-      // A single accessible tenant is unambiguous. Multiple tenants require
-      // an explicit choice until ActiveUnisonContext is wired into this page.
-      setBusinessId((previous) => (
-        previous && list.some((business) => business.id === previous)
-          ? previous
-          : list.length === 1 ? list[0].id : null
-      ));
+      setBusinessId((prev) => prev ?? list[0]?.id ?? null);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // ── Load rows for the active business+resource ────────────────────────────
+  // ── Load rows for the active business+table ───────────────────────────────
   const loadRows = useCallback(async () => {
     if (!schema || !businessId) {
       setRows([]);
@@ -193,16 +178,19 @@ export function BusinessCatalogEditor({ sectionType }: Props) {
       return;
     }
     setLoading(true);
-    try {
-      const data = await listCmsRecords({ businessId, resource: schema.resource });
-      setRows(data);
-    } catch (error) {
+    const { data, error } = await supabase
+      .from(schema.table as never)
+      .select('*')
+      .eq('business_id', businessId)
+      .order('sort_order', { ascending: true });
+    if (error) {
       console.warn('[BusinessCatalogEditor] load rows failed', error);
       toast.error('Failed to load rows');
       setRows([]);
-    } finally {
-      setLoading(false);
+    } else {
+      setRows((data ?? []) as unknown as Array<Record<string, unknown>>);
     }
+    setLoading(false);
   }, [schema, businessId]);
 
   useEffect(() => {
@@ -217,7 +205,7 @@ export function BusinessCatalogEditor({ sectionType }: Props) {
       );
       window.dispatchEvent(
         new CustomEvent('unison:catalog-seeded', {
-          detail: { businessId, resource: schema?.resource },
+          detail: { businessId, table: schema?.table },
         }),
       );
     } catch {
@@ -260,23 +248,22 @@ export function BusinessCatalogEditor({ sectionType }: Props) {
     delete payload.created_at;
     delete payload.updated_at;
 
-    try {
-      if (editingId === 'new') {
-        await createCmsRecord({ businessId, resource: schema.resource, values: payload });
-      } else if (editingId) {
-        await updateCmsRecord({
-          businessId,
-          resource: schema.resource,
-          recordId: editingId,
-          values: payload,
-        });
-      }
-    } catch (error) {
+    let error: unknown = null;
+    if (editingId === 'new') {
+      const res = await supabase.from(schema.table as never).insert(payload as never);
+      error = res.error;
+    } else if (editingId) {
+      const res = await supabase
+        .from(schema.table as never)
+        .update(payload as never)
+        .eq('id', editingId);
+      error = res.error;
+    }
+    setSaving(false);
+    if (error) {
       console.warn('[BusinessCatalogEditor] save failed', error);
       toast.error('Save failed — check required fields');
       return;
-    } finally {
-      setSaving(false);
     }
     toast.success(editingId === 'new' ? 'Added' : 'Saved');
     setEditingId(null);
@@ -289,15 +276,12 @@ export function BusinessCatalogEditor({ sectionType }: Props) {
     if (!schema) return;
     if (typeof window !== 'undefined' && !window.confirm('Delete this row?')) return;
     setDeletingId(id);
-    try {
-      if (!businessId) return;
-      await removeCmsRecord({ businessId, resource: schema.resource, recordId: id });
-    } catch (error) {
+    const { error } = await supabase.from(schema.table as never).delete().eq('id', id);
+    setDeletingId(null);
+    if (error) {
       console.warn('[BusinessCatalogEditor] delete failed', error);
       toast.error('Delete failed');
       return;
-    } finally {
-      setDeletingId(null);
     }
     toast.success('Deleted');
     bumpPreview();

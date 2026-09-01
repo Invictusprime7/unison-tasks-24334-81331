@@ -1,7 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
-import { ALL_COMPOSITIONS } from '@/sections/templates';
-import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
 import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
 
 describe('normalizeWizardThemeTokens', () => {
@@ -32,19 +29,5 @@ describe('normalizeWizardThemeTokens', () => {
 
     expect(result.changedFiles).toEqual([]);
     expect(result.files['/src/pages/Home.tsx']).toBe(source);
-  });
-
-  it('keeps composition theme modules parseable through final preflight', () => {
-    const composition = ALL_COMPOSITIONS[0];
-    expect(composition).toBeDefined();
-    const files = compositionToReactFileSet(composition, '/src/pages/Home.tsx');
-    const normalized = normalizeWizardThemeTokens(files);
-    const sharedThemeFiles = Object.fromEntries(
-      Object.entries(normalized.files).filter(([path]) => path.startsWith('/src/components/')),
-    );
-
-    expect(normalized.changedFiles).not.toContain('/src/components/theme.ts');
-    expect(normalized.changedFiles).not.toContain('/src/components/Navbar.tsx');
-    expect(runPreflightRepair(sharedThemeFiles).quarantinedCount).toBe(0);
   });
 });

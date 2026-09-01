@@ -444,7 +444,7 @@ export function ElementIntentInspector({
         {/* Latest GHL events (workflow context) */}
         {ghlEvents.length > 0 && (
           <div>
-            <Label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+            <Label className="text-xs text-gray-400 mb-1 block flex items-center gap-1">
               <Workflow className="h-3 w-3" /> Latest GHL Events
             </Label>
             <div className="space-y-1 max-h-24 overflow-y-auto pr-1">

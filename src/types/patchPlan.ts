@@ -10,8 +10,6 @@
  * remains the single legal writer.
  */
 
-import type { BusinessSystemState } from '@/platform/core/capabilityRegistry';
-
 export type PatchSource =
   | 'wizard-launch'
   | 'ai-builder'
@@ -57,22 +55,12 @@ export interface BackendOp {
   payload?: Record<string, unknown>;
 }
 
-/** Snapshot-owned visual mutations. These never rewrite page JSX directly. */
-export interface PresentationOp {
-  type: 'setVariant';
-  sectionId: string;
-  variantId: string;
-}
-
 export interface PatchPlan {
   summary: string;
   fileOps: FileOp[];
   playgroundOps: PlaygroundOp[];
   bindingOps: BindingOp[];
   backendOps: BackendOp[];
-  presentationOps: PresentationOp[];
-  /** Approved capability state to stamp into the resulting SiteBundleSnapshot. */
-  businessSystem?: BusinessSystemState;
 }
 
 export function emptyPatchPlan(summary = ''): PatchPlan {
@@ -82,7 +70,6 @@ export function emptyPatchPlan(summary = ''): PatchPlan {
     playgroundOps: [],
     bindingOps: [],
     backendOps: [],
-    presentationOps: [],
   };
 }
 
@@ -107,7 +94,6 @@ export function legacyFilesToPatchPlan(
     playgroundOps: [],
     bindingOps: [],
     backendOps: [],
-    presentationOps: [],
   };
 }
 
@@ -117,7 +103,7 @@ export function assertPatchPlan(plan: unknown, context = 'assertPatchPlan'): ass
     throw new Error(`[${context}] PatchPlan must be an object`);
   }
   const p = plan as Partial<PatchPlan>;
-  for (const key of ['fileOps', 'playgroundOps', 'bindingOps', 'backendOps', 'presentationOps'] as const) {
+  for (const key of ['fileOps', 'playgroundOps', 'bindingOps', 'backendOps'] as const) {
     if (!Array.isArray(p[key])) {
       throw new Error(`[${context}] PatchPlan.${key} must be an array`);
     }
@@ -131,11 +117,6 @@ export function assertPatchPlan(plan: unknown, context = 'assertPatchPlan'): ass
     }
     if ((op.type === 'create' || op.type === 'replace') && typeof (op as { contents?: unknown }).contents !== 'string') {
       throw new Error(`[${context}] FileOp.contents required for ${op.type}`);
-    }
-  }
-  for (const op of p.presentationOps as PresentationOp[]) {
-    if (!op || typeof op !== 'object' || op.type !== 'setVariant' || typeof op.sectionId !== 'string' || typeof op.variantId !== 'string') {
-      throw new Error(`[${context}] invalid PresentationOp: ${JSON.stringify(op)}`);
     }
   }
 }

@@ -21,7 +21,7 @@ describe("route shell activation", () => {
   });
 
   it("does not activate routes still marked as legacy or fullscreen chrome", () => {
-    expect(isRouteShellEnabled(meta("project"), { enabled: true })).toBe(false);
+    expect(isRouteShellEnabled(meta("dashboard"), { enabled: true })).toBe(false);
     expect(isRouteShellEnabled(meta("web-builder"), { enabled: true })).toBe(false);
   });
 

@@ -81,7 +81,7 @@ export const CTASplitCard: React.FC<BaseSectionProps<'cta'>> = ({ section, theme
 
           {/* Visual Column */}
           <div
-            className="h-full min-h-[var(--ut-media-block)] flex items-center justify-center"
+            className="h-full min-h-[280px] flex items-center justify-center"
             style={{
               background: `linear-gradient(135deg, ${hsla(theme.colors.primary, 0.08)}, ${hsla(theme.colors.accent, 0.08)})`,
             }}

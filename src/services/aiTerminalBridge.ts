@@ -328,7 +328,6 @@ export class AITerminalBridge {
 
   private handleDepAdded(pkg: string, version: string): void {
     this.currentDeps[pkg] = version;
-    this.writeDependencyManifest(pkg, version);
     this.conversation.addMessage(
       'terminal',
       `Dependency added: ${pkg}@${version}`,
@@ -338,7 +337,6 @@ export class AITerminalBridge {
 
   private handleDepRemoved(pkg: string): void {
     delete this.currentDeps[pkg];
-    this.writeDependencyManifest(pkg, null);
     this.conversation.addMessage(
       'terminal',
       `Dependency removed: ${pkg}`,
@@ -374,45 +372,6 @@ export class AITerminalBridge {
 
     this.conversation.setVFSSnapshot(this.getVFSSnapshot());
     this.notifyVFSWatchers([normalizedPath]);
-  }
-
-  /** Persist installs into the VFS so Sandpack customSetup is reproducible. */
-  private writeDependencyManifest(pkg: string, version: string | null): void {
-    const fileMap = this.getVFSSnapshot();
-    const raw = fileMap['/package.json'] || fileMap['package.json'];
-    let manifest: Record<string, unknown> = {
-      name: 'unison-vfs-site',
-      private: true,
-      version: '0.0.0',
-    };
-    if (raw) {
-      try {
-        manifest = JSON.parse(raw) as Record<string, unknown>;
-      } catch {
-        // A valid manifest is required for dependency installation to proceed.
-      }
-    }
-    const dependencies = {
-      ...((manifest.dependencies && typeof manifest.dependencies === 'object')
-        ? manifest.dependencies as Record<string, string>
-        : {}),
-    };
-    const devDependencies = {
-      ...((manifest.devDependencies && typeof manifest.devDependencies === 'object')
-        ? manifest.devDependencies as Record<string, string>
-        : {}),
-    };
-    if (version) {
-      dependencies[pkg] = version;
-      delete devDependencies[pkg];
-    } else {
-      delete dependencies[pkg];
-      delete devDependencies[pkg];
-    }
-    this.handleFileWritten(
-      '/package.json',
-      JSON.stringify({ ...manifest, dependencies, devDependencies }, null, 2),
-    );
   }
 
   private notifyVFSWatchers(changes: string[]): void {
@@ -528,22 +487,18 @@ export class AITerminalBridge {
 // Singleton instance for app-wide use
 // ============================================================================
 
-type AITerminalGlobal = typeof globalThis & {
-  __unisonAiTerminalBridge?: AITerminalBridge;
-};
-
-const terminalGlobal = globalThis as AITerminalGlobal;
+let globalBridge: AITerminalBridge | null = null;
 
 export function getGlobalAITerminalBridge(
   nodes?: VirtualNode[],
   deps?: Record<string, string>
 ): AITerminalBridge {
-  if (!terminalGlobal.__unisonAiTerminalBridge) {
-    terminalGlobal.__unisonAiTerminalBridge = new AITerminalBridge(nodes, deps);
+  if (!globalBridge) {
+    globalBridge = new AITerminalBridge(nodes, deps);
   }
-  return terminalGlobal.__unisonAiTerminalBridge;
+  return globalBridge;
 }
 
 export function resetGlobalAITerminalBridge(): void {
-  delete terminalGlobal.__unisonAiTerminalBridge;
+  globalBridge = null;
 }

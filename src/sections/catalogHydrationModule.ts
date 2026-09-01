@@ -12,7 +12,6 @@
 export const CATALOG_HYDRATION_PATH = '/src/components/catalogHydration.ts';
 
 export const CATALOG_HYDRATION_MODULE = `import { useEffect, useRef, useState } from 'react';
-import { PUBLISHED_RUNTIME_CONFIG } from '@/unison/publishedRuntime';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shape returned to callers
@@ -20,16 +19,12 @@ import { PUBLISHED_RUNTIME_CONFIG } from '@/unison/publishedRuntime';
 export type SectionHydrationState = {
   loading: boolean;
   rows: any[] | null;
-  cardBinding: any | null;
   fallback: 'ok' | 'empty_state' | 'hide_section' | 'show_placeholder' | null;
   error: string | null;
 };
 
 let __seq = 0;
 const nextId = () => \`h_\${Date.now().toString(36)}_\${(++__seq).toString(36)}\`;
-// Published sites revalidate through the public runtime gateway rather than
-// subscribing directly to Supabase tables or credentials.
-const PUBLISHED_CATALOG_REVALIDATE_MS = 60_000;
 
 /**
  * Request live catalog rows for a generated section. Falls back gracefully
@@ -44,7 +39,6 @@ export function useSectionData(
   const [state, setState] = useState<SectionHydrationState>({
     loading: true,
     rows: null,
-    cardBinding: null,
     fallback: null,
     error: null,
   });
@@ -55,69 +49,8 @@ export function useSectionData(
   useEffect(() => {
     mounted.current = true;
     if (typeof window === 'undefined' || window.parent === window) {
-      let activeController: AbortController | null = null;
-      const refreshPublishedCatalog = async (initial: boolean) => {
-        activeController?.abort();
-        const controller = new AbortController();
-        activeController = controller;
-        const timer = window.setTimeout(() => controller.abort(), 1500);
-        const runtime = PUBLISHED_RUNTIME_CONFIG;
-        if (!runtime.siteId || !runtime.runtimeEndpoint || controller.signal.aborted) {
-          window.clearTimeout(timer);
-          if (mounted.current) setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: null });
-          return;
-        }
-        try {
-          const response = await fetch(runtime.runtimeEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify({
-              operation: 'read',
-              runtimeVersion: runtime.runtimeVersion,
-              siteId: runtime.siteId,
-              read: {
-                type: 'catalog',
-                pagePath: typeof window.location !== 'undefined' ? (window.location.pathname || '/') : '/',
-                sectionId,
-                sectionType: sectionType || null,
-                occurrenceIndex: typeof occurrenceIndex === 'number' ? occurrenceIndex : null,
-              },
-            }),
-          });
-          const data: any = response.ok ? await response.json() : null;
-          if (!mounted.current) return;
-          setState({
-            loading: false,
-            rows: Array.isArray(data?.rows) ? data.rows : null,
-            cardBinding: data?.cardBinding ?? null,
-            fallback: data?.fallback ?? null,
-            error: data?.error ?? null,
-          });
-        } catch {
-          if (initial && mounted.current) {
-            setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: null });
-          }
-        } finally {
-          window.clearTimeout(timer);
-        }
-      };
-
-      void refreshPublishedCatalog(true);
-      const interval = window.setInterval(() => {
-        if (!document.hidden) void refreshPublishedCatalog(false);
-      }, PUBLISHED_CATALOG_REVALIDATE_MS);
-      const onVisibilityChange = () => {
-        if (!document.hidden) void refreshPublishedCatalog(false);
-      };
-      document.addEventListener('visibilitychange', onVisibilityChange);
-
-      return () => {
-        mounted.current = false;
-        window.clearInterval(interval);
-        document.removeEventListener('visibilitychange', onVisibilityChange);
-        activeController?.abort();
-      };
+      setState({ loading: false, rows: null, fallback: null, error: null });
+      return () => { mounted.current = false; };
     }
 
     const requestId = nextId();
@@ -141,7 +74,6 @@ export function useSectionData(
       setState({
         loading: false,
         rows: Array.isArray(data.rows) ? data.rows : null,
-        cardBinding: data.cardBinding ?? null,
         fallback: data.fallback ?? null,
         error: data.error ?? null,
       });
@@ -162,13 +94,13 @@ export function useSectionData(
         '*',
       );
     } catch (err) {
-      setState({ loading: false, rows: null, cardBinding: null, fallback: null, error: String(err) });
+      setState({ loading: false, rows: null, fallback: null, error: String(err) });
     }
 
     // Give the host ~1.5s; if nothing arrives, resolve to null so seeds render.
     const timer = window.setTimeout(() => {
       if (!mounted.current) return;
-      setState((prev) => (prev.loading ? { loading: false, rows: null, cardBinding: null, fallback: null, error: null } : prev));
+      setState((prev) => (prev.loading ? { loading: false, rows: null, fallback: null, error: null } : prev));
     }, 1500);
 
     return () => {

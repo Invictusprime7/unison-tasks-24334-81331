@@ -1,4 +1,3 @@
-import { GENERATED_RUNTIME_PROFILE } from '@/platform/core/generatedRuntimeCapabilities';
 /**
  * AI Web Parser - Advanced parsing for AI-generated web content and online webpages
  * 
@@ -789,8 +788,8 @@ function generateIndexHtml(meta: WebContentMeta, title: string): string {
  */
 function generatePackageJson(name: string, addRouting: boolean): string {
   const deps: Record<string, string> = {
-    'react': GENERATED_RUNTIME_PROFILE.react,
-    'react-dom': GENERATED_RUNTIME_PROFILE.reactDom,
+    'react': '^18.2.0',
+    'react-dom': '^18.2.0',
   };
   
   if (addRouting) {
@@ -809,8 +808,8 @@ function generatePackageJson(name: string, addRouting: boolean): string {
     },
     dependencies: deps,
     devDependencies: {
-      '@types/react': GENERATED_RUNTIME_PROFILE.reactTypes,
-      '@types/react-dom': GENERATED_RUNTIME_PROFILE.reactDomTypes,
+      '@types/react': '^18.2.0',
+      '@types/react-dom': '^18.2.0',
       '@vitejs/plugin-react': '^4.0.0',
       'typescript': '^5.0.0',
       'vite': '^5.0.0',

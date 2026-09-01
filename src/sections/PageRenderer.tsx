@@ -246,7 +246,7 @@ function Hero({ props }) {
   const { headline, subheadline, ctas = [], badge, stats, layout = 'centered' } = props;
   const split = layout === 'split';
   return (
-    <section style={{ ...sectionPad, paddingTop: 'clamp(5.5rem, 8vw, 6.5rem)', background: hsl(THEME.colors.background), position: 'relative', overflow: 'hidden' }}>
+    <section style={{ ...sectionPad, paddingTop: '8rem', background: hsl(THEME.colors.background), position: 'relative', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', top: '-30%', right: '-10%', width: '600px', height: '600px', background: \`radial-gradient(circle, \${hsla(THEME.colors.primary, 0.08)} 0%, transparent 70%)\`, borderRadius: '50%', pointerEvents: 'none' }} />
       <div style={{ ...containerStyle, textAlign: split ? 'left' : 'center', position: 'relative' }}>
         {badge && <span style={{ display: 'inline-block', padding: '0.35rem 1rem', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: '600', background: hsla(THEME.colors.primary, 0.12), color: hsl(THEME.colors.primary), border: \`1px solid \${hsla(THEME.colors.primary, 0.25)}\`, marginBottom: '1.5rem' }}>{badge}</span>}

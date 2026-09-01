@@ -69,10 +69,9 @@ export const CATALOG_TOOL_DEFINITIONS = [
       "Patch fields on an existing catalog row (title, description, price, image). Prices are in DOLLARS.",
     parameters: {
       type: "object",
-      required: ["surfaceId", "businessId", "rowId", "patch"],
+      required: ["surfaceId", "rowId", "patch"],
       properties: {
         surfaceId: { type: "string", enum: SURFACE_IDS },
-        businessId: { type: "string" },
         rowId: { type: "string" },
         patch: ROW_PATCH_SCHEMA,
       },
@@ -83,10 +82,9 @@ export const CATALOG_TOOL_DEFINITIONS = [
     description: "Delete an existing catalog row.",
     parameters: {
       type: "object",
-      required: ["surfaceId", "businessId", "rowId"],
+      required: ["surfaceId", "rowId"],
       properties: {
         surfaceId: { type: "string", enum: SURFACE_IDS },
-        businessId: { type: "string" },
         rowId: { type: "string" },
       },
     },

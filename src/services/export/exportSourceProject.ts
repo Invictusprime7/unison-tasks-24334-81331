@@ -19,11 +19,6 @@ import {
   netlifyToml,
   vercelJson,
 } from './hostAdapters';
-import {
-  UNISON_ATTRIBUTION_ASSET,
-  UNISON_ATTRIBUTION_SCRIPT,
-  injectPoweredByUnisonScript,
-} from './unisonAttribution';
 
 export interface ExportSourceProjectOptions {
   projectName: string;
@@ -156,7 +151,7 @@ export async function exportSourceProject(
   root.file('tsconfig.node.json', scaffold.tsConfigNode);
   root.file('tailwind.config.ts', scaffold.tailwindConfig);
   root.file('postcss.config.js', scaffold.postcssConfig);
-  root.file('index.html', injectPoweredByUnisonScript(scaffold.indexHtml));
+  root.file('index.html', scaffold.indexHtml);
   root.file('.gitignore', scaffold.gitignore);
   root.file('README.md', scaffold.readme);
   if (scaffold.envExample.trim()) {
@@ -166,12 +161,11 @@ export async function exportSourceProject(
   // 6. Static-host SPA fallbacks (live at project root so `dist/` deploys
   //    pick them up when copied alongside).
   const publicFolder = root.folder('public') || root;
-  publicFolder.file(UNISON_ATTRIBUTION_ASSET, UNISON_ATTRIBUTION_SCRIPT);
   publicFolder.file('_redirects', netlifyRedirects());
   root.file('vercel.json', vercelJson());
   root.file('netlify.toml', netlifyToml());
 
-  fileCount += 11;
+  fileCount += 10;
 
 
   const blob = await zip.generateAsync({
@@ -195,5 +189,5 @@ export function downloadBlob(blob: Blob, fileName: string): void {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  URL.revokeObjectURL(url);
 }

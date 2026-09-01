@@ -175,8 +175,7 @@ export function generateMultiPageVFS(result: MultiPageParseResult): Record<strin
   // Generate React Router App.tsx
   files['/src/App.tsx'] = generateRouterApp(result);
   files['/src/main.tsx'] = generateMainTsx();
-  // Theme CSS belongs to the wizard pipeline (Stage 4b themed /src/index.css).
-  // This generator must never emit a hardcoded palette.
+  files['/src/index.css'] = generateBaseCss();
   
   return files;
 }
@@ -439,5 +438,30 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>
 );
+`;
+}
+
+function generateBaseCss(): string {
+  return `:root {
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --primary: 221.2 83.2% 53.3%;
+  --primary-foreground: 210 40% 98%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --border: 214.3 31.8% 91.4%;
+  --card: 0 0% 100%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+}
+
+* { border-color: hsl(var(--border)); }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
 `;
 }

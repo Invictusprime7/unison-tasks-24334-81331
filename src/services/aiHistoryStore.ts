@@ -20,7 +20,6 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import { isUuid } from '@/types/builderIdentity';
 
 // ---------------------------------------------------------------------------
 // Types — kept loose so the panel can store its richer Message shape verbatim
@@ -206,6 +205,64 @@ export function subscribeAIHistory(
 }
 
 // ---------------------------------------------------------------------------
+// Supabase mirror (best-effort, debounced)
+// ---------------------------------------------------------------------------
+
+const remoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+async function mirrorToSupabase(draftId: string, record: AIHistoryRecord): Promise<void> {
+  try {
+    const { data: row, error: selErr } = await supabase
+      .from('builder_drafts')
+      .select('id, metadata')
+      .eq('id', draftId)
+      .maybeSingle();
+    if (selErr || !row) return;
+    const meta = (row.metadata && typeof row.metadata === 'object' ? row.metadata : {}) as Record<string, unknown>;
+    // Don't write the full file blobs to Supabase — keep them local-only to
+    // avoid bloating the row. Persist messages + snapshot metadata.
+    const trimmedSnapshots = record.snapshots.map((s) => ({
+      id: s.id,
+      label: s.label,
+      timestamp: s.timestamp,
+      source: s.source,
+      changedPaths: s.changedPaths,
+      fileStats: s.fileStats,
+      totals: s.totals,
+      meta: s.meta,
+    }));
+    const nextMeta = {
+      ...meta,
+      aiHistory: {
+        v: 1,
+        draftId,
+        messages: record.messages.slice(-50),
+        snapshots: trimmedSnapshots,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+    await supabase
+      .from('builder_drafts')
+      .update({ metadata: nextMeta as unknown as never })
+      .eq('id', row.id);
+  } catch {
+    // best-effort only
+  }
+}
+
+function scheduleRemoteMirror(draftId: string | null | undefined, record: AIHistoryRecord) {
+  if (!draftId) return;
+  const key = lsKey(draftId);
+  const existing = remoteTimers.get(key);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    remoteTimers.delete(key);
+    void mirrorToSupabase(draftId, record);
+  }, 1500);
+  remoteTimers.set(key, timer);
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -221,7 +278,7 @@ export async function hydrateAIHistoryFromSupabase(
   draftId: string | null | undefined,
 ): Promise<AIHistoryRecord> {
   const local = readLocal(draftId);
-  if (!isUuid(draftId)) {
+  if (!draftId) {
     return local;
   }
 
@@ -283,48 +340,9 @@ export async function hydrateAIHistoryFromSupabase(
       .sort((a, b) => (Date.parse(a.timestamp || '') || 0) - (Date.parse(b.timestamp || '') || 0))
       .slice(-MAX_MESSAGES);
 
-    // Merge remote snapshot metadata (labels/stats/paths). Remote mirror
-    // intentionally omits `before`/`after` file blobs to keep row size sane,
-    // so we synthesize empty maps for remote-only entries — the History menu
-    // still lists them; full revert requires a locally-cached snapshot.
-    const remoteSnapshotsRaw =
-      aiHistory && typeof aiHistory === 'object'
-        ? (aiHistory as Record<string, unknown>).snapshots
-        : null;
-
-    const mergedSnapshotsById = new Map<string, EditSnapshot>();
-    for (const snap of local.snapshots) mergedSnapshotsById.set(snap.id, snap);
-    if (Array.isArray(remoteSnapshotsRaw)) {
-      for (const raw of remoteSnapshotsRaw) {
-        if (!raw || typeof raw !== 'object') continue;
-        const rec = raw as Record<string, unknown>;
-        const id = typeof rec.id === 'string' ? rec.id : null;
-        if (!id || mergedSnapshotsById.has(id)) continue;
-        mergedSnapshotsById.set(id, {
-          id,
-          label: typeof rec.label === 'string' ? rec.label : 'AI edit',
-          timestamp: typeof rec.timestamp === 'string' ? rec.timestamp : new Date(0).toISOString(),
-          source: (rec.source === 'debug' || rec.source === 'manual' ? rec.source : 'ai') as EditSnapshot['source'],
-          before: {},
-          after: {},
-          changedPaths: Array.isArray(rec.changedPaths) ? (rec.changedPaths as string[]) : [],
-          fileStats: Array.isArray(rec.fileStats) ? (rec.fileStats as FileChangeStat[]) : [],
-          totals: (rec.totals && typeof rec.totals === 'object'
-            ? (rec.totals as EditSnapshot['totals'])
-            : { added: 0, removed: 0, created: 0, modified: 0, deleted: 0 }),
-          meta: (rec.meta && typeof rec.meta === 'object') ? (rec.meta as EditSnapshotMeta) : undefined,
-        });
-      }
-    }
-
-    const mergedSnapshots = Array.from(mergedSnapshotsById.values())
-      .sort((a, b) => (Date.parse(a.timestamp || '') || 0) - (Date.parse(b.timestamp || '') || 0))
-      .slice(-MAX_SNAPSHOTS);
-
     const next: AIHistoryRecord = {
       ...local,
       messages: mergedMessages,
-      snapshots: mergedSnapshots,
     };
 
     writeLocal(draftId, next);
@@ -346,6 +364,7 @@ export function setMessages(
   };
   writeLocal(projectId, next);
   emit(projectId, next);
+  scheduleRemoteMirror(projectId, next);
 }
 
 export function pushSnapshot(
@@ -378,6 +397,7 @@ export function pushSnapshot(
   };
   writeLocal(projectId, next);
   emit(projectId, next);
+  scheduleRemoteMirror(projectId, next);
   return full;
 }
 
@@ -395,6 +415,7 @@ export function getSnapshot(
 export function clearAIHistory(projectId: string | null | undefined): void {
   writeLocal(projectId, { ...EMPTY });
   emit(projectId, { ...EMPTY });
+  scheduleRemoteMirror(projectId, { ...EMPTY });
 }
 
 /** Compute the changed-paths list between two file maps (for snapshot UI). */

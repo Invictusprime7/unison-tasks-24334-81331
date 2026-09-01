@@ -24,27 +24,19 @@ import {
   getCatalogSurface,
   type CatalogSurface,
 } from '@/platform/core/catalogSurfaceRegistry';
-import { type EditableRowPatch } from '@/services/catalogRowService';
 import {
-  createCmsRecord,
-  getCmsRecord,
-  removeCmsRecord,
-  updateCmsRecord,
-} from '@/services/cmsRecordService';
+  createCatalogRow as createRow,
+  deleteCatalogRow as deleteRow,
+  updateCatalogRow as updateRow,
+  type EditableRowPatch,
+} from '@/services/catalogRowService';
 import {
   getBinding,
-  getBindingById,
   patchBindingById,
   upsertBinding,
   type BindingPatch,
   type UpsertBindingInput,
 } from '@/services/sectionDataBindingService';
-import {
-  updateCatalogCardBinding,
-  updateCatalogCardPresentation,
-  upsertCatalogCardBinding,
-} from '@/services/catalogCardBindingService';
-import type { CatalogBindingActions, CatalogBindingPresentation } from '@/types/catalog';
 import type { CatalogFallbackMode } from '@/platform/core/catalogSurfaceRegistry';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,11 +46,7 @@ import type { CatalogFallbackMode } from '@/platform/core/catalogSurfaceRegistry
 export type CatalogOperationName =
   | 'createCatalogRow'
   | 'updateCatalogRow'
-  | 'updateCatalogItem'
   | 'deleteCatalogRow'
-  | 'bindCatalogItemToComponent'
-  | 'updateComponentPresentation'
-  | 'updateComponentActions'
   | 'updateSectionBinding'
   | 'switchSectionCollection'
   | 'changeSectionLimit'
@@ -134,14 +122,13 @@ async function currentUserId(): Promise<string | null> {
 
 async function assertBusinessAccess(
   businessId: string | null | undefined,
-  permission: 'catalog.write' | 'catalog.delete' | 'artifact.write',
 ): Promise<string | null> {
   if (!businessId) return 'businessId is required for this catalog operation.';
   const uid = await currentUserId();
   if (!uid) return UNAUTHORIZED_SIGN_IN;
   const { data, error } = await supabase.rpc(
-    'business_has_permission' as never,
-    { p_business_id: businessId, p_permission: permission } as never,
+    'is_business_member' as never,
+    { _business_id: businessId } as never,
   );
   if (error) return `Authorization check failed: ${error.message}`;
   if (data !== true) return UNAUTHORIZED_BUSINESS;
@@ -161,6 +148,19 @@ async function assertProjectAccess(
   if (error) return `Authorization check failed: ${error.message}`;
   if (data !== true) return UNAUTHORIZED_PROJECT;
   return null;
+}
+
+/** Look up the owning business_id for a catalog row before mutating it. */
+async function fetchRowBusinessId(
+  table: string,
+  rowId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from(table as never)
+    .select('business_id')
+    .eq('id', rowId)
+    .maybeSingle();
+  return (data as { business_id?: string } | null)?.business_id ?? null;
 }
 
 /** Look up the owning project/business for a binding row. */
@@ -201,20 +201,6 @@ function splitPatch(
   return { editable, extraColumns };
 }
 
-function normalizeCmsValues(surface: CatalogSurface, patch: CatalogRowFieldPatch): Record<string, unknown> {
-  const { editable, extraColumns } = splitPatch(surface, patch);
-  const values: Record<string, unknown> = { ...extraColumns };
-  if (editable.name !== undefined) values[surface.fields.title] = editable.name ?? '';
-  if (editable.description !== undefined && surface.fields.description) values[surface.fields.description] = editable.description;
-  if (editable.image_url !== undefined && surface.fields.image) values[surface.fields.image] = editable.image_url;
-  if (editable.price !== undefined) {
-    const dollars = editable.price == null || !Number.isFinite(editable.price) ? 0 : editable.price;
-    if (surface.fields.priceCents) values[surface.fields.priceCents] = Math.round(dollars * 100);
-    if (surface.fields.price) values[surface.fields.price] = dollars;
-  }
-  return values;
-}
-
 async function locateBindingId(
   locator: SectionBindingLocator,
 ): Promise<string | null> {
@@ -241,175 +227,75 @@ export async function createCatalogRow(args: {
   patch: CatalogRowFieldPatch;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
-  const denied = await assertBusinessAccess(args.businessId, 'catalog.write');
+  const denied = await assertBusinessAccess(args.businessId);
   if (denied) return { ok: false, op: 'createCatalogRow', message: denied };
-  let created: Record<string, unknown>;
-  try {
-    created = await createCmsRecord({
-      resource: surface.surfaceId,
-      businessId: args.businessId,
-      values: { ...surface.newRowDefaults, ...normalizeCmsValues(surface, args.patch) },
-    });
-  } catch {
+  const { editable, extraColumns } = splitPatch(surface, args.patch);
+  const created = await createRow(surface.sourceTable, args.businessId, editable);
+  if (!created) {
     return { ok: false, op: 'createCatalogRow', message: 'create failed' };
+  }
+  if (Object.keys(extraColumns).length > 0) {
+    await supabase
+      .from(surface.sourceTable as never)
+      .update(extraColumns as never)
+      .eq('id', created.id);
   }
   return {
     ok: true,
     op: 'createCatalogRow',
     message: `Created ${surface.rowLabel} in ${surface.sourceTable}`,
-    data: { id: created.id, surfaceId: surface.surfaceId },
+    data: { id: created.id, surfaceId: surface.surfaceId, table: surface.sourceTable },
   };
 }
 
 export async function updateCatalogRow(args: {
   surfaceId: string;
-  businessId: string;
   rowId: string;
   patch: CatalogRowFieldPatch;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
-  const denied = await assertBusinessAccess(args.businessId, 'catalog.write');
+  const ownerBusinessId = await fetchRowBusinessId(surface.sourceTable, args.rowId);
+  const denied = await assertBusinessAccess(ownerBusinessId);
   if (denied) return { ok: false, op: 'updateCatalogRow', message: denied };
-  let ok = true;
-  try {
-    await updateCmsRecord({
-      resource: surface.surfaceId,
-      businessId: args.businessId,
-      recordId: args.rowId,
-      values: normalizeCmsValues(surface, args.patch),
-    });
-  } catch {
-    ok = false;
+  const { editable, extraColumns } = splitPatch(surface, args.patch);
+
+  const ok1 = Object.keys(editable).length === 0
+    ? true
+    : await updateRow(surface.sourceTable, args.rowId, editable);
+
+  let ok2 = true;
+  if (Object.keys(extraColumns).length > 0) {
+    const { error } = await supabase
+      .from(surface.sourceTable as never)
+      .update(extraColumns as never)
+      .eq('id', args.rowId);
+    ok2 = !error;
   }
 
   return {
-    ok,
+    ok: ok1 && ok2,
     op: 'updateCatalogRow',
-    message: ok
+    message: ok1 && ok2
       ? `Updated ${surface.rowLabel} ${args.rowId}`
-      : `Update failed on ${surface.surfaceId}#${args.rowId}`,
-    data: { surfaceId: surface.surfaceId, rowId: args.rowId },
+      : `Partial/failed update on ${surface.sourceTable}#${args.rowId}`,
+    data: { surfaceId: surface.surfaceId, table: surface.sourceTable, rowId: args.rowId },
   };
 }
 
 export async function deleteCatalogRow(args: {
   surfaceId: string;
-  businessId: string;
   rowId: string;
 }): Promise<CatalogOperationResult> {
   const surface = resolveSurfaceOrFail(args.surfaceId);
-  const denied = await assertBusinessAccess(args.businessId, 'catalog.delete');
+  const ownerBusinessId = await fetchRowBusinessId(surface.sourceTable, args.rowId);
+  const denied = await assertBusinessAccess(ownerBusinessId);
   if (denied) return { ok: false, op: 'deleteCatalogRow', message: denied };
-  let ok = true;
-  try {
-    await removeCmsRecord({ resource: surface.surfaceId, businessId: args.businessId, recordId: args.rowId });
-  } catch {
-    ok = false;
-  }
+  const ok = await deleteRow(surface.sourceTable, args.rowId);
   return {
     ok,
     op: 'deleteCatalogRow',
     message: ok ? `Deleted ${surface.rowLabel} ${args.rowId}` : 'delete failed',
     data: { surfaceId: surface.surfaceId, rowId: args.rowId },
-  };
-}
-
-/** Semantic alias for content edits triggered from a bound catalog card. */
-export async function updateCatalogItem(args: {
-  surfaceId: string;
-  businessId: string;
-  itemId: string;
-  patch: CatalogRowFieldPatch;
-}): Promise<CatalogOperationResult> {
-  const result = await updateCatalogRow({
-    surfaceId: args.surfaceId,
-    businessId: args.businessId,
-    rowId: args.itemId,
-    patch: args.patch,
-  });
-  return { ...result, op: 'updateCatalogItem' as CatalogOperationName };
-}
-
-export async function bindCatalogItemToComponent(args: {
-  businessId: string;
-  projectId: string;
-  snapshotId?: string | null;
-  pagePath: string;
-  componentId: string;
-  slotKey?: string | null;
-  surfaceId: string;
-  itemId: string;
-  presentation?: Partial<CatalogBindingPresentation>;
-  actions?: CatalogBindingActions;
-}): Promise<CatalogOperationResult> {
-  const surface = resolveSurfaceOrFail(args.surfaceId);
-  const [projectDenied, businessDenied] = await Promise.all([
-    assertProjectAccess(args.projectId),
-    assertBusinessAccess(args.businessId, 'artifact.write'),
-  ]);
-  const denied = projectDenied ?? businessDenied;
-  if (denied) return { ok: false, op: 'bindCatalogItemToComponent', message: denied };
-  try {
-    await getCmsRecord({
-      businessId: args.businessId,
-      resource: surface.surfaceId,
-      recordId: args.itemId,
-    });
-  } catch {
-    return {
-      ok: false,
-      op: 'bindCatalogItemToComponent',
-      message: 'The catalog item does not belong to the selected business.',
-    };
-  }
-  const binding = await upsertCatalogCardBinding(args);
-  return {
-    ok: !!binding,
-    op: 'bindCatalogItemToComponent',
-    message: binding ? `Bound catalog item ${args.itemId} to component ${args.componentId}` : 'binding upsert failed',
-    data: binding,
-  };
-}
-
-export async function updateComponentPresentation(args: {
-  bindingId: string;
-  patch: Partial<CatalogBindingPresentation>;
-}): Promise<CatalogOperationResult> {
-  const current = await getBindingById(args.bindingId);
-  if (!current) {
-    return { ok: false, op: 'updateComponentPresentation', message: 'Card binding not found.' };
-  }
-  const denied = current.projectId
-    ? await assertProjectAccess(current.projectId)
-    : await assertBusinessAccess(current.businessId, 'artifact.write');
-  if (denied) return { ok: false, op: 'updateComponentPresentation', message: denied };
-  const binding = await updateCatalogCardPresentation(args.bindingId, args.patch);
-  return {
-    ok: !!binding,
-    op: 'updateComponentPresentation',
-    message: binding ? `Updated presentation for component ${binding.sectionId}` : 'presentation update failed',
-    data: binding,
-  };
-}
-
-export async function updateComponentActions(args: {
-  bindingId: string;
-  actions: CatalogBindingActions;
-}): Promise<CatalogOperationResult> {
-  const current = await getBindingById(args.bindingId);
-  if (!current) {
-    return { ok: false, op: 'updateComponentActions', message: 'Card binding not found.' };
-  }
-  const denied = current.projectId
-    ? await assertProjectAccess(current.projectId)
-    : await assertBusinessAccess(current.businessId, 'artifact.write');
-  if (denied) return { ok: false, op: 'updateComponentActions', message: denied };
-  const binding = await updateCatalogCardBinding(args.bindingId, { actions: args.actions });
-  return {
-    ok: !!binding,
-    op: 'updateComponentActions',
-    message: binding ? `Updated actions for component ${binding.sectionId}` : 'action update failed',
-    data: binding,
   };
 }
 
@@ -438,7 +324,7 @@ export async function updateSectionBinding(args: {
     const scope = await fetchBindingScope(id);
     const denied = scope.projectId
       ? await assertProjectAccess(scope.projectId)
-      : await assertBusinessAccess(scope.businessId, 'artifact.write');
+      : await assertBusinessAccess(scope.businessId);
     if (denied) return { ok: false, op: 'updateSectionBinding', message: denied };
     const dto = await patchBindingById(id, args.patch);
     return {
@@ -462,7 +348,7 @@ export async function updateSectionBinding(args: {
   const upsertBusinessId = (args.upsert as { businessId?: string }).businessId ?? null;
   const denied = upsertProjectId
     ? await assertProjectAccess(upsertProjectId)
-    : await assertBusinessAccess(upsertBusinessId, 'artifact.write');
+    : await assertBusinessAccess(upsertBusinessId);
   if (denied) return { ok: false, op: 'updateSectionBinding', message: denied };
   const dto = await upsertBinding({
     ...args.upsert,
@@ -538,16 +424,8 @@ export async function applyCatalogOperation(
         return await createCatalogRow(args as never);
       case 'updateCatalogRow':
         return await updateCatalogRow(args as never);
-      case 'updateCatalogItem':
-        return await updateCatalogItem(args as never);
       case 'deleteCatalogRow':
         return await deleteCatalogRow(args as never);
-      case 'bindCatalogItemToComponent':
-        return await bindCatalogItemToComponent(args as never);
-      case 'updateComponentPresentation':
-        return await updateComponentPresentation(args as never);
-      case 'updateComponentActions':
-        return await updateComponentActions(args as never);
       case 'updateSectionBinding':
         return await updateSectionBinding(args as never);
       case 'switchSectionCollection':
@@ -605,23 +483,6 @@ const ROW_PATCH_SCHEMA = {
   },
 } as const;
 
-const CARD_PRESENTATION_SCHEMA = {
-  type: 'object',
-  additionalProperties: true,
-  properties: {
-    showImage: { type: 'boolean' },
-    showDescription: { type: 'boolean' },
-    showPrice: { type: 'boolean' },
-    showCTA: { type: 'boolean' },
-    imageAspectRatio: { type: 'string' },
-    layout: { type: 'string' },
-    typography: { type: 'string' },
-    alignment: { type: 'string' },
-    ctaStyle: { type: 'string' },
-    featuredBadge: { type: 'boolean' },
-  },
-} as const;
-
 export const CATALOG_OPERATION_TOOLS = [
   {
     name: 'createCatalogRow',
@@ -643,86 +504,11 @@ export const CATALOG_OPERATION_TOOLS = [
       'Patch fields on an existing catalog row. Prices go in DOLLARS in the patch (converted to cents when needed).',
     parameters: {
       type: 'object',
-      required: ['surfaceId', 'businessId', 'rowId', 'patch'],
+      required: ['surfaceId', 'rowId', 'patch'],
       properties: {
         surfaceId: { type: 'string', enum: SURFACE_IDS },
-        businessId: { type: 'string' },
         rowId: { type: 'string' },
         patch: ROW_PATCH_SCHEMA,
-      },
-    },
-  },
-  {
-    name: 'updateCatalogItem',
-    description:
-      'Update the real catalog record referenced by a rendered card. Use this for content changes, never a TSX text rewrite.',
-    parameters: {
-      type: 'object',
-      required: ['surfaceId', 'businessId', 'itemId', 'patch'],
-      properties: {
-        surfaceId: { type: 'string', enum: SURFACE_IDS },
-        businessId: { type: 'string' },
-        itemId: { type: 'string' },
-        patch: ROW_PATCH_SCHEMA,
-      },
-    },
-  },
-  {
-    name: 'bindCatalogItemToComponent',
-    description:
-      'Bind one generated card component to a real catalog item. The binding is tenant-scoped and is hydrated by preview and published runtime.',
-    parameters: {
-      type: 'object',
-      required: ['businessId', 'projectId', 'pagePath', 'componentId', 'surfaceId', 'itemId'],
-      properties: {
-        businessId: { type: 'string' },
-        projectId: { type: 'string' },
-        snapshotId: { type: ['string', 'null'] },
-        pagePath: { type: 'string' },
-        componentId: { type: 'string' },
-        slotKey: { type: ['string', 'null'] },
-        surfaceId: { type: 'string', enum: SURFACE_IDS },
-        itemId: { type: 'string' },
-        presentation: CARD_PRESENTATION_SCHEMA,
-        actions: {
-          type: 'object',
-          properties: {
-            primary: { type: 'string', enum: ['cart.add', 'booking.start', 'quote.request'] },
-            secondary: { type: 'string', enum: ['catalog.view_details'] },
-          },
-        },
-      },
-    },
-  },
-  {
-    name: 'updateComponentPresentation',
-    description:
-      'Change only how a bound catalog card renders. It never mutates the catalog record.',
-    parameters: {
-      type: 'object',
-      required: ['bindingId', 'patch'],
-      properties: {
-        bindingId: { type: 'string' },
-        patch: CARD_PRESENTATION_SCHEMA,
-      },
-    },
-  },
-  {
-    name: 'updateComponentActions',
-    description:
-      'Change the approved CTA actions for a bound catalog card without mutating catalog content or TSX.',
-    parameters: {
-      type: 'object',
-      required: ['bindingId', 'actions'],
-      properties: {
-        bindingId: { type: 'string' },
-        actions: {
-          type: 'object',
-          properties: {
-            primary: { type: 'string', enum: ['cart.add', 'booking.start', 'quote.request'] },
-            secondary: { type: 'string', enum: ['catalog.view_details'] },
-          },
-        },
       },
     },
   },
@@ -731,10 +517,9 @@ export const CATALOG_OPERATION_TOOLS = [
     description: 'Delete an existing catalog row.',
     parameters: {
       type: 'object',
-      required: ['surfaceId', 'businessId', 'rowId'],
+      required: ['surfaceId', 'rowId'],
       properties: {
         surfaceId: { type: 'string', enum: SURFACE_IDS },
-        businessId: { type: 'string' },
         rowId: { type: 'string' },
       },
     },

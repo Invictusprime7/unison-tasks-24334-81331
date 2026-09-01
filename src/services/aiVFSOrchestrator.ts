@@ -67,8 +67,6 @@ export interface AIApplyResult {
   packageJson: string | null;
   /** Errors encountered */
   errors: string[];
-  /** Files quarantined by the write guard (protected paths / slot violations) */
-  skipped?: Array<{ path: string; reason: string }>;
   /** Timing info */
   timing: {
     depExtractionMs: number;
@@ -133,61 +131,25 @@ function getExistingContent(files: Record<string, string>, path: string): string
   return files[path] ?? files[normalized] ?? files[normalized.replace(/^\/src\//, '/')];
 }
 
-/**
- * Resolve Sandpack-style aliases such as `/pages/Home.tsx` to the canonical
- * source path already owned by the VFS (`/src/pages/Home.tsx`). AI models see
- * both namespaces in preview context; writing the alias creates a shadow file
- * that is never imported by the router even though the VFS write succeeds.
- */
-export function canonicalizeAIFilePaths(
-  aiFiles: Record<string, string>,
-  currentFiles: Record<string, string>,
-): Record<string, string> {
-  const canonical: Record<string, string> = {};
-
-  for (const [rawPath, content] of Object.entries(aiFiles)) {
-    const normalized = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
-    const candidates = normalized.startsWith('/src/')
-      ? [normalized, normalized.replace(/^\/src\//, '/')]
-      : [normalized, `/src${normalized}`];
-    const matchedPath = candidates.find((candidate) => (
-      Object.prototype.hasOwnProperty.call(currentFiles, candidate)
-      || Object.prototype.hasOwnProperty.call(currentFiles, candidate.slice(1))
-    ));
-
-    canonical[matchedPath || normalized] = content;
-  }
-
-  return canonical;
-}
-
 function validateAIFileEdits(
   aiFiles: Record<string, string>,
   currentFiles: Record<string, string>,
-): { appliable: Record<string, string>; skipped: Array<{ path: string; reason: string }> } {
-  // Partition, never reject wholesale. A single protected path or slot
-  // violation inside a multi-file AI response used to discard the entire
-  // batch, so legitimate rewrites never materialized in the VFS or preview.
-  const appliable: Record<string, string> = {};
-  const skipped: Array<{ path: string; reason: string }> = [];
+): string[] {
+  const errors: string[] = [];
   for (const [path, nextContent] of Object.entries(aiFiles)) {
     if (isUnisonProtectedPath(path)) {
-      skipped.push({
-        path,
-        reason:
-          'Auto-generated Unison file — edit CreatorData/Creator Playground inputs instead; this path is regenerated canonically.',
-      });
+      errors.push(
+        `AI edit blocked for auto-generated file ${path}. ` +
+          `Edit CreatorData/Creator Playground inputs; Unison files are regenerated canonically.`,
+      );
       continue;
     }
     const previousContent = getExistingContent(currentFiles, path);
-    const violations = detectSlotBindingViolations(previousContent, nextContent);
-    if (violations.length > 0) {
-      skipped.push({ path, reason: violations.map((violation) => violation.reason).join('; ') });
-      continue;
+    for (const violation of detectSlotBindingViolations(previousContent, nextContent)) {
+      errors.push(`[${path}] ${violation.reason}`);
     }
-    appliable[path] = nextContent;
   }
-  return { appliable, skipped };
+  return errors;
 }
 
 // ============================================================================
@@ -229,25 +191,22 @@ export function applyAIOutputToVFS(
   try {
     // 0. Snapshot current state for undo
     const currentFiles = preserveExisting ? vfs.getSandpackFiles() : {};
-    aiFiles = canonicalizeAIFilePaths(aiFiles, currentFiles);
-    const { appliable, skipped } = validateAIFileEdits(aiFiles, currentFiles);
-    for (const entry of skipped) errors.push(`[${entry.path}] ${entry.reason}`);
-    if (Object.keys(appliable).length === 0) {
-      vfsEventBus.emit('ai:apply:error', { message: errors.join('\n') });
+    const validationErrors = validateAIFileEdits(aiFiles, currentFiles);
+    if (validationErrors.length > 0) {
+      errors.push(...validationErrors);
+      vfsEventBus.emit('ai:apply:error', { message: validationErrors.join('\n') });
       return {
         success: false,
         filesWritten: [],
         dependencies: createEmptyDeps(),
         packageJson: null,
         errors,
-        skipped,
         timing: {
           depExtractionMs: 0,
           totalMs: performance.now() - startTime,
         },
       };
     }
-    aiFiles = appliable;
     vfsSnapshotManager.createSnapshot(currentFiles, `Before AI edit (${Object.keys(aiFiles).length} files)`, 'ai');
 
     // 1. Merge AI output with existing files (after repairing common AI typos
@@ -308,7 +267,6 @@ export function applyAIOutputToVFS(
       dependencies: depExtraction || createEmptyDeps(),
       packageJson: mergedFiles['/package.json'] || null,
       errors,
-      skipped,
       timing: {
         depExtractionMs,
         totalMs: performance.now() - startTime,

@@ -176,8 +176,34 @@ function createCRMManager(businessId: string): IntentManagers['crm'] {
 
 function createBookingManager(businessId: string): IntentManagers['booking'] {
   return {
-    createBooking: async (_data: BookingData) => {
-      throw new Error('Booking writes require the generated site-runtime adapter.');
+    createBooking: async (data: BookingData) => {
+      console.log('[Booking] Creating booking:', data);
+      
+      if (supabase) {
+        const { data: booking, error } = await supabase
+          .from('bookings')
+          .insert({
+            business_id: businessId,
+            service_id: data.serviceId,
+            scheduled_at: data.datetime,
+            customer_name: data.customerName,
+            customer_email: data.customerEmail,
+            customer_phone: data.customerPhone,
+            notes: data.notes,
+            status: 'pending',
+          })
+          .select()
+          .single();
+
+        if (error) {
+          console.error('[Booking] Failed to create:', error);
+          throw error;
+        }
+
+        return { bookingId: booking.id };
+      }
+
+      return { bookingId: `booking_${Date.now()}` };
     },
 
     getServices: async () => {

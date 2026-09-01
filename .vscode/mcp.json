@@ -18,7 +18,7 @@
     {
       "id": "supabaseAccessToken",
       "type": "promptString",
-      "description": "Supabase personal access token for the UNISON-TASKS MCP server",
+      "description": "Supabase Personal Access Token — generate at https://supabase.com/dashboard/account/tokens",
       "password": true
     }
   ]

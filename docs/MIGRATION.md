@@ -119,8 +119,10 @@ No setup needed - database is already configured.
 
 4. **Deploy Edge Functions**
    ```bash
+   supabase functions deploy generate-ai-template
    supabase functions deploy generate-image
    supabase functions deploy generate-template-image
+   supabase functions deploy generate-template
    ```
 
 5. **Set Secrets**

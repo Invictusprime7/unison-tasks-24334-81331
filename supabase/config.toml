@@ -7,12 +7,23 @@ verify_jwt = true
 verify_jwt = false
 
 
+[functions.ai-design-assistant]
+verify_jwt = true
+
 [functions.generate-image]
+verify_jwt = true
+
+[functions.generate-ai-template]
+verify_jwt = true
+
+[functions.generate-template]
 verify_jwt = true
 
 [functions.generate-template-image]
 verify_jwt = true
 
+[functions.generate-page]
+verify_jwt = true
 
 [functions.copy-rewrite]
 verify_jwt = true
@@ -24,9 +35,6 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.ai-code-assistant]
-verify_jwt = false
-
-[functions.builder-request-interpreter]
 verify_jwt = false
 
 # Removed: [functions.ai-web-assistant] - unused (0 call sites)
@@ -47,12 +55,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.form-submit]
-verify_jwt = false
-
-[functions.site-runtime-read]
-verify_jwt = false
-
-[functions.site-runtime]
 verify_jwt = false
 
 [functions.research]
@@ -76,12 +78,6 @@ verify_jwt = true
 [functions.install-system]
 verify_jwt = true
 
-[functions.provision-launch-site]
-verify_jwt = true
-
-[functions.reconcile-generated-runtime]
-verify_jwt = true
-
 [functions.automation-event]
 verify_jwt = false
 
@@ -94,8 +90,11 @@ verify_jwt = true
 [functions.builder-provision]
 verify_jwt = true
 
-[functions.cms-records]
+[functions.builder-provision-lite]
 verify_jwt = true
+
+[functions.create-booking]
+verify_jwt = false
 
 [functions.create-lead]
 verify_jwt = false
@@ -106,7 +105,13 @@ verify_jwt = false
 [functions.create-order-checkout]
 verify_jwt = false
 
+[functions.generate-fullstack-app]
+verify_jwt = true
+
 [functions.intent-action]
+verify_jwt = false
+
+[functions.intent-booking]
 verify_jwt = false
 
 [functions.intent-router]
@@ -143,7 +148,4 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.ai-builder-apply]
-verify_jwt = true
-
-[functions.capability-migration-apply]
 verify_jwt = true

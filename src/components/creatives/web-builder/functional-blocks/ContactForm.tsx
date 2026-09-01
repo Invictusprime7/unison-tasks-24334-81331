@@ -1,12 +1,12 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { useWorkflowTrigger } from '@/hooks/useWorkflowTrigger';
 import { supabase as supabaseClient } from '@/integrations/supabase/client';
-import type { UnisonRuntimeContext } from '@/platform/core/runtimeManifest';
 const supabase = supabaseClient as any;
 import { Send, CheckCircle } from 'lucide-react';
 
@@ -18,11 +18,6 @@ interface ContactFormProps {
   submitButtonText?: string;
   primaryColor?: string;
   workflowId?: string;
-  runtimeContext?: UnisonRuntimeContext;
-  intent?: 'contact.submit' | 'quote.request' | 'booking.request' | 'newsletter.subscribe' | 'application.submit';
-  pageId?: string;
-  componentId?: string;
-  consentMetadata?: Record<string, unknown>;
   fields?: Array<{
     name: string;
     label: string;
@@ -47,23 +42,14 @@ export const ContactForm: React.FC<ContactFormProps> = ({
   description = 'Fill out the form below and we\'ll get back to you soon.',
   submitButtonText = 'Send Message',
   primaryColor = '#3b82f6',
-  runtimeContext,
-  intent = 'contact.submit',
-  pageId,
-  componentId,
-  consentMetadata = {},
+  workflowId,
   fields = defaultFields,
   onSubmit
 }) => {
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [honeypot, setHoneypot] = useState('');
-  const idempotencyKeyRef = useRef(
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `form-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
+  const { triggerFormSubmit } = useWorkflowTrigger();
 
   const handleChange = (name: string, value: string) => {
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -74,34 +60,20 @@ export const ContactForm: React.FC<ContactFormProps> = ({
     setSubmitting(true);
 
     try {
-      if (!runtimeContext) {
-        throw new Error('This form is missing its canonical runtime context.');
-      }
-      const url = new URL(window.location.href);
+      // Call the form-submit edge function
       const { error } = await supabase.functions.invoke('form-submit', {
         body: {
-          businessId: runtimeContext.businessId,
-          projectId: runtimeContext.projectId,
-          siteId: runtimeContext.siteId,
-          snapshotId: runtimeContext.snapshotId,
           formId,
           formName,
-          intent,
-          pageId,
-          componentId,
           data: formData,
-          sourceUrl: window.location.href,
-          referrer: document.referrer || undefined,
-          utmSource: url.searchParams.get('utm_source') || undefined,
-          utmMedium: url.searchParams.get('utm_medium') || undefined,
-          utmCampaign: url.searchParams.get('utm_campaign') || undefined,
-          consentMetadata,
-          idempotencyKey: idempotencyKeyRef.current,
-          honeypot,
+          sourceUrl: window.location.href
         }
       });
 
       if (error) throw error;
+
+      // Trigger workflow if configured
+      await triggerFormSubmit(formId, formName, formData, workflowId);
 
       // Call custom onSubmit handler if provided
       if (onSubmit) {
@@ -133,9 +105,6 @@ export const ContactForm: React.FC<ContactFormProps> = ({
             onClick={() => {
               setSubmitted(false);
               setFormData({});
-              idempotencyKeyRef.current = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-                ? crypto.randomUUID()
-                : `form-${Date.now()}-${Math.random().toString(36).slice(2)}`;
             }}
           >
             Send Another Message
@@ -155,17 +124,6 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="sr-only" aria-hidden="true">
-            <Label htmlFor={`${formId}-website`}>Website</Label>
-            <Input
-              id={`${formId}-website`}
-              name="website"
-              tabIndex={-1}
-              autoComplete="off"
-              value={honeypot}
-              onChange={(event) => setHoneypot(event.target.value)}
-            />
-          </div>
           {fields.map((field) => (
             <div key={field.name} className="space-y-2">
               <Label htmlFor={field.name}>

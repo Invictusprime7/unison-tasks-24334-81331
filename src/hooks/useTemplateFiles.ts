@@ -13,9 +13,38 @@ import { toast } from "sonner";
 import { Json } from "@/integrations/supabase/types";
 import { syncCanonicalComponentGraph } from "@/services/componentGraphPersistence";
 import { findBuilderDraftIdForProject } from "@/services/builderDraftBridge";
-import { migrateFrameworkVfs } from "@/services/frameworkVfsMigration";
-import { commitMutation } from "@/services/vfsCommitService";
-import { legacyFilesToPatchPlan } from "@/types/patchPlan";
+import { generateCanonicalRouterForFiles } from "@/utils/topologyRouterGenerator";
+import type { PageRegistry } from "@/types/pageRegistry";
+import { createMinimalValidSnapshot } from "@/platform/core/canonicalRuntimeContract";
+
+/**
+ * Pass 1 (Canonical Preview Enforcement): if a draft is being created without
+ * a SiteBundleSnapshot AND without wizard evidence in metadata, mint a real
+ * minimal snapshot up-front so canonical preview / readiness / publish never
+ * have to fall back to a fabricated shell at render time. Blank drafts now
+ * enter the system already-canonical.
+ */
+function bootstrapSnapshotIfMissing(
+  metadata: Record<string, unknown>,
+  payload?: SaveProjectPayload,
+  projectName?: string,
+): Record<string, unknown> {
+  if (payload?.siteBundleSnapshot) return metadata;
+  if (metadata.siteBundleSnapshot) return metadata;
+  // Honor explicit wizard handoff if present — wizard pipeline mints its own.
+  if (metadata.wizardSeedId || metadata.canonicalPlayground) return metadata;
+  try {
+    const snapshot = createMinimalValidSnapshot({
+      businessName: projectName || 'Untitled project',
+      themePresetId: (metadata.themePresetId as string) || 'default',
+      systemId: (metadata.systemId as string) || 'manual',
+    });
+    return { ...metadata, siteBundleSnapshot: snapshot as unknown as Record<string, unknown> };
+  } catch (err) {
+    console.warn('[useTemplateFiles] minimal snapshot bootstrap failed:', err);
+    return metadata;
+  }
+}
 
 interface TemplateData {
   html: string;
@@ -27,12 +56,6 @@ interface TemplateData {
   activePagePath?: string;
   canonicalPlayground?: Record<string, unknown>;
   siteBundleSnapshot?: Record<string, unknown>;
-  runtimeManifest?: Record<string, unknown>;
-  businessRuntime?: Record<string, unknown>;
-  businessId?: string;
-  projectId?: string;
-  draftId?: string;
-  siteId?: string;
   version?: number;
 }
 
@@ -56,17 +79,6 @@ export interface SaveProjectPayload {
   canonicalPlayground?: Record<string, unknown>;
   siteBundleSnapshot?: unknown;
   metadata?: Record<string, unknown>;
-  /**
-   * When true, `saveTemplate` skips the existing-draft lookup and always
-   * INSERTs a fresh row. Used by the "Save as New" action so cloning a
-   * project doesn't silently overwrite the currently-open draft.
-   */
-  forceNew?: boolean;
-  /**
-   * Background/auto-saves set this so a failure never spams the user with
-   * toasts. Errors are still logged and surfaced through the return value.
-   */
-  silent?: boolean;
 }
 
 const LOCAL_STORAGE_KEY = "webbuilder_templates";
@@ -93,112 +105,6 @@ function emitCloudDraftSaved(detail: {
   window.dispatchEvent(new CustomEvent('unison:project-draft-saved', { detail }));
 }
 
-/** True for network-level/transient failures worth a single automatic retry. */
-function isTransientSaveError(error: unknown): boolean {
-  const candidate = error as { message?: string; code?: string; status?: number } | null;
-  const message = (candidate?.message || '').toLowerCase();
-  if (candidate?.status && candidate.status >= 500) return true;
-  return (
-    message.includes('failed to fetch') ||
-    message.includes('network') ||
-    message.includes('timeout') ||
-    message.includes('load failed') ||
-    candidate?.code === 'PGRST301' // Postgrest: JWT expired mid-request race, worth one retry after refresh
-  );
-}
-
-/** True when a Postgres foreign-key violation is on the business_id column. */
-function isBusinessIdForeignKeyViolation(error: unknown): boolean {
-  const candidate = error as { code?: string; message?: string; details?: string } | null;
-  if (candidate?.code !== '23503') return false;
-  const haystack = `${candidate?.message || ''} ${candidate?.details || ''}`.toLowerCase();
-  return haystack.includes('business_id');
-}
-
-async function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Persist real VFS/snapshot content as a canonical revision. builder_drafts
- * content columns (vfs_files, metadata.siteBundleSnapshot/runtimeManifest/
- * activePagePath) are only ever written by commitMutation — never by this
- * hook's identity/name writes — so the schema's canonical-projection trigger
- * never sees a divergent draft row.
- */
-async function commitProjectContent(input: {
-  userId: string;
-  draftId: string;
-  businessId: string | null | undefined;
-  projectId: string | null | undefined;
-  lastRevisionId: string | null | undefined;
-  payload: SaveProjectPayload;
-  summary: string;
-}): Promise<void> {
-  if (!input.businessId || !input.projectId) {
-    throw new Error('Canonical content requires a linked business and project.');
-  }
-  const vfsFiles = input.payload.vfsFiles;
-  if (!vfsFiles) return;
-  const commit = await commitMutation({
-    source: 'playground-edit',
-    identity: {
-      userId: input.userId,
-      businessId: input.businessId,
-      projectId: input.projectId,
-      draftId: input.draftId,
-      revisionId: input.lastRevisionId || '',
-      sessionId: `template-save:${input.draftId}`,
-    },
-    current: {
-      vfsFiles,
-      siteBundleSnapshot: input.payload.siteBundleSnapshot ?? undefined,
-      activePagePath: input.payload.activePagePath,
-    },
-    patch: legacyFilesToPatchPlan(vfsFiles, input.summary),
-    options: {
-      requirePreviewPass: true,
-      requireReadinessPass: false,
-    },
-  });
-  if (!commit.persistedRevisionId) {
-    throw new Error('Canonical save did not persist a revision.');
-  }
-}
-
-/**
- * Runs a builder_drafts write (insert/update) with hardening:
- *  - retries transient/network failures with backoff (up to 3 attempts total)
- *  - if a stale/invalid business_id causes a foreign-key violation, drops it
- *    and retries once rather than failing the whole save
- * `payload` is mutated in place when the business_id fallback kicks in, so
- * callers building metadata from it afterwards see the corrected value.
- */
-async function executeDraftWrite<T>(
-  payload: Record<string, unknown>,
-  run: (payload: Record<string, unknown>) => PromiseLike<{ data: T | null; error: unknown }>,
-): Promise<{ data: T | null; error: unknown }> {
-  let attempt = 0;
-  let lastError: unknown = null;
-  while (attempt < 3) {
-    attempt += 1;
-    const { data, error } = await run(payload);
-    if (!error) return { data, error: null };
-    lastError = error;
-    if (isBusinessIdForeignKeyViolation(error) && payload.business_id !== null && payload.business_id !== undefined) {
-      console.warn('[useTemplateFiles] business_id FK violation on write — retrying without it:', error);
-      payload.business_id = null;
-      continue;
-    }
-    if (isTransientSaveError(error) && attempt < 3) {
-      await delay(300 * attempt);
-      continue;
-    }
-    break;
-  }
-  return { data: null, error: lastError };
-}
-
 /** Build the v2 canvas_data envelope. Always includes the legacy fields for fallback rendering. */
 const buildCanvasData = (code: string, payload?: SaveProjectPayload): TemplateData => ({
   version: 2,
@@ -212,7 +118,7 @@ const buildCanvasData = (code: string, payload?: SaveProjectPayload): TemplateDa
 });
 
 /** Convert a builder_drafts row to a SavedTemplate envelope. */
-export const draftRowToTemplate = (row: any): SavedTemplate => {
+const draftRowToTemplate = (row: any): SavedTemplate => {
   const meta = (row.metadata || {}) as Record<string, any>;
   const vfsFiles = (
     row.vfs_files ||
@@ -237,12 +143,6 @@ export const draftRowToTemplate = (row: any): SavedTemplate => {
       activePagePath: meta.activePagePath,
       canonicalPlayground: (meta.canonicalPlayground || undefined) as Record<string, unknown> | undefined,
       siteBundleSnapshot: (meta.siteBundleSnapshot || undefined) as Record<string, unknown> | undefined,
-      runtimeManifest: (meta.runtimeManifest || undefined) as Record<string, unknown> | undefined,
-      businessRuntime: (meta.businessRuntime || undefined) as Record<string, unknown> | undefined,
-      businessId: row.business_id || undefined,
-      projectId: row.project_id || undefined,
-      draftId: row.id,
-      siteId: row.site_id || meta.siteId || undefined,
     },
   };
 };
@@ -292,46 +192,28 @@ export function useTemplateFiles() {
       // argument always wins over any stale metadata fallback (e.g. a wizard
       // "My Business" placeholder). Never fall back to a business name here.
       const trimmedName = (name || '').trim() || 'Untitled project';
-      const forceNew = payload?.forceNew === true;
-      // "Save as new" MUST NOT inherit the source project's id — otherwise the
-      // DB trigger updates the same projects row instead of creating a copy.
-      const effectiveProjectId = forceNew ? null : (payload?.projectId ?? null);
-      const incomingMeta = { ...(payload?.metadata || {}) } as Record<string, unknown>;
-      if (forceNew) {
-        delete incomingMeta.projectId;
-        delete (incomingMeta as Record<string, unknown>).project_id;
-        delete (incomingMeta as Record<string, unknown>).linkedProjectId;
-      }
-      // Identity-only metadata. Canonical content (vfs_files, siteBundleSnapshot,
-      // runtimeManifest, activePagePath) is never written here — commitMutation
-      // is the only legal writer for that content, invoked below once identity
-      // exists, so the schema's canonical-projection trigger never rejects
-      // this write for diverging from a committed revision.
-      const metadata: Record<string, unknown> = {
+      const incomingMeta = (payload?.metadata || {}) as Record<string, unknown>;
+      const baseMeta: Record<string, unknown> = {
         ...incomingMeta,
         name: trimmedName,
         projectName: trimmedName,
         description: description || null,
         entryPoint: payload?.entryPoint,
-        projectId: effectiveProjectId,
+        activePagePath: payload?.activePagePath,
+        projectId: payload?.projectId ?? null,
+        canonicalPlayground: payload?.canonicalPlayground ?? null,
+        siteBundleSnapshot: payload?.siteBundleSnapshot ?? null,
       };
-      if (forceNew) {
-        metadata.clonedFromDraftId = payload?.metadata && typeof payload.metadata === 'object'
-          ? ((payload.metadata as Record<string, unknown>).sourceDraftId ?? null)
-          : null;
-        metadata.clonedAt = new Date().toISOString();
-      }
+      const metadata = bootstrapSnapshotIfMissing(baseMeta, payload, trimmedName) as unknown as Json;
 
       // If a draft already exists for this (user, business, project), update it instead of inserting.
       // This prevents `uq_builder_drafts_user_business*` collisions when users save multiple times
       // or rename a project — saving must always succeed and never lose state.
-      // EXCEPTION: `forceNew` (Save as New) always inserts a fresh row.
       let existingDraftId: string | null = null;
-      let existingRevisionId: string | null = null;
-      if (!forceNew) {
+      {
         let lookup = supabase
           .from("builder_drafts")
-          .select("id, last_revision_id")
+          .select("id")
           .eq("user_id", user.id)
           .order("updated_at", { ascending: false })
           .limit(1);
@@ -346,85 +228,67 @@ export function useTemplateFiles() {
 
         const { data: existingRow } = await lookup.maybeSingle();
         existingDraftId = existingRow?.id ?? null;
-        existingRevisionId = (existingRow as { last_revision_id?: string | null } | null)?.last_revision_id ?? null;
       }
 
-      let data: { id: string; project_id?: string | null; business_id?: string | null } | null = null;
+      let data: { id: string; project_id?: string | null } | null = null;
 
       if (existingDraftId) {
         const updatePayload: Record<string, unknown> = {
           name: trimmedName,
           code,
           editor_code: code,
-          metadata: metadata as unknown as Json,
+          vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
+          metadata,
           updated_at: new Date().toISOString(),
         };
         if (payload?.businessId !== undefined) updatePayload.business_id = payload.businessId;
         if (payload?.projectId !== undefined) updatePayload.project_id = payload.projectId;
-        const { data: updated, error: updateError } = await executeDraftWrite<{ id: string; project_id?: string | null; business_id?: string | null }>(
-          updatePayload,
-          (p) => supabase
-            .from("builder_drafts")
-            .update(p)
-            .eq("id", existingDraftId)
-            .eq("user_id", user.id)
-            .select("id, project_id, business_id")
-            .single(),
-        );
+        const { data: updated, error: updateError } = await supabase
+          .from("builder_drafts")
+          .update(updatePayload)
+          .eq("id", existingDraftId)
+          .eq("user_id", user.id)
+          .select("id, project_id, business_id")
+          .single();
         if (updateError) throw updateError;
-        data = updated as { id: string; project_id?: string | null; business_id?: string | null };
+        data = updated as { id: string; project_id?: string | null };
       } else {
-        const insertPayload: Record<string, unknown> = {
-          name: trimmedName,
-          user_id: user.id,
-          business_id: payload?.businessId ?? null,
-          project_id: effectiveProjectId,
-          code,
-          editor_code: code,
-          metadata: metadata as unknown as Json,
-        };
-        const { data: inserted, error: insertError } = await executeDraftWrite<{ id: string; project_id?: string | null; business_id?: string | null }>(
-          insertPayload,
-          (p) => supabase
-            .from("builder_drafts")
-            .insert(p)
-            .select("id, project_id, business_id")
-            .single(),
-        );
+        const { data: inserted, error: insertError } = await supabase
+          .from("builder_drafts")
+          .insert({
+            name: trimmedName,
+            user_id: user.id,
+            business_id: payload?.businessId ?? null,
+            project_id: payload?.projectId ?? null,
+            code,
+            editor_code: code,
+            vfs_files: (payload?.vfsFiles ?? null) as unknown as Json,
+            metadata,
+          })
+          .select("id, project_id, business_id")
+          .single();
         if (insertError) throw insertError;
-        data = inserted as { id: string; project_id?: string | null; business_id?: string | null };
+        data = inserted as { id: string; project_id?: string | null };
       }
 
       if (!data) throw new Error("Failed to persist draft");
 
-      const resolvedBusinessId = data.business_id ?? payload?.businessId ?? null;
-      const resolvedProjectId = data.project_id ?? payload?.projectId ?? null;
-
-      if (payload?.vfsFiles) {
-        await commitProjectContent({
-          userId: user.id,
-          draftId: data.id,
-          businessId: resolvedBusinessId,
-          projectId: resolvedProjectId,
-          lastRevisionId: existingDraftId ? existingRevisionId : null,
-          payload,
-          summary: forceNew ? `Save "${trimmedName}" as new project` : `Save "${trimmedName}"`,
-        });
-      }
-
       await syncCanonicalComponentGraph({
-        businessId: resolvedBusinessId,
-        projectId: resolvedProjectId,
+        projectId: (data as { project_id?: string | null }).project_id ?? payload?.projectId ?? null,
         draftId: data.id,
         canonicalPlayground: payload?.canonicalPlayground,
       });
 
       setCurrentDraftId(data.id);
+      const resolvedProjectId =
+        (data as { project_id?: string | null }).project_id ??
+        payload?.projectId ??
+        null;
       setCurrentProjectId(resolvedProjectId);
       emitCloudDraftSaved({
         draftId: data.id,
         projectId: resolvedProjectId,
-        businessId: resolvedBusinessId,
+        businessId: payload?.businessId ?? null,
       });
       toast.success("Project saved!", {
         description: `"${name}" has been saved successfully`,
@@ -432,17 +296,7 @@ export function useTemplateFiles() {
       return data.id;
     } catch (error) {
       console.error("Error saving project:", error);
-      if (isTransientSaveError(error)) {
-        toast.error("Network issue while saving", {
-          description: "Check your connection and try Save again.",
-        });
-      } else if (error instanceof Error && error.message.includes('Canonical')) {
-        toast.error("Project identity saved, but content could not be committed", {
-          description: error.message,
-        });
-      } else {
-        toast.error("Failed to save project");
-      }
+      toast.error("Failed to save project");
       return null;
     } finally {
       setLoading(false);
@@ -472,21 +326,10 @@ export function useTemplateFiles() {
         throw new Error("Project not found");
       }
 
-      // Hardening: verify there is an active, authenticated session before
-      // attempting a cloud write. Previously this call relied entirely on
-      // RLS to reject unauthenticated/expired-session updates, which surfaced
-      // as a confusing "Draft ... access or linkage is invalid" error with
-      // no indication that the fix is simply signing in again.
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        throw new Error("SESSION_EXPIRED");
-      }
-
-      // Read existing identity so we can merge name/description and resolve
-      // the parent revision commitProjectContent must chain from.
+      // Read existing metadata so we can merge name/description.
       const { data: existing } = await supabase
         .from("builder_drafts")
-        .select("metadata, last_revision_id, project_id, business_id")
+        .select("metadata")
         .eq("id", id)
         .maybeSingle();
 
@@ -502,14 +345,13 @@ export function useTemplateFiles() {
         ''
       ).trim();
 
-      // Identity-only metadata merge. Canonical content keys (siteBundleSnapshot,
-      // runtimeManifest, activePagePath) are deliberately left untouched here —
-      // commitProjectContent below is the only writer for those, so this row
-      // never diverges from its last committed revision.
       const nextMeta = {
         ...prevMeta,
         ...(payload?.entryPoint ? { entryPoint: payload.entryPoint } : {}),
+        ...(payload?.activePagePath ? { activePagePath: payload.activePagePath } : {}),
         ...(payload?.projectId !== undefined ? { projectId: payload.projectId } : {}),
+        ...(payload?.canonicalPlayground !== undefined ? { canonicalPlayground: payload.canonicalPlayground } : {}),
+        ...(payload?.siteBundleSnapshot !== undefined ? { siteBundleSnapshot: payload.siteBundleSnapshot } : {}),
         ...incomingMeta,
         ...(resolvedName ? { name: resolvedName, projectName: resolvedName } : {}),
       } as unknown as Json;
@@ -523,84 +365,39 @@ export function useTemplateFiles() {
       if (resolvedName) {
         updatePatch.name = resolvedName;
       }
+      if (payload?.vfsFiles !== undefined) {
+        updatePatch.vfs_files = payload.vfsFiles as unknown as Json;
+      }
       if (payload?.businessId !== undefined) updatePatch.business_id = payload.businessId;
       if (payload?.projectId !== undefined) updatePatch.project_id = payload.projectId;
 
-      // Hardening: retry on transient network errors, and drop business_id
-      // if it turns out to reference a business row that no longer exists
-      // (e.g. a stale/local preview id was persisted by an older bug) — a
-      // save should never be blocked by a broken secondary linkage when the
-      // code itself is safe to persist.
-      const { data: updatedDraft, error: lastError } = await executeDraftWrite<{ id: string; project_id: string | null; business_id: string | null }>(
-        updatePatch,
-        (p) => supabase
-          .from("builder_drafts")
-          .update(p)
-          .eq("id", id)
-          .eq("user_id", user.id)
-          .select("id, project_id, business_id")
-          .maybeSingle(),
-      );
+      const { data: updatedDraft, error } = await supabase
+        .from("builder_drafts")
+        .update(updatePatch)
+        .eq("id", id)
+        .select("id, project_id, business_id")
+        .maybeSingle();
 
-      if (lastError) {
-        throw lastError;
+      if (error) {
+        throw error;
       }
-      if (!updatedDraft) {
-        throw new Error(`Draft ${id} was not updated; access or linkage is invalid.`);
-      }
-      const resolvedBusinessId = updatedDraft.business_id ?? payload?.businessId ?? null;
-      const resolvedProjectId = updatedDraft.project_id ?? payload?.projectId ?? null;
-
-      if (payload?.vfsFiles) {
-        await commitProjectContent({
-          userId: user.id,
-          draftId: id,
-          businessId: resolvedBusinessId,
-          projectId: resolvedProjectId,
-          lastRevisionId: (existing as { last_revision_id?: string | null } | null)?.last_revision_id ?? null,
-          payload,
-          summary: resolvedName ? `Update "${resolvedName}"` : 'Update project',
-        });
-      }
-
-      setCurrentProjectId(resolvedProjectId);
+      if (!updatedDraft) throw new Error(`Draft ${id} was not updated; access or linkage is invalid.`);
+      setCurrentProjectId(updatedDraft.project_id ?? payload?.projectId ?? null);
       await syncCanonicalComponentGraph({
-        businessId: resolvedBusinessId,
-        projectId: resolvedProjectId,
+        projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
         draftId: id,
         canonicalPlayground: payload?.canonicalPlayground,
       });
       emitCloudDraftSaved({
         draftId: id,
-        projectId: resolvedProjectId,
-        businessId: resolvedBusinessId,
+        projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
+        businessId: updatedDraft.business_id ?? payload?.businessId ?? null,
       });
-      if (!payload?.silent) toast.success("Project updated!");
+      toast.success("Project updated!");
       return true;
     } catch (error) {
       console.error("Error updating project:", error);
-      if (payload?.silent) {
-        return false;
-      }
-      if (error instanceof Error && error.message === "SESSION_EXPIRED") {
-        toast.error("Your session has expired", {
-          description: "Please sign in again, then click Update to save your changes.",
-        });
-      } else if (error instanceof Error && error.message.includes('access or linkage is invalid')) {
-        toast.error("Couldn't reconnect to this project", {
-          description: "Reload the page to relink your workspace, then try Update again.",
-        });
-      } else if (error instanceof Error && error.message.includes('Canonical')) {
-        toast.error("Project identity updated, but content could not be committed", {
-          description: error.message,
-        });
-      } else if (isTransientSaveError(error)) {
-        toast.error("Network issue while saving", {
-          description: "Check your connection and click Update to retry.",
-        });
-      } else {
-        toast.error("Failed to update project");
-      }
+      toast.error("Failed to update project");
       return false;
     } finally {
       setLoading(false);
@@ -657,12 +454,12 @@ export function useTemplateFiles() {
         .maybeSingle();
 
       if (draftErr && draftErr.code !== "PGRST116") {
-        // PGRST116 = no rows; anything else is a real error, but legacy/project lookup can still recover.
+        // PGRST116 = no rows; anything else is a real error
         console.warn("[useTemplateFiles] builder_drafts lookup error:", draftErr);
       }
 
       let draft = draftById;
-      if (!draft) {
+      if (!draft && !draftErr) {
         const { data: draftByProject, error: projectLookupError } = await supabase
           .from("builder_drafts")
           .select("*")
@@ -677,42 +474,15 @@ export function useTemplateFiles() {
       }
 
       if (draft) {
-        const frameworkMigration = migrateFrameworkVfs({
-          vfsFiles: draft.vfs_files as Record<string, string> | null,
-          metadata: draft.metadata as Record<string, unknown> | null,
-        });
-        let hydratedDraft = draft;
-        if (frameworkMigration.changed) {
-          const { data: persistedDraft, error: persistError } = await supabase
-            .from("builder_drafts")
-            .update({
-              vfs_files: frameworkMigration.vfsFiles as unknown as Json,
-              metadata: frameworkMigration.metadata as unknown as Json,
-            })
-            .eq("id", draft.id)
-            .select("*")
-            .maybeSingle();
-          if (persistError) {
-            console.warn('[useTemplateFiles] framework VFS migration persistence failed:', persistError);
-          } else if (persistedDraft) {
-            hydratedDraft = persistedDraft;
-          } else {
-            hydratedDraft = {
-              ...draft,
-              vfs_files: frameworkMigration.vfsFiles as unknown as Json,
-              metadata: frameworkMigration.metadata as unknown as Json,
-            };
-          }
-        }
         setCurrentDraftId(draft.id);
         const draftProjectId =
-          (hydratedDraft as { project_id?: string | null }).project_id ??
-          ((hydratedDraft.metadata as Record<string, unknown> | null)?.projectId as
+          (draft as { project_id?: string | null }).project_id ??
+          ((draft.metadata as Record<string, unknown> | null)?.projectId as
             | string
             | undefined) ??
           null;
         setCurrentProjectId(draftProjectId ?? null);
-        return draftRowToTemplate(hydratedDraft);
+        return draftRowToTemplate(draft);
       }
 
       // Legacy fallback: design_templates (read-only)
@@ -720,12 +490,8 @@ export function useTemplateFiles() {
         .from("design_templates")
         .select("*")
         .eq("id", id)
-        .maybeSingle();
-      if (legacyErr && legacyErr.code !== "PGRST116") throw legacyErr;
-      if (!legacy) {
-        console.warn("[useTemplateFiles] project not found in canonical or legacy stores:", id);
-        return null;
-      }
+        .single();
+      if (legacyErr) throw legacyErr;
 
       const template: SavedTemplate = {
         ...legacy,
@@ -767,6 +533,133 @@ export function useTemplateFiles() {
     }
   }, []);
 
+  const autoSave = useCallback(async (code: string, payload?: SaveProjectPayload): Promise<boolean> => {
+    if (!currentDraftId) return false;
+    try {
+      if (currentDraftId.startsWith("local-")) {
+        const localTemplates = getLocalTemplates();
+        const index = localTemplates.findIndex(t => t.id === currentDraftId);
+        if (index !== -1) {
+          localTemplates[index] = {
+            ...localTemplates[index],
+            canvas_data: buildCanvasData(code, payload),
+            updated_at: new Date().toISOString(),
+          };
+          saveLocalTemplates(localTemplates);
+          return true;
+        }
+        return false;
+      }
+
+      // ── Deterministic router last-mile guard ──────────────────────────────
+      // The PageRegistry-version effect in WebBuilder regenerates /src/App.tsx
+      // on every structural mutation, and buildSavePayload's commitToPipeline
+      // recompiles the router on every save. As a defensive third line, before
+      // we persist the draft we re-derive the canonical router from the
+      // payload's canonicalPlayground.pageRegistry and overwrite the App.tsx
+      // entry in vfsFiles if it has drifted. This guarantees the saved draft
+      // never carries a stale or AI-authored router that disagrees with the
+      // current page registry.
+      let vfsFilesForSave: Record<string, string> | undefined =
+        (payload?.vfsFiles as Record<string, string> | undefined) ?? undefined;
+      try {
+        const cp = (payload?.canonicalPlayground || {}) as Record<string, unknown>;
+        const registry = cp.pageRegistry as PageRegistry | undefined;
+        if (
+          vfsFilesForSave &&
+          registry &&
+          registry.pages &&
+          Object.keys(registry.pages).length > 0
+        ) {
+          const businessName =
+            (((cp.creatorData || {}) as Record<string, unknown>).businessInfo as
+              | Record<string, unknown>
+              | undefined)?.businessName as string | undefined;
+          const fresh = generateCanonicalRouterForFiles(
+            registry,
+            vfsFilesForSave,
+            businessName,
+          );
+          const appPath = vfsFilesForSave['/src/App.tsx']
+            ? '/src/App.tsx'
+            : vfsFilesForSave['/App.tsx']
+              ? '/App.tsx'
+              : '/src/App.tsx';
+          if (fresh && fresh !== vfsFilesForSave[appPath]) {
+            vfsFilesForSave = { ...vfsFilesForSave, [appPath]: fresh };
+            console.log('[useTemplateFiles.autoSave] Re-derived canonical router before save:', appPath);
+          }
+        }
+      } catch (err) {
+        console.warn('[useTemplateFiles.autoSave] Router re-derivation skipped:', err);
+      }
+
+      const updatePatch: Record<string, unknown> = {
+        code,
+        editor_code: code,
+        updated_at: new Date().toISOString(),
+      };
+      if (vfsFilesForSave !== undefined) {
+        updatePatch.vfs_files = vfsFilesForSave as unknown as Json;
+      }
+      if (payload?.businessId !== undefined) updatePatch.business_id = payload.businessId;
+      if (payload?.projectId !== undefined) updatePatch.project_id = payload.projectId;
+      if (
+        payload?.entryPoint !== undefined ||
+        payload?.activePagePath !== undefined ||
+        payload?.projectId !== undefined ||
+        payload?.canonicalPlayground !== undefined ||
+        payload?.siteBundleSnapshot !== undefined ||
+        payload?.metadata
+      ) {
+        const { data: existing } = await supabase
+          .from("builder_drafts")
+          .select("metadata")
+          .eq("id", currentDraftId)
+          .maybeSingle();
+
+        const prevMeta = (existing?.metadata || {}) as Record<string, unknown>;
+        updatePatch.metadata = {
+          ...prevMeta,
+          ...(payload?.entryPoint !== undefined ? { entryPoint: payload.entryPoint } : {}),
+          ...(payload?.activePagePath !== undefined ? { activePagePath: payload.activePagePath } : {}),
+          ...(payload?.projectId !== undefined ? { projectId: payload.projectId } : {}),
+          ...(payload?.canonicalPlayground !== undefined ? { canonicalPlayground: payload.canonicalPlayground } : {}),
+          ...(payload?.siteBundleSnapshot !== undefined ? { siteBundleSnapshot: payload.siteBundleSnapshot } : {}),
+          ...(payload?.metadata || {}),
+        } as Json;
+      }
+
+      const { data: updatedDraft, error } = await supabase
+        .from("builder_drafts")
+        .update(updatePatch)
+        .eq("id", currentDraftId)
+        .select("id, project_id, business_id")
+        .maybeSingle();
+      if (error) {
+        throw error;
+      }
+      if (!updatedDraft) {
+        throw new Error(`Autosave did not update draft ${currentDraftId}; access or linkage is invalid.`);
+      }
+      setCurrentProjectId(updatedDraft.project_id ?? payload?.projectId ?? null);
+      await syncCanonicalComponentGraph({
+        projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
+        draftId: currentDraftId,
+        canonicalPlayground: payload?.canonicalPlayground,
+      });
+      emitCloudDraftSaved({
+        draftId: currentDraftId,
+        projectId: updatedDraft.project_id ?? payload?.projectId ?? null,
+        businessId: updatedDraft.business_id ?? payload?.businessId ?? null,
+      });
+      return true;
+    } catch (error) {
+      console.error("Auto-save failed:", error);
+      return false;
+    }
+  }, [currentDraftId]);
+
   const clearCurrentTemplate = useCallback(() => {
     setCurrentDraftId(null);
     setCurrentProjectId(null);
@@ -803,6 +696,7 @@ export function useTemplateFiles() {
     ensureDraft,
     loadTemplate,
     deleteTemplate,
+    autoSave,
     clearCurrentTemplate,
     setCurrentDraftId,
     setCurrentProjectId,

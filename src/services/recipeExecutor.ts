@@ -12,25 +12,7 @@
  *   await executor.runRecipe(recipe);
  */
 
-// Keep the workflow runtime independent from the browser-facing recipe manager
-// (and its import.meta/Supabase client). These shapes mirror its public recipe
-// contract without pulling that client module into the Vercel function graph.
-interface RecipeStep {
-  type: 'action' | 'wait' | 'condition' | 'goal';
-  actionType?: string;
-  config: Record<string, unknown>;
-  waitDuration?: string;
-}
-
-interface Recipe {
-  id: string;
-  name: string;
-  description: string;
-  trigger: string;
-  category: string;
-  steps: RecipeStep[];
-  defaultEnabled: boolean;
-}
+import type { RecipeStep, Recipe } from '@/services/recipeManagerService';
 
 // ============================================================================
 // Types

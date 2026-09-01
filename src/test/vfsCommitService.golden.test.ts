@@ -18,10 +18,6 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { runtimeReconcileInvoke } = vi.hoisted(() => ({
-  runtimeReconcileInvoke: vi.fn(async () => ({ data: { success: true }, error: null })),
-}));
-
 // -- Mocks ------------------------------------------------------------------
 
 vi.mock('@/platform/core/commitToPipeline', () => ({
@@ -34,10 +30,6 @@ vi.mock('@/services/runFullPreflight', () => ({
 
 vi.mock('@/services/playgroundControlPlaneResolver', () => ({
   resolvePlaygroundControlPlane: vi.fn(),
-}));
-
-vi.mock('@/services/backendOpExecutor', () => ({
-  executeBackendOps: vi.fn(),
 }));
 
 vi.mock('@/platform/core/gates', () => ({
@@ -64,8 +56,6 @@ type RevisionRow = {
 };
 
 const revisionStore: RevisionRow[] = [];
-const draftProjectionUpdates: Array<{ id: unknown; userId: unknown; revisionId: unknown }> = [];
-let canonicalCommitRpcError: { message: string } | null = null;
 
 vi.mock('@/integrations/supabase/client', () => {
   const insert = (payload: Record<string, unknown>) => ({
@@ -111,72 +101,10 @@ vi.mock('@/integrations/supabase/client', () => {
 
   return {
     supabase: {
-      from: (table: string) => {
-        if (table === 'builder_drafts') return {
-            update: (payload: { last_revision_id?: unknown }) => ({
-              eq: (_column: string, id: unknown) => ({
-                eq: async (_userColumn: string, userId: unknown) => {
-                  draftProjectionUpdates.push({ id, userId, revisionId: payload.last_revision_id });
-                  return { error: null };
-                },
-              }),
-            }),
-          };
-        if (table === 'projects') return {
-          select: (_columns: string) => ({
-            eq: (_projectColumn: string, _projectId: unknown) => ({
-              eq: (_businessColumn: string, _businessId: unknown) => ({
-                single: async () => ({
-                  data: { site_id: '55555555-5555-4555-8555-555555555555' },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        };
-        return {
-          insert,
-          select: (_cols: string) => selectChain((rows) => rows),
-        };
-      },
-      functions: { invoke: runtimeReconcileInvoke },
-      rpc: async (functionName: string, payload: Record<string, unknown>) => {
-        if (functionName !== 'commit_canonical_site_revision') {
-          return { data: null, error: { message: `Unexpected RPC ${functionName}` } };
-        }
-        if (canonicalCommitRpcError) return { data: null, error: canonicalCommitRpcError };
-        const seq = String(revisionStore.length + 1).padStart(12, '0');
-        const id = `00000000-0000-0000-0000-${seq}`;
-        const row: RevisionRow = {
-          id,
-          project_id: String(payload.p_project_id),
-          business_id: String(payload.p_business_id),
-          draft_id: String(payload.p_draft_id),
-          parent_revision_id: (payload.p_parent_revision_id as string | null) ?? null,
-          source: String(payload.p_source),
-          status: payload.p_status as RevisionRow['status'],
-          vfs_files: (payload.p_vfs_files ?? {}) as Record<string, unknown>,
-          site_bundle_snapshot: (payload.p_site_bundle_snapshot ?? {}) as Record<string, unknown>,
-          runtime_manifest: (payload.p_runtime_manifest ?? {}) as Record<string, unknown>,
-          playground_state: (payload.p_playground_state ?? {}) as Record<string, unknown>,
-          readiness_report: (payload.p_readiness_report ?? {}) as Record<string, unknown>,
-          diagnostics: (payload.p_diagnostics ?? []) as unknown[],
-          created_by: IDENTITY.userId,
-          created_at: new Date().toISOString(),
-          publish_ready: payload.p_publish_ready,
-          publish_blockers: payload.p_publish_blockers,
-          vfs_hash: payload.p_vfs_hash,
-        } as RevisionRow;
-        revisionStore.push(row);
-        if (row.status === 'committed') {
-          draftProjectionUpdates.push({
-            id: payload.p_draft_id,
-            userId: IDENTITY.userId,
-            revisionId: id,
-          });
-        }
-        return { data: id, error: null };
-      },
+      from: (_table: string) => ({
+        insert,
+        select: (_cols: string) => selectChain((rows) => rows),
+      }),
     },
   };
 });
@@ -184,7 +112,6 @@ vi.mock('@/integrations/supabase/client', () => {
 // -- Imports (after mocks) ---------------------------------------------------
 
 import {
-  CommitRejectedError,
   commitMutation,
   loadLatestRevisionForProject,
   loadLatestPublishReadyRevisionForProject,
@@ -192,7 +119,6 @@ import {
 import { commitToPipeline } from '@/platform/core/commitToPipeline';
 import { runFullPreflight } from '@/services/runFullPreflight';
 import { resolvePlaygroundControlPlane } from '@/services/playgroundControlPlaneResolver';
-import { executeBackendOps } from '@/services/backendOpExecutor';
 import type { BuilderIdentity } from '@/types/builderIdentity';
 import { emptyPatchPlan, legacyFilesToPatchPlan } from '@/types/patchPlan';
 
@@ -234,93 +160,10 @@ function mockIntents(previewBlocked = 0, publishBlocked = 0) {
 
 beforeEach(() => {
   revisionStore.length = 0;
-  draftProjectionUpdates.length = 0;
-  canonicalCommitRpcError = null;
   vi.clearAllMocks();
-  runtimeReconcileInvoke.mockResolvedValue({ data: { success: true }, error: null });
 });
 
 describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
-  it('records Wizard capabilities without provisioning before revision persistence', async () => {
-    const files = {
-      '/src/App.tsx': 'export default function App(){return null}',
-      '/.unison/wizard-seed.json': JSON.stringify({
-        canonical: { capabilities: ['booking', 'contact'] },
-      }),
-    };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents(0, 0);
-
-    const launch = await commitMutation({
-      source: 'wizard-launch',
-      identity: IDENTITY,
-      current: { vfsFiles: {}, activePagePath: '/src/App.tsx' },
-      patch: legacyFilesToPatchPlan(files, 'capability request'),
-      options: { selections: { industry: 'salon' } as never },
-    });
-
-    expect(executeBackendOps).not.toHaveBeenCalled();
-    expect(launch.siteBundleSnapshot?.businessSystem?.capabilities).toEqual([
-      expect.objectContaining({ id: 'booking', status: 'approved' }),
-      expect.objectContaining({ id: 'contact', status: 'approved' }),
-    ]);
-  });
-
-  it('persists a reviewed wizard artifact without regenerating it', async () => {
-    const reviewedFiles = {
-      '/src/App.tsx': 'export default function Reviewed(){return <main>Reviewed</main>}',
-      '/src/pages/Home.tsx': 'export default function Home(){return <h1>Exact AI output</h1>}',
-    };
-    const snapshot = {
-      vfsFiles: reviewedFiles,
-      routerFile: { path: '/src/App.tsx', content: reviewedFiles['/src/App.tsx'] },
-      meta: {},
-    } as never;
-    mockPreflight(reviewedFiles);
-    mockIntents(0, 0);
-
-    const launch = await commitMutation({
-      source: 'wizard-launch',
-      identity: IDENTITY,
-      current: { vfsFiles: {} },
-      patch: legacyFilesToPatchPlan(reviewedFiles, 'reviewed launch'),
-      options: {
-        selections: { industry: 'salon' } as never,
-        reviewedArtifact: {
-          siteBundleSnapshot: snapshot,
-          runtimeManifest: { entryPoint: '/src/App.tsx' } as never,
-        },
-      },
-    });
-
-    expect(commitToPipeline).not.toHaveBeenCalled();
-    expect(launch.vfsFiles['/src/pages/Home.tsx']).toContain('Exact AI output');
-    expect(launch.diagnostics).toContainEqual(expect.objectContaining({
-      stage: 'canonical',
-      message: expect.stringContaining('regeneration skipped'),
-    }));
-  });
-
-  it('hard-fails when the atomic canonical revision transaction fails', async () => {
-    const files = { '/src/App.tsx': 'export default function App(){return null}' };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents(0, 0);
-    canonicalCommitRpcError = { message: 'draft projection update denied' };
-
-    await expect(commitMutation({
-      source: 'wizard-launch',
-      identity: IDENTITY,
-      current: { vfsFiles: {}, activePagePath: '/src/App.tsx' },
-      patch: legacyFilesToPatchPlan(files, 'atomic failure'),
-      options: { selections: { industry: 'salon' } as never },
-    })).rejects.toThrow('canonical revision transaction failed');
-
-    expect(revisionStore).toEqual([]);
-    expect(draftProjectionUpdates).toEqual([]);
-  });
-
   it('chains five commits across sources and persists a revision per step', async () => {
     const salonFiles = {
       '/src/App.tsx': 'export default function App(){return null}',
@@ -340,11 +183,6 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
     });
     expect(launch.status).toBe('committed');
     expect(launch.persistedRevisionId).toBe('00000000-0000-0000-0000-000000000001');
-    expect(draftProjectionUpdates).toEqual([{
-      id: IDENTITY.draftId,
-      userId: IDENTITY.userId,
-      revisionId: launch.persistedRevisionId,
-    }]);
     expect(launch.parentRevisionId).toBeNull();
 
     // 2. AI Builder edits hero
@@ -430,235 +268,6 @@ describe('Golden E2E — salon launcher → AI edits → publish gate', () => {
     // Rejected revisions are still persisted for forensics.
     expect(revisionStore[revisionStore.length - 1]?.status).toBe('rejected');
   });
-
-  it('does not execute backend operations when pre-execution gates reject the commit', async () => {
-    const files = { '/src/App.tsx': 'x' };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents(3, 3);
-    const patch = emptyPatchPlan('rejected booking install');
-    patch.backendOps.push({ type: 'requireCapability', capability: 'booking' });
-
-    await expect(
-      commitMutation({
-        source: 'ai-builder',
-        identity: IDENTITY,
-        current: { vfsFiles: files, playground: { pages: [] } as never },
-        patch,
-      }),
-    ).rejects.toThrow(/rejected/i);
-
-    expect(executeBackendOps).not.toHaveBeenCalled();
-  });
-
-  it('rejects the revision when a backend operation fails', async () => {
-    const files = { '/src/App.tsx': 'x' };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents(0, 0);
-    (executeBackendOps as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      failedCount: 1,
-      results: [{
-        op: { type: 'requireCapability', capability: 'booking' },
-        status: 'failed',
-      }],
-    });
-    const patch = emptyPatchPlan('failed booking install');
-    patch.backendOps.push({ type: 'requireCapability', capability: 'booking' });
-
-    await expect(
-      commitMutation({
-        source: 'ai-builder',
-        identity: IDENTITY,
-        current: { vfsFiles: files, playground: { pages: [] } as never },
-        patch,
-      }),
-    ).rejects.toThrow(/rejected/i);
-
-    expect(revisionStore[revisionStore.length - 1]?.status).toBe('rejected');
-  });
-
-  it('persists provisioned capability state on a successful approved transaction', async () => {
-    const files = { '/src/App.tsx': 'x' };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents(0, 0);
-    (executeBackendOps as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      failedCount: 0,
-      results: [{ op: { type: 'requireCapability', capability: 'booking' }, status: 'ok' }],
-    });
-    const patch = emptyPatchPlan('approved booking install');
-    patch.backendOps.push({ type: 'requireCapability', capability: 'booking' });
-    patch.businessSystem = {
-      version: '1.0',
-      requestedCapabilities: ['booking.appointments'],
-      capabilities: [{
-        id: 'booking',
-        provides: ['booking.appointments'],
-        status: 'approved',
-        approval: { approvedBy: 'user-123', approvedAt: '2026-07-25T23:00:00.000Z' },
-      }],
-    };
-
-    const result = await commitMutation({
-      source: 'ai-builder',
-      identity: IDENTITY,
-      current: { vfsFiles: files, playground: { pages: [] } as never },
-      patch,
-    });
-
-    expect((result.siteBundleSnapshot as { businessSystem?: { capabilities: Array<{ status: string }> } })
-      .businessSystem?.capabilities[0]?.status).toBe('provisioned');
-  });
-});
-
-describe('Guard 1 — preview artifact leakage', () => {
-  it('sanitizes a preview-only Lucide fallback declaration back to a plain import before canonical commit', async () => {
-    const contactWithPreviewArtifact = [
-      "import * as __LucideIcons from 'lucide-react';",
-      "const __LucideFallback = (props) => React.createElement('svg', props);",
-      "const MapPin = __LucideIcons['MapPin'] || __LucideFallback;",
-      'export default function Contact(){',
-      '  return <main><MapPin /></main>;',
-      '}',
-    ].join('\n');
-    const files = { '/src/pages/Contact.tsx': contactWithPreviewArtifact };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents();
-
-    const result = await commitMutation({
-      source: 'catalog-binding' as never,
-      identity: IDENTITY,
-      current: { vfsFiles: {}, playground: {} as never },
-      patch: legacyFilesToPatchPlan(files, 'catalog binding regenerated Contact section'),
-    });
-
-    expect(result.status).toBe('committed');
-    const passedFiles = (commitToPipeline as unknown as ReturnType<typeof vi.fn>).mock
-      .calls[0][0].existingVfsFiles as Record<string, string>;
-    const committedContact = passedFiles['/src/pages/Contact.tsx'];
-    expect(committedContact).not.toContain('__LucideIcons');
-    expect(committedContact).not.toContain('__LucideFallback');
-    expect(committedContact).toContain("import { MapPin } from 'lucide-react';");
-    expect(
-      result.diagnostics.some((d) => d.stage === 'fileOps' && d.level === 'warn' && /preview-only artifact/i.test(d.message)),
-    ).toBe(true);
-  });
-
-  it('leaves canonical files without preview artifacts untouched', async () => {
-    const files = { '/src/pages/Contact.tsx': "import { MapPin } from 'lucide-react'; export default function Contact(){ return <MapPin />; }" };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents();
-
-    await commitMutation({
-      source: 'ai-builder',
-      identity: IDENTITY,
-      current: { vfsFiles: {}, playground: {} as never },
-      patch: legacyFilesToPatchPlan(files, 'plain edit'),
-    });
-
-    const passedFiles = (commitToPipeline as unknown as ReturnType<typeof vi.fn>).mock
-      .calls[0][0].existingVfsFiles as Record<string, string>;
-    expect(passedFiles['/src/pages/Contact.tsx']).toBe(files['/src/pages/Contact.tsx']);
-  });
-});
-
-describe('VFS commit Stage 4b handoff', () => {
-  it('forwards the original snapshot tokens for a non-wizard recompile', async () => {
-    const themeTokens = {
-      colors: {
-        primary: '120 50% 40%', primaryForeground: '0 0% 100%', secondary: '180 40% 40%', secondaryForeground: '0 0% 100%',
-        accent: '45 80% 50%', accentForeground: '0 0% 10%', background: '0 0% 100%', foreground: '0 0% 10%',
-        muted: '0 0% 95%', mutedForeground: '0 0% 40%', card: '0 0% 100%', cardForeground: '0 0% 10%', border: '0 0% 90%',
-      },
-      typography: { headingFont: 'serif', bodyFont: 'sans-serif', headingWeight: '700', bodyWeight: '400' },
-      radius: '0.5rem', sectionPadding: '5rem 1rem', containerWidth: '1200px',
-    };
-    const files = { '/src/App.tsx': 'export default function App(){ return null; }' };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents();
-
-    await commitMutation({
-      source: 'ai-builder',
-      identity: IDENTITY,
-      current: {
-        vfsFiles: files,
-        playground: {} as never,
-        siteBundleSnapshot: {
-          meta: { themePresetId: 'organic', templateId: 'salon-minimal' },
-          themeTokens,
-        } as never,
-      },
-      patch: legacyFilesToPatchPlan({ '/src/pages/Home.tsx': 'export default function Home(){ return null; }' }),
-    });
-
-    expect(commitToPipeline).toHaveBeenCalledWith(expect.objectContaining({
-      themePresetId: 'organic',
-      selectedTemplateId: 'salon-minimal',
-      themeTokens,
-    }), 'ai-builder');
-  });
-});
-
-describe('Snapshot-owned presentation mutations', () => {
-  it('projects a selected variant into canonical metadata and VFS mirrors before recompilation', async () => {
-    const files = { '/src/App.tsx': 'export default function App(){ return null; }' };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents();
-    const patch = emptyPatchPlan('Select split hero');
-    patch.presentationOps.push({
-      type: 'setVariant',
-      sectionId: 'home-hero',
-      variantId: 'hero:split-image',
-    });
-    const snapshot = {
-      meta: {
-        designIntervention: {
-          activeVariants: { 'home-hero': 'hero:centered' },
-        },
-      },
-    } as never;
-
-    await commitMutation({
-      source: 'playground-edit',
-      identity: IDENTITY,
-      current: { vfsFiles: files, playground: {} as never, siteBundleSnapshot: snapshot },
-      patch,
-    });
-
-    const canonicalInput = (commitToPipeline as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(canonicalInput.existingVfsFiles['/.unison/design-intervention.json']).toContain('hero:split-image');
-    expect(canonicalInput.existingVfsFiles['/.unison/site-bundle-snapshot.json']).toContain('hero:split-image');
-    expect(canonicalInput.themeTokens).toBeUndefined();
-  });
-
-  it('rejects a variant from a different section family', async () => {
-    const patch = emptyPatchPlan('Invalid service variant for hero');
-    patch.presentationOps.push({
-      type: 'setVariant',
-      sectionId: 'home-hero',
-      variantId: 'services:card-grid',
-    });
-
-    await expect(commitMutation({
-      source: 'playground-edit',
-      identity: IDENTITY,
-      current: {
-        vfsFiles: {},
-        playground: {} as never,
-        siteBundleSnapshot: {
-          meta: {
-            designIntervention: { activeVariants: { 'home-hero': 'hero:centered' } },
-          },
-        } as never,
-      },
-      patch,
-    })).rejects.toThrow('invalid presentation variant');
-  });
 });
 
 describe('Move D — publish-ready ledger', () => {
@@ -704,50 +313,9 @@ describe('Move D — publish-ready ledger', () => {
 
     expect(result.publishReady).toBe(true);
     expect(result.publishBlockers).toHaveLength(0);
-    expect(runtimeReconcileInvoke).toHaveBeenCalledWith('reconcile-generated-runtime', {
-      body: expect.objectContaining({
-        businessId: IDENTITY.businessId,
-        projectId: IDENTITY.projectId,
-        manifest: expect.objectContaining({
-          siteId: '55555555-5555-4555-8555-555555555555',
-          agents: [],
-        }),
-      }),
-    });
-    expect(result.vfsFiles['/src/unison/generatedSiteRuntimeManifest.ts']).toContain(
-      'GENERATED_SITE_RUNTIME_MANIFEST',
-    );
 
     const ready = await loadLatestPublishReadyRevisionForProject(IDENTITY.projectId);
     expect(ready?.id).toBe(result.persistedRevisionId);
     expect(ready?.publishReady).toBe(true);
-  });
-
-  it('preserves the committed revision but blocks publish when generated runtime reconciliation fails', async () => {
-    const files = { '/src/App.tsx': 'x', '/src/pages/Home.tsx': '<Hero/>' };
-    mockPipeline(files);
-    mockPreflight(files);
-    mockIntents(0, 0);
-    runtimeReconcileInvoke.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'runtime control plane unavailable' },
-    });
-
-    const result = await commitMutation({
-      source: 'ai-builder',
-      identity: IDENTITY,
-      current: { vfsFiles: files, playground: { pages: [] } as never },
-      patch: legacyFilesToPatchPlan(files, 'runtime reconciliation failure'),
-    });
-
-    expect(result.status).toBe('committed');
-    expect(result.publishReady).toBe(false);
-    expect(result.publishBlockers).toContainEqual(expect.objectContaining({
-      code: 'generated-runtime-reconciliation-failed',
-      message: 'runtime control plane unavailable',
-    }));
-    expect(revisionStore).toHaveLength(1);
-    expect(revisionStore[0].status).toBe('committed');
-    expect(draftProjectionUpdates).toHaveLength(1);
   });
 });

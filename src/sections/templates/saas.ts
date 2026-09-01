@@ -47,7 +47,6 @@ export const SAAS_COMPOSITIONS: TemplateComposition[] = [
         id: 'saas-dark-nav',
         type: 'navbar',
         props: {
-          layout: 'minimal-dark',
           brand: 'Apex',
           sticky: true,
           transparent: false,
@@ -191,7 +190,6 @@ export const SAAS_COMPOSITIONS: TemplateComposition[] = [
         id: 'saas-dark-footer',
         type: 'footer',
         props: {
-          layout: 'centered-minimal',
           brand: 'Apex',
           copyright: '© 2024 Apex Technologies Inc. All rights reserved.',
           newsletter: false,
@@ -248,7 +246,6 @@ export const SAAS_COMPOSITIONS: TemplateComposition[] = [
         id: 'saas-light-nav',
         type: 'navbar',
         props: {
-          layout: 'standard',
           brand: 'Pulse',
           sticky: true,
           links: [
@@ -360,7 +357,6 @@ export const SAAS_COMPOSITIONS: TemplateComposition[] = [
         id: 'saas-light-footer',
         type: 'footer',
         props: {
-          layout: 'dark-band',
           brand: 'Pulse',
           copyright: '© 2024 Pulse Analytics Inc.',
           newsletter: true,
@@ -416,7 +412,6 @@ export const SAAS_COMPOSITIONS: TemplateComposition[] = [
         id: 'saas-developer-nav',
         type: 'navbar',
         props: {
-          layout: 'minimal-dark',
           brand: 'edgequeue.dev',
           sticky: true,
           links: [
@@ -523,7 +518,6 @@ export const SAAS_COMPOSITIONS: TemplateComposition[] = [
         id: 'saas-developer-footer',
         type: 'footer',
         props: {
-          layout: 'dark-band',
           brand: 'edgequeue.dev',
           copyright: '© 2024 EdgeQueue, Inc.',
           newsletter: true,

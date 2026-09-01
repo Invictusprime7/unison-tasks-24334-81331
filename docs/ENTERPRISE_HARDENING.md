@@ -20,11 +20,9 @@ Based on enterprise readiness audit recommendations, the following categories ha
 
 ## A) Preview Runtime Enterprise Hardening
 
-> **Removed:** `preview-service/` (the standalone Docker preview gateway referenced below) was retired as legacy, inactive infrastructure. Sandpack is the sole Web Builder preview runtime; this section is kept as a historical record of the hardening work performed while it was active.
-
 ### 1. AuthN/AuthZ on Every Endpoint
 
-**File:** `preview-service/gateway/src/middleware/auth.ts` (removed)
+**File:** `preview-service/gateway/src/middleware/auth.ts`
 
 - JWT token validation via Supabase Auth
 - API key authentication as alternative

@@ -313,3 +313,18 @@ export const updateElementInIframe = (
 
   return true;
 };
+
+/**
+ * DEPRECATED: Update code with new element properties
+ * This function is kept for backward compatibility but should not be used
+ * Use updateElementInIframe instead for direct DOM manipulation
+ */
+export const updateCodeWithElementChanges = (
+  originalCode: string,
+  selector: string,
+  updates: { styles?: Record<string, string>; textContent?: string; attributes?: Record<string, string> }
+): string => {
+  console.warn('updateCodeWithElementChanges is deprecated. Use updateElementInIframe for safer updates.');
+  // Return original code unchanged to prevent corruption
+  return originalCode;
+};

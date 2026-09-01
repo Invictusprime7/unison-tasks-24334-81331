@@ -8,7 +8,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { getBinding } from '@/services/sectionDataBindingService';
-import { catalogCardBindingFor } from '@/services/catalogCardBindingService';
 import {
   getCatalogSurface,
   getCatalogSurfaceByTable,
@@ -17,7 +16,6 @@ import {
 } from '@/platform/core/catalogSurfaceRegistry';
 import type {
   CatalogCollectionDTO,
-  CatalogBinding,
   SectionDataBindingDTO,
   SectionDataFallback,
 } from '@/types/catalog';
@@ -25,7 +23,6 @@ import type {
 export interface CatalogRenderResult {
   rows: Array<Record<string, unknown>>;
   binding: SectionDataBindingDTO | null;
-  cardBinding: CatalogBinding | null;
   collection: CatalogCollectionDTO | null;
   fallback: SectionDataFallback | 'ok';
 }
@@ -38,7 +35,7 @@ export async function resolveSectionData(
 ): Promise<CatalogRenderResult> {
   const binding = await getBinding(projectId, pagePath, sectionId, slotKey);
   if (!binding) {
-    return { rows: [], binding: null, cardBinding: null, collection: null, fallback: 'hide_section' };
+    return { rows: [], binding: null, collection: null, fallback: 'hide_section' };
   }
   return hydrateBinding(binding);
 }
@@ -97,20 +94,13 @@ export async function hydrateBinding(
   const { data, error } = await query;
   if (error) {
     console.warn('[catalogRuntime] hydrate failed', error);
-    return {
-      rows: [],
-      binding,
-      cardBinding: catalogCardBindingFor(binding),
-      collection,
-      fallback: binding.fallbackMode,
-    };
+    return { rows: [], binding, collection, fallback: binding.fallbackMode };
   }
 
   const rows = (data as unknown as Array<Record<string, unknown>>) ?? [];
   return {
     rows,
     binding,
-    cardBinding: catalogCardBindingFor(binding),
     collection,
     fallback: rows.length === 0 ? binding.fallbackMode : 'ok',
   };
@@ -129,7 +119,7 @@ export async function resolveHydrationRequest(params: {
 }): Promise<CatalogRenderResult> {
   const { projectId, pagePath } = params;
   if (!projectId || !pagePath) {
-    return { rows: [], binding: null, cardBinding: null, collection: null, fallback: 'hide_section' };
+    return { rows: [], binding: null, collection: null, fallback: 'hide_section' };
   }
 
   if (params.sectionId) {
@@ -139,7 +129,7 @@ export async function resolveHydrationRequest(params: {
 
   const surface = getCatalogSurface(params.sectionType ?? '');
   if (!surface) {
-    return { rows: [], binding: null, cardBinding: null, collection: null, fallback: 'hide_section' };
+    return { rows: [], binding: null, collection: null, fallback: 'hide_section' };
   }
   const { data, error } = await supabase
     .from('site_data_bindings' as never)
@@ -149,7 +139,7 @@ export async function resolveHydrationRequest(params: {
     .like('section_id', `${surface.bindingPrefix}-%`)
     .order('section_id', { ascending: true });
   if (error || !data || (data as unknown[]).length === 0) {
-    return { rows: [], binding: null, cardBinding: null, collection: null, fallback: 'hide_section' };
+    return { rows: [], binding: null, collection: null, fallback: 'hide_section' };
   }
   const rows = data as unknown as Array<{
     id: string; business_id: string; project_id: string; snapshot_id: string | null;
@@ -170,7 +160,7 @@ export async function resolveHydrationRequest(params: {
     sort: (pick.sort && typeof pick.sort === 'object') ? pick.sort as SectionDataBindingDTO['sort'] : {},
     limitCount: pick.limit_count,
     displayMapping: (pick.display_mapping && typeof pick.display_mapping === 'object')
-      ? pick.display_mapping as Record<string, unknown> : {},
+      ? pick.display_mapping as Record<string, string> : {},
     fallbackMode: (pick.fallback_mode as SectionDataBindingDTO['fallbackMode']) ?? 'empty_state',
     createdAt: pick.created_at, updatedAt: pick.updated_at,
   };

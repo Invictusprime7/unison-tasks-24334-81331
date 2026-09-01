@@ -24,7 +24,6 @@ import {
   loadLatestPublishReadyRevisionForProject,
   recordRepublishEvent,
 } from '@/services/vfsCommitService';
-import { withPoweredByUnisonAttribution } from '@/services/export/unisonAttribution';
 import type { BusinessSystemType } from '@/lib/infrastructureContext';
 
 export type DeploymentProvider = 'vercel' | 'netlify';
@@ -76,8 +75,6 @@ export interface DeploymentResponse {
   note?: string;
   error?: string;
   isLocalDevelopment?: boolean;
-  /** Deployment succeeded, but the durable project projection needs repair. */
-  synchronizationWarning?: string;
   /** Server-proven publish attestation outcome (Track 5). */
   attestation?: {
     enforced: boolean;
@@ -283,7 +280,7 @@ export async function deployToProvider(
     updateProgress(10, 'Preparing files for deployment...');
 
     // Normalize file paths (remove leading slashes for Vercel)
-    let normalizedFiles: Record<string, string> = {};
+    const normalizedFiles: Record<string, string> = {};
     for (const [path, content] of Object.entries(request.files)) {
       const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
       normalizedFiles[normalizedPath] = content;
@@ -293,7 +290,6 @@ export async function deployToProvider(
     if (!normalizedFiles['index.html']) {
       throw new Error('Missing index.html - required for deployment');
     }
-    normalizedFiles = withPoweredByUnisonAttribution(normalizedFiles);
 
     updateProgress(30, `Connecting to ${request.provider}...`);
 
@@ -389,28 +385,10 @@ export async function deployToProvider(
 
     updateProgress(100, 'Deployment complete!');
 
-    // Project the deployed ledger revision onto the durable project owner.
+    // Ledger loop closer — stamp the published revision back into ai_events
+    // so the ledger view, drift watcher, and ops surfaces can answer
+    // "which revision is currently live?" deterministically.
     if (publishedRevision) {
-      const { data: projectedProject, error: projectionError } = await supabase
-        .from('projects')
-        .update({
-          active_published_revision_id: publishedRevision.id,
-          publish_status: 'published',
-          published_at: new Date().toISOString(),
-        })
-        .eq('id', publishedRevision.projectId)
-        .eq('business_id', publishedRevision.businessId)
-        .select('id')
-        .maybeSingle();
-      if (projectionError || !projectedProject) {
-        const synchronizationWarning = projectionError?.message
-          || 'The deployed revision could not be attached to the project.';
-        console.error('[deploymentService] Published revision projection failed:', synchronizationWarning);
-        response.synchronizationWarning = synchronizationWarning;
-        response.note = [response.note, 'Site deployed, but project synchronization requires attention.']
-          .filter(Boolean)
-          .join(' ');
-      }
       void recordRepublishEvent({
         revisionId: publishedRevision.id,
         projectId: publishedRevision.projectId,
@@ -425,9 +403,7 @@ export async function deployToProvider(
     onProgress?.({
       isDeploying: false,
       progress: 100,
-      message: response.synchronizationWarning
-        ? 'Deployment complete — project synchronization needs attention.'
-        : 'Deployment complete!',
+      message: 'Deployment complete!',
       result: response,
     });
 

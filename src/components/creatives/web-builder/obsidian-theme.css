@@ -193,7 +193,7 @@
 .wb-obsidian [role="tab"],
 .wb-obsidian [role="menuitem"] {
   font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: 0;
+  letter-spacing: -0.005em;
 }
 .wb-obsidian textarea.font-mono,
 .wb-obsidian pre,

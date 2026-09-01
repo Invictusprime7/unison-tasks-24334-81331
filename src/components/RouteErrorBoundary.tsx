@@ -29,35 +29,6 @@ interface State {
   errorId: string | null;
 }
 
-const DYNAMIC_IMPORT_FAILURE = /failed to fetch dynamically imported module|importing a module script failed|loading chunk \d+ failed/i;
-
-export function isDynamicImportFailure(error: unknown): boolean {
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === 'string'
-      ? error
-      : '';
-  return DYNAMIC_IMPORT_FAILURE.test(message);
-}
-
-function dynamicImportRecoveryKey(): string {
-  return `unison:dynamic-import-recovery:${window.location.pathname}`;
-}
-
-function recoverDynamicImportOnce(error: unknown): boolean {
-  if (!isDynamicImportFailure(error)) return false;
-
-  try {
-    const key = dynamicImportRecoveryKey();
-    if (window.sessionStorage.getItem(key)) return false;
-    window.sessionStorage.setItem(key, '1');
-    window.location.reload();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // ============================================
 // ERROR BOUNDARY COMPONENT
 // ============================================
@@ -81,10 +52,6 @@ export class RouteErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     const { onError, routeName } = this.props;
     const { errorId } = this.state;
-
-    if (recoverDynamicImportOnce(error)) {
-      return;
-    }
 
     // Log to console for development
     console.error('Route Error Boundary caught error:', error, errorInfo);
@@ -134,15 +101,6 @@ export class RouteErrorBoundary extends Component<Props, State> {
   }
 
   private handleRetry = () => {
-    if (isDynamicImportFailure(this.state.error)) {
-      try {
-        window.sessionStorage.removeItem(dynamicImportRecoveryKey());
-      } catch {
-        // Storage can be disabled; the normal reload action still applies.
-      }
-      window.location.reload();
-      return;
-    }
     this.setState({ hasError: false, error: null, errorId: null });
   };
 

@@ -1,11 +1,8 @@
 import type { TemplateComposition } from '@/sections/types';
-import { getVariantIdForLayout } from '@/sections/variants';
-import type { VariantId } from '@/sections/variants';
 
 export interface TemplateLayoutSection {
   id: string;
   type: string;
-  variantId?: VariantId;
   layout?: string;
   columns?: number;
   hasMedia: boolean;
@@ -47,10 +44,6 @@ export function buildTemplateLayoutContract(
     return {
       id: section.id,
       type: section.type,
-      variantId: getVariantIdForLayout(
-        section.type,
-        typeof props.layout === 'string' ? props.layout : undefined,
-      ),
       layout: typeof props.layout === 'string' ? props.layout : undefined,
       columns: typeof props.columns === 'number' ? props.columns : undefined,
       hasMedia,
@@ -61,7 +54,6 @@ export function buildTemplateLayoutContract(
   const signature = sections.map((section) => [
     section.id,
     section.type,
-    section.variantId || 'unregistered',
     section.layout || 'default',
     section.columns || '-',
     section.hasMedia ? 'media' : 'text',
@@ -82,13 +74,11 @@ export function buildTemplateLayoutPrompt(contract: TemplateLayoutContract): str
     `TEMPLATE LAYOUT CONTRACT (LOCKED): ${contract.templateId} for ${contract.industry}.`,
     `Layout signature: ${contract.signature}.`,
     'Preserve every section in this exact order and preserve each declared layout, column count, media treatment, and CTA variant.',
-    'On each section root emit the declared data-ut-section-id, data-ut-section-type, and data-ut-variant values. Interactive controls must preserve data-ut-slot and data-ut-intent independently of visual order.',
   ];
   for (const section of contract.sections) {
     const details = [
       `id=${section.id}`,
       `type=${section.type}`,
-      `variantId=${section.variantId || 'unregistered'}`,
       `layout=${section.layout || 'default'}`,
       `columns=${section.columns || 'default'}`,
       `media=${section.hasMedia ? 'required' : 'none'}`,
@@ -99,24 +89,19 @@ export function buildTemplateLayoutPrompt(contract: TemplateLayoutContract): str
   return lines.join('\n');
 }
 
-/** Adds a durable runtime identity without rewriting the AI-authored geometry.
- *  Stamps EVERY page in /src/pages/*.tsx (not only Home) so Lane B pages carry
- *  the template identity for the theme bridge + downstream diagnostics. */
+/** Adds a durable runtime identity without rewriting the AI-authored geometry. */
 export function stampTemplateLayoutIdentity(
   files: Record<string, string>,
   contract: TemplateLayoutContract,
 ): Record<string, string> {
   const next = { ...files };
-  const pagePaths = Object.keys(next).filter((path) =>
-    /\/src\/pages\/[^/]+\.(?:tsx|jsx)$/i.test(path),
-  );
-  for (const pagePath of pagePaths) {
-    const source = next[pagePath];
-    if (typeof source !== 'string' || source.includes('data-ut-template-id=')) continue;
-    const tagged = source.replace(/<(main|section)\b([^>]*)>/i, (match, tag: string, attrs: string) => (
-      `<${tag}${attrs} data-ut-template-id="${contract.templateId}" data-ut-layout-signature="${contract.signature}">`
-    ));
-    if (tagged !== source) next[pagePath] = tagged;
-  }
+  const homePath = Object.keys(next).find((path) => /\/src\/pages\/(?:Home|Index)\.(?:tsx|jsx)$/i.test(path));
+  if (!homePath || next[homePath].includes('data-ut-template-id=')) return next;
+
+  const source = next[homePath];
+  const tagged = source.replace(/<(main|section)\b([^>]*)>/i, (match, tag: string, attrs: string) => (
+    `<${tag}${attrs} data-ut-template-id="${contract.templateId}" data-ut-layout-signature="${contract.signature}">`
+  ));
+  if (tagged !== source) next[homePath] = tagged;
   return next;
 }

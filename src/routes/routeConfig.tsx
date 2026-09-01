@@ -1,7 +1,6 @@
 import { AsyncBoundary, AsyncRouteLoadingFallback } from "@/components/RouteErrorBoundary";
 import { CloudProvider } from "@/contexts/CloudContext";
 import { lazy, type ReactElement } from "react";
-import { Navigate } from "react-router-dom";
 
 import Auth from "@/pages/Auth";
 import Landing from "@/pages/Landing";
@@ -18,9 +17,14 @@ const Files = lazy(() => import("@/pages/Files"));
 const Creatives = lazy(() => import("@/pages/Creatives"));
 const TaskPlanning = lazy(() => import("@/pages/TaskPlanning"));
 const DesignStudioPage = lazy(() => import("@/pages/DesignStudioPage"));
+const AIPageGenerator = lazy(() =>
+  import("@/components/creatives/AIPageGenerator").then((module) => ({
+    default: module.AIPageGenerator,
+  })),
+);
+const CRMDashboard = lazy(() => import("@/pages/CRMDashboard"));
 const BusinessSettings = lazy(() => import("@/pages/BusinessSettings"));
 const BusinessCatalog = lazy(() => import("@/pages/BusinessCatalog"));
-const BusinessContent = lazy(() => import("@/pages/BusinessContent"));
 const CloudDashboard = lazy(() => import("@/pages/CloudDashboard"));
 const DocsPage = lazy(() => import("@/pages/DocsPage"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -30,9 +34,6 @@ const ProjectSetup = lazy(() => import("@/pages/ProjectSetup"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const TeamManagement = lazy(() => import("@/pages/TeamManagement"));
 const AIChat = lazy(() => import("@/pages/AIChat"));
-const ExternalPreviewPage = lazy(() => import("@/pages/ExternalPreviewPage"));
-const SiteSnapshotPreviewPage = lazy(() => import("@/pages/SiteSnapshotPreviewPage"));
-
 
 export type RouteShell = "public" | "onboarding" | "workspace" | "project" | "builder" | "focus";
 export type RouteChrome = "none" | "legacy" | "canonical" | "fullscreen";
@@ -136,9 +137,10 @@ export const appRoutes: AppRouteConfig[] = [
       title: "Dashboard",
       section: "workspace",
       shell: "workspace",
-      chrome: "canonical",
+      chrome: "legacy",
       requiresAuth: true,
       requiresWorkspace: true,
+      primaryAction: "Create project",
     },
   },
   {
@@ -243,54 +245,14 @@ export const appRoutes: AppRouteConfig[] = [
     },
   },
   {
-    path: "/preview/:previewKey",
-    element: withAsyncBoundary(<ExternalPreviewPage />),
-    meta: {
-      id: "external-preview",
-      title: "Site preview",
-      section: "public",
-      shell: "public",
-      chrome: "none",
-    },
-  },
-  {
-    path: "/site-preview",
-    element: withAsyncBoundary(<SiteSnapshotPreviewPage />),
-    meta: {
-      id: "site-snapshot-preview",
-      title: "Snapshot previewer",
-      section: "builder",
-      shell: "focus",
-      chrome: "fullscreen",
-      requiresAuth: true,
-    },
-  },
-  {
-    path: "/site-preview/:draftId",
-    element: withAsyncBoundary(<SiteSnapshotPreviewPage />),
-    meta: {
-      id: "site-snapshot-preview-draft",
-      title: "Snapshot previewer",
-      section: "builder",
-      shell: "focus",
-      chrome: "fullscreen",
-      requiresAuth: true,
-    },
-  },
-
-  {
-    // R6: the standalone AI page generator was a parallel visual pipeline
-    // (own PageRenderer, own noir/warm/minimal theme presets, no
-    // SiteBundleSnapshot). It is deleted; the path now redirects to the
-    // canonical builder so existing links keep working.
     path: "/ai-generator",
-    element: <Navigate to="/web-builder" replace />,
+    element: withAsyncBoundary(<AIPageGenerator />),
     meta: {
       id: "ai-generator",
       title: "AI generator",
       section: "builder",
       shell: "builder",
-      chrome: "none",
+      chrome: "legacy",
       requiresAuth: true,
       requiresWorkspace: true,
       deprecatedAliasFor: "/web-builder",
@@ -298,13 +260,7 @@ export const appRoutes: AppRouteConfig[] = [
   },
   {
     path: "/crm",
-    element: (
-      <Navigate
-        to="/cloud"
-        replace
-        state={{ tab: "projects", workspaceSection: "crm", crmView: "overview" }}
-      />
-    ),
+    element: withAsyncBoundary(<CRMDashboard />),
     meta: {
       id: "crm",
       title: "CRM",
@@ -313,7 +269,7 @@ export const appRoutes: AppRouteConfig[] = [
       chrome: "legacy",
       requiresAuth: true,
       requiresWorkspace: true,
-      deprecatedAliasFor: "/cloud",
+      primaryAction: "Add lead",
     },
   },
   {
@@ -322,19 +278,6 @@ export const appRoutes: AppRouteConfig[] = [
     meta: {
       id: "business-settings",
       title: "Business settings",
-      section: "workspace",
-      shell: "workspace",
-      chrome: "legacy",
-      requiresAuth: true,
-      requiresWorkspace: true,
-    },
-  },
-  {
-    path: "/business/content",
-    element: withAsyncBoundary(<BusinessContent />),
-    meta: {
-      id: "business-content",
-      title: "Manage content",
       section: "workspace",
       shell: "workspace",
       chrome: "legacy",
@@ -358,13 +301,7 @@ export const appRoutes: AppRouteConfig[] = [
 
   {
     path: "/dashboard/leads",
-    element: (
-      <Navigate
-        to="/cloud"
-        replace
-        state={{ tab: "projects", workspaceSection: "crm", crmView: "leads" }}
-      />
-    ),
+    element: withAsyncBoundary(<CRMDashboard initialView="leads" />),
     meta: {
       id: "dashboard-leads",
       title: "Leads",
@@ -373,7 +310,8 @@ export const appRoutes: AppRouteConfig[] = [
       chrome: "legacy",
       requiresAuth: true,
       requiresWorkspace: true,
-      deprecatedAliasFor: "/cloud",
+      deprecatedAliasFor: "/crm",
+      primaryAction: "Add lead",
     },
   },
   {

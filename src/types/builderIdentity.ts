@@ -37,10 +37,6 @@ export class InvalidBuilderIdentityError extends Error {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function isUuid(value: unknown): value is string {
-  return typeof value === 'string' && UUID_RE.test(value);
-}
-
 /**
  * Hard-asserts a `BuilderIdentity`. Throws on:
  *   - missing required fields
@@ -75,7 +71,7 @@ export function assertBuilderIdentity(
   }
   for (const key of ['userId', 'businessId', 'projectId', 'draftId'] as const) {
     const v = identity[key];
-    if (typeof v === 'string' && v.length > 0 && !isUuid(v)) {
+    if (typeof v === 'string' && v.length > 0 && !UUID_RE.test(v)) {
       throw new InvalidBuilderIdentityError(
         `${context}: field "${key}" must be a UUID, got "${v}"`,
         identity,
@@ -83,7 +79,7 @@ export function assertBuilderIdentity(
     }
   }
   // revisionId, when present, must be a UUID
-  if (identity.revisionId && !isUuid(identity.revisionId)) {
+  if (identity.revisionId && !UUID_RE.test(identity.revisionId)) {
     throw new InvalidBuilderIdentityError(
       `${context}: revisionId must be a UUID when set, got "${identity.revisionId}"`,
       identity,

@@ -131,6 +131,107 @@ serve(async (req) => {
         return secureJsonResponse({ success: true }, 200, publicCorsHeaders);
       }
 
+      // BOOKING OPERATIONS
+      case 'createBooking': {
+        const sessionId = typeof data.sessionId === "string" ? sanitizeString(data.sessionId, 120) : "";
+        const serviceName = typeof data.serviceName === "string" ? sanitizeString(data.serviceName, 160) : "";
+        const customerName = typeof data.customerName === "string" ? sanitizeString(data.customerName, 160) : "";
+        const customerEmail = typeof data.customerEmail === "string" ? sanitizeString(data.customerEmail, 254) : "";
+        const customerPhone = typeof data.customerPhone === "string" ? sanitizeString(data.customerPhone, 40) : "";
+        const bookingDate = typeof data.bookingDate === "string" ? sanitizeString(data.bookingDate, 32) : "";
+        const bookingTime = typeof data.bookingTime === "string" ? sanitizeString(data.bookingTime, 16) : "";
+        const durationMinutes = typeof data.durationMinutes === "number" ? Math.max(15, Math.min(480, Math.trunc(data.durationMinutes))) : 60;
+        const notes = typeof data.notes === "string" ? sanitizeString(data.notes, 1_000) : undefined;
+        const ghlCalendarId = typeof data.ghlCalendarId === "string" ? sanitizeString(data.ghlCalendarId, 120) : undefined;
+        const locationId = typeof data.locationId === "string" ? sanitizeString(data.locationId, 120) : undefined;
+
+        if (!sessionId || !serviceName || !customerName || !isValidEmail(customerEmail) || !bookingDate || !bookingTime) {
+          return errorResponse("Missing or invalid booking fields", 400, publicCorsHeaders);
+        }
+
+        // If GHL integration is enabled, create booking there too
+        let ghlContactId = null;
+        if (locationId) {
+          try {
+            const ghlApiKey = Deno.env.get('GOHIGHLEVEL_API_KEY');
+            if (ghlApiKey) {
+              // Create/find contact in GHL
+              const contactRes = await fetch(`https://services.leadconnectorhq.com/contacts/`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${ghlApiKey}`,
+                  'Content-Type': 'application/json',
+                  'Version': '2021-07-28'
+                },
+                body: JSON.stringify({
+                  locationId,
+                  email: customerEmail,
+                  name: customerName,
+                  phone: customerPhone
+                })
+              });
+              const contactData = await contactRes.json();
+              ghlContactId = contactData.contact?.id;
+              console.log('GHL contact created:', ghlContactId);
+            }
+          } catch (ghlError) {
+            console.error('GHL integration error:', ghlError);
+          }
+        }
+
+        const { data: booking, error } = await supabase
+          .from('bookings')
+          .insert({
+            session_id: sessionId,
+            service_name: serviceName,
+            customer_name: customerName,
+            customer_email: customerEmail,
+            customer_phone: customerPhone,
+            booking_date: bookingDate,
+            booking_time: bookingTime,
+            duration_minutes: durationMinutes,
+            notes,
+            ghl_calendar_id: ghlCalendarId,
+            ghl_contact_id: ghlContactId,
+            status: 'confirmed'
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return secureJsonResponse({ success: true, booking }, 200, publicCorsHeaders);
+      }
+
+      case 'getAvailableSlots': {
+        const date = typeof data.date === "string" ? sanitizeString(data.date, 32) : "";
+        if (!date) {
+          return errorResponse("date is required", 400, publicCorsHeaders);
+        }
+        // Generate available time slots (9 AM - 5 PM, hourly)
+        const slots = [];
+        for (let hour = 9; hour < 17; hour++) {
+          const time = `${hour.toString().padStart(2, '0')}:00`;
+          
+          // Check if slot is already booked
+          const { data: existing } = await supabase
+            .from('bookings')
+            .select('id')
+            .eq('booking_date', date)
+            .eq('booking_time', time)
+            .eq('status', 'confirmed')
+            .maybeSingle();
+
+          if (!existing) {
+            slots.push({
+              time,
+              available: true,
+              label: `${hour > 12 ? hour - 12 : hour}:00 ${hour >= 12 ? 'PM' : 'AM'}`
+            });
+          }
+        }
+        return secureJsonResponse({ success: true, slots }, 200, publicCorsHeaders);
+      }
+
       // ORDER/CHECKOUT OPERATIONS
       case 'createOrder': {
         const sessionId = typeof data.sessionId === "string" ? sanitizeString(data.sessionId, 120) : "";

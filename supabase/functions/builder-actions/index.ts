@@ -28,6 +28,9 @@ const INTENT_FUNCTION_MAP: Record<string, string> = {
   'contact.submit': 'intent-exec',
   'newsletter.subscribe': 'intent-exec',
   'join.waitlist': 'intent-exec',
+  'booking.create': 'intent-exec',
+  'booking.cancel': 'intent-exec',
+  'booking.reschedule': 'intent-exec',
   'auth.signup': 'supabase-auth',
   'auth.signin': 'supabase-auth',
   'auth.signout': 'supabase-auth',
@@ -173,7 +176,11 @@ serve(async (req) => {
               content: generateIntentRouterCode(['contact.submit', 'newsletter.subscribe', 'join.waitlist'])
             });
           } else if (packName === 'booking') {
-            results.notes.push('Booking UI wiring is compiled by the canonical site runtime manifest.');
+            results.patches.push({
+              file: '/src/runtime/intentRouter.ts',
+              op: 'upsert',
+              content: generateIntentRouterCode(['booking.create', 'booking.cancel', 'booking.reschedule'])
+            });
           } else if (packName === 'auth') {
             results.patches.push({
               file: '/src/runtime/intentRouter.ts',

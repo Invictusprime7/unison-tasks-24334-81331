@@ -210,37 +210,10 @@ function resolvePageForElement(
 ): BuilderPage | null {
   // 1. href / to
   const href = getAttrValue(info.attrs, 'href') ?? getAttrValue(info.attrs, 'to');
-  if (href && !/^(https?:|mailto:|tel:)/i.test(href)) {
-    if (href.startsWith('#')) {
-      // Hash-style "page route" links. AI templates and legacy scaffolds
-      // frequently generate `href="#services"` / `to="#/pricing"` for what
-      // is actually a real, separate page rather than an in-page scroll
-      // anchor — treating a multi-page site like a single-page site. A bare
-      // `#` (placeholder, no fragment) is never a route.
-      const fragment = href.replace(/^#\/?/, '').trim();
-      if (!fragment) return null;
-
-      // Try resolving the fragment as a route path first (`#/services` →
-      // `/services`), then fall back to label matching against the
-      // fragment itself (`#book-now` → "book now").
-      const route = normalizeRoute(`/${fragment}`);
-      const byRoute = index.byRoute.get(route) || index.byRoute.get(route.replace(/^\//, ''));
-      if (byRoute && byRoute.pageId !== currentPageId) return byRoute;
-
-      const fragmentLabel = normalizeText(fragment.replace(/[-_]+/g, ' '));
-      const byFragmentLabel = fragmentLabel ? index.byLabel.get(fragmentLabel) : undefined;
-      if (byFragmentLabel && byFragmentLabel.pageId !== currentPageId) return byFragmentLabel;
-
-      // No page matches this hash fragment — it's most likely a genuine
-      // same-page scroll anchor (e.g. `#pricing-table` with no separate
-      // Pricing page). Leave it alone; fall through to label matching below
-      // only continues to consider the element's visible text, not the
-      // hash itself, so we don't accidentally hijack real anchor scrolling.
-    } else {
-      const route = normalizeRoute(href);
-      const page = index.byRoute.get(route) || index.byRoute.get(route.replace(/^\//, ''));
-      if (page && page.pageId !== currentPageId) return page;
-    }
+  if (href && !/^(https?:|mailto:|tel:|#)/i.test(href)) {
+    const route = normalizeRoute(href.replace(/^#\/?/, '/'));
+    const page = index.byRoute.get(route) || index.byRoute.get(route.replace(/^\//, ''));
+    if (page && page.pageId !== currentPageId) return page;
   }
 
   // 2. label
@@ -277,23 +250,20 @@ function inferCurrentPageId(filePath: string, snapshot: SiteBundleSnapshot): Pag
   return null;
 }
 
-function buildAttrInjection(page: BuilderPage, label: string, attrs: ts.JsxAttributes): string {
+function buildAttrInjection(page: BuilderPage, label: string): string {
   const route = normalizeRoute(page.path);
-  const candidates: Array<[string, string]> = [
-    ['data-ut-intent', 'nav.goto'],
-    ['data-intent', 'nav.goto'],
-    ['data-ut-target-page-id', page.pageId],
-    ['data-ut-path', route],
-    ['data-ut-target-id', page.pageId],
-    ['data-ut-target-type', 'page'],
-    ['data-ut-ui-action', 'navigate'],
-    ['data-ut-preflight', '1'],
+  const attrs = [
+    `data-ut-intent="nav.goto"`,
+    `data-intent="nav.goto"`,
+    `data-ut-target-page-id="${escapeAttr(page.pageId)}"`,
+    `data-ut-path="${escapeAttr(route)}"`,
+    `data-ut-target-id="${escapeAttr(page.pageId)}"`,
+    `data-ut-target-type="page"`,
+    `data-ut-ui-action="navigate"`,
+    `data-ut-preflight="1"`,
   ];
-  if (label) candidates.push(['data-ut-label', label.slice(0, 80)]);
-  return candidates
-    .filter(([name]) => !hasAttr(attrs, name))
-    .map(([name, value]) => `${name}="${escapeAttr(value)}"`)
-    .join(' ');
+  if (label) attrs.push(`data-ut-label="${escapeAttr(label.slice(0, 80))}"`);
+  return attrs.join(' ');
 }
 
 interface Edit {
@@ -329,15 +299,7 @@ function processFile(
     text: string,
   ) => {
     if (!isInteractiveTag(tagName, attrs)) return;
-    const existingIntent = getAttrValue(attrs, 'data-ut-intent') || getAttrValue(attrs, 'data-intent');
-    // Preserve explicit non-navigation bindings. Existing nav.goto bindings are
-    // enriched below when their required route/page payload is incomplete.
-    if (existingIntent && existingIntent !== 'nav.goto' && existingIntent !== 'nav.goto_page') return;
-    if (
-      existingIntent
-      && hasAttr(attrs, 'data-ut-path')
-      && hasAttr(attrs, 'data-ut-target-page-id')
-    ) return;
+    if (hasAttr(attrs, 'data-ut-intent') || hasAttr(attrs, 'data-intent')) return;
 
     const info: OpeningTagInfo = { tagName, openTagStart, openTagEnd, attrs, text };
     const page = resolvePageForElement(info, index, currentPageId);
@@ -354,9 +316,7 @@ function processFile(
     // Inject before the closing `>` of the opening tag.
     // openTagEnd points at the position just after `>`.
     const insertionPoint = openTagEnd - (content[openTagEnd - 2] === '/' ? 2 : 1);
-    const attrsToInject = buildAttrInjection(page, text.trim(), attrs);
-    if (!attrsToInject) return;
-    const injection = ` ${attrsToInject}`;
+    const injection = ` ${buildAttrInjection(page, text.trim())}`;
     edits.push({ start: insertionPoint, end: insertionPoint, replacement: injection });
     result.wired += 1;
   };
@@ -403,6 +363,7 @@ export function preflightNavWiring(
       result.files[filePath] = processFile(filePath, content, index, snapshot, result);
     } catch (err) {
       // Never let a single bad file break the pass.
+      // eslint-disable-next-line no-console
       console.warn('[preflightNavWiring] skip file due to parse error', filePath, err);
     }
   }

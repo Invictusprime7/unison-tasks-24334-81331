@@ -19,7 +19,6 @@ import { getCompositionById } from '@/sections/templates';
 import type { LayoutCategory } from '@/data/templates/types';
 import type { BuilderPage } from '@/types/pageRegistry';
 import type { GeneratedSitePlan, PageRole, PageRouteNode } from '@/platform/core/siteTopologyPlanner';
-import type { WizardDesignIntervention } from '@/services/wizardDesignIntervention';
 
 export interface CompilePlaygroundOptions {
   /** Selected template used to generate real role-filtered page scaffolds. */
@@ -28,12 +27,8 @@ export interface CompilePlaygroundOptions {
   selectedThemeId?: string;
   /** Resolved wizard ThemePreset id used for route-level token seeding. */
   themePresetId?: string;
-  /** Exact Stage 4b stylesheet supplied by the canonical pipeline. */
-  stage4bCss?: string;
   /** Industry overlay used by template/page scaffolding. */
   industry?: LayoutCategory | string | null;
-  /** Versioned visual recipes chosen by the canonical wizard pipeline. */
-  designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants' | 'activeVariants'> & Partial<Pick<WizardDesignIntervention, 'industry' | 'themePresetId' | 'layoutRecipe' | 'interactionRecipes'>>;
 }
 
 type WizardSeedLike = Record<string, unknown> & {
@@ -244,9 +239,7 @@ export function compilePlayground(
       // Multi-file emit: page module + per-section components under
       // /src/components/*. Shared component files are idempotent across
       // pages and safe to merge by Object.assign.
-      const fileSet = generateTopologyPlaceholderFiles(node, scaffoldPlan, undefined, {
-        designIntervention: options?.designIntervention,
-      });
+      const fileSet = generateTopologyPlaceholderFiles(node, scaffoldPlan);
       Object.assign(vfsFiles, fileSet);
     } catch (err) {
       if (err instanceof PreviewPipelineError) {
@@ -284,7 +277,6 @@ export function compilePlayground(
   // existing user-authored config files.
   const hydratedVfsFiles = ensureViteRootFiles(vfsFiles, {
     themePresetId: resolvedThemePresetId ?? null,
-    stage4bCss: options?.stage4bCss,
   });
 
   for (const [p, c] of Object.entries(hydratedVfsFiles)) {

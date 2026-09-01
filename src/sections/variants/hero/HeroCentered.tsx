@@ -16,7 +16,7 @@ export const HeroCentered: React.FC<BaseSectionProps<'hero'>> = ({ section, them
       className="relative overflow-hidden"
       style={{
         padding: theme.sectionPadding,
-        paddingTop: 'clamp(5.5rem, 8vw, 6.5rem)',
+        paddingTop: '8rem',
         background: hsl(theme.colors.background),
       }}
     >

@@ -2,28 +2,10 @@ import { Suspense, lazy, Component, type ReactNode, type ErrorInfo } from "react
 import { VFSProvider } from "@/contexts/VFSContext";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LaunchDegradationNote } from "@/components/builder/LaunchDegradationNote";
 
-
-const WEB_BUILDER_MODULE_RETRY_KEY = "unison:web-builder-module-retry";
-type WebBuilderModule = typeof import("@/components/creatives/WebBuilder");
-
-const WebBuilder = lazy(async (): Promise<{ default: WebBuilderModule["WebBuilder"] }> => {
-  try {
-    const module = await import("@/components/creatives/WebBuilder");
-    window.sessionStorage.removeItem(WEB_BUILDER_MODULE_RETRY_KEY);
-    return { default: module.WebBuilder };
-  } catch (error) {
-    if (window.sessionStorage.getItem(WEB_BUILDER_MODULE_RETRY_KEY) !== "1") {
-      window.sessionStorage.setItem(WEB_BUILDER_MODULE_RETRY_KEY, "1");
-      window.location.reload();
-      return new Promise(() => undefined);
-    }
-
-    window.sessionStorage.removeItem(WEB_BUILDER_MODULE_RETRY_KEY);
-    throw error;
-  }
-});
+const WebBuilder = lazy(() =>
+  import("@/components/creatives/WebBuilder").then((m) => ({ default: m.WebBuilder }))
+);
 
 // Inner error boundary that catches VFS/WebBuilder-specific crashes
 // and allows recovery without navigating away
@@ -48,7 +30,7 @@ class VFSErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-[100dvh] w-full flex items-center justify-center bg-background">
+        <div className="h-screen w-full flex items-center justify-center bg-background">
           <div className="text-center max-w-md p-8">
             <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold mb-2">Web Builder failed to load</h2>
@@ -88,10 +70,10 @@ class VFSErrorBoundary extends Component<
 const WebBuilderPage = () => (
   <VFSErrorBoundary>
     <VFSProvider>
-      <div className="min-h-[100dvh] w-full overflow-hidden">
+      <div className="h-screen w-full">
         <Suspense
           fallback={
-            <div className="min-h-[100dvh] w-full flex items-center justify-center">
+            <div className="h-screen w-full flex items-center justify-center">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
                 <p className="text-muted-foreground">Loading Web Builder...</p>
@@ -101,11 +83,9 @@ const WebBuilderPage = () => (
         >
           <WebBuilder />
         </Suspense>
-        <LaunchDegradationNote />
       </div>
     </VFSProvider>
   </VFSErrorBoundary>
 );
-
 
 export default WebBuilderPage;

@@ -26,6 +26,16 @@ interface CartItem {
   };
 }
 
+interface Booking {
+  id: string;
+  service_name: string;
+  customer_name: string;
+  customer_email: string;
+  booking_date: string;
+  booking_time: string;
+  status: string;
+}
+
 interface Order {
   id: string;
   customer_email: string;
@@ -113,6 +123,42 @@ export const useTemplateAutomation = () => {
     }
   };
 
+  // BOOKING OPERATIONS
+  const createBooking = async (bookingData: {
+    serviceName: string;
+    customerName: string;
+    customerEmail: string;
+    customerPhone?: string;
+    bookingDate: string;
+    bookingTime: string;
+    durationMinutes?: number;
+    notes?: string;
+    ghlCalendarId?: string;
+    locationId?: string;
+  }): Promise<Booking | null> => {
+    setLoading(true);
+    try {
+      const result = await callAutomation('createBooking', bookingData);
+      toast.success('Booking confirmed!');
+      return result.booking;
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create booking');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getAvailableSlots = async (date: string, serviceDuration = 60) => {
+    try {
+      const result = await callAutomation('getAvailableSlots', { date, serviceDuration });
+      return result.slots || [];
+    } catch (error) {
+      console.error('Error fetching slots:', error);
+      return [];
+    }
+  };
+
   // ORDER OPERATIONS
   const createOrder = async (orderData: {
     customerEmail: string;
@@ -167,6 +213,9 @@ export const useTemplateAutomation = () => {
     removeFromCart,
     clearCart,
     fetchCart,
+    // Bookings
+    createBooking,
+    getAvailableSlots,
     // Orders
     createOrder,
     // Products

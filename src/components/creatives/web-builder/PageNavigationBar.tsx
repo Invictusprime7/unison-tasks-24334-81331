@@ -5,8 +5,9 @@
  * between pages in the preview. Only visible when >1 page exists.
  */
 
+import { useMemo, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, FileText, Home, Plus, Redo2, RefreshCcw, Undo2, X } from "lucide-react";
+import { FileText, Plus, X, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
@@ -30,13 +31,6 @@ interface PageNavigationBarProps {
   onAddPage?: () => void;
   /** Optional: callback to remove a page */
   onRemovePage?: (path: string) => void;
-  onUndo?: () => void;
-  onRedo?: () => void;
-  onRefresh?: () => void;
-  onOpenPreview?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
-  isRefreshing?: boolean;
 }
 
 export function PageNavigationBar({
@@ -45,16 +39,11 @@ export function PageNavigationBar({
   onSelectPage,
   onAddPage,
   onRemovePage,
-  onUndo,
-  onRedo,
-  onRefresh,
-  onOpenPreview,
-  canUndo = false,
-  canRedo = false,
-  isRefreshing = false,
 }: PageNavigationBarProps) {
+  if (pages.length <= 1) return null;
+
   return (
-    <div className="flex h-8 shrink-0 items-center gap-1 border-b border-white/[0.05] bg-transparent px-2">
+    <div className="h-9 bg-muted/30 border-b flex items-center px-2 gap-1 shrink-0">
       <ScrollArea className="flex-1">
         <div className="flex items-center gap-0.5 pr-2">
           {pages.map((page) => {
@@ -64,10 +53,10 @@ export function PageNavigationBar({
                 key={page.path}
                 onClick={() => onSelectPage(page.path)}
                 className={cn(
-                    "group relative flex h-7 items-center gap-1.5 whitespace-nowrap px-2 text-[11px] font-medium transition-colors",
+                  "group flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap",
                   isActive
-                    ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-px after:bg-indigo-400"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-background text-foreground shadow-sm border border-border"
+                    : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                 )}
                 title={page.path}
               >
@@ -79,7 +68,7 @@ export function PageNavigationBar({
                 <span className="max-w-[120px] truncate">{page.label}</span>
                 {onRemovePage && !page.isMain && (
                   <X
-                    className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100"
+                    className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.stopPropagation();
                       onRemovePage(page.path);
@@ -97,61 +86,12 @@ export function PageNavigationBar({
           variant="ghost"
           size="icon"
           onClick={onAddPage}
-          className="h-7 w-7 shrink-0 rounded text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
           title="Add new page"
         >
           <Plus className="h-3.5 w-3.5" />
         </Button>
       )}
-      <div className="ml-1 flex shrink-0 items-center gap-0.5 border-l border-white/[0.06] pl-1">
-        {onUndo && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onUndo}
-            disabled={!canUndo}
-            className="h-7 w-7 rounded text-muted-foreground hover:bg-white/[0.05] hover:text-foreground disabled:opacity-30"
-            title="Undo (Ctrl+Z)"
-          >
-            <Undo2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        {onRedo && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRedo}
-            disabled={!canRedo}
-            className="h-7 w-7 rounded text-muted-foreground hover:bg-white/[0.05] hover:text-foreground disabled:opacity-30"
-            title="Redo (Ctrl+Y)"
-          >
-            <Redo2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        {onRefresh && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            className="h-7 w-7 rounded text-muted-foreground hover:bg-white/[0.05] hover:text-foreground disabled:opacity-30"
-            title="Refresh preview (F5)"
-          >
-            <RefreshCcw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
-          </Button>
-        )}
-        {onOpenPreview && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onOpenPreview}
-            className="h-7 w-7 rounded text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
-            title="Open preview in new tab"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Button>
-        )}
-      </div>
     </div>
   );
 }

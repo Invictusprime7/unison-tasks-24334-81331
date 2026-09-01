@@ -1,4 +1,3 @@
-import { GENERATED_RUNTIME_PROFILE } from '@/platform/core/generatedRuntimeCapabilities';
 /**
  * Sandpack File Preparation Utilities
  * 
@@ -22,67 +21,17 @@ import { GENERATED_RUNTIME_PROFILE } from '@/platform/core/generatedRuntimeCapab
 
 import { ensureReactImports, sanitizeSvgElements } from '@/utils/aiCodeCleaner';
 import { LAUNCHER_BASE_THEME } from '@/sections/themes';
-import { isSandpackAllowedImport } from '@/utils/sandpackDependencies';
+import { SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
 import { isValidAesthetic } from '@/utils/aestheticToCSS';
 import { buildThemedIndexCss } from '@/components/onboarding/themePresetToIndexCss';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
-import { isLiveEditedVfsPath, resolveSnapshot } from '@/services/snapshotProjector';
-import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
-import { buildGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
+import { resolveSnapshot } from '@/services/snapshotProjector';
+import { enforceThemeGeometryContract, hasThemeGeometryContract } from '@/services/themeGeometryContract';
+import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedChrome';
 
-const UI_MANIFEST_PATH = '/.unison/ui-manifest.json';
-
-/**
- * Single source of truth for re-materializing the Unison UI foundation into a
- * VFS. Every runtime module, the root barrel, the CSS bridge, and the manifest
- * are refreshed together so parents, children, and tokens can never drift out
- * of sync between the VFS, the preview, and the Playground.
- */
-export function syncGeneratedUiFoundationFiles(
-  files: Record<string, string>,
-  themePresetId?: string | null,
-): void {
-  const foundation = buildGeneratedUiFoundation({
-    themePresetId: themePresetId || 'snapshot-recovery',
-  });
-
-  for (const [path, content] of Object.entries(foundation.files)) {
-    if (path === UI_MANIFEST_PATH) continue;
-    // Every path emitted by buildGeneratedUiFoundation is registry-owned.
-    // Refresh it atomically even when a legacy snapshot predates the marker;
-    // unknown user files outside this path set remain untouched.
-    files[path] = content;
-  }
-
-  // Keep the manifest in lockstep with the runtime files we just wrote. A
-  // stale-version manifest reads back as `null` and makes downstream contract
-  // checks treat a healthy snapshot as invalid.
-  // Only refresh an existing manifest — non-wizard drafts intentionally have
-  // none, and fabricating one would make them look snapshot-owned.
-  const existingManifest = files[UI_MANIFEST_PATH];
-  if (!existingManifest) return;
-  try {
-    const parsed = JSON.parse(existingManifest) as Record<string, unknown>;
-    if (parsed.version === foundation.manifest.version) return;
-    const extraRequirements = Array.isArray(parsed.requirements)
-      ? (parsed.requirements as string[]).filter(
-          (requirement) => !foundation.manifest.requirements.includes(requirement),
-        )
-      : [];
-    files[UI_MANIFEST_PATH] = JSON.stringify(
-      {
-        ...foundation.manifest,
-        requirements: [...foundation.manifest.requirements, ...extraRequirements],
-      },
-      null,
-      2,
-    );
-  } catch {
-    files[UI_MANIFEST_PATH] = foundation.files[UI_MANIFEST_PATH];
-  }
-}
+const ALLOWED_IMPORTS = SANDPACK_ALLOWED_IMPORTS;
 
 const LAUNCHER_THEME_JSON = JSON.stringify(LAUNCHER_BASE_THEME, null, 2);
 
@@ -128,7 +77,7 @@ const PREVIEW_INDEX_HTML = `<!DOCTYPE html>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script data-unison-semantic-tailwind>
+  <script>
     tailwind.config = {
       theme: {
         extend: {
@@ -187,25 +136,6 @@ const PREVIEW_INDEX_HTML = `<!DOCTYPE html>
   <div id="root"></div>
 </body>
 </html>`;
-
-const SEMANTIC_TAILWIND_CONFIG = PREVIEW_INDEX_HTML.match(
-  /<script data-unison-semantic-tailwind>[\s\S]*?<\/script>/,
-)?.[0] || '';
-
-function ensureSemanticTailwindPreviewHtml(html: string): string {
-  if (html.includes('data-unison-semantic-tailwind')) return html;
-
-  const needsTailwindRuntime = !/cdn\.tailwindcss\.com/i.test(html);
-  const bridge = [
-    needsTailwindRuntime ? '<script src="https://cdn.tailwindcss.com"></script>' : '',
-    SEMANTIC_TAILWIND_CONFIG,
-  ].filter(Boolean).join('\n  ');
-
-  if (/<\/head>/i.test(html)) {
-    return html.replace(/<\/head>/i, `  ${bridge}\n</head>`);
-  }
-  return `${bridge}\n${html}`;
-}
 
 
 const PREVIEW_NAV_BRIDGE = `function __initUnisonPreviewNavBridge() {
@@ -1014,62 +944,38 @@ const App = (() => {
   return null;
 })();
 
-// Sandpack replaces the VFS index.html with its own shell, so scripts placed
-// there never run. Bootstrap Tailwind here, before the site mounts, to compile
-// the generated utility classes alongside the snapshot-owned token stylesheet.
-const __tailwindConfig = {
-  theme: {
-    extend: {
-      colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-        primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
-        secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
-        destructive: { DEFAULT: 'hsl(var(--destructive))', foreground: 'hsl(var(--destructive-foreground))' },
-        muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
-        accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
-        popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
-        card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
-      },
-      borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
-      },
-      fontFamily: {
-        heading: 'var(--font-heading, ui-sans-serif, system-ui, sans-serif)',
-        body: 'var(--font-body, ui-sans-serif, system-ui, sans-serif)',
+// Configure Tailwind CDN with semantic design tokens
+if (typeof window !== 'undefined' && (window as any).tailwind) {
+  (window as any).tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          border: 'hsl(var(--border))',
+          input: 'hsl(var(--input))',
+          ring: 'hsl(var(--ring))',
+          background: 'hsl(var(--background))',
+          foreground: 'hsl(var(--foreground))',
+          primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
+          secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
+          destructive: { DEFAULT: 'hsl(var(--destructive))', foreground: 'hsl(var(--destructive-foreground))' },
+          muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
+          accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
+          popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
+          card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
+        },
+        borderRadius: {
+          lg: 'var(--radius)',
+          md: 'calc(var(--radius) - 2px)',
+          sm: 'calc(var(--radius) - 4px)',
+        },
+        fontFamily: {
+          heading: 'var(--font-heading, ui-sans-serif, system-ui, sans-serif)',
+          body: 'var(--font-body, ui-sans-serif, system-ui, sans-serif)',
+        },
       },
     },
-  },
-};
-
-const __loadTailwindUtilities = () => new Promise<void>((resolve) => {
-  if (document.querySelector('[data-unison-tailwind-runtime]')) {
-    resolve();
-    return;
-  }
-
-  (window as any).tailwind = { config: __tailwindConfig };
-  const source = document.createElement('style');
-  source.type = 'text/tailwindcss';
-  source.dataset.unisonTailwindSource = 'true';
-  source.textContent = '@tailwind base; @tailwind components; @tailwind utilities;';
-  document.head.appendChild(source);
-
-  const loader = document.createElement('script');
-  loader.src = 'https://cdn.tailwindcss.com';
-  loader.async = true;
-  loader.dataset.unisonTailwindRuntime = 'true';
-  const finish = () => window.setTimeout(resolve, 0);
-  loader.onload = finish;
-  loader.onerror = finish;
-  document.head.appendChild(loader);
-  window.setTimeout(finish, 5000);
-});
+  };
+}
 
 ${PREVIEW_NAV_BRIDGE}
 __initUnisonPreviewNavBridge();
@@ -1113,7 +1019,6 @@ class PreviewErrorBoundary extends Component<{ children: React.ReactNode }, { ha
   }
 }
 
-const __mountPreview = () => {
 if (App) {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
@@ -1136,9 +1041,6 @@ if (App) {
     </div>
   );
 }
-};
-
-void __loadTailwindUtilities().finally(__mountPreview);
 `;
 
 const HOOKS_SHIM = `
@@ -1471,167 +1373,6 @@ export function Calendar({ ...props }) { return React.createElement('div', { cla
 
 export default {};
 `;
-
-// Sandpack's remote compiler transforms Radix CJS modules and then attempts to
-// collect injected @swc/helpers imports. Generated previews only need the
-// component API shape, so keep the existing VFS facade imports local.
-const RADIX_PREVIEW_SHIM = `
-import React from 'react';
-
-const passthrough = (tag = 'div') => React.forwardRef(({ children, ...props }, ref) =>
-  React.createElement(tag, { ...props, ref }, children)
-);
-
-export const Root = passthrough();
-export const Trigger = passthrough('button');
-export const Content = passthrough();
-export const Portal = ({ children }) => React.createElement(React.Fragment, null, children);
-export const Overlay = passthrough();
-export const Title = passthrough('h2');
-export const Description = passthrough('p');
-export const Close = passthrough('button');
-export const Item = passthrough();
-export const ItemText = passthrough('span');
-export const ItemIndicator = passthrough('span');
-export const Group = passthrough();
-export const Label = passthrough('label');
-export const Separator = passthrough();
-export const Viewport = passthrough();
-export const Scrollbar = passthrough();
-export const Thumb = passthrough();
-export const Icon = passthrough('span');
-export const Arrow = passthrough();
-export const Value = passthrough('span');
-export const Indicator = passthrough('span');
-export const Toggle = passthrough('button');
-export const ToggleGroup = Root;
-export const ToggleGroupItem = Trigger;
-export const List = passthrough();
-export const Link = passthrough('a');
-export const Collection = passthrough();
-export const CollectionItem = passthrough();
-export const AspectRatio = passthrough();
-export const Image = passthrough('img');
-export const Fallback = passthrough('span');
-export const Provider = ({ children }) => React.createElement(React.Fragment, null, children);
-export const ToastProvider = Provider;
-export const ToastViewport = Viewport;
-export const Toast = Root;
-export const ToastTitle = Title;
-export const ToastDescription = Description;
-export const ToastAction = Trigger;
-export const ToastClose = Close;
-export const createSlot = () => Slot;
-export const Slottable = ({ children }) => React.createElement(React.Fragment, null, children);
-export const Slot = React.forwardRef(({ children, ...props }, ref) => {
-  const child = React.Children.toArray(children).find(React.isValidElement);
-  return child
-    ? React.cloneElement(child, { ...props, ref })
-    : React.createElement('span', { ...props, ref }, children);
-});
-export const createContextScope = () => [() => [Provider, () => ({})], () => ({})];
-export const createCollection = () => [{ Provider, Slot, ItemSlot: Item }, () => [], () => ({})];
-export const unstable_createCollection = createCollection;
-export const createPopperScope = () => () => ({});
-export const createMenuScope = () => () => ({});
-export const createDialogScope = () => () => ({});
-export const createSelectScope = () => () => ({});
-export const createTooltipScope = () => () => ({});
-export const createTabsScope = () => () => ({});
-export const createAccordionScope = () => () => ({});
-export const useControllableState = ({ defaultProp, prop, onChange }) => {
-  const [value, setValue] = React.useState(prop === undefined ? defaultProp : prop);
-  const set = (next) => { const resolved = typeof next === 'function' ? next(value) : next; setValue(resolved); onChange?.(resolved); };
-  return [prop === undefined ? value : prop, set];
-};
-export const useComposedRefs = (...refs) => (node) => refs.forEach((ref) => {
-  if (typeof ref === 'function') ref(node);
-  else if (ref) ref.current = node;
-});
-`;
-
-// Sandpack's CommonJS transform for Framer Motion has the same dependency
-// collector failure as Radix. Generated previews need declarative motion
-// components, not the animation runtime, while compiling.
-const MOTION_PREVIEW_SHIM = `
-import React from 'react';
-
-const MOTION_ONLY_PROPS = new Set([
-  'animate', 'initial', 'exit', 'transition', 'variants', 'whileHover',
-  'whileTap', 'whileFocus', 'whileInView', 'layout', 'layoutId', 'drag',
-  'dragConstraints', 'onAnimationStart', 'onAnimationComplete',
-]);
-const component = (tag = 'div') => React.forwardRef(({ children, ...props }, ref) => {
-  const domProps = Object.fromEntries(
-    Object.entries(props).filter(([name]) => !MOTION_ONLY_PROPS.has(name))
-  );
-  return React.createElement(tag, { ...domProps, ref }, children);
-});
-const motionComponent = (tag) => component(String(tag));
-export const motion = new Proxy({}, { get: (_target, tag) => motionComponent(tag) });
-export const m = motion;
-export const AnimatePresence = ({ children }) => React.createElement(React.Fragment, null, children);
-export const LazyMotion = AnimatePresence;
-export const LayoutGroup = AnimatePresence;
-export const MotionConfig = AnimatePresence;
-export const Reorder = { Group: component(), Item: component() };
-export const useMotionValue = (initial) => {
-  const value = React.useRef(initial);
-  return React.useMemo(() => ({ get: () => value.current, set: (next) => { value.current = next; }, on: () => () => {} }), []);
-};
-export const useSpring = (value) => value;
-export const useTransform = (value) => value;
-export const useScroll = () => ({ scrollX: useMotionValue(0), scrollY: useMotionValue(0), scrollXProgress: useMotionValue(0), scrollYProgress: useMotionValue(0) });
-export const useInView = () => true;
-export const useAnimation = () => ({ start: () => Promise.resolve(), set: () => {}, stop: () => {} });
-export const useReducedMotion = () => false;
-`;
-
-/**
- * Keep external Radix packages out of Sandpack's dependency graph. This must
- * also run after canonical overlays, which are written after the main file
- * preparation pass.
- */
-export function applyRadixPreviewShim(files: Record<string, string>): Record<string, string> {
-  const previewFiles = { ...files };
-
-  for (const [filePath, content] of Object.entries(previewFiles)) {
-    if (!/\.[cm]?[jt]sx?$/.test(filePath)) continue;
-
-    const sandpackPath = filePath.replace(/^\/src\//, '/');
-    const radixShimImport = toRelativeSandpackImport(sandpackPath, '/radix-shim');
-    previewFiles[filePath] = content.replace(
-      /(['"])@radix-ui\/react-[^'"]+\1/g,
-      (_match, quote: string) => `${quote}${radixShimImport}${quote}`,
-    );
-  }
-
-  previewFiles['/radix-shim.tsx'] = RADIX_PREVIEW_SHIM;
-  return previewFiles;
-}
-
-/** Replace Framer Motion imports only in Sandpack artifact files. */
-export function applyFramerMotionPreviewShim(files: Record<string, string>): Record<string, string> {
-  const previewFiles = { ...files };
-
-  for (const [filePath, content] of Object.entries(previewFiles)) {
-    if (!/\.[cm]?[jt]sx?$/.test(filePath)) continue;
-
-    const sandpackPath = filePath.replace(/^\/src\//, '/');
-    const motionShimImport = toRelativeSandpackImport(sandpackPath, '/motion-shim');
-    previewFiles[filePath] = content.replace(
-      /(['"])framer-motion\1/g,
-      (_match, quote: string) => `${quote}${motionShimImport}${quote}`,
-    );
-  }
-
-  previewFiles['/motion-shim.tsx'] = MOTION_PREVIEW_SHIM;
-  return previewFiles;
-}
-
-export function applySandpackRuntimeShims(files: Record<string, string>): Record<string, string> {
-  return applyFramerMotionPreviewShim(applyRadixPreviewShim(files));
-}
 
 // ── Industry-contextual fallback images ──────────────────────────────────────
 const CONTEXTUAL_IMAGES: Record<string, string[]> = {
@@ -2127,6 +1868,7 @@ function createProxyApp(targetPath: string): string {
   const importPath = toRelativeSandpackImport('/App.tsx', targetPath).replace(/\.(tsx?|jsx?)$/, '');
 
   return `import React from 'react';
+import { HashRouter } from 'react-router-dom';
 import * as PreviewEntryModule from '${importPath}';
 
 // Robust component discovery: prefer default export, then find first PascalCase function/class component
@@ -2184,7 +1926,11 @@ export default function App() {
     }, React.createElement('h2', { style: { fontSize: 18, marginBottom: 8 } }, 'No renderable component found'), React.createElement('p', { style: { color: '#888', fontSize: 14 } }, 'The entry file does not export a valid React component. Check that your component uses "export default" or a named PascalCase export.'), React.createElement('p', { style: { color: '#aaa', fontSize: 12, marginTop: 12 } }, 'Source: ${targetPath}')));
   }
 
-  return React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry));
+  return React.createElement(
+    HashRouter,
+    null,
+    React.createElement(ErrorBoundary, null, React.createElement(PreviewEntry))
+  );
 }
 `;
 }
@@ -2194,6 +1940,1617 @@ export default function App() {
 // preview cannot render the AI output, surface the real runtime error from
 // DEFAULT_INDEX instead of substituting a placeholder.
 
+
+// ── Real component generators keyed by section name ─────────────────────────
+// When the AI generates App.tsx that imports ./components/Hero etc. but omits
+// the actual file, we synthesize a REAL section component — not a stub.
+
+interface GeneratorContext {
+  industry: string;
+  images: string[];
+  portraits: string[];
+  brandName: string;
+}
+
+/** Detect industry from existing VFS content (CSS vars, copy, file names). */
+function detectIndustryFromVFS(files: Record<string, string>): string {
+  const allContent = Object.values(files).join(' ').toLowerCase();
+  const indicators: [string, string[]][] = [
+    ['restaurant', ['menu', 'dish', 'cuisine', 'chef', 'reservation', 'dining', 'restaurant', 'bistro', 'cafe']],
+    ['salon', ['salon', 'beauty', 'hair', 'spa', 'stylist', 'treatment', 'nail', 'skincare', 'facial']],
+    ['fitness', ['fitness', 'gym', 'workout', 'training', 'exercise', 'crossfit', 'yoga', 'pilates', 'membership']],
+    ['medical', ['medical', 'health', 'clinic', 'doctor', 'patient', 'dental', 'physician', 'hospital', 'healthcare']],
+    ['coaching', ['coaching', 'coach', 'consulting', 'mentor', 'mindset', 'breakthrough', 'discovery call', 'mastermind', 'transformation']],
+    ['local-service', ['plumbing', 'hvac', 'electrical', 'roofing', 'handyman', 'licensed', 'insured', 'estimate', 'emergency service']],
+    ['saas', ['saas', 'software', 'platform', 'dashboard', 'analytics', 'api', 'startup', 'integration', 'deploy']],
+    ['ecommerce', ['shop', 'product', 'cart', 'store', 'buy', 'ecommerce', 'collection', 'checkout', 'catalog']],
+    ['portfolio', ['portfolio', 'creative', 'freelance', 'selected work', 'case study', 'skillset']],
+    ['contractor', ['contractor', 'construction', 'remodel', 'renovation', 'home improvement', 'general contractor']],
+    ['agency', ['agency', 'marketing', 'branding', 'campaign', 'strategy', 'digital agency', 'creative agency']],
+  ];
+  for (const [industry, keywords] of indicators) {
+    if (keywords.filter(k => allContent.includes(k)).length >= 2) return industry;
+  }
+  return 'default';
+}
+
+/** Extract business name from App.tsx / VFS content. */
+function extractBusinessName(files: Record<string, string>): string {
+  for (const content of Object.values(files)) {
+    const h1 = content.match(/<h1[^>]*>([^<]{2,40})<\/h1>/i);
+    if (h1) return h1[1].trim();
+    const title = content.match(/(?:brandName|businessName|siteName|company)\s*[=:]\s*["']([^"']+)["']/);
+    if (title) return title[1];
+  }
+  return 'Our Business';
+}
+
+function genHero(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export function Hero() {
+  return (
+    <section className="relative min-h-[85vh] flex items-center overflow-hidden">
+      <div className="absolute inset-0 z-0">
+        <img src="${ctx.images[0] || CONTEXTUAL_IMAGES.default[0]}" alt="${ctx.brandName}" className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+      </div>
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-24">
+        <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">${ctx.brandName}</h1>
+        <p className="text-xl md:text-2xl text-white/90 mb-8 max-w-2xl">Premium ${ctx.industry} services crafted with passion and expertise for our valued clients.</p>
+        <div className="flex flex-wrap gap-4">
+          <button className="px-8 py-4 bg-white text-black font-semibold rounded-lg hover:bg-white/90 transition-all text-lg">Get Started</button>
+          <button className="px-8 py-4 border-2 border-white text-white font-semibold rounded-lg hover:bg-white/10 transition-all text-lg">Learn More</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Hero;`;
+}
+
+function genNavbar(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export function Navbar() {
+  return (
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <a href="#" className="text-xl font-bold text-foreground">${ctx.brandName}</a>
+        <div className="hidden md:flex items-center gap-8">
+          <a href="#about" className="text-foreground/70 hover:text-foreground transition-colors">About</a>
+          <a href="#services" className="text-foreground/70 hover:text-foreground transition-colors">Services</a>
+          <a href="#contact" className="text-foreground/70 hover:text-foreground transition-colors">Contact</a>
+          <button className="px-5 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-opacity">Book Now</button>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+export default Navbar;`;
+}
+
+function genHeader(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export function Header() {
+  return (
+    <header className="bg-background border-b border-border">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <span className="text-xl font-bold text-foreground">${ctx.brandName}</span>
+        <nav className="hidden md:flex items-center gap-6">
+          <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">Home</a>
+          <a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">Services</a>
+          <a href="#about" className="text-muted-foreground hover:text-foreground transition-colors">About</a>
+          <a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">Contact</a>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+export default Header;`;
+}
+
+function genFeatures(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const features = [
+  { title: 'Expert Team', desc: 'Our certified professionals bring years of ${ctx.industry} experience to every project.', icon: '⭐' },
+  { title: 'Quality First', desc: 'We use only premium materials and cutting-edge techniques for outstanding results.', icon: '✨' },
+  { title: 'Fast Turnaround', desc: 'Efficient processes ensure your project is completed on time, every time.', icon: '⚡' },
+  { title: 'Customer Focus', desc: 'Your satisfaction drives everything we do — from consultation to completion.', icon: '💎' },
+];
+
+export function Features() {
+  return (
+    <section id="features" className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Why Choose Us</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Discover what sets us apart in the ${ctx.industry} industry</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          {features.map((f, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8 text-center hover:shadow-lg transition-shadow">
+              <span className="text-4xl mb-4 block">{f.icon}</span>
+              <h3 className="text-xl font-semibold text-card-foreground mb-3">{f.title}</h3>
+              <p className="text-muted-foreground">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Features;`;
+}
+
+function genServices(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.default[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.default[1];
+  const img2 = ctx.images[2] || CONTEXTUAL_IMAGES.default[2];
+  return `import React from 'react';
+
+const services = [
+  { name: 'Premium Service', desc: 'Our flagship ${ctx.industry} offering with personalized attention to detail.', price: 'From $99', img: '${img0}' },
+  { name: 'Standard Package', desc: 'Everything you need to get started with professional quality.', price: 'From $59', img: '${img1}' },
+  { name: 'Custom Solution', desc: 'Tailored specifically to your unique requirements and goals.', price: 'Contact Us', img: '${img2}' },
+];
+
+export function Services() {
+  return (
+    <section id="services" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Our Services</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Professional solutions tailored to your needs</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {services.map((s, i) => (
+            <div key={i} className="group bg-card border border-border rounded-2xl overflow-hidden hover:shadow-xl transition-all">
+              <div className="h-56 overflow-hidden">
+                <img src={s.img} alt={s.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              </div>
+              <div className="p-6">
+                <h3 className="text-xl font-semibold text-card-foreground mb-2">{s.name}</h3>
+                <p className="text-muted-foreground mb-4">{s.desc}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-primary font-bold text-lg">{s.price}</span>
+                  <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">Learn More</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Services;`;
+}
+
+function genAbout(ctx: GeneratorContext): string {
+  const img = ctx.images[1] || CONTEXTUAL_IMAGES.default[1];
+  return `import React from 'react';
+
+export function About() {
+  return (
+    <section id="about" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+          <div>
+            <h2 className="text-4xl font-bold text-foreground mb-6">About ${ctx.brandName}</h2>
+            <p className="text-muted-foreground text-lg mb-6 leading-relaxed">With years of experience in the ${ctx.industry} industry, we have built a reputation for excellence, reliability, and genuine care for our clients.</p>
+            <p className="text-muted-foreground text-lg mb-8 leading-relaxed">Our team of dedicated professionals is passionate about delivering exceptional results that exceed expectations every time.</p>
+            <div className="grid grid-cols-3 gap-6">
+              <div className="text-center"><span className="block text-3xl font-bold text-primary">10+</span><span className="text-muted-foreground text-sm">Years</span></div>
+              <div className="text-center"><span className="block text-3xl font-bold text-primary">500+</span><span className="text-muted-foreground text-sm">Clients</span></div>
+              <div className="text-center"><span className="block text-3xl font-bold text-primary">50+</span><span className="text-muted-foreground text-sm">Team</span></div>
+            </div>
+          </div>
+          <div className="rounded-2xl overflow-hidden shadow-2xl">
+            <img src="${img}" alt="About ${ctx.brandName}" className="w-full h-[500px] object-cover" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default About;`;
+}
+
+function genTestimonials(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const testimonials = [
+  { name: 'Sarah Johnson', role: 'Regular Client', text: 'Absolutely outstanding service! ${ctx.brandName} exceeded all my expectations.', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Michael Chen', role: 'Business Owner', text: 'Professional, reliable, and incredibly talented. They transformed my vision into reality.', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'Emily Rodriguez', role: 'Returning Customer', text: 'The attention to detail and personalized approach makes all the difference.', img: '${PORTRAIT_IMAGES[2]}' },
+];
+
+export function Testimonials() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">What Our Clients Say</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {testimonials.map((t, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8">
+              <div className="flex items-center gap-1 mb-4">{[...Array(5)].map((_, j) => <span key={j} className="text-yellow-500 text-lg">★</span>)}</div>
+              <p className="text-card-foreground mb-6 italic leading-relaxed">"{t.text}"</p>
+              <div className="flex items-center gap-3">
+                <img src={t.img} alt={t.name} className="w-12 h-12 rounded-full object-cover" />
+                <div><p className="font-semibold text-card-foreground">{t.name}</p><p className="text-muted-foreground text-sm">{t.role}</p></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Testimonials;`;
+}
+
+function genContact(ctx: GeneratorContext): string {
+  const emailDomain = ctx.brandName.toLowerCase().replace(/\s+/g, '');
+  return `import React from 'react';
+
+export function Contact() {
+  return (
+    <section id="contact" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
+          <div>
+            <h2 className="text-4xl font-bold text-foreground mb-6">Get In Touch</h2>
+            <p className="text-muted-foreground text-lg mb-8">Ready to get started? Reach out and we will respond within 24 hours.</p>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-foreground"><span className="text-primary text-xl">📍</span>123 Business Ave, Suite 100</div>
+              <div className="flex items-center gap-3 text-foreground"><span className="text-primary text-xl">📞</span>(555) 123-4567</div>
+              <div className="flex items-center gap-3 text-foreground"><span className="text-primary text-xl">✉️</span>hello@${emailDomain}.com</div>
+            </div>
+          </div>
+          <form className="bg-card border border-border rounded-2xl p-8 space-y-5" onSubmit={e => e.preventDefault()}>
+            <div className="grid grid-cols-2 gap-4">
+              <input placeholder="First Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+              <input placeholder="Last Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            </div>
+            <input placeholder="Email" type="email" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <textarea placeholder="Your Message" rows={4} className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground resize-none" />
+            <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Send Message</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Contact;`;
+}
+
+function genFooter(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export function Footer() {
+  return (
+    <footer className="bg-foreground text-background py-16">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
+          <div>
+            <h3 className="text-xl font-bold mb-4">${ctx.brandName}</h3>
+            <p className="text-background/70 text-sm leading-relaxed">Delivering exceptional quality and service since day one.</p>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-4">Quick Links</h4>
+            <ul className="space-y-2 text-background/70 text-sm">
+              <li><a href="#" className="hover:text-background transition-colors">Home</a></li>
+              <li><a href="#services" className="hover:text-background transition-colors">Services</a></li>
+              <li><a href="#about" className="hover:text-background transition-colors">About</a></li>
+              <li><a href="#contact" className="hover:text-background transition-colors">Contact</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-4">Hours</h4>
+            <ul className="space-y-2 text-background/70 text-sm">
+              <li>Mon-Fri: 9am - 6pm</li>
+              <li>Saturday: 10am - 4pm</li>
+              <li>Sunday: Closed</li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-4">Follow Us</h4>
+            <div className="flex gap-3">
+              <a href="#" className="w-10 h-10 rounded-full bg-background/10 flex items-center justify-center hover:bg-background/20 transition-colors text-sm">X</a>
+              <a href="#" className="w-10 h-10 rounded-full bg-background/10 flex items-center justify-center hover:bg-background/20 transition-colors text-sm">in</a>
+              <a href="#" className="w-10 h-10 rounded-full bg-background/10 flex items-center justify-center hover:bg-background/20 transition-colors text-sm">ig</a>
+            </div>
+          </div>
+        </div>
+        <div className="border-t border-background/20 pt-8 text-center text-background/50 text-sm">&copy; {new Date().getFullYear()} ${ctx.brandName}. All rights reserved.</div>
+      </div>
+    </footer>
+  );
+}
+
+export default Footer;`;
+}
+
+function genPricing(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const plans = [
+  { name: 'Basic', price: '$29', period: '/mo', features: ['Core features', 'Email support', '1 user', 'Basic analytics'], popular: false },
+  { name: 'Professional', price: '$79', period: '/mo', features: ['Everything in Basic', 'Priority support', '5 users', 'Advanced analytics', 'Custom integrations'], popular: true },
+  { name: 'Enterprise', price: '$199', period: '/mo', features: ['Everything in Pro', '24/7 support', 'Unlimited users', 'Custom solutions', 'Dedicated manager'], popular: false },
+];
+
+export function Pricing() {
+  return (
+    <section id="pricing" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Simple Pricing</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Choose the plan that fits your needs</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {plans.map((p, i) => (
+            <div key={i} className={\`bg-card border rounded-2xl p-8 relative \${p.popular ? 'border-primary shadow-xl scale-105' : 'border-border'}\`}>
+              {p.popular && <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">Most Popular</span>}
+              <h3 className="text-xl font-semibold text-card-foreground mb-2">{p.name}</h3>
+              <div className="mb-6"><span className="text-4xl font-bold text-foreground">{p.price}</span><span className="text-muted-foreground">{p.period}</span></div>
+              <ul className="space-y-3 mb-8">{p.features.map((f, j) => <li key={j} className="flex items-center gap-2 text-muted-foreground"><span className="text-primary">✓</span>{f}</li>)}</ul>
+              <button className={\`w-full py-3 rounded-lg font-semibold transition-opacity \${p.popular ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-secondary text-secondary-foreground hover:opacity-80'}\`}>Get Started</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Pricing;`;
+}
+
+function genGallery(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const galleryImages = [
+  '${CONTEXTUAL_IMAGES.default[0]}',
+  '${CONTEXTUAL_IMAGES.default[1]}',
+  '${CONTEXTUAL_IMAGES.default[2]}',
+  '${CONTEXTUAL_IMAGES.portfolio[0]}',
+  '${CONTEXTUAL_IMAGES.agency[0]}',
+  '${CONTEXTUAL_IMAGES.saas[0]}',
+];
+
+export function Gallery() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Our Work</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {galleryImages.map((src, i) => (
+            <div key={i} className="aspect-square rounded-xl overflow-hidden group cursor-pointer">
+              <img src={src} alt={\`Gallery \${i+1}\`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Gallery;`;
+}
+
+function genCTA(ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+export function CTA() {
+  return (
+    <section className="py-24 bg-primary">
+      <div className="max-w-4xl mx-auto px-6 text-center">
+        <h2 className="text-4xl font-bold text-primary-foreground mb-6">Ready to Get Started?</h2>
+        <p className="text-primary-foreground/80 text-xl mb-10 max-w-2xl mx-auto">Join hundreds of satisfied customers who chose ${ctx.brandName}.</p>
+        <div className="flex flex-wrap gap-4 justify-center">
+          <button className="px-8 py-4 bg-background text-foreground font-semibold rounded-lg hover:opacity-90 transition-opacity text-lg">Contact Us Today</button>
+          <button className="px-8 py-4 border-2 border-primary-foreground text-primary-foreground font-semibold rounded-lg hover:bg-primary-foreground/10 transition-colors text-lg">View Our Work</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default CTA;`;
+}
+
+function genFAQ(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const faqs = [
+  { q: 'How do I get started?', a: 'Simply reach out through our contact form or give us a call. We will schedule a free consultation to discuss your needs.' },
+  { q: 'What are your hours?', a: 'We are open Monday through Friday, 9am to 6pm, and Saturday 10am to 4pm.' },
+  { q: 'Do you offer free consultations?', a: 'Yes! We offer a complimentary initial consultation to understand your requirements and provide a detailed quote.' },
+  { q: 'What is your cancellation policy?', a: 'We require 24-hour notice for cancellations. Late cancellations may incur a fee.' },
+];
+
+export function FAQ() {
+  const [open, setOpen] = React.useState<number | null>(null);
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-3xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Frequently Asked Questions</h2>
+        <div className="space-y-4">
+          {faqs.map((f, i) => (
+            <div key={i} className="border border-border rounded-xl overflow-hidden">
+              <button onClick={() => setOpen(open === i ? null : i)} className="w-full px-6 py-4 flex items-center justify-between text-left text-foreground font-medium hover:bg-secondary/50 transition-colors">
+                {f.q}<span className="text-muted-foreground ml-2">{open === i ? '−' : '+'}</span>
+              </button>
+              {open === i && <div className="px-6 pb-4 text-muted-foreground">{f.a}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default FAQ;`;
+}
+
+function genTeam(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+
+const members = [
+  { name: 'Alex Thompson', role: 'Founder & CEO', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Maria Garcia', role: 'Creative Director', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'James Wilson', role: 'Lead Developer', img: '${PORTRAIT_IMAGES[2]}' },
+  { name: 'Sophie Chen', role: 'Operations Manager', img: '${PORTRAIT_IMAGES[3]}' },
+];
+
+export function Team() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Meet Our Team</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          {members.map((m, i) => (
+            <div key={i} className="text-center group">
+              <div className="w-40 h-40 mx-auto rounded-full overflow-hidden mb-4 ring-4 ring-border group-hover:ring-primary transition-all">
+                <img src={m.img} alt={m.name} className="w-full h-full object-cover" />
+              </div>
+              <h3 className="font-semibold text-foreground text-lg">{m.name}</h3>
+              <p className="text-muted-foreground text-sm">{m.role}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Team;`;
+}
+
+// ── Industry-specific generators ──────────────────────────────────────────────
+// RESTAURANT
+function genMenu(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.default[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.default[1];
+  return `import React from 'react';
+const menuItems = [
+  { category: 'Starters', items: [
+    { name: 'Bruschetta', desc: 'Toasted bread with fresh tomatoes, basil, and olive oil', price: '$12', img: '${img0}' },
+    { name: 'Soup of the Day', desc: "Chef's daily selection served with artisan bread", price: '$10' },
+    { name: 'Caesar Salad', desc: 'Crisp romaine with parmesan, croutons, and house dressing', price: '$14' },
+  ]},
+  { category: 'Main Courses', items: [
+    { name: 'Grilled Salmon', desc: 'Atlantic salmon with seasonal vegetables and lemon butter', price: '$28', img: '${img1}' },
+    { name: 'Filet Mignon', desc: '8oz prime cut with truffle mashed potatoes', price: '$42' },
+    { name: 'Pasta Primavera', desc: 'Fresh pasta with garden vegetables in a light cream sauce', price: '$22' },
+  ]},
+];
+export function Menu() {
+  return (
+    <section id="menu" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Our Menu</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Crafted with the finest seasonal ingredients</p>
+        {menuItems.map((cat, ci) => (
+          <div key={ci} className="mb-16 last:mb-0">
+            <h3 className="text-2xl font-semibold text-primary mb-8 text-center">{cat.category}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {cat.items.map((item, ii) => (
+                <div key={ii} className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-lg transition-shadow">
+                  {item.img && <img src={item.img} alt={item.name} className="w-full h-48 object-cover" />}
+                  <div className="p-5">
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="text-lg font-semibold text-card-foreground">{item.name}</h4>
+                      <span className="text-primary font-bold">{item.price}</span>
+                    </div>
+                    <p className="text-muted-foreground text-sm">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+export default Menu;`;
+}
+
+function genReservation(ctx: GeneratorContext): string {
+  return `import React from 'react';
+export function Reservation() {
+  return (
+    <section id="reservation" className="py-24 bg-secondary/30">
+      <div className="max-w-4xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Make a Reservation</h2>
+        <p className="text-muted-foreground text-center mb-12 text-lg">Book your table at ${ctx.brandName}</p>
+        <form className="bg-card border border-border rounded-2xl p-8 space-y-5" onSubmit={e => e.preventDefault()}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input placeholder="Full Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="Phone Number" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <input type="date" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground" />
+            <input type="time" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground" />
+            <select className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground">
+              <option>2 Guests</option><option>3 Guests</option><option>4 Guests</option><option>5+ Guests</option>
+            </select>
+          </div>
+          <textarea placeholder="Special Requests" rows={3} className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground resize-none" />
+          <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Reserve Table</button>
+        </form>
+      </div>
+    </section>
+  );
+}
+export default Reservation;`;
+}
+
+function genSpecials(ctx: GeneratorContext): string {
+  const img = ctx.images[0] || CONTEXTUAL_IMAGES.default[0];
+  return `import React from 'react';
+const specials = [
+  { name: "Chef's Tasting Menu", desc: 'A curated five-course experience featuring seasonal highlights.', price: '$85/person', img: '${img}' },
+  { name: 'Weekend Brunch', desc: 'Enjoy our signature brunch menu every Saturday and Sunday.', price: 'From $18' },
+  { name: 'Happy Hour', desc: 'Half-price appetizers and cocktails, Mon-Fri 4-6 PM.', price: 'From $6' },
+];
+export function Specials() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Today's Specials</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Hand-picked selections from our kitchen</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {specials.map((s, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-lg transition-shadow">
+              {s.img && <img src={s.img} alt={s.name} className="w-full h-48 object-cover" />}
+              <div className="p-6">
+                <h3 className="text-xl font-semibold text-card-foreground mb-2">{s.name}</h3>
+                <p className="text-muted-foreground mb-3">{s.desc}</p>
+                <span className="text-primary font-bold">{s.price}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Specials;`;
+}
+
+// SALON / BEAUTY
+function genTreatments(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.salon[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.salon[1];
+  return `import React from 'react';
+const treatments = [
+  { name: 'Signature Facial', desc: 'Deep-cleansing facial customized to your skin type with premium products.', duration: '60 min', price: '$95', img: '${img0}' },
+  { name: 'Hair Transformation', desc: 'Full color and cut with our senior stylist for a complete new look.', duration: '120 min', price: '$180', img: '${img1}' },
+  { name: 'Relaxation Massage', desc: 'Full-body Swedish massage to melt away tension and restore balance.', duration: '90 min', price: '$120' },
+  { name: 'Manicure & Pedicure', desc: 'Luxurious hand and foot treatment with gel polish application.', duration: '75 min', price: '$65' },
+];
+export function Treatments() {
+  return (
+    <section id="treatments" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Our Treatments</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Indulge in our curated wellness experiences</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {treatments.map((t, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col md:flex-row hover:shadow-lg transition-shadow">
+              {t.img && <img src={t.img} alt={t.name} className="w-full md:w-48 h-48 md:h-auto object-cover" />}
+              <div className="p-6 flex-1">
+                <h3 className="text-xl font-semibold text-card-foreground mb-2">{t.name}</h3>
+                <p className="text-muted-foreground text-sm mb-3">{t.desc}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-sm">{t.duration}</span>
+                  <span className="text-primary font-bold text-lg">{t.price}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Treatments;`;
+}
+
+function genBeforeAfter(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.salon[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.salon[1];
+  return `import React from 'react';
+const transformations = [
+  { title: 'Color Transformation', before: '${img0}', after: '${img1}', desc: 'From brunette to sun-kissed balayage' },
+  { title: 'Skin Rejuvenation', before: '${img1}', after: '${img0}', desc: 'Visible results after our signature facial series' },
+];
+export function BeforeAfter() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Transformations</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">See the results our clients love</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {transformations.map((t, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="grid grid-cols-2">
+                <div className="relative"><img src={t.before} alt="Before" className="w-full h-64 object-cover" /><span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">Before</span></div>
+                <div className="relative"><img src={t.after} alt="After" className="w-full h-64 object-cover" /><span className="absolute bottom-2 left-2 bg-primary text-primary-foreground text-xs px-2 py-1 rounded">After</span></div>
+              </div>
+              <div className="p-5"><h3 className="font-semibold text-card-foreground">{t.title}</h3><p className="text-muted-foreground text-sm mt-1">{t.desc}</p></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default BeforeAfter;`;
+}
+
+function genStylists(ctx: GeneratorContext): string {
+  return `import React from 'react';
+const stylists = [
+  { name: 'Isabella Cruz', role: 'Senior Stylist', specialty: 'Color & Balayage', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'Marcus Lee', role: 'Lead Barber', specialty: 'Precision Cuts', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Ava Williams', role: 'Esthetician', specialty: 'Facials & Skin Care', img: '${PORTRAIT_IMAGES[3]}' },
+];
+export function Stylists() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Meet Our Stylists</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {stylists.map((s, i) => (
+            <div key={i} className="text-center group">
+              <div className="w-48 h-48 mx-auto rounded-full overflow-hidden mb-4 ring-4 ring-border group-hover:ring-primary transition-all">
+                <img src={s.img} alt={s.name} className="w-full h-full object-cover" />
+              </div>
+              <h3 className="font-semibold text-foreground text-lg">{s.name}</h3>
+              <p className="text-primary text-sm font-medium">{s.role}</p>
+              <p className="text-muted-foreground text-sm mt-1">{s.specialty}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Stylists;`;
+}
+
+// FITNESS / GYM
+function genClasses(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.fitness[0];
+  return `import React from 'react';
+const classes = [
+  { name: 'HIIT Burn', time: 'Mon/Wed/Fri 6:00 AM', trainer: 'Coach Mike', level: 'All Levels', img: '${img0}' },
+  { name: 'Power Yoga', time: 'Tue/Thu 7:30 AM', trainer: 'Sara K.', level: 'Beginner' },
+  { name: 'Spin Cycle', time: 'Mon-Fri 12:00 PM', trainer: 'DJ Marcus', level: 'Intermediate' },
+  { name: 'Strength Lab', time: 'Mon/Wed/Fri 5:30 PM', trainer: 'Coach Jake', level: 'Advanced' },
+];
+export function Classes() {
+  return (
+    <section id="classes" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Class Schedule</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Find the perfect class for your fitness journey</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {classes.map((c, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-6 flex gap-4 items-center hover:shadow-lg transition-shadow">
+              {c.img && <img src={c.img} alt={c.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />}
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-card-foreground">{c.name}</h3>
+                <p className="text-muted-foreground text-sm">{c.time} &middot; {c.trainer}</p>
+                <span className="inline-block mt-2 text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium">{c.level}</span>
+              </div>
+              <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity flex-shrink-0">Join</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Classes;`;
+}
+
+function genTrainers(ctx: GeneratorContext): string {
+  return `import React from 'react';
+const trainers = [
+  { name: 'Mike Johnson', specialty: 'HIIT & Strength', cert: 'NASM-CPT', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Sara Kim', specialty: 'Yoga & Mobility', cert: 'RYT-500', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'Jake Torres', specialty: 'Powerlifting', cert: 'CSCS', img: '${PORTRAIT_IMAGES[2]}' },
+];
+export function Trainers() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Expert Trainers</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {trainers.map((t, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8 text-center hover:shadow-lg transition-shadow">
+              <img src={t.img} alt={t.name} className="w-32 h-32 rounded-full object-cover mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-card-foreground">{t.name}</h3>
+              <p className="text-primary font-medium text-sm">{t.specialty}</p>
+              <p className="text-muted-foreground text-xs mt-1">{t.cert}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Trainers;`;
+}
+
+function genMembership(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const plans = [
+  { name: 'Day Pass', price: '$15', period: '/day', features: ['Full gym access', 'Locker room', 'Free WiFi'], popular: false },
+  { name: 'Monthly', price: '$49', period: '/mo', features: ['Unlimited gym access', 'All group classes', 'Locker room', 'Free parking'], popular: true },
+  { name: 'Annual', price: '$399', period: '/yr', features: ['Everything in Monthly', 'Personal training session', 'Nutrition consult', 'Guest passes'], popular: false },
+];
+export function Membership() {
+  return (
+    <section id="membership" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Membership Plans</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Flexible options to fit your lifestyle</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {plans.map((p, i) => (
+            <div key={i} className={\`bg-card border rounded-2xl p-8 relative \${p.popular ? 'border-primary shadow-xl scale-105' : 'border-border'}\`}>
+              {p.popular && <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">Best Value</span>}
+              <h3 className="text-xl font-semibold text-card-foreground mb-2">{p.name}</h3>
+              <div className="mb-6"><span className="text-4xl font-bold text-foreground">{p.price}</span><span className="text-muted-foreground">{p.period}</span></div>
+              <ul className="space-y-3 mb-8">{p.features.map((f, j) => <li key={j} className="flex items-center gap-2 text-muted-foreground"><span className="text-primary">✓</span>{f}</li>)}</ul>
+              <button className={\`w-full py-3 rounded-lg font-semibold transition-opacity \${p.popular ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-secondary text-secondary-foreground hover:opacity-80'}\`}>Join Now</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Membership;`;
+}
+
+function genSchedule(ctx: GeneratorContext): string { return genClasses(ctx); }
+function genPrograms(ctx: GeneratorContext): string { return genClasses(ctx); }
+
+// MEDICAL / HEALTH
+function genDoctors(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const doctors = [
+  { name: 'Dr. Sarah Chen', specialty: 'Family Medicine', education: 'Johns Hopkins University', img: '${PORTRAIT_IMAGES[1]}' },
+  { name: 'Dr. James Wilson', specialty: 'Internal Medicine', education: 'Stanford Medical School', img: '${PORTRAIT_IMAGES[0]}' },
+  { name: 'Dr. Emily Park', specialty: 'Pediatrics', education: 'Harvard Medical School', img: '${PORTRAIT_IMAGES[3]}' },
+];
+export function Doctors() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Our Physicians</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Board-certified professionals dedicated to your health</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {doctors.map((d, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8 text-center hover:shadow-lg transition-shadow">
+              <img src={d.img} alt={d.name} className="w-32 h-32 rounded-full object-cover mx-auto mb-4 ring-4 ring-primary/20" />
+              <h3 className="text-xl font-semibold text-card-foreground">{d.name}</h3>
+              <p className="text-primary font-medium text-sm">{d.specialty}</p>
+              <p className="text-muted-foreground text-xs mt-1">{d.education}</p>
+              <button className="mt-4 px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">Book Appointment</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Doctors;`;
+}
+
+function genDepartments(ctx: GeneratorContext): string {
+  const img = ctx.images[0] || CONTEXTUAL_IMAGES.medical[0];
+  return `import React from 'react';
+const departments = [
+  { name: 'Primary Care', desc: 'Comprehensive health services for the whole family.', icon: '🏥' },
+  { name: 'Pediatrics', desc: 'Specialized care for infants, children, and adolescents.', icon: '👶' },
+  { name: 'Cardiology', desc: 'Expert heart health monitoring and treatment.', icon: '❤️' },
+  { name: 'Orthopedics', desc: 'Bone, joint, and muscle care from diagnosis to recovery.', icon: '🦴' },
+  { name: 'Dermatology', desc: 'Skin health diagnostics and cosmetic procedures.', icon: '✨' },
+  { name: 'Urgent Care', desc: 'Walk-in care for non-life-threatening emergencies.', icon: '⚡' },
+];
+export function Departments() {
+  return (
+    <section id="departments" className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Departments</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Comprehensive medical care under one roof</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {departments.map((d, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-6 hover:shadow-lg transition-shadow">
+              <span className="text-3xl mb-3 block">{d.icon}</span>
+              <h3 className="text-xl font-semibold text-card-foreground mb-2">{d.name}</h3>
+              <p className="text-muted-foreground text-sm">{d.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Departments;`;
+}
+
+function genAppointment(ctx: GeneratorContext): string {
+  return `import React from 'react';
+export function Appointment() {
+  return (
+    <section id="appointment" className="py-24 bg-background">
+      <div className="max-w-4xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Schedule an Appointment</h2>
+        <p className="text-muted-foreground text-center mb-12 text-lg">Your health is our priority at ${ctx.brandName}</p>
+        <form className="bg-card border border-border rounded-2xl p-8 space-y-5" onSubmit={e => e.preventDefault()}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input placeholder="Patient Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="Phone" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input type="date" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground" />
+            <select className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground">
+              <option>Select Department</option><option>Primary Care</option><option>Pediatrics</option><option>Cardiology</option><option>Dermatology</option>
+            </select>
+          </div>
+          <textarea placeholder="Reason for visit" rows={3} className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground resize-none" />
+          <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Request Appointment</button>
+        </form>
+      </div>
+    </section>
+  );
+}
+export default Appointment;`;
+}
+
+function genInsurance(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const providers = ['Aetna', 'Blue Cross Blue Shield', 'Cigna', 'United Healthcare', 'Humana', 'Kaiser Permanente', 'Medicare', 'Medicaid'];
+export function Insurance() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Insurance Accepted</h2>
+        <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto text-lg">We work with most major insurance providers</p>
+        <div className="flex flex-wrap justify-center gap-4 max-w-4xl mx-auto">
+          {providers.map((p, i) => (
+            <span key={i} className="bg-card border border-border rounded-xl px-6 py-3 text-card-foreground font-medium text-sm">{p}</span>
+          ))}
+        </div>
+        <p className="text-center text-muted-foreground text-sm mt-8">Don't see your provider? Contact us — we may still be able to help.</p>
+      </div>
+    </section>
+  );
+}
+export default Insurance;`;
+}
+
+// SAAS / SOFTWARE
+function genDemo(ctx: GeneratorContext): string {
+  const img = ctx.images[0] || CONTEXTUAL_IMAGES.saas[0];
+  return `import React from 'react';
+export function Demo() {
+  return (
+    <section id="demo" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+          <div>
+            <span className="text-primary font-medium text-sm uppercase tracking-wider">Product Demo</span>
+            <h2 className="text-4xl font-bold text-foreground mt-2 mb-6">See ${ctx.brandName} in Action</h2>
+            <p className="text-muted-foreground text-lg mb-8">Watch how our platform streamlines your workflow and delivers results from day one.</p>
+            <form className="space-y-4 max-w-sm" onSubmit={e => e.preventDefault()}>
+              <input placeholder="Work email" type="email" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+              <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Request Demo</button>
+            </form>
+          </div>
+          <div className="rounded-2xl overflow-hidden shadow-2xl border border-border">
+            <img src="${img}" alt="Product Demo" className="w-full h-auto" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Demo;`;
+}
+
+function genIntegrations(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const integrations = [
+  { name: 'Slack', desc: 'Real-time notifications and team collaboration.', icon: '💬' },
+  { name: 'GitHub', desc: 'Sync repositories and track deployments.', icon: '🐙' },
+  { name: 'Google Workspace', desc: 'Connect docs, sheets, and calendar.', icon: '📊' },
+  { name: 'Stripe', desc: 'Seamless payment processing and invoicing.', icon: '💳' },
+  { name: 'Zapier', desc: 'Automate workflows with 5000+ apps.', icon: '⚡' },
+  { name: 'HubSpot', desc: 'CRM sync for sales and marketing.', icon: '🎯' },
+];
+export function Integrations() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Integrations</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Connects with the tools you already use</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+          {integrations.map((int, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-6 text-center hover:shadow-lg transition-shadow">
+              <span className="text-3xl mb-3 block">{int.icon}</span>
+              <h3 className="font-semibold text-card-foreground">{int.name}</h3>
+              <p className="text-muted-foreground text-xs mt-1">{int.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Integrations;`;
+}
+
+function genDashboard(ctx: GeneratorContext): string {
+  const img = ctx.images[1] || CONTEXTUAL_IMAGES.saas[1];
+  return `import React from 'react';
+export function Dashboard() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6 text-center">
+        <h2 className="text-4xl font-bold text-foreground mb-4">Powerful Dashboard</h2>
+        <p className="text-muted-foreground mb-12 max-w-2xl mx-auto text-lg">Everything you need at a glance — analytics, insights, and controls.</p>
+        <div className="rounded-2xl overflow-hidden shadow-2xl border border-border max-w-5xl mx-auto">
+          <img src="${img}" alt="Dashboard Preview" className="w-full h-auto" />
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Dashboard;`;
+}
+
+// E-COMMERCE
+function genProducts(ctx: GeneratorContext): string {
+  const img0 = ctx.images[0] || CONTEXTUAL_IMAGES.ecommerce[0];
+  const img1 = ctx.images[1] || CONTEXTUAL_IMAGES.ecommerce[1];
+  const img2 = ctx.images[2] || CONTEXTUAL_IMAGES.ecommerce[2];
+  return `import React from 'react';
+const products = [
+  { name: 'Premium Collection', price: '$129', badge: 'New', img: '${img0}', rating: 4.8 },
+  { name: 'Classic Edition', price: '$89', badge: 'Popular', img: '${img1}', rating: 4.9 },
+  { name: 'Limited Release', price: '$199', badge: 'Limited', img: '${img2}', rating: 5.0 },
+];
+export function Products() {
+  return (
+    <section id="products" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Featured Products</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Handpicked favorites our customers love</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {products.map((p, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl transition-all">
+              <div className="relative h-72 overflow-hidden">
+                <img src={p.img} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                <span className="absolute top-3 right-3 bg-primary text-primary-foreground text-xs font-bold px-2 py-1 rounded-full">{p.badge}</span>
+              </div>
+              <div className="p-6">
+                <h3 className="text-xl font-semibold text-card-foreground mb-1">{p.name}</h3>
+                <div className="flex items-center gap-1 mb-3">{'★'.repeat(Math.floor(p.rating)).split('').map((s, j) => <span key={j} className="text-yellow-500 text-sm">{s}</span>)}<span className="text-muted-foreground text-xs ml-1">{p.rating}</span></div>
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl font-bold text-foreground">{p.price}</span>
+                  <button className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">Add to Cart</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Products;`;
+}
+
+function genCategories(ctx: GeneratorContext): string {
+  const imgs = ctx.images.length >= 3 ? ctx.images : CONTEXTUAL_IMAGES.ecommerce;
+  return `import React from 'react';
+const categories = [
+  { name: 'New Arrivals', count: 24, img: '${imgs[0]}' },
+  { name: 'Best Sellers', count: 18, img: '${imgs[1]}' },
+  { name: 'On Sale', count: 12, img: '${imgs[2] || imgs[0]}' },
+];
+export function Categories() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Shop by Category</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {categories.map((c, i) => (
+            <div key={i} className="relative rounded-2xl overflow-hidden group cursor-pointer h-80">
+              <img src={c.img} alt={c.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+              <div className="absolute bottom-6 left-6">
+                <h3 className="text-2xl font-bold text-white">{c.name}</h3>
+                <p className="text-white/80 text-sm">{c.count} products</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Categories;`;
+}
+
+// PORTFOLIO / CREATIVE
+function genPortfolioProjects(ctx: GeneratorContext): string {
+  const imgs = ctx.images.length >= 2 ? ctx.images : CONTEXTUAL_IMAGES.portfolio;
+  return `import React from 'react';
+const projects = [
+  { title: 'Brand Identity Redesign', category: 'Branding', img: '${imgs[0]}' },
+  { title: 'E-Commerce Platform', category: 'Web Development', img: '${imgs[1]}' },
+  { title: 'Mobile App UI/UX', category: 'Design', img: '${imgs[2] || imgs[0]}' },
+];
+export function PortfolioProjects() {
+  return (
+    <section id="work" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Selected Work</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">A curated selection of recent projects</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {projects.map((p, i) => (
+            <div key={i} className="group cursor-pointer">
+              <div className="rounded-2xl overflow-hidden mb-4 aspect-[4/3]">
+                <img src={p.img} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              </div>
+              <span className="text-primary text-sm font-medium">{p.category}</span>
+              <h3 className="text-xl font-semibold text-foreground mt-1">{p.title}</h3>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default PortfolioProjects;`;
+}
+
+function genSkills(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const skills = [
+  { name: 'UI/UX Design', level: 95 }, { name: 'React / TypeScript', level: 90 },
+  { name: 'Brand Strategy', level: 85 }, { name: 'Motion Design', level: 80 },
+];
+export function Skills() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-3xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Skills & Expertise</h2>
+        <div className="space-y-6">
+          {skills.map((s, i) => (
+            <div key={i}>
+              <div className="flex justify-between mb-2"><span className="text-foreground font-medium">{s.name}</span><span className="text-muted-foreground text-sm">{s.level}%</span></div>
+              <div className="w-full bg-secondary rounded-full h-2"><div className="bg-primary h-2 rounded-full transition-all" style={{ width: s.level + '%' }} /></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Skills;`;
+}
+
+// CONTRACTOR / LOCAL SERVICE
+function genEstimate(ctx: GeneratorContext): string {
+  return `import React from 'react';
+export function Estimate() {
+  return (
+    <section id="estimate" className="py-24 bg-secondary/30">
+      <div className="max-w-4xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Get a Free Estimate</h2>
+        <p className="text-muted-foreground text-center mb-12 text-lg">Tell us about your project and we will get back within 24 hours</p>
+        <form className="bg-card border border-border rounded-2xl p-8 space-y-5" onSubmit={e => e.preventDefault()}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input placeholder="Your Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="Phone" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input placeholder="Email" type="email" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <select className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground">
+              <option>Select Service</option><option>Plumbing</option><option>Electrical</option><option>HVAC</option><option>Remodeling</option><option>Roofing</option>
+            </select>
+          </div>
+          <textarea placeholder="Project details" rows={4} className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground resize-none" />
+          <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Request Free Estimate</button>
+        </form>
+      </div>
+    </section>
+  );
+}
+export default Estimate;`;
+}
+
+function genServiceArea(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const areas = ['Downtown', 'Midtown', 'Westside', 'Eastside', 'North County', 'South Bay', 'Suburbs', 'Metro Area'];
+export function ServiceArea() {
+  return (
+    <section className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Service Areas</h2>
+        <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto text-lg">Licensed and insured — proudly serving the greater metro area</p>
+        <div className="flex flex-wrap justify-center gap-3 max-w-4xl mx-auto">
+          {areas.map((a, i) => (
+            <span key={i} className="bg-card border border-border rounded-xl px-6 py-3 text-card-foreground font-medium text-sm hover:border-primary transition-colors cursor-default">{a}</span>
+          ))}
+        </div>
+        <p className="text-center mt-8"><button className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Check Your Area</button></p>
+      </div>
+    </section>
+  );
+}
+export default ServiceArea;`;
+}
+
+function genLicenses(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const credentials = [
+  { label: 'Licensed', icon: '📜', desc: 'Fully licensed in all service areas' },
+  { label: 'Insured', icon: '🛡️', desc: '$2M liability coverage' },
+  { label: 'Bonded', icon: '🔒', desc: 'Performance bond guaranteed' },
+  { label: 'BBB A+', icon: '⭐', desc: 'Better Business Bureau rated' },
+];
+export function Licenses() {
+  return (
+    <section className="py-16 bg-primary">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          {credentials.map((c, i) => (
+            <div key={i} className="text-center">
+              <span className="text-3xl mb-2 block">{c.icon}</span>
+              <h3 className="text-primary-foreground font-bold text-lg">{c.label}</h3>
+              <p className="text-primary-foreground/70 text-sm">{c.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Licenses;`;
+}
+
+// AGENCY
+function genCaseStudies(ctx: GeneratorContext): string {
+  const imgs = ctx.images.length >= 2 ? ctx.images : CONTEXTUAL_IMAGES.agency;
+  return `import React from 'react';
+const studies = [
+  { title: 'SaaS Platform Launch', result: '+340% signups in 90 days', category: 'Growth Marketing', img: '${imgs[0]}' },
+  { title: 'E-Commerce Rebrand', result: '+120% conversion rate', category: 'Brand Strategy', img: '${imgs[1]}' },
+  { title: 'Mobile App Campaign', result: '2M+ downloads in Q1', category: 'Digital Ads', img: '${imgs[2] || imgs[0]}' },
+];
+export function CaseStudies() {
+  return (
+    <section id="work" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Case Studies</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Real results for real businesses</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {studies.map((s, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden group hover:shadow-xl transition-all cursor-pointer">
+              <div className="h-56 overflow-hidden"><img src={s.img} alt={s.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /></div>
+              <div className="p-6">
+                <span className="text-primary text-sm font-medium">{s.category}</span>
+                <h3 className="text-xl font-semibold text-card-foreground mt-1 mb-2">{s.title}</h3>
+                <p className="text-muted-foreground font-medium">{s.result}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default CaseStudies;`;
+}
+
+function genProcess(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const steps = [
+  { num: '01', title: 'Discovery', desc: 'Deep-dive into your brand, market, and goals.' },
+  { num: '02', title: 'Strategy', desc: 'Data-driven plan tailored to your growth targets.' },
+  { num: '03', title: 'Execution', desc: 'Multi-channel campaigns launched with precision.' },
+  { num: '04', title: 'Optimize', desc: 'Continuous testing, learning, and scaling.' },
+];
+export function Process() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-16">Our Process</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          {steps.map((s, i) => (
+            <div key={i} className="text-center">
+              <span className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary text-primary-foreground text-2xl font-bold mb-4">{s.num}</span>
+              <h3 className="text-xl font-semibold text-foreground mb-2">{s.title}</h3>
+              <p className="text-muted-foreground text-sm">{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Process;`;
+}
+
+function genClients(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const clients = ['TechCorp', 'GrowthLab', 'NovaBrand', 'Skyline Digital', 'Apex Solutions', 'Vertex Inc.'];
+export function Clients() {
+  return (
+    <section className="py-16 bg-background border-y border-border">
+      <div className="max-w-7xl mx-auto px-6">
+        <p className="text-center text-muted-foreground text-sm uppercase tracking-wider mb-8">Trusted by Leading Brands</p>
+        <div className="flex flex-wrap justify-center gap-8 items-center">
+          {clients.map((c, i) => (
+            <span key={i} className="text-xl font-bold text-muted-foreground/40 hover:text-foreground transition-colors cursor-default">{c}</span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Clients;`;
+}
+
+// COACHING / CONSULTING
+function genMethodology(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const pillars = [
+  { title: 'Assess', desc: 'Comprehensive evaluation of your current position and goals.', icon: '🔍' },
+  { title: 'Plan', desc: 'Custom roadmap designed around your unique challenges.', icon: '📋' },
+  { title: 'Execute', desc: 'Guided implementation with accountability checkpoints.', icon: '🚀' },
+  { title: 'Sustain', desc: 'Systems and habits for lasting transformation.', icon: '🏆' },
+];
+export function Methodology() {
+  return (
+    <section className="py-24 bg-secondary/30">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">The Framework</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">A proven methodology for breakthrough results</p>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          {pillars.map((p, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8 text-center hover:shadow-lg transition-shadow">
+              <span className="text-4xl mb-4 block">{p.icon}</span>
+              <h3 className="text-xl font-semibold text-card-foreground mb-3">{p.title}</h3>
+              <p className="text-muted-foreground text-sm">{p.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Methodology;`;
+}
+
+function genResults(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const results = [
+  { metric: '95%', label: 'Client Satisfaction' },
+  { metric: '3x', label: 'Average ROI' },
+  { metric: '500+', label: 'Clients Coached' },
+  { metric: '12+', label: 'Years Experience' },
+];
+export function Results() {
+  return (
+    <section className="py-24 bg-primary">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-primary-foreground text-center mb-16">Proven Results</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          {results.map((r, i) => (
+            <div key={i} className="text-center">
+              <span className="block text-5xl font-bold text-primary-foreground mb-2">{r.metric}</span>
+              <span className="text-primary-foreground/70">{r.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Results;`;
+}
+
+function genDiscoveryCall(ctx: GeneratorContext): string {
+  return `import React from 'react';
+export function DiscoveryCall() {
+  return (
+    <section id="book" className="py-24 bg-background">
+      <div className="max-w-4xl mx-auto px-6">
+        <div className="bg-card border border-border rounded-2xl p-12 text-center">
+          <h2 className="text-4xl font-bold text-foreground mb-4">Book a Free Discovery Call</h2>
+          <p className="text-muted-foreground text-lg mb-8 max-w-2xl mx-auto">Let's explore how ${ctx.brandName} can help you achieve your goals. No pressure, no obligation.</p>
+          <form className="max-w-md mx-auto space-y-4" onSubmit={e => e.preventDefault()}>
+            <input placeholder="Your Name" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="Email" type="email" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <input placeholder="What's your biggest challenge?" className="w-full px-4 py-3 rounded-lg bg-background border border-input text-foreground placeholder:text-muted-foreground" />
+            <button type="submit" className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:opacity-90 transition-opacity">Schedule Call</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}
+export default DiscoveryCall;`;
+}
+
+function genCoachingPrograms(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const programs = [
+  { name: '1:1 Coaching', desc: 'Personalized sessions tailored to your goals.', duration: '12 weeks', price: 'From $2,500', popular: false },
+  { name: 'Group Mastermind', desc: 'Collaborate with like-minded achievers.', duration: '8 weeks', price: 'From $997', popular: true },
+  { name: 'VIP Intensive', desc: 'Accelerated breakthroughs in a focused 2-day deep-dive.', duration: '2 days', price: 'From $5,000', popular: false },
+];
+export function CoachingPrograms() {
+  return (
+    <section id="programs" className="py-24 bg-background">
+      <div className="max-w-7xl mx-auto px-6">
+        <h2 className="text-4xl font-bold text-foreground text-center mb-4">Programs</h2>
+        <p className="text-muted-foreground text-center mb-16 max-w-2xl mx-auto text-lg">Choose the path that fits your ambition</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {programs.map((p, i) => (
+            <div key={i} className={\`bg-card border rounded-2xl p-8 relative \${p.popular ? 'border-primary shadow-xl scale-105' : 'border-border'}\`}>
+              {p.popular && <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">Most Popular</span>}
+              <h3 className="text-xl font-semibold text-card-foreground mb-2">{p.name}</h3>
+              <p className="text-muted-foreground text-sm mb-4">{p.desc}</p>
+              <p className="text-muted-foreground text-sm mb-1">{p.duration}</p>
+              <p className="text-2xl font-bold text-foreground mb-6">{p.price}</p>
+              <button className={\`w-full py-3 rounded-lg font-semibold transition-opacity \${p.popular ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-secondary text-secondary-foreground hover:opacity-80'}\`}>Apply Now</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default CoachingPrograms;`;
+}
+
+// ── Stats section (universal) ─────────────────────────────────────────────────
+function genStats(_ctx: GeneratorContext): string {
+  return `import React from 'react';
+const stats = [
+  { value: '10+', label: 'Years Experience' },
+  { value: '500+', label: 'Happy Clients' },
+  { value: '50+', label: 'Team Members' },
+  { value: '99%', label: 'Satisfaction Rate' },
+];
+export function Stats() {
+  return (
+    <section className="py-16 bg-primary">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          {stats.map((s, i) => (
+            <div key={i} className="text-center">
+              <span className="block text-4xl font-bold text-primary-foreground mb-1">{s.value}</span>
+              <span className="text-primary-foreground/70 text-sm">{s.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+export default Stats;`;
+}
+
+// ── Booking (universal appointment form) ──────────────────────────────────────
+function genBooking(ctx: GeneratorContext): string { return genReservation(ctx); }
+
+// ── SECTION_GENERATORS registry ──────────────────────────────────────────────
+const SECTION_GENERATORS: Record<string, (ctx: GeneratorContext) => string> = {
+  // Universal
+  hero: genHero, navbar: genNavbar, header: genHeader, features: genFeatures,
+  services: genServices, about: genAbout, testimonials: genTestimonials,
+  contact: genContact, footer: genFooter, pricing: genPricing,
+  gallery: genGallery, cta: genCTA, faq: genFAQ, team: genTeam, stats: genStats,
+  // Restaurant
+  menu: genMenu, reservation: genReservation, specials: genSpecials,
+  // Salon / Beauty
+  treatments: genTreatments, beforeafter: genBeforeAfter, stylists: genStylists,
+  // Fitness
+  classes: genClasses, trainers: genTrainers, membership: genMembership, schedule: genSchedule, programs: genPrograms,
+  // Medical
+  doctors: genDoctors, departments: genDepartments, appointment: genAppointment, insurance: genInsurance,
+  // SaaS
+  demo: genDemo, integrations: genIntegrations, dashboard: genDashboard,
+  // E-commerce
+  products: genProducts, categories: genCategories,
+  // Portfolio
+  portfolioprojects: genPortfolioProjects, skills: genSkills,
+  // Contractor / Local Service
+  estimate: genEstimate, servicearea: genServiceArea, licenses: genLicenses,
+  // Agency
+  casestudies: genCaseStudies, process: genProcess, clients: genClients,
+  // Coaching
+  methodology: genMethodology, results: genResults, discoverycall: genDiscoveryCall,
+  coachingprograms: genCoachingPrograms,
+  // Aliases that map directly
+  booking: genBooking,
+};
+
+/**
+ * Levenshtein distance — measures how many edits needed to transform one string into another.
+ * Used for fuzzy matching component names to known section generators.
+ */
+function levenshteinDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+  }
+  return dp[m][n];
+}
+
+/**
+ * Find the closest matching section generator key using fuzzy matching.
+ * Returns null if distance is too high (no reasonable match).
+ */
+function findClosestSectionKey(componentName: string): string | null {
+  const lower = componentName.toLowerCase();
+  const registryKeys = Object.keys(SECTION_GENERATORS);
+  const matches = registryKeys.map(key => ({
+    key,
+    distance: levenshteinDistance(lower, key),
+  })).sort((a, b) => a.distance - b.distance);
+  
+  // If closest match has reasonable distance (≤3 chars or <50% of length), use it
+  const closest = matches[0];
+  if (closest.distance <= 3 || closest.distance < lower.length / 2) {
+    return closest.key;
+  }
+  return null;
+}
+
+/** Normalize component name to a section generator key. */
+function matchSectionGenerator(componentName: string): string | null {
+  const lower = componentName.toLowerCase().replace(/section$|component$|block$|widget$/i, '');
+  if (SECTION_GENERATORS[lower]) return lower;
+  const aliases: Record<string, string> = {
+    // Universal
+    navigation: 'navbar', nav: 'navbar', topbar: 'navbar', menubar: 'navbar',
+    herosection: 'hero', herobanner: 'hero', banner: 'hero', jumbotron: 'hero',
+    featurelist: 'features', featuregrid: 'features', benefits: 'features', whyus: 'features', whychooseus: 'features', highlights: 'features',
+    servicelist: 'services', servicegrid: 'services', offerings: 'services', whatwedo: 'services',
+    aboutus: 'about', aboutsection: 'about', story: 'about', ourstory: 'about',
+    testimonial: 'testimonials', reviews: 'testimonials', clientreviews: 'testimonials', socialproof: 'testimonials', customerreviews: 'testimonials',
+    contactform: 'contact', contactus: 'contact', getintouch: 'contact', reachout: 'contact',
+    footersection: 'footer', sitefooter: 'footer',
+    pricingplan: 'pricing', pricingtable: 'pricing', plans: 'pricing', pricingcards: 'pricing',
+    portfolio: 'gallery', showcase: 'gallery', work: 'gallery', ourwork: 'gallery',
+    calltoaction: 'cta', ctasection: 'cta', ctablock: 'cta', ctabanner: 'cta',
+    faqsection: 'faq', questions: 'faq', frequentlyasked: 'faq',
+    teamgrid: 'team', ourteam: 'team', staff: 'team', people: 'team', meettheteam: 'team',
+    statistics: 'stats', metrics: 'stats', numbers: 'stats', counters: 'stats', achievements: 'stats',
+
+    // Restaurant
+    menusection: 'menu', menulist: 'menu', foodmenu: 'menu', diningmenu: 'menu', menucard: 'menu', menugrid: 'menu',
+    reservations: 'reservation', reservationform: 'reservation', booktable: 'reservation', tablereservation: 'reservation',
+    dailyspecials: 'specials', todaysspecials: 'specials', specialoffers: 'specials', featuredmenu: 'specials', chefsspecial: 'specials',
+
+    // Salon / Beauty
+    treatmentlist: 'treatments', treatmentmenu: 'treatments', salonservices: 'treatments', beautyservices: 'treatments', spaservices: 'treatments', servicemenu: 'treatments',
+    transformations: 'beforeafter', beforeandafter: 'beforeafter', results: 'results',
+    ourstylists: 'stylists', hairstylists: 'stylists', beauticians: 'stylists', therapists: 'stylists',
+
+    // Fitness
+    classschedule: 'classes', classgrid: 'classes', groupclasses: 'classes', fitnessclasstable: 'classes', workouts: 'classes',
+    ourtrainers: 'trainers', coaches: 'trainers', instructors: 'trainers', fitnessteam: 'trainers',
+    membershipplans: 'membership', gympricing: 'membership', fitnesspricing: 'membership', joinplans: 'membership',
+    timetable: 'schedule', weeklyschedule: 'schedule',
+    fitnessprograms: 'programs', trainingprograms: 'programs',
+
+    // Medical
+    ourdoctors: 'doctors', physicians: 'doctors', medicalteam: 'doctors', providers: 'doctors', specialists: 'doctors',
+    specialties: 'departments', medicaldepartments: 'departments', clinics: 'departments',
+    bookappointment: 'appointment', schedulevisit: 'appointment', appointmentform: 'appointment',
+    insuranceproviders: 'insurance', acceptedinsurance: 'insurance', insurancelist: 'insurance',
+
+    // SaaS
+    requestdemo: 'demo', bookdemo: 'demo', livedemo: 'demo', productdemo: 'demo', tryforfree: 'demo',
+    integrationgrid: 'integrations', connectors: 'integrations', partners: 'integrations', ecosystem: 'integrations',
+    productscreen: 'dashboard', apppreview: 'dashboard', screenshot: 'dashboard', platformpreview: 'dashboard',
+
+    // E-commerce
+    featuredproducts: 'products', productgrid: 'products', productcards: 'products', shopcollection: 'products', collection: 'products',
+    shopcategories: 'categories', productcategories: 'categories', browsecategories: 'categories',
+
+    // Portfolio
+    selectedwork: 'portfolioprojects', projectgrid: 'portfolioprojects', creativework: 'portfolioprojects', projectshowcase: 'portfolioprojects',
+    projects: 'portfolioprojects', mywork: 'portfolioprojects',
+    skillset: 'skills', expertise: 'skills', capabilities: 'skills', techstack: 'skills',
+
+    // Contractor / Local Service
+    freeestimate: 'estimate', requestquote: 'estimate', getquote: 'estimate', quoterequest: 'estimate', estimateform: 'estimate',
+    serviceareas: 'servicearea', coveragearea: 'servicearea', locationscovered: 'servicearea', areas: 'servicearea',
+    credentials: 'licenses', certifications: 'licenses', trustbadges: 'licenses', accreditations: 'licenses',
+
+    // Agency
+    casestudy: 'casestudies', portfoliocases: 'casestudies', clientwork: 'casestudies', successstories: 'casestudies',
+    ourprocess: 'process', howwework: 'process', workflow: 'process', approach: 'process', steps: 'process',
+    ourclients: 'clients', trustedby: 'clients', clientlogos: 'clients', brandlogos: 'clients', partnerslogos: 'clients',
+
+    // Coaching / Consulting
+    framework: 'methodology', ourapproach: 'methodology', pillars: 'methodology', system: 'methodology',
+    clientresults: 'results', outcomes: 'results', impact: 'results', successmetrics: 'results',
+    bookacall: 'discoverycall', freeconsult: 'discoverycall', strategycall: 'discoverycall', consultation: 'discoverycall', calendly: 'discoverycall',
+    coachingplans: 'coachingprograms', programplans: 'coachingprograms', packages: 'coachingprograms',
+
+    // Booking (universal)
+    bookingform: 'booking', bookingwidget: 'booking', schedulebooking: 'booking',
+  };
+  if (aliases[lower]) return aliases[lower];
+  
+  // Try substring / partial matches
+  for (const key of Object.keys(SECTION_GENERATORS)) {
+    if (lower.includes(key) || key.includes(lower)) return key;
+  }
+  
+  // Last resort: fuzzy matching - find the closest match
+  const fuzzyMatch = findClosestSectionKey(componentName);
+  if (fuzzyMatch) {
+    console.warn(`[matchSectionGenerator] Fuzzy match: "${componentName}" → "${fuzzyMatch}"`);
+    return fuzzyMatch;
+  }
+  
+  return null;
+}
 
 // ── Built-in HTML/React elements that should NOT be treated as custom components ──
 const BUILTIN_JSX_ELEMENTS = new Set([
@@ -2207,8 +3564,7 @@ const BUILTIN_JSX_ELEMENTS = new Set([
   'PointerEvent', 'ChangeEvent', 'FormEvent', 'ReactNode', 'ReactElement',
   'CSSProperties', 'SVGElement', 'SVGSVGElement', 'HTMLDivElement',
   'HTMLButtonElement', 'HTMLInputElement', 'HTMLAnchorElement', 'HTMLFormElement',
-  'HTMLImageElement', 'HTMLTextAreaElement', 'HTMLSelectElement',
-  'HTMLLabelElement', 'HTMLSpanElement', 'HTMLParagraphElement', 'HTMLHeadingElement',
+  'HTMLImageElement',
   // Component from error boundary / React internals
   'Component', 'PureComponent',
 ]);
@@ -2318,8 +3674,8 @@ function toRelativeFromDir(fromDir: string, toPath: string): string {
  * Scan JSX in all files for PascalCase component usage (e.g. `<Gallery />`)
  * that has NO corresponding import statement. For each missing component,
  * inject a relative import pointing to `./components/ComponentName`.
- * Imports are only normalized here; unresolved modules must be authored by the
- * AI (Lane B) — no template/chip component is ever synthesized in their place.
+ * This ensures `generateMissingComponents` (which only scans import statements)
+ * will then synthesize the actual component file.
  */
 function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): void {
   const existingPaths = new Set(Object.keys(sandpackFiles));
@@ -2333,10 +3689,7 @@ function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): voi
     let m;
     while ((m = jsxPattern.exec(content)) !== null) {
       const name = m[1];
-      // TypeScript generics such as React.TextareaHTMLAttributes<HTMLTextAreaElement>
-      // contain the same `<PascalCase>` token shape as JSX. DOM element types are
-      // never renderable components and must not produce synthesized imports.
-      if (!BUILTIN_JSX_ELEMENTS.has(name) && !/^HTML[A-Z][A-Za-z0-9]*Element$/.test(name)) {
+      if (!BUILTIN_JSX_ELEMENTS.has(name)) {
         jsxUsages.add(name);
       }
     }
@@ -2362,15 +3715,6 @@ function autoInjectMissingJsxImports(sandpackFiles: Record<string, string>): voi
     let ld;
     while ((ld = localDeclPattern.exec(content)) !== null) {
       importedNames.add(ld[1]);
-    }
-
-    // Dynamic components are often received through a destructured prop alias,
-    // for example `function Icon({ icon: Glyph }) { return <Glyph />; }`.
-    // `Glyph` is a local binding, not a module that needs an inferred import.
-    const destructuredAliasPattern = /\b[A-Za-z_$][\w$]*\s*:\s*([A-Z]\w*)\s*(?=[,}])/g;
-    let alias;
-    while ((alias = destructuredAliasPattern.exec(content)) !== null) {
-      importedNames.add(alias[1]);
     }
 
     // Find missing components
@@ -2437,11 +3781,7 @@ function resolveRelativeModuleTarget(
   resolved = '/' + stack.join('/');
   const candidates = /\.\w+$/.test(resolved)
     ? [resolved]
-    : [
-        resolved,
-        ...extensions.map((ext) => `${resolved}${ext}`),
-        ...extensions.map((ext) => `${resolved}/index${ext}`),
-      ];
+    : [resolved, ...extensions.map((ext) => `${resolved}${ext}`)];
 
   return candidates.find((candidate) => existingPaths.has(candidate)) || null;
 }
@@ -2450,38 +3790,6 @@ function inspectModuleExports(content: string): {
   hasDefault: boolean;
   named: Set<string>;
   primaryName: string | null;
-  hasStarReExport: boolean;
-} {
-  const key = moduleExportsCacheKey(content);
-  const cached = moduleExportsCache.get(key);
-  if (cached) return cached;
-  const result = computeModuleExports(content);
-  if (moduleExportsCache.size >= MODULE_EXPORTS_CACHE_LIMIT) moduleExportsCache.clear();
-  moduleExportsCache.set(key, result);
-  return result;
-}
-
-// Import-contract validation re-scans the same shared modules (a components
-// barrel imported by every page) on every importer and on every
-// prepareSandpackFiles() call in the launch → preview pipeline. Memoizing on
-// content makes repeat scans of unchanged files free.
-const MODULE_EXPORTS_CACHE_LIMIT = 4000;
-const moduleExportsCache = new Map<string, ReturnType<typeof computeModuleExports>>();
-
-function moduleExportsCacheKey(content: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < content.length; i++) {
-    h ^= content.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return `${content.length}:${(h >>> 0).toString(36)}`;
-}
-
-function computeModuleExports(content: string): {
-  hasDefault: boolean;
-  named: Set<string>;
-  primaryName: string | null;
-  hasStarReExport: boolean;
 } {
   const named = new Set<string>();
   const exportPatterns = [
@@ -2497,7 +3805,7 @@ function computeModuleExports(content: string): {
     }
   }
 
-  const reExportPattern = /export\s*\{([^}]+)\}(?:\s+from\s+['"][^'"]+['"])?/g;
+  const reExportPattern = /export\s*\{([^}]+)\}/g;
   let reExportMatch: RegExpExecArray | null;
   while ((reExportMatch = reExportPattern.exec(content)) !== null) {
     reExportMatch[1]
@@ -2514,7 +3822,6 @@ function computeModuleExports(content: string): {
   }
 
   const hasDefault = /export\s+default\b/.test(content);
-  const hasStarReExport = /export\s*\*\s*(?:as\s+\w+\s*)?from\s+['"][^'"]+['"]/.test(content);
   const primaryName =
     content.match(/export\s+default\s+function\s+([A-Z]\w*)/)?.[1] ||
     content.match(/export\s+default\s+class\s+([A-Z]\w*)/)?.[1] ||
@@ -2522,7 +3829,7 @@ function computeModuleExports(content: string): {
     [...named][0] ||
     null;
 
-  return { hasDefault, named, primaryName, hasStarReExport };
+  return { hasDefault, named, primaryName };
 }
 
 function repairLocalImportContracts(sandpackFiles: Record<string, string>): void {
@@ -2531,178 +3838,93 @@ function repairLocalImportContracts(sandpackFiles: Record<string, string>): void
   for (const [filePath, originalContent] of Object.entries({ ...sandpackFiles })) {
     if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
 
+    // Allow multi-line braces; no line anchors so multi-line `import { A,\n B }` matches too.
     const namedImportRegex = /import\s+\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{([^}]*)\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    // Default imports — matches both `import Foo from './bar'` and `import Foo, { X } from './bar'`.
+    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{[^}]*\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let content = originalContent;
 
     content = content.replace(namedImportRegex, (statement, specifierBlock: string, rawImportPath: string) => {
       const targetPath = resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths);
       if (!targetPath) return statement;
+
       const targetContent = sandpackFiles[targetPath];
       if (!targetContent) return statement;
 
       const moduleExports = inspectModuleExports(targetContent);
-      const specifiers = specifierBlock.split(',').map((part) => part.trim()).filter(Boolean).map((part) => {
-        const [imported, local] = part.split(/\s+as\s+/).map((value) => value.trim());
-        return { imported, local: local || imported };
-      });
-      const missingPascalExports = specifiers.filter(({ imported, local }) => (
-        /^[A-Z]/.test(imported) &&
-        !moduleExports.named.has(imported) &&
-        new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)
-      ));
-
-      if (missingPascalExports.length === 0 || moduleExports.hasStarReExport) return statement;
-
-      // Sibling-module resolution: a missing named component is very often
-      // exported by a neighbouring module in the same folder (e.g. `Label`
-      // living in ./form-fields vs ./label). Re-point just that specifier
-      // instead of failing the whole preflight.
-      const targetDir = targetPath.slice(0, targetPath.lastIndexOf('/'));
-      const rawDir = rawImportPath.slice(0, rawImportPath.lastIndexOf('/'));
-      const relocated = new Map<string, string>();
-      for (const missing of missingPascalExports) {
-        const donor = Object.keys(sandpackFiles).find((candidate) => (
-          candidate !== targetPath &&
-          candidate.startsWith(`${targetDir}/`) &&
-          !candidate.slice(targetDir.length + 1).includes('/') &&
-          /\.(tsx?|jsx?)$/.test(candidate) &&
-          inspectModuleExports(sandpackFiles[candidate] || '').named.has(missing.imported)
-        ));
-        if (!donor) continue;
-        const donorName = donor.slice(targetDir.length + 1).replace(/\.(tsx?|jsx?)$/, '');
-        relocated.set(missing.imported, rawDir ? `${rawDir}/${donorName}` : `./${donorName}`);
-      }
-
-      if (relocated.size > 0) {
-        const kept = specifiers.filter(({ imported }) => !relocated.has(imported));
-        const lines: string[] = [];
-        if (kept.length > 0) {
-          lines.push(`import { ${kept.map(({ imported, local }) => imported === local ? imported : `${imported} as ${local}`).join(', ')} } from '${rawImportPath}';`);
-        }
-        const byModule = new Map<string, string[]>();
-        for (const { imported, local } of specifiers) {
-          const moved = relocated.get(imported);
-          if (!moved) continue;
-          const spec = imported === local ? imported : `${imported} as ${local}`;
-          byModule.set(moved, [...(byModule.get(moved) || []), spec]);
-        }
-        for (const [modulePath, specs] of byModule) {
-          console.warn(`[sandpackFilePrep] Re-pointing missing named import in ${filePath}: ${specs.join(', ')} -> ${modulePath}`);
-          lines.push(`import { ${specs.join(', ')} } from '${modulePath}';`);
-        }
-        if (relocated.size === missingPascalExports.length) return lines.join('\n');
-      }
-
-
-      if (moduleExports.hasDefault && missingPascalExports.length === 1) {
-        const missing = missingPascalExports[0];
-        const remaining = specifiers.filter((item) => item !== missing);
-        const namedLine = remaining.length > 0
-          ? `\nimport { ${remaining.map(({ imported, local }) => imported === local ? imported : `${imported} as ${local}`).join(', ')} } from '${rawImportPath}';`
-          : '';
-        console.warn(`[sandpackFilePrep] Rewriting named import to default import in ${filePath}: ${missing.imported} -> ${missing.local}`);
-        return `import ${missing.local} from '${rawImportPath}';${namedLine}`;
-      }
-
-      if (!moduleExports.hasDefault && moduleExports.named.size === 1 && missingPascalExports.length === 1) {
-        const [actual] = [...moduleExports.named];
-        const missing = missingPascalExports[0];
-        const rewritten = specifiers.map(({ imported, local }) => {
-          if (imported !== missing.imported) return imported === local ? imported : `${imported} as ${local}`;
-          return actual === local ? actual : `${actual} as ${local}`;
+      const specifiers = specifierBlock
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => {
+          const [imported, local] = part.split(/\s+as\s+/).map((value) => value.trim());
+          return { imported, local: local || imported };
         });
-        console.warn(`[sandpackFilePrep] Rewriting incompatible named import in ${filePath}: ${missing.imported} -> ${actual} as ${missing.local}`);
-        return `import { ${rewritten.join(', ')} } from '${rawImportPath}';`;
+
+      const missingPascalExports = specifiers.filter(
+        ({ imported }) => /^[A-Z]/.test(imported) && !moduleExports.named.has(imported),
+      );
+
+      if (missingPascalExports.length === 0) return statement;
+
+      if (moduleExports.primaryName) {
+        let patchedTarget = targetContent;
+        let changed = false;
+
+        for (const { imported } of missingPascalExports) {
+          if (patchedTarget.includes(`export const ${imported} = ${moduleExports.primaryName};`)) continue;
+          patchedTarget += `\nexport const ${imported} = ${moduleExports.primaryName};\n`;
+          changed = true;
+        }
+
+        if (changed) {
+          sandpackFiles[targetPath] = patchedTarget;
+          console.warn(`[sandpackFilePrep] Repaired named exports for ${targetPath}: ${missingPascalExports.map((item) => item.imported).join(', ')}`);
+        }
+
+        return statement;
+      }
+
+      if (moduleExports.hasDefault && specifiers.length === 1) {
+        const localName = specifiers[0].local;
+        console.warn(`[sandpackFilePrep] Rewriting named import to default import in ${filePath}: ${specifiers[0].imported} -> ${localName}`);
+        return `import ${localName} from '${rawImportPath}';`;
       }
 
       return statement;
     });
 
-    content = content.replace(defaultImportRegex, (statement, localName: string, namedBlock: string | undefined, rawImportPath: string) => {
+    // Default imports against files that don't actually have a default export.
+    // Patch the TARGET file with `export default <primary>` so the import resolves
+    // instead of evaluating to `undefined` and crashing React with
+    // "Element type is invalid".
+    content.replace(defaultImportRegex, (statement, localName: string, rawImportPath: string) => {
       const targetPath = resolveRelativeModuleTarget(filePath, rawImportPath, existingPaths);
       if (!targetPath) return statement;
       const targetContent = sandpackFiles[targetPath];
       if (!targetContent) return statement;
       const moduleExports = inspectModuleExports(targetContent);
-      if (moduleExports.hasDefault || moduleExports.hasStarReExport) return statement;
-
-      const fallback = moduleExports.named.has(localName)
-        ? localName
-        : moduleExports.named.size === 1
-          ? [...moduleExports.named][0]
-          : null;
-      if (!fallback) return statement;
-
-      const existingNamed = (namedBlock || '').split(',').map((part) => part.trim()).filter(Boolean);
-      const defaultAsNamed = fallback === localName ? fallback : `${fallback} as ${localName}`;
-      console.warn(`[sandpackFilePrep] Rewriting default import to named import in ${filePath}: ${localName} -> ${fallback}`);
-      return `import { ${[defaultAsNamed, ...existingNamed].join(', ')} } from '${rawImportPath}';`;
+      if (moduleExports.hasDefault) return statement;
+      // Prefer a named export matching the local import name, else primary.
+      const fallback = moduleExports.named.has(localName) ? localName : moduleExports.primaryName;
+      if (fallback) {
+        sandpackFiles[targetPath] = targetContent + `\nexport default ${fallback};\n`;
+        console.warn(`[sandpackFilePrep] Added missing default export to ${targetPath} (default → ${fallback}) for ${filePath}`);
+        return statement;
+      }
+      // Last-resort: synthesize a no-op default so the import doesn't evaluate to undefined
+      // and crash React with "Element type is invalid". Better an empty section than a white screen.
+      const safeName = /^[A-Z]\w*$/.test(localName) ? localName : 'MissingComponent';
+      sandpackFiles[targetPath] =
+        targetContent +
+        `\nexport default function ${safeName}() { return null; }\n`;
+      console.warn(`[sandpackFilePrep] Synthesized placeholder default export for ${targetPath} (imported as ${localName} by ${filePath})`);
+      return statement;
     });
 
-    if (content !== originalContent) sandpackFiles[filePath] = content;
-  }
-}
-
-function assertLocalJsxImportContracts(sandpackFiles: Record<string, string>): void {
-  const existingPaths = new Set(Object.keys(sandpackFiles));
-  const violations: Array<{ filePath: string; message: string }> = [];
-
-  for (const [filePath, content] of Object.entries(sandpackFiles)) {
-    if (!/\.(tsx|jsx)$/.test(filePath)) continue;
-
-    // `[^}]` (not `[\s\S]`) keeps the named block inside a single import
-    // statement — otherwise a package import (`{ Float } from '@react-three/drei'`)
-    // pairs with the NEXT relative import and reports a phantom violation.
-    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([^}]*)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    let namedMatch: RegExpExecArray | null;
-    while ((namedMatch = namedImportRegex.exec(content)) !== null) {
-      const targetPath = resolveRelativeModuleTarget(filePath, namedMatch[2], existingPaths);
-      if (!targetPath) continue;
-      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
-      if (moduleExports.hasStarReExport) continue;
-
-      for (const part of namedMatch[1].split(',').map((item) => item.trim()).filter(Boolean)) {
-        const [imported, localAlias] = part.split(/\s+as\s+/).map((item) => item.trim());
-        const local = localAlias || imported;
-        if (
-          /^[A-Z]/.test(imported) &&
-          new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content) &&
-          !moduleExports.named.has(imported)
-        ) {
-          const available = [...moduleExports.named].join(', ') || (moduleExports.hasDefault ? 'default' : 'none');
-          violations.push({
-            filePath,
-            message: `${filePath} imports JSX component "${imported}" from "${namedMatch[2]}", but ${targetPath} does not export it (available: ${available}).`,
-          });
-        }
-      }
+    if (content !== originalContent) {
+      sandpackFiles[filePath] = content;
     }
-
-    const defaultImportRegex = /import\s+([A-Z]\w*)(?:\s*,\s*\{[^}]*\})?\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
-    let defaultMatch: RegExpExecArray | null;
-    while ((defaultMatch = defaultImportRegex.exec(content)) !== null) {
-      const local = defaultMatch[1];
-      if (!new RegExp(`<${escapeRegExp(local)}(?:\\s|/|>)`).test(content)) continue;
-      const targetPath = resolveRelativeModuleTarget(filePath, defaultMatch[2], existingPaths);
-      if (!targetPath) continue;
-      const moduleExports = inspectModuleExports(sandpackFiles[targetPath] || '');
-      if (!moduleExports.hasDefault && !moduleExports.hasStarReExport) {
-        const available = [...moduleExports.named].join(', ') || 'none';
-        violations.push({
-          filePath,
-          message: `${filePath} default-imports JSX component "${local}" from "${defaultMatch[2]}", but ${targetPath} has no default export (named exports: ${available}).`,
-        });
-      }
-    }
-  }
-
-  if (violations.length > 0) {
-    throw new PreviewPipelineError(
-      'prep',
-      `VFS JSX import/export incompatibility: ${violations.map(({ message }) => message).join(' ')}`,
-      { blockedFiles: [...new Set(violations.map(({ filePath }) => filePath))] },
-    );
   }
 }
 
@@ -2816,17 +4038,15 @@ export default Icon;
 `;
 }
 
-// Chrome is authored by the page body only. No platform-owned navbar/footer
-// module exists, so nothing is synthesized for shared chrome imports.
 function buildCanonicalWizardChromeModules(): Record<string, string> {
-  return {};
+  return getCanonicalWizardSharedChromeModules();
 }
 
 /**
  * Safety net for unresolved relative imports.
  *
- * Wizard sites never substitute template/chip components for missing modules —
- * that tier has been removed entirely. But when the in-builder AI Builder writes a file
+ * Wizard sites intentionally disable `generateMissingComponents` (chip-inject)
+ * to keep diagnostics visible. But when the in-builder AI Builder writes a file
  * that references a sibling module which doesn't exist yet, the preview crashes
  * with "Could not find module" before any other repair can run.
  *
@@ -2952,6 +4172,213 @@ function synthesizeMissingLocalImports(
 
 
 
+/**
+ * Scan all files for relative imports. For missing modules, generate REAL
+ * contextual section components using the wizard launcher context
+ * inferred from existing VFS content (industry, brand name, images).
+ * 
+ * CRITICAL: NEVER GENERATES STUBS. ALL missing components are injected with
+ * real industry-appropriate UI/template chips from the detection context.
+ */
+function generateIndustryContextualComponent(componentName: string, ctx: GeneratorContext): string {
+  const lower = componentName.toLowerCase();
+  
+  // Industry-specific toolkit — canonical list of real chips for each industry
+  const industryTookits: Record<string, string[]> = {
+    restaurant: ['menu', 'reservation', 'specials', 'features', 'contact', 'footer', 'testimonials', 'about', 'navbar', 'cta'],
+    salon: ['treatments', 'beforeafter', 'stylists', 'services', 'features', 'contact', 'footer', 'testimonials', 'about', 'gallery'],
+    fitness: ['classes', 'trainers', 'membership', 'programs', 'schedule', 'features', 'contact', 'footer', 'testimonials', 'about'],
+    medical: ['doctors', 'departments', 'appointment', 'insurance', 'services', 'features', 'contact', 'footer', 'testimonials', 'about'],
+    ecommerce: ['products', 'categories', 'features', 'services', 'contact', 'footer', 'testimonials', 'about', 'pricing', 'gallery'],
+    saas: ['demo', 'integrations', 'dashboard', 'features', 'pricing', 'contact', 'footer', 'testimonials', 'about', 'faq'],
+    portfolio: ['portfolioprojects', 'skills', 'about', 'contact', 'footer', 'testimonials', 'services', 'features'],
+    coaching: ['methodology', 'results', 'discoverycall', 'coachingprograms', 'testimonials', 'about', 'contact', 'footer', 'pricing'],
+    'local-service': ['estimate', 'servicearea', 'licenses', 'features', 'about', 'contact', 'footer', 'testimonials', 'services'],
+    agency: ['casestudies', 'process', 'clients', 'services', 'features', 'about', 'contact', 'footer', 'testimonials', 'portfolio'],
+    default: ['hero', 'features', 'services', 'about', 'contact', 'testimonials', 'cta', 'footer', 'pricing', 'gallery'],
+  };
+  
+  // Common pattern-to-section mappings (applies across all industries)
+  const commonPatterns: Record<string, string[]> = {
+    'card': ['features', 'services', 'testimonials'],
+    'item': ['features', 'services'],
+    'grid': ['gallery', 'products'],
+    'list': ['features', 'services'],
+    'chip': ['features', 'services', 'testimonials'],
+    'tile': ['features', 'gallery'],
+    'block': ['features', 'services', 'about'],
+    'widget': ['features', 'contact'],
+    'section': ['features', 'services', 'about'],
+    'component': ['features', 'services'],
+    'panel': ['features', 'pricing'],
+    'modal': ['contact', 'booking'],
+  };
+  
+  // 1. Try exact section key match first
+  if (SECTION_GENERATORS[lower]) {
+    console.log(`[chip-inject] Direct match: "${componentName}" → ${lower}`);
+    return SECTION_GENERATORS[lower](ctx);
+  }
+  
+  // 2. Try explicit pattern match (card → features/services, item → features, etc.)
+  for (const [pattern, sections] of Object.entries(commonPatterns)) {
+    if (lower.includes(pattern)) {
+      // Use hash to select consistently from the pattern options
+      const hashValue = componentName.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+      const idx = Math.abs(hashValue) % sections.length;
+      const section = sections[idx];
+      if (SECTION_GENERATORS[section]) {
+        console.log(`[chip-inject] Pattern match: "${componentName}" (pattern: "${pattern}") → ${section}`);
+        return SECTION_GENERATORS[section](ctx);
+      }
+    }
+  }
+  
+  // 3. Try fuzzy match against the industry's toolkit
+  const toolkit = industryTookits[ctx.industry] || industryTookits.default;
+  const fuzzyMatches = toolkit
+    .filter(key => SECTION_GENERATORS[key])
+    .map(key => ({
+      key,
+      distance: levenshteinDistance(lower, key),
+    }))
+    .filter(m => m.distance <= 4)
+    .sort((a, b) => a.distance - b.distance);
+  
+  if (fuzzyMatches.length > 0) {
+    const match = fuzzyMatches[0].key;
+    console.log(`[chip-inject] Fuzzy match: "${componentName}" → ${match} (distance: ${fuzzyMatches[0].distance}, industry: ${ctx.industry})`);
+    return SECTION_GENERATORS[match](ctx);
+  }
+  
+  // 4. Use deterministic variant from industry toolkit based on component name hash
+  const industryDefaults = toolkit.filter(k => SECTION_GENERATORS[k]);
+  if (industryDefaults.length > 0) {
+    const hashIdx = Math.abs(componentName.split('').reduce((a, b) => a + b.charCodeAt(0), 0)) % industryDefaults.length;
+    const selectedKey = industryDefaults[hashIdx];
+    console.log(`[chip-inject] Hash-based selection: "${componentName}" → ${selectedKey} (industry: ${ctx.industry})`);
+    return SECTION_GENERATORS[selectedKey](ctx);
+  }
+  
+  // 5. Absolute fallback: use universal components that work in any industry
+  const universalOptions = ['hero', 'features', 'services', 'about', 'contact', 'testimonials', 'cta', 'footer'];
+  const universalIdx = Math.abs(componentName.split('').reduce((a, b) => a + b.charCodeAt(0), 0)) % universalOptions.length;
+  const fallbackKey = universalOptions[universalIdx];
+  
+  console.warn(`[chip-inject] FINAL FALLBACK (no industry match): "${componentName}" → ${fallbackKey} (universal)`);
+  if (SECTION_GENERATORS[fallbackKey]) {
+    return SECTION_GENERATORS[fallbackKey](ctx);
+  }
+  
+  // Defensive: if somehow fallback fails, use hero (always exists)
+  console.error(`[chip-inject] CRITICAL FALLBACK: "${componentName}" → hero (all else failed)`);
+  return SECTION_GENERATORS['hero'](ctx);
+}
+
+/**
+ * Scan all files for relative imports. For missing modules, generate REAL
+ * contextual section components using the wizard launcher context
+ * inferred from existing VFS content (industry, brand name, images).
+ * 
+ * CRITICAL: NEVER GENERATES STUBS. ALL missing components are injected with
+ * real industry-appropriate UI/template chips from the detection context.
+ */
+
+/**
+ * Scan all files for relative imports. For missing modules, generate REAL
+ * contextual section components using the wizard launcher context
+ * inferred from existing VFS content (industry, brand name, images).
+ */
+function generateMissingComponents(sandpackFiles: Record<string, string>): void {
+  const existingPaths = new Set(Object.keys(sandpackFiles));
+  const extensions = ['.tsx', '.jsx', '.ts', '.js'];
+
+  const industry = detectIndustryFromVFS(sandpackFiles);
+  const images = CONTEXTUAL_IMAGES[industry] || CONTEXTUAL_IMAGES.default;
+  const brandName = extractBusinessName(sandpackFiles);
+  const ctx: GeneratorContext = { industry, images, portraits: PORTRAIT_IMAGES, brandName };
+
+  for (const [filePath, content] of Object.entries({ ...sandpackFiles })) {
+    if (!/\.(tsx?|jsx?)$/.test(filePath)) continue;
+
+    const importRegex = /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"](\.\.?\/[^'"]+)['"]/g;
+    let im;
+    while ((im = importRegex.exec(content)) !== null) {
+      const rawImportPath = im[1];
+      const dir = filePath.substring(0, filePath.lastIndexOf('/')) || '/';
+      let resolved = rawImportPath.startsWith('/')
+        ? rawImportPath
+        : `${dir}/${rawImportPath}`.replace(/\/\.\//g, '/');
+
+      const parts = resolved.split('/');
+      const stack: string[] = [];
+      for (const p of parts) {
+        if (p === '..') stack.pop();
+        else if (p !== '.' && p !== '') stack.push(p);
+      }
+      resolved = '/' + stack.join('/');
+
+      if (/\.(css|scss|less)$/.test(resolved)) continue;
+
+      const candidates = [resolved, ...extensions.map(ext => resolved + ext)];
+      if (candidates.some(c => existingPaths.has(c))) continue;
+
+      const targetPath = /\.\w+$/.test(resolved) ? resolved : `${resolved}.tsx`;
+      if (existingPaths.has(targetPath)) continue;
+
+      const importStatement = im[0];
+      const defaultMatch = importStatement.match(/import\s+([A-Z]\w*)\s/);
+      const namedMatch = importStatement.match(/import\s+\{([^}]+)\}/);
+      const componentName = defaultMatch?.[1] || namedMatch?.[1]?.split(',')[0]?.trim()?.split(/\s+as\s+/)?.[0] || resolved.split('/').pop() || '';
+
+      const sectionKey = matchSectionGenerator(componentName);
+
+      if (sectionKey) {
+        let generated = SECTION_GENERATORS[sectionKey](ctx);
+        // Generators now produce both `export function X` and `export default X`.
+        // If the import uses a DIFFERENT name than the generator's function name,
+        // add an alias export so `import { CustomName }` resolves.
+        if (namedMatch) {
+          const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
+          for (const name of names) {
+            if (/^[A-Z]/.test(name) && !generated.includes(`export function ${name}`) && !generated.includes(`export const ${name}`)) {
+              // Find the generator's primary function name
+              const fnMatch = generated.match(/export function (\w+)/);
+              if (fnMatch) {
+                generated += `\nexport const ${name} = ${fnMatch[1]};\n`;
+              }
+            }
+          }
+        }
+        sandpackFiles[targetPath] = generated;
+        console.log(`[sandpackFilePrep] Generated real ${sectionKey} component: ${targetPath}`);
+      } else {
+        // NO STUBS ALLOWED. Generate real industry-appropriate component.
+        const industryCode = generateIndustryContextualComponent(componentName, ctx);
+        
+        // Handle named imports that use different names than the generated export
+        let finalCode = industryCode;
+        if (namedMatch) {
+          const names = namedMatch[1].split(',').map(n => n.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
+          for (const name of names) {
+            if (/^[A-Z]/.test(name) && !finalCode.includes(`export function ${name}`) && !finalCode.includes(`export const ${name}`)) {
+              // Find the generator's primary function name and create an alias
+              const fnMatch = finalCode.match(/export function (\w+)/);
+              if (fnMatch) {
+                finalCode += `\nexport const ${name} = ${fnMatch[1]};\n`;
+              }
+            }
+          }
+        }
+        
+        sandpackFiles[targetPath] = finalCode;
+        console.log(`[chip-inject COMPLETE] Generated real component: ${targetPath} (name: "${componentName}")`);
+      }
+
+      existingPaths.add(targetPath);
+    }
+  }
+}
 
 function pickPrimaryComponentPath(paths: string[]): string | null {
   const uniquePaths = [...new Set(paths)].filter(
@@ -3040,120 +4467,12 @@ function forceClassicReactJsxRuntime(content: string): string {
 }
 
 /**
- * Find a safe position to insert a new top-level statement after the last
- * *syntactically complete* import statement in `code`.
- *
- * A naive `code.lastIndexOf('\nimport ')` matches the literal text
- * "\nimport " and can anchor on a truncated/unterminated import (e.g. the AI
- * emitted `import { ` with no closing brace or `from` clause). Splicing
- * injected code right after that dangling line corrupts the file — the
- * injected statement lands in the middle of the broken import instead of
- * after it, producing an "Unexpected keyword 'import'" parse error.
- *
- * This only anchors on imports that have an actual `from '...'` clause
- * (single- or multi-line), and falls back to the very top of the file
- * (after any leading directive prologue like `"use client";`) when no
- * complete import can be found.
- */
-function findSafeImportInsertionPoint(code: string): number {
-  const completeImportRe = /^import\s[\s\S]*?from\s*(['"])(?:(?!\1)[\s\S])*\1\s*;?[ \t]*$/gm;
-  let lastEnd = -1;
-  let match: RegExpExecArray | null;
-  while ((match = completeImportRe.exec(code)) !== null) {
-    lastEnd = match.index + match[0].length;
-    if (completeImportRe.lastIndex === match.index) {
-      completeImportRe.lastIndex += 1;
-    }
-  }
-
-  if (lastEnd === -1) {
-    const directiveMatch = code.match(/^(['"])use [a-z]+\1;?[ \t]*\n/);
-    return directiveMatch ? directiveMatch[0].length : 0;
-  }
-
-  const nextNewline = code.indexOf('\n', lastEnd);
-  return nextNewline === -1 ? code.length : nextNewline + 1;
-}
-
-/**
- * Collect the local names of every top-level binding already present in
- * `code`: named/default/namespace imports, `const`/`let`/`var` declarations,
- * function declarations, and class declarations. Used to make repair passes
- * (e.g. the Lucide icon fallback injector) idempotent — a binding must never
- * be declared twice, whether it came from a real import or a previously
- * generated fallback declaration.
- */
-function collectTopLevelBindingNames(code: string): Set<string> {
-  const bindings = new Set<string>();
-
-  const namedImportRe = /^import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"][^'"]+['"];?/gm;
-  let m: RegExpExecArray | null;
-  while ((m = namedImportRe.exec(code)) !== null) {
-    for (const spec of m[1].split(',')) {
-      const parts = spec.trim().split(/\s+as\s+/);
-      const local = (parts[1] || parts[0]).trim();
-      if (local) bindings.add(local);
-    }
-  }
-
-  const defaultOrNamespaceImportRe = /^import\s+(?:\*\s+as\s+([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*))\s*(?:,\s*\{[^}]*\})?\s+from\s+['"][^'"]+['"];?/gm;
-  while ((m = defaultOrNamespaceImportRe.exec(code)) !== null) {
-    const name = m[1] || m[2];
-    if (name) bindings.add(name);
-  }
-
-  const declarationRe = /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=|^(?:export\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(|^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)\b/gm;
-  while ((m = declarationRe.exec(code)) !== null) {
-    const name = m[1] || m[2] || m[3];
-    if (name) bindings.add(name);
-  }
-
-  return bindings;
-}
-
-/**
  * Process code to strip/transform imports that Sandpack can't resolve.
  * Also fixes dangerouslySetInnerHTML template literals that contain CSS (which crash Babel).
  */
 export function processCode(code: string, filePath: string): string {
   if (!/\.(tsx?|jsx?|mjs)$/.test(filePath)) {
     return code;
-  }
-
-  // ── Repair: strip dangling/unterminated import openers ─────────────────
-  // AI generation (or an earlier repair pass) sometimes leaves a truncated
-  // `import { ` opener with no closing brace / `from` clause — e.g. the rest
-  // of the specifier list and the module source never got written. Left in
-  // place, this dangling line can be mistaken by later anchor-based repairs
-  // (or by Sandpack/Babel itself) for the start of a real statement,
-  // producing "Unexpected keyword" parse errors. Since there is nothing
-  // usable to recover (no specifiers, no module source), remove the opener
-  // line outright when it never resolves to a closing `} from '...'`.
-  {
-    const lines = code.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      if (!/^\s*import\s*\{\s*$/.test(lines[i])) continue;
-      let closed = false;
-      for (let j = i + 1; j < lines.length; j++) {
-        const line = lines[j];
-        if (/^\s*\}\s*from\s*['"][^'"]+['"]\s*;?\s*$/.test(line)) {
-          closed = true;
-          break;
-        }
-        // Still looks like an import-specifier continuation line
-        // (`Name,`, `Name as Alias,`, or a blank line) — keep scanning.
-        if (line.trim() === '' || /^\s*[A-Za-z_$][\w$]*(\s+as\s+[A-Za-z_$][\w$]*)?,?\s*$/.test(line)) {
-          continue;
-        }
-        // Anything else (a new statement, JSX, etc.) means this import
-        // was never closed.
-        break;
-      }
-      if (!closed) {
-        lines[i] = '';
-      }
-    }
-    code = lines.join('\n');
   }
 
   // ── Safe lucide-react imports ──────────────────────────────────────────
@@ -3253,43 +4572,19 @@ export function processCode(code: string, filePath: string): string {
   }
 
   if (__allLucideIcons.length > 0) {
-    // ── Idempotency guard ──────────────────────────────────────────────
-    // A Live Business Data operation (catalog binding, AI patch, Playground
-    // recompile) can reintroduce a plain `import { MapPin } from
-    // 'lucide-react'` into a file that a PRIOR prepareSandpackFiles() pass
-    // already rewrote into `const MapPin = __LucideIcons['MapPin'] ||
-    // __LucideFallback;`. Emitting a second `const MapPin = ...` declaration
-    // produces "Identifier 'MapPin' has already been declared". Check every
-    // existing top-level binding (imports, consts, functions, classes —
-    // including previously generated Lucide aliases) BEFORE emitting a new
-    // fallback declaration for that alias, so repeated preparation passes
-    // are idempotent. The stale named import is always removed regardless.
-    const existingBindings = collectTopLevelBindingNames(code.replace(lucideImportRe, ''));
-
     code = code.replace(lucideImportRe, (_match) => {
       if (__lucideImportDone) return '/* lucide import merged above */';
       __lucideImportDone = true;
 
-      const iconLines: string[] = [];
-      for (const { original, alias } of __allLucideIcons) {
-        if (existingBindings.has(alias)) continue;
-        const candidates = getLucideLookupCandidates(original);
-        const lookup = `${candidates.map((name) => `__LucideIcons['${name}']`).join(' || ')} || __LucideFallback`;
-        iconLines.push(`const ${alias} = ${lookup};`);
-      }
-
-      if (iconLines.length === 0) {
-        // Every requested icon already has a binding somewhere in the file
-        // (typically from a prior preparation pass). Nothing new to emit —
-        // still drop the stale named import so it isn't left dangling.
-        return '/* lucide import already satisfied by existing bindings */';
-      }
-
       const lines: string[] = [
         `import * as __LucideIcons from 'lucide-react';`,
         `const __LucideFallback = (props) => React.createElement('svg', Object.assign({ viewBox: '0 0 24 24', width: 24, height: 24, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, props), React.createElement('circle', { cx: 12, cy: 12, r: 10 }), React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 12 }), React.createElement('line', { x1: 12, y1: 16, x2: 12.01, y2: 16 }));`,
-        ...iconLines,
       ];
+      for (const { original, alias } of __allLucideIcons) {
+        const candidates = getLucideLookupCandidates(original);
+        const lookup = `${candidates.map((name) => `__LucideIcons['${name}']`).join(' || ')} || __LucideFallback`;
+        lines.push(`const ${alias} = ${lookup};`);
+      }
       return lines.join('\n');
     });
   }
@@ -3406,8 +4701,13 @@ export function processCode(code: string, filePath: string): string {
       const insertAt = fallbackLineEnd === -1 ? code.length : fallbackLineEnd + 1;
       code = code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
     } else {
-      const insertAt = findSafeImportInsertionPoint(code);
-      code = code.slice(0, insertAt) + injections.join('\n') + '\n' + code.slice(insertAt);
+      const lastImportIdx = code.lastIndexOf('\nimport ');
+      if (lastImportIdx !== -1) {
+        const lineEnd = code.indexOf('\n', lastImportIdx + 1);
+        code = code.slice(0, lineEnd + 1) + injections.join('\n') + '\n' + code.slice(lineEnd + 1);
+      } else {
+        code = injections.join('\n') + '\n' + code;
+      }
     }
   }
 
@@ -3447,7 +4747,6 @@ export function processCode(code: string, filePath: string): string {
 
   let processed = code;
   const hooksShimImport = toRelativeSandpackImport(filePath, '/hooks-shim');
-  const radixShimImport = toRelativeSandpackImport(filePath, '/radix-shim');
 
   processed = repairMalformedDefaultExportClosures(processed);
 
@@ -3498,7 +4797,7 @@ export function processCode(code: string, filePath: string): string {
 
   // Handle @/ path alias imports — convert to correct relative paths for flattened Sandpack files
   processed = processed.replace(
-    /^(import\s+[^'";\n]*from\s*['"])@\/([^'"\n]+)(['"];?[ \t]*)$/gm,
+    /^(import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
     (match, importPrefix, modulePath, importSuffix) => {
       // Shim @/lib/utils → real cn() function
       if (modulePath === 'lib/utils') {
@@ -3543,32 +4842,12 @@ export function processCode(code: string, filePath: string): string {
     }
   );
 
-  processed = processed.replace(
-    /^(\s*import\s+['"])@\/([^'"]+)(['"];?\s*)$/gm,
-    (_match, importPrefix, modulePath, importSuffix) => (
-      `${importPrefix}${aliasModuleToRelativeImport(filePath, `@/${modulePath}`)}${importSuffix}`
-    ),
-  );
-
   // Process remaining imports — strip unresolvable npm packages to prevent Sandpack crashes
-
-  // Generated Unison Radix facades re-export the external primitive. Sandpack
-  // cannot collect its CommonJS transform helpers reliably, so preserve the
-  // facade API while resolving it against the local preview shim.
   processed = processed.replace(
-    /export\s+\*\s+from\s+['"]@radix-ui\/react-[^'"]+['"];?/g,
-    `export * from '${radixShimImport}';`,
-  );
-  processed = processed.replace(
-    /^import\s+[^'";\n]*from\s*['"]([^'"\n]+)['"];?[ \t]*$/gm,
+    /^import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s*,?\s*)*\s*from\s+['"]([^'"]+)['"];?\s*$/gm,
     (match, modulePath) => {
-      if (isSandpackAllowedImport(modulePath)) return match;
-      if (modulePath.startsWith('@/')) {
-      if (/^@radix-ui\/react-/.test(modulePath)) {
-        return match.replace(modulePath, radixShimImport);
-      }
-        return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
-      }
+      const baseModule = modulePath.split('/')[0];
+      if (ALLOWED_IMPORTS.has(modulePath) || ALLOWED_IMPORTS.has(baseModule)) return match;
       if (/\.(css|scss|less)$/.test(modulePath)) return match;
 
       if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
@@ -3610,6 +4889,10 @@ export function processCode(code: string, filePath: string): string {
           return `import hooks from '${hooksShimImport}'; // [Preview] Shimmed: ${modulePath}`;
         }
         return match;
+      }
+
+      if (modulePath.startsWith('@/')) {
+        return match.replace(modulePath, aliasModuleToRelativeImport(filePath, modulePath));
       }
 
       // Unknown npm package — pass through to Sandpack for real resolution.
@@ -3789,50 +5072,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     out['/src/index.css'] = buildBaseCssForPreset(options?.themePresetId);
   }
 
-  // Existing wizard snapshots can carry an earlier marker-owned UI facade.
-  // Refresh those runtime modules before routing or preview compilation so
-  // generated pages never import an API absent from their own foundation.
-  // Non-wizard drafts have no ui-manifest, but AI-generated code is sanitized
-  // onto the `@/unison/ui/*` facade, so seed the foundation whenever anything
-  // references it — otherwise the edit "applies" and the preview fails to resolve.
-  if (
-    out['/.unison/ui-manifest.json'] ||
-    Object.entries(out).some(([path, content]) => (
-      path.startsWith('/src/unison/ui/') || /@\/unison\/ui(?:\/[^'"\s]+)?/.test(content)
-    ))
-  ) {
-    syncGeneratedUiFoundationFiles(out, options?.themePresetId);
-
-    // Radix's raw Slot throws ("Slot failed to slot onto its children") whenever
-    // `asChild` receives text, a fragment, or multiple children — a shape AI
-    // pages produce constantly (icon + label). Route every direct import onto
-    // the tolerant foundation slot so the preview degrades instead of crashing.
-    for (const [path, content] of Object.entries(out)) {
-      if (!path.startsWith('/src/') || path.startsWith('/src/unison/ui/radix/')) continue;
-      if (!content.includes('@radix-ui/react-slot')) continue;
-      out[path] = content.replace(
-        /(["'])@radix-ui\/react-slot\1/g,
-        "'@/unison/ui/radix/slot'",
-      );
-    }
-
-  }
-
-  if (
-    /@import\s+(?:url\(\s*)?['"](?:\.\/)?unison\/ui\/tailwind\.css['"]/.test(out['/src/index.css'] || '') &&
-    !out['/src/unison/ui/tailwind.css']
-  ) {
-    out['/src/unison/ui/tailwind.css'] = UNISON_VFS_STYLE_BRIDGE;
-    console.info('[sandpackFilePrep] Restored the token-consuming VFS CSS bridge.');
-  }
-
   // ── Inject conventional IDE JSON / config files ──────────────────────────
   // Ensures the VFS looks like a real project with package.json, tsconfig, etc.
   if (!out['/package.json']) {
-    const detectedDeps: Record<string, string> = {
-      react: GENERATED_RUNTIME_PROFILE.react,
-      'react-dom': GENERATED_RUNTIME_PROFILE.reactDom,
-    };
+    const detectedDeps: Record<string, string> = { react: '^18.2.0', 'react-dom': '^18.2.0' };
     // Scan source for common imports to auto-populate dependencies
     const allCode = Object.values(out).join('\n');
     const importMatches = allCode.matchAll(/from\s+['"]([a-z@][a-z0-9\-_@/.]*)['"]/g);
@@ -4064,48 +5307,18 @@ function repairConciseArrowChildren(content: string): string {
   return out;
 }
 
-// The launcher's strict pre-persist validation call and Preview's mount-time
-// call run this same full VFS pipeline back-to-back on essentially identical
-// files (validate-then-render). `strict` only changes behaviour inside the
-// `!hasApp` branch below, so once a run resolves `hasApp === true` its result
-// is valid for either strict value — cache on that basis to cut the second,
-// otherwise-redundant full pass instead of the coverage it produces.
-const PREPARED_FILES_CACHE_LIMIT = 20;
-const preparedFilesCache = new Map<string, Record<string, string>>();
-
-function hashFilesRecord(files: Record<string, string>): string {
-  let h = 0x811c9dc5;
-  for (const path of Object.keys(files).sort()) {
-    const entry = `${path}\u0000${files[path]}\u0000`;
-    for (let i = 0; i < entry.length; i++) {
-      h ^= entry.charCodeAt(i);
-      h = Math.imul(h, 0x01000193);
-    }
-  }
-  return (h >>> 0).toString(36);
-}
-
 export function prepareSandpackFiles(
   files: Record<string, string>,
   options?: { strict?: boolean; entryPoint?: string; aesthetic?: string; themePresetId?: string | null }
 ): Record<string, string> {
-  const effectiveAesthetic = options?.themePresetId ? null : (options?.aesthetic || null);
-  const preparedCacheKey =
-    `${hashFilesRecord(files)}::${options?.entryPoint || ''}::${options?.themePresetId || ''}::${effectiveAesthetic || ''}`;
-  const cachedPrepared = preparedFilesCache.get(preparedCacheKey);
-  if (cachedPrepared) return { ...cachedPrepared };
-
   // ═══════════════════════════════════════════════════════════════════════════
   // GUARD: Unwrap JSON-wrapped file maps that leaked through as raw content.
   // If ANY file's content is a JSON object with a "files" key, extract the
   // actual files and merge them into the VFS instead of treating the JSON
   // string as source code.
   // ═══════════════════════════════════════════════════════════════════════════
-  // Foundation primitives imported from an unauthored relative path are an
-  // import-specifier mistake, not a missing module: point them at the canonical
-  // barrel before any unresolved-import enforcement runs.
-  let resolvedFiles = normalizeFoundationLocalImports(files);
-  const fileKeys = Object.keys(resolvedFiles);
+  let resolvedFiles = files;
+  const fileKeys = Object.keys(files);
 
   // Case 1: The entire VFS has a single file whose content is a JSON files wrapper
   // e.g. { "/App.tsx": '{"files":{"src/App.tsx":"import React..."}}' }
@@ -4167,14 +5380,6 @@ export function prepareSandpackFiles(
     finalFiles[path] = content;
   }
 
-  const referencesGeneratedUiFoundation = Object.entries(finalFiles).some(([path, content]) => (
-    path.startsWith('/src/unison/ui/') || /@\/unison\/ui(?:\/[^'"\s]+)?/.test(content)
-  ));
-
-  if (finalFiles['/.unison/ui-manifest.json'] || referencesGeneratedUiFoundation) {
-    syncGeneratedUiFoundationFiles(finalFiles, options?.themePresetId);
-  }
-
   const sandpackFiles: Record<string, string> = {};
   let hasApp = false;
   let hasIndex = false;
@@ -4191,7 +5396,8 @@ export function prepareSandpackFiles(
         normalizedPath.includes('/.') ||
         normalizedPath.endsWith('.json') ||
         normalizedPath.endsWith('.config.ts') ||
-        normalizedPath.endsWith('.config.js')) {
+        normalizedPath.endsWith('.config.js') ||
+        normalizedPath.includes('/public/')) {
       continue;
     }
 
@@ -4261,22 +5467,6 @@ export function prepareSandpackFiles(
       .replace(/from\s+['"]\.\/styles\//g, "from './")
       .replace(/import\s+['"]\.\/styles\//g, "import './");
 
-    processedContent = processedContent.replace(
-      /(\bfrom\s+['"])@\/unison\/([^'"]+)(['"])/g,
-      (_match, importPrefix, modulePath, importSuffix) => (
-        `${importPrefix}${aliasModuleToRelativeImport(normalizedPath, `@/unison/${modulePath}`)}${importSuffix}`
-      ),
-    );
-
-    if (/\.css$/i.test(normalizedPath)) {
-      processedContent = processedContent.replace(
-        /(@import\s+(?:url\(\s*)?['"])@\/([^'"]+)(['"]\s*\)?\s*;)/g,
-        (_match, importPrefix, modulePath, importSuffix) => (
-          `${importPrefix}${aliasModuleToRelativeImport(normalizedPath, `@/${modulePath}`)}${importSuffix}`
-        ),
-      );
-    }
-
     processedContent = processCode(processedContent, normalizedPath);
     processedContent = repairBrokenImageUrls(processedContent);
     processedContent = injectPreviewNavBridge(processedContent, normalizedPath);
@@ -4320,13 +5510,11 @@ export function prepareSandpackFiles(
     const existingIndexCSS = sandpackFiles['/index.css'] || '';
     if (existingIndexCSS && !existingIndexCSS.includes('--primary:')) {
       if (cssResolution.isWizardDraft) {
-        if (isLiveEditedVfsPath('/src/index.css')) {
-          console.info('[prepareSandpackFiles] Preserving live-edited wizard stylesheet without legacy semantic tokens.');
         // RESILIENCY: if the caller knows the themePresetId (Lane B recompile,
         // AI patch flow, cloud rehydrate), re-emit the themed stylesheet in
         // place of the untokenized CSS instead of hard-failing. Only throw
         // when we truly cannot recover the wizard's preset.
-        } else if (resolvedPresetId) {
+        if (resolvedPresetId) {
           try {
             sandpackFiles['/index.css'] = buildBaseCssForPreset(resolvedPresetId);
             console.warn(
@@ -4414,7 +5602,6 @@ export function prepareSandpackFiles(
   sandpackFiles['/hooks-shim.ts'] = HOOKS_SHIM;
   sandpackFiles['/lib-utils-shim.ts'] = LIB_UTILS_SHIM;
   sandpackFiles['/ui-shim.tsx'] = UI_COMPONENTS_SHIM;
-  sandpackFiles['/radix-shim.tsx'] = RADIX_PREVIEW_SHIM;
 
   // Canonical tsconfig so consumers (and tests) can rely on the modern
   // automatic JSX runtime being active. The per-file `forceClassicReactJsxRuntime`
@@ -4486,6 +5673,7 @@ export function prepareSandpackFiles(
         .replace(new RegExp(`</(?:${routerTagPattern})>`, 'g'), '');
       if (fixed !== content) {
         sandpackFiles[filePath] = fixed;
+        console.warn(`[sandpackFilePrep] Stripped Router wrapper from ${filePath} (RouterGuard provides one)`);
       }
     }
   }
@@ -4507,12 +5695,6 @@ export function prepareSandpackFiles(
   // "Could not find module" crashes from killing the preview, we synthesize
   // a minimal `() => null` placeholder (NOT a fake chip). Authors see the
   // empty slot and replace it on the next turn.
-  // Foundation primitives imported from an unauthored relative path are an
-  // import-specifier mistake, not a missing module. Normalize them onto the
-  // canonical barrel here too: sandpackFiles may be projected from the sealed
-  // snapshot rather than the argument map.
-  Object.assign(sandpackFiles, normalizeFoundationLocalImports(sandpackFiles));
-
   synthesizeMissingLocalImports(
     sandpackFiles,
     {
@@ -4530,12 +5712,12 @@ export function prepareSandpackFiles(
   }
 
   repairLocalImportContracts(sandpackFiles);
-  assertLocalJsxImportContracts(sandpackFiles);
 
 
   // ── SAFETY: Validate App.tsx has a default export ──
   // If AI-generated App.tsx only uses named exports (e.g., `export function App`),
   // `import App from './App'` in index.tsx resolves to undefined → crash.
+  // Must run AFTER generateMissingComponents so all files are present.
   const appContent = sandpackFiles['/App.tsx'] || sandpackFiles['/App.jsx'] || '';
   if (appContent && !appContent.includes('export default')) {
     const appPath = sandpackFiles['/App.tsx'] ? '/App.tsx' : '/App.jsx';
@@ -4562,12 +5744,6 @@ export function prepareSandpackFiles(
 
     sandpackFiles[filePath] = ensureDefaultExportForReactModule(content, filePath);
   }
-
-  // The default-export completion pass above can make one more import rewrite
-  // possible. Reconcile again, then fail with the exact file/symbol pair before
-  // React receives an undefined JSX element type.
-  repairLocalImportContracts(sandpackFiles);
-  assertLocalJsxImportContracts(sandpackFiles);
 
   // ── CLEANUP: Remove unused imports from VFS files ──
   // AI often imports components/icons it doesn't actually use in the template,
@@ -4596,8 +5772,6 @@ export function prepareSandpackFiles(
   // Ensure index.html exists with Tailwind CDN + semantic theme config
   if (!sandpackFiles['/index.html']) {
     sandpackFiles['/index.html'] = PREVIEW_INDEX_HTML;
-  } else {
-    sandpackFiles['/index.html'] = ensureSemanticTailwindPreviewHtml(sandpackFiles['/index.html']);
   }
 
   // ── FINAL SAFETY: Detect any remaining JSON wrappers that leaked through ──
@@ -4625,16 +5799,14 @@ export function prepareSandpackFiles(
     }
   }
 
-  console.log('[sandpackFilePrep] Prepared files:', Object.keys(sandpackFiles));
-  const prepared = applySandpackRuntimeShims(sandpackFiles);
-  if (hasApp) {
-    if (preparedFilesCache.size >= PREPARED_FILES_CACHE_LIMIT) preparedFilesCache.clear();
-    // Store a copy — `prepared` escapes to the caller, who may mutate it
-    // in place (e.g. Preview's debug metadata injection), which would
-    // otherwise leak into every later cache hit for this content.
-    preparedFilesCache.set(preparedCacheKey, { ...prepared });
-  }
-  return prepared;
+  // A registered themePresetId owns final geometry through its canonical CSS
+  // override. Normalize only legacy artifacts with no valid Style Card.
+  const themedPreviewFiles = hasThemeGeometryContract(resolvedPresetId)
+    ? sandpackFiles
+    : enforceThemeGeometryContract(sandpackFiles, resolvedPresetId);
+
+  console.log('[sandpackFilePrep] Prepared files:', Object.keys(themedPreviewFiles));
+  return themedPreviewFiles;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

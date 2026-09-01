@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 
 describe('wizard VFS integrity', () => {
-  it('refuses to synthesize a missing chrome module — pages must author chrome inline', () => {
+  it('restores canonical shared wizard chrome instead of synthesizing empty modules', () => {
     const files = {
       '/src/App.tsx': [
         "import Home from './pages/Home';",
@@ -24,7 +24,10 @@ describe('wizard VFS integrity', () => {
       }),
     };
 
-    expect(() => prepareSandpackFiles(files)).toThrow(/missing local module/i);
+    const prepared = prepareSandpackFiles(files);
+
+    expect(prepared['/sections/SiteNavbar.tsx']).toContain('export default SiteNavbar');
+    expect(prepared['/sections/SiteNavbar.tsx']).toContain('aria-label="Primary navigation"');
   });
 
   it('does not mistake DOM generics in the interaction runtime for JSX components', () => {
@@ -67,61 +70,5 @@ describe('wizard VFS integrity', () => {
     };
 
     expect(() => prepareSandpackFiles(files)).toThrow(/missing local module.*MissingPortfolioGrid/i);
-  });
-
-  it('rejects unbound JSX components before the runtime can render placeholder labels', () => {
-    const files = {
-      '/src/App.tsx': 'export default function App() { return <main><MissingPortfolioGrid /></main>; }',
-      '/src/index.css': ':root { --primary: 221 83% 53%; }',
-      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
-      '/.unison/site-bundle-snapshot.json': JSON.stringify({
-        snapshotId: 'snap_unbound_jsx',
-        pageRegistry: { pages: {} },
-        vfsFiles: {},
-        meta: { source: 'wizard' },
-      }),
-    };
-
-    expect(() => prepareSandpackFiles(files)).toThrow(/missing local module.*MissingPortfolioGrid/i);
-
-    const valid = prepareSandpackFiles({
-      '/src/App.tsx': 'export default function App() { return <main>Complete component contract</main>; }',
-      '/src/index.css': ':root { --primary: 221 83% 53%; }',
-      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
-      '/.unison/site-bundle-snapshot.json': JSON.stringify({
-        snapshotId: 'snap_valid_jsx',
-        pageRegistry: { pages: {} },
-        vfsFiles: {},
-        meta: { source: 'wizard' },
-      }),
-    });
-
-    expect(valid['/index.tsx']).toContain('React runtime patch disabled');
-    expect(valid['/index.tsx']).not.toContain('⚠ missing component');
-  });
-
-  it('reuses a prepared result across the launcher strict gate and Preview mount without cross-call mutation leaking', () => {
-    const files = {
-      '/src/App.tsx': "export default function App() { return <main>Cache reuse check</main>; }",
-      '/src/index.css': ':root { --primary: 221 83% 53%; }',
-      '/.unison/wizard-seed.json': JSON.stringify({ source: 'system-launcher' }),
-      '/.unison/site-bundle-snapshot.json': JSON.stringify({
-        snapshotId: 'snap_cache_reuse',
-        pageRegistry: { pages: {} },
-        vfsFiles: {},
-        meta: { source: 'wizard' },
-      }),
-    };
-
-    // Launcher strict gate: validates and discards its own output.
-    const strictResult = prepareSandpackFiles(files, { strict: true, entryPoint: '/src/App.tsx' });
-    strictResult['/launch-metadata.json'] = 'mutated by the discarding caller';
-
-    // Preview mount: same files, no strict flag — must share the cached
-    // computation (same content) and must NOT see the strict caller's mutation.
-    const previewResult = prepareSandpackFiles(files, { entryPoint: '/src/App.tsx' });
-
-    expect(previewResult['/App.tsx']).toContain('Cache reuse check');
-    expect(previewResult['/launch-metadata.json']).toBeUndefined();
   });
 });

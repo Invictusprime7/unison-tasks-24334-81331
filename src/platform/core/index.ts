@@ -22,7 +22,6 @@ export * from './intentSurfaceRegistry';
 // Blueprint & capabilities
 export * from './blueprintSchema';
 export * from './capabilityRegistry';
-export * from '@/services/businessCapabilityPlanner';
 export * from './routePolicy';
 export * from './provisioningValidator';
 export * from './intentNormalizer';
@@ -32,9 +31,6 @@ export * from './industryIntentProfiles';
 export * from './integrityReport';
 export * from './iconIntentRegistry';
 export * from './siteTopologyPlanner';
-
-// Artifact registry (Phase 3) — canonical artifact ↔ data ↔ intent ↔ capability map.
-export * from './artifactRegistry';
 
 // Compilation + gates (PreviewGate / PublishGate live here as isPreviewReady / isPublishReady)
 export * from './contractCompiler';
@@ -57,9 +53,6 @@ export {
 export * from './runtimeManifest';
 export * from './canonicalPipeline';
 
-// Generated runtime profile + advanced runtime capability registry (one source).
-export * from './generatedRuntimeCapabilities';
-
 // Playground state model
 export * from './playground';
 
@@ -68,6 +61,3 @@ export * from './commitToPipeline';
 
 // Contract Guard — silent-retry-then-surface enforcement for AI patches.
 export * from './contractGuard';
-
-// Pass 1 — named revisions: Stage 4b compile artifact + the single seal point.
-export * from './snapshotSeal';

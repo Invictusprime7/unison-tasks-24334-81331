@@ -92,25 +92,36 @@ const actionLabels: Record<string, { label: string; icon: typeof Mail }> = {
   'create_task': { label: 'Create Task', icon: Calendar },
 };
 
-interface PrebuiltWorkflowsProps {
-  businessId: string;
-}
-
-export function PrebuiltWorkflows({ businessId }: PrebuiltWorkflowsProps) {
+export function PrebuiltWorkflows() {
   const [packs, setPacks] = useState<RecipePack[]>([]);
   const [installedPacks, setInstalledPacks] = useState<Map<string, InstalledPack>>(new Map());
   const [recipeToggles, setRecipeToggles] = useState<Map<string, boolean>>(new Map());
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState<string | null>(null);
   const [selectedPack, setSelectedPack] = useState<RecipePack | null>(null);
+  const [businessId, setBusinessId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchBusinessAndPacks();
-  }, [businessId]);
+  }, []);
 
   async function fetchBusinessAndPacks() {
     try {
-      const bizId = businessId;
+      // Get user's business
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const { data: businesses } = await supabase
+        .from("businesses")
+        .select("id")
+        .eq("owner_id", user.id)
+        .limit(1);
+
+      const bizId = businesses?.[0]?.id;
+      setBusinessId(bizId || null);
 
       // Fetch all published recipe packs
       const { data: packsData, error: packsError } = await supabase

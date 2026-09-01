@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Generated with AI Web Builder">
+  <title>my-project</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+
+    :root {
+      --soft-pink: #ffebee;
+      --deep-rose: #e91e63;
+      --light-rose: #f8bbd0;
+      /* Adjusted text colors to work better with soft pink background */
+      --text-dark: #3f3f46; /* Retain dark text for contrast */
+      --text-medium: #71717a; /* Retain medium text for contrast */
+      --background-primary: #fefefe; /* A very light, almost white, background */
+      --background-secondary: #fff0f5; /* A slightly darker soft pink for secondary sections */
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--background-primary); /* Apply scheme to body */
+    }
+
+    /* Custom Gradient Animation for Hero Background */
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .hero-gradient-bg {
+      background: linear-gradient(-45deg, var(--soft-pink), var(--light-rose), var(--deep-rose));
+      background-size: 400% 400%;
+      animation: gradientShift 15s ease infinite;
+    }
+
+    /* Card hover effect with subtle depth */
+    .card-hover-effect {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .card-hover-effect:hover {
+      transform: translateY(-8px) scale(1.02);
+      box-shadow: 0 15px 30px rgba(233, 30, 99, 0.2), 0 5px 15px rgba(0,0,0,0.05); /* Deep rose tinge */
+    }
+
+    /* Fade in animation for cards */
+    @keyframes fadeInSlideUp {
+      from { opacity: 0; transform: translateY(40px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .animate-fadeInSlideUp {
+      animation: fadeInSlideUp 0.8s ease-out forwards;
+      animation-fill-mode: backwards; /* Ensures element stays hidden before animation */
+    }
+
+    /* Artistic "blob" elements with background blur */
+    .artistic-blob {
+        position: absolute;
+        width: 250px;
+        height: 250px;
+        background: var(--light-rose); /* using the lighter pink */
+        border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
+        opacity: 0.7;
+        filter: blur(80px);
+        animation: blobMovement 15s infinite alternate ease-in-out;
+        z-index: 0; /* Send to background */
+    }
+
+    .artistic-blob-2 {
+        background: var(--deep-rose); /* using the deeper pink */
+        border-radius: 70% 30% 30% 70% / 70% 70% 30% 30%;
+        width: 300px;
+        height: 300px;
+        opacity: 0.6;
+        animation: blobMovement 18s infinite alternate-reverse ease-in-out;
+        z-index: 0;
+    }
+
+    @keyframes blobMovement {
+        0% { transform: translate(0px, 0px) scale(1.0); }
+        33% { transform: translate(30px, -50px) scale(1.1); }
+        66% { transform: translate(-20px, 40px) scale(0.9); }
+        100% { transform: translate(0px, 0px) scale(1.0); }
+    }
+
+    /* Scroll-triggered animation */
+    /* Base state (hidden) */
+    .animate-on-scroll {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+    }
+
+    /* State when visible */
+    .animate-on-scroll.animate-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Carousel specific styles */
+    .carousel-container {
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+      height: 400px; /* Adjust height as needed */
+      border-radius: 1rem; /* Rounded corners for the carousel */
+      box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+      z-index: 1; /* Ensure carousel is above blobs */
+    }
+
+    .carousel-inner {
+      display: flex;
+      transition: transform 0.5s ease-in-out;
+      height: 100%;
+    }
+
+    .carousel-item {
+      min-width: 100%;
+      flex-shrink: 0;
+      height: 100%;
+    }
+
+    .carousel-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+    }
+
+    .carousel-button {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background-color: rgba(255, 255, 255, 0.7);
+      color: var(--deep-rose);
+      border: none;
+      padding: 10px 15px;
+      font-size: 1.5rem;
+      cursor: pointer;
+      border-radius: 50%;
+      transition: background-color 0.3s ease;
+      z-index: 10;
+    }
+
+    .carousel-button:hover {
+      background-color: rgba(255, 255, 255, 0.9);
+    }
+
+    .carousel-button.prev {
+      left: 10px;
+    }
+
+    .carousel-button.next {
+      right: 10px;
+    }
+
+    .carousel-dots {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+
+    .carousel-dot {
+      width: 12px;
+      height: 12px;
+      background-color: rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      cursor: pointer;
+      transition: background-color 0.3s ease, transform 0.3s ease;
+    }
+
+    .carousel-dot.active {
+      background-color: var(--deep-rose);
+      transform: scale(1.2);
+    }
+  
+  </style>
+</head>
+<body>
+
+
+  <!-- Hero Section -->
+  <header class="relative overflow-hidden hero-gradient-bg min-h-screen flex items-center justify-center py-16 px-4 md:px-8">
+    <!-- Artistic Blobs in background -->
+    <div class="artistic-blob top-1/4 left-1/4 opacity-70"></div>
+    <div class="artistic-blob-2 bottom-1/4 right-1/4 opacity-60"></div>
+    <div class="artistic-blob top-1/2 left-3/4 opacity-50 w-20 h-20"></div>
+
+    <div class="relative z-10 max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-center gap-8">
+      
+      <!-- Image Carousel Component - Moved to the left and given flex-1 width -->
+      <div id="hero-carousel" class="carousel-container flex-1 w-full lg:w-1/2 max-w-xl animate-fadeInSlideUp" style="animation-delay: 0.9s;">
+        <div class="carousel-inner" data-current-slide="0">
+          <div class="carousel-item">
+            <img src="https://images.unsplash.com/photo-1579783900829-166297371909?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Abstract pink paint strokes" loading="lazy"https://placehold.co/800x400/cccccc/666666?text=Image+1+Error';">
+          </div>
+          <div class="carousel-item">
+            <img src="https://images.unsplash.com/photo-1547489432-ad338b251ce7?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Pink textured background" loading="lazy"https://placehold.co/800x400/cccccc/666666?text=Image+2+Error';">
+          </div>
+          <div class="carousel-item">
+            <img src="https://images.unsplash.com/photo-1579783900882-62349071c6d1?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Close-up of pink paint texture" loading="lazy"https://placehold.co/800x400/cccccc/666666?text=Image+3+Error';">
+          </div>
+        </div>
+        <button class="carousel-button prev" aria-label="Previous slide">&#10094;</button>
+        <button class="carousel-button next" aria-label="Next slide">&#10095;</button>
+        <div class="carousel-dots"></div>
+      </div>
+
+      <!-- Hero Content - Given flex-1 width and text-left on large screens -->
+      <div class="flex-1 w-full lg:w-1/2 text-center lg:text-left text-var(--text-dark) lg:pl-10">
+        <p class="text-lg md:text-xl font-semibold text-deep-rose mb-3 animate-fadeInSlideUp" style="animation-delay: 0.1s;">
+          Discover Your Inner Radiance
+        </p>
+        <h1 class="text-4xl md:text-6xl font-extrabold leading-tight text-var(--text-dark) mb-6 animate-fadeInSlideUp" style="animation-delay: 0.3s;">
+          Elegance Meets Innovation in Every Creation
+        </h1>
+        <p class="text-lg md:text-xl text-var(--text-medium) mb-8 max-w-2xl mx-auto lg:mx-0 animate-fadeInSlideUp" style="animation-delay: 0.5s;">
+          Explore a curated collection designed to inspire, delight, and transform. Experience the art of modern beauty.
+        </p>
+        <div class="space-x-4 animate-fadeInSlideUp" style="animation-delay: 0.7s;">
+          <button class="px-8 py-4 bg-deep-rose text-white text-lg font-bold rounded-full shadow-lg hover:shadow-xl hover:bg-var(--light-rose) transition duration-300 transform hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-deep-rose focus:ring-opacity-50">
+            Explore Collections
+          </button>
+          <button class="px-8 py-4 bg-transparent text-deep-rose text-lg font-bold rounded-full border-2 border-deep-rose hover:bg-deep-rose hover:text-white transition duration-300 transform hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-deep-rose focus:ring-opacity-50">
+            Learn More
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Feature Cards Section -->
+  <section class="py-20 px-4 md:px-8 bg-[color:var(--background-primary)]">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-center text-var(--text-dark) mb-6 animate-on-scroll">
+        Crafted with Passion & Precision
+      </h2>
+      <p class="text-xl text-center text-var(--text-medium) mb-12 animate-on-scroll">
+        We blend timeless aesthetics with innovative design thinking.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+
+        <!-- Card 1 -->
+        <div class="flex flex-col bg-white p-8 rounded-2xl shadow-xl card-hover-effect animate-fadeInSlideUp animate-on-scroll" style="animation-delay: 0.1s;">
+          <div class="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-full bg-light-rose text-deep-rose">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.485 0-4.5 2.015-4.5 4.5s2.015 4.5 4.5 4.5 4.5-2.015 4.5-4.5-2.015-4.5-4.5-4.5zM12 18a6 6 0 100-12 6 6 0 000 12zM12 2v2m0 16v2m8.485-8.485l-1.414 1.414M4.929 4.929l1.414 1.414m11.314 0l1.414-1.414m-14.142 0l-1.414 1.414M12 4.5V1.5m0 19.5v-3m6.536-12.036L16.293 6.071m-8.485 0L6.071 8.293M17.929 8.293L16.293 6.071M6.071 17.929L8.293 16.293M17.929 17.929L16.293 16.293m-4.5-4.5H1.5m19.5 0H14.5"></path></svg>
+          </div>
+          <h3 class="text-xl font-semibold text-var(--text-dark) mb-4">Artistic Design</h3>
+          <p class="text-var(--text-medium) flex-grow">
+            Each piece is meticulously designed, blending modern aesthetics with timeless elegance to create unique narratives.
+          </p>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="flex flex-col bg-white p-8 rounded-2xl shadow-xl card-hover-effect animate-fadeInSlideUp animate-on-scroll" style="animation-delay: 0.2s;">
+          <div class="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-full bg-light-rose text-deep-rose">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-1.208-8.455-3.245M19 19V5.772a2 2 0 00-.772-1.558L15 2H9.772a2 2 0 00-1.558.772L5 6.228A2 2 0 004 7.772V19a2 2 0 002 2h12a2 2 0 002-2z"></path></svg>
+          </div>
+          <h3 class="text-xl font-semibold text-var(--text-dark) mb-4">Premium Materials</h3>
+          <p class="text-var(--text-medium) flex-grow">
+            We source only the finest materials, ensuring durability, comfort, and an exquisite touch for every creation.
+          </p>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="flex flex-col bg-white p-8 rounded-2xl shadow-xl card-hover-effect animate-fadeInSlideUp animate-on-scroll" style="animation-delay: 0.3s;">
+          <div class="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-full bg-light-rose text-deep-rose">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16v4m-2-2h4m5 0h4m-2-2v4M8 9h16l-3 9H5l-3-9zm-1 9l-2 2"></path></svg>
+          </div>
+          <h3 class="text-xl font-semibold text-var(--text-dark) mb-4">Dedicated Support</h3>
+          <p class="text-var(--text-medium) flex-grow">
+            Our commitment extends beyond the product, offering exceptional customer care to ensure your complete satisfaction.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Image Showcase Section -->
+  <section class="py-20 px-4 md:px-8 bg-[color:var(--background-secondary)]">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-center text-var(--text-dark) mb-6 animate-on-scroll">
+        Visual Inspirations
+      </h2>
+      <p class="text-xl text-center text-var(--text-medium) mb-12 animate-on-scroll">
+        A glimpse into our meticulously crafted world of design.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="relative group rounded-xl shadow-lg overflow-hidden animate-on-scroll" style="animation-delay: 0.1s;">
+          <img src="https://images.unsplash.com/photo-1549495147-3a131b2e2d83?q=80&w=1974&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Abstract pink art" class="w-full h-80 object-cover object-center transition-transform duration-500 group-hover:scale-105" loading="lazy"https://placehold.co/700x500/cccccc/666666?text=Image+Not+Available';">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <h3 class="text-white text-xl font-semibold">Blush Tones Collection</h3>
+          </div>
+        </div>
+
+        <div class="relative group rounded-xl shadow-lg overflow-hidden animate-on-scroll" style="animation-delay: 0.2s;">
+          <img src="https://images.unsplash.com/photo-1506792019770-0714ed4ceb8c?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Pink flowers with soft focus" class="w-full h-80 object-cover object-center transition-transform duration-500 group-hover:scale-105" loading="lazy"https://placehold.co/700x500/cccccc/666666?text=Image+Not+Available';">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <h3 class="text-white text-xl font-semibold">Floral Whispers Series</h3>
+          </div>
+        </div>
+
+        <div class="relative group rounded-xl shadow-lg overflow-hidden animate-on-scroll" style="animation-delay: 0.3s;">
+          <img src="https://images.unsplash.com/photo-1600021677334-03a110a169b8?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Minimalist pink interior design" class="w-full h-80 object-cover object-center transition-transform duration-500 group-hover:scale-105" loading="lazy"https://placehold.co/700x500/cccccc/666666?text=Image+Not+Available';">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <h3 class="text-white text-xl font-semibold">Modern Pink Sanctuary</h3>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Call to Action Section -->
+  <section class="py-20 px-4 md:px-8 bg-var(--deep-rose) text-white">
+    <div class="max-w-4xl mx-auto text-center animate-on-scroll">
+      <h2 class="text-4xl font-extrabold mb-6 animate-on-scroll">
+        Ready to Experience Elegance?
+      </h2>
+      <p class="text-xl mb-8 animate-on-scroll">
+        Join our community and be the first to receive exclusive offers, new collection alerts, and inspiring content.
+      </p>
+      <button class="px-10 py-5 bg-white text-deep-rose text-xl font-bold rounded-full shadow-lg hover:shadow-xl hover:bg-gray-100 transition duration-300 transform hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-white focus:ring-opacity-50 animate-on-scroll">
+        Get Started Today
+      </button>
+    </div>
+  </section>
+
+  <footer class="bg-[color:var(--soft-pink)] py-10 px-4 md:px-8 text-center text-var(--text-medium)">
+    <p>&copy; 2023 Elegant Designs. All rights reserved.</p>
+  </footer>
+
+  <script>
+    (function() {
+      'use strict';
+
+      // Intersection Observer for scroll animations
+      const observeElements = () => {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('animate-visible');
+              observer.unobserve(entry.target); // Stop observing once animated
+            }
+          });
+        }, { threshold: 0.1 }); // Trigger when 10% of the element is visible
+
+        document.querySelectorAll('.animate-on-scroll').forEach(el => {
+          observer.observe(el);
+        });
+      };
+
+      // Carousel functionality
+      function setupCarousel(carouselElementId) {
+        const carousel = document.getElementById(carouselElementId);
+        if (!carousel) return;
+
+        const carouselInner = carousel.querySelector('.carousel-inner');
+        const items = carousel.querySelectorAll('.carousel-item');
+        const prevButton = carousel.querySelector('.carousel-button.prev');
+        const nextButton = carousel.querySelector('.carousel-button.next');
+        const dotsContainer = carousel.querySelector('.carousel-dots');
+
+        let currentIndex = parseInt(carouselInner.dataset.currentSlide || '0');
+        const totalItems = items.length;
+        let autoSlideInterval;
+
+        function updateCarousel() {
+          carouselInner.style.transform = `translateX(-${currentIndex * 100}%)`;
+          updateDots();
+        }
+
+        function createDots() {
+          dotsContainer.innerHTML = ''; // Clear existing dots
+          items.forEach((_, i) => {
+            const dot = document.createElement('div');
+            dot.classList.add('carousel-dot');
+            if (i === currentIndex) {
+              dot.classList.add('active');
+            }
+            dot.addEventListener('click', () => {
+              currentIndex = i;
+              updateCarousel();
+              resetAutoSlide();
+            });
+            dotsContainer.appendChild(dot);
+          });
+        }
+
+        function updateDots() {
+          const dots = dotsContainer.querySelectorAll('.carousel-dot');
+          dots.forEach((dot, i) => {
+            if (i === currentIndex) {
+              dot.classList.add('active');
+            } else {
+              dot.classList.remove('active');
+            }
+          });
+        }
+
+        function showNext() {
+          currentIndex = (currentIndex + 1) % totalItems;
+          updateCarousel();
+          resetAutoSlide();
+        }
+
+        function showPrev() {
+          currentIndex = (currentIndex - 1 + totalItems) % totalItems;
+          updateCarousel();
+          resetAutoSlide();
+        }
+
+        function startAutoSlide() {
+          autoSlideInterval = setInterval(showNext, 5000); // Change slide every 5 seconds
+        }
+
+        function resetAutoSlide() {
+          clearInterval(autoSlideInterval);
+          startAutoSlide();
+        }
+
+        // Event listeners
+        prevButton.addEventListener('click', showPrev);
+        nextButton.addEventListener('click', showNext);
+
+        // Initialize
+        createDots();
+        updateCarousel(); // Initial rendering
+        startAutoSlide(); // Start autoplay
+
+        // Pause autoplay on hover
+        carousel.addEventListener('mouseenter', () => clearInterval(autoSlideInterval));
+        carousel.addEventListener('mouseleave', startAutoSlide);
+      }
+
+      // Run on DOM ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          observeElements();
+          setupCarousel('hero-carousel'); // Initialize the hero carousel
+        });
+      } else {
+        observeElements();
+        setupCarousel('hero-carousel'); // Initialize the hero carousel
+      }
+    })();
+  </script>
+
+  <script>
+
+    (function() {
+      'use strict';
+
+      // Intersection Observer for scroll animations
+      const observeElements = () => {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('animate-visible');
+              observer.unobserve(entry.target); // Stop observing once animated
+            }
+          });
+        }, { threshold: 0.1 }); // Trigger when 10% of the element is visible
+
+        document.querySelectorAll('.animate-on-scroll').forEach(el => {
+          observer.observe(el);
+        });
+      };
+
+      // Carousel functionality
+      function setupCarousel(carouselElementId) {
+        const carousel = document.getElementById(carouselElementId);
+        if (!carousel) return;
+
+        const carouselInner = carousel.querySelector('.carousel-inner');
+        const items = carousel.querySelectorAll('.carousel-item');
+        const prevButton = carousel.querySelector('.carousel-button.prev');
+        const nextButton = carousel.querySelector('.carousel-button.next');
+        const dotsContainer = carousel.querySelector('.carousel-dots');
+
+        let currentIndex = parseInt(carouselInner.dataset.currentSlide || '0');
+        const totalItems = items.length;
+        let autoSlideInterval;
+
+        function updateCarousel() {
+          carouselInner.style.transform = `translateX(-${currentIndex * 100}%)`;
+          updateDots();
+        }
+
+        function createDots() {
+          dotsContainer.innerHTML = ''; // Clear existing dots
+          items.forEach((_, i) => {
+            const dot = document.createElement('div');
+            dot.classList.add('carousel-dot');
+            if (i === currentIndex) {
+              dot.classList.add('active');
+            }
+            dot.addEventListener('click', () => {
+              currentIndex = i;
+              updateCarousel();
+              resetAutoSlide();
+            });
+            dotsContainer.appendChild(dot);
+          });
+        }
+
+        function updateDots() {
+          const dots = dotsContainer.querySelectorAll('.carousel-dot');
+          dots.forEach((dot, i) => {
+            if (i === currentIndex) {
+              dot.classList.add('active');
+            } else {
+              dot.classList.remove('active');
+            }
+          });
+        }
+
+        function showNext() {
+          currentIndex = (currentIndex + 1) % totalItems;
+          updateCarousel();
+          resetAutoSlide();
+        }
+
+        function showPrev() {
+          currentIndex = (currentIndex - 1 + totalItems) % totalItems;
+          updateCarousel();
+          resetAutoSlide();
+        }
+
+        function startAutoSlide() {
+          autoSlideInterval = setInterval(showNext, 5000); // Change slide every 5 seconds
+        }
+
+        function resetAutoSlide() {
+          clearInterval(autoSlideInterval);
+          startAutoSlide();
+        }
+
+        // Event listeners
+        prevButton.addEventListener('click', showPrev);
+        nextButton.addEventListener('click', showNext);
+
+        // Initialize
+        createDots();
+        updateCarousel(); // Initial rendering
+        startAutoSlide(); // Start autoplay
+
+        // Pause autoplay on hover
+        carousel.addEventListener('mouseenter', () => clearInterval(autoSlideInterval));
+        carousel.addEventListener('mouseleave', startAutoSlide);
+      }
+
+      // Run on DOM ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          observeElements();
+          setupCarousel('hero-carousel'); // Initialize the hero carousel
+        });
+      } else {
+        observeElements();
+        setupCarousel('hero-carousel'); // Initialize the hero carousel
+      }
+    })();
+  
+  </script>
+</body>
+</html>

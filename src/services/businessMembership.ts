@@ -12,27 +12,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 
-export type BusinessRole =
-  | 'owner'
-  | 'admin'
-  | 'manager'
-  | 'editor'
-  | 'staff'
-  | 'viewer'
-  | 'billing'
-  /** Legacy rows without a recognized role retain read-only member access. */
-  | 'member';
-
-const BUSINESS_ROLES = new Set<BusinessRole>([
-  'owner',
-  'admin',
-  'manager',
-  'editor',
-  'staff',
-  'viewer',
-  'billing',
-  'member',
-]);
+export type BusinessRole = 'owner' | 'admin' | 'member';
 
 export interface BusinessMembershipRow {
   businessId: string;
@@ -72,15 +52,12 @@ export async function loadBusinessMemberships(userId: string): Promise<BusinessM
     const biz = row.businesses;
     if (!biz?.id) continue;
     if (byId.has(biz.id)) continue; // owner wins
-    const candidateRole = String(row.role).toLowerCase();
-    const role = BUSINESS_ROLES.has(candidateRole as BusinessRole)
-      ? candidateRole as BusinessRole
-      : 'member';
+    const role = (String(row.role).toLowerCase() as BusinessRole);
     byId.set(biz.id, {
       businessId: biz.id,
       name: biz.name,
       industry: biz.industry ?? null,
-      role,
+      role: role === 'owner' || role === 'admin' ? role : 'member',
     });
   }
 
@@ -89,10 +66,6 @@ export async function loadBusinessMemberships(userId: string): Promise<BusinessM
 
 export function isAdminRole(role: BusinessRole): boolean {
   return role === 'owner' || role === 'admin';
-}
-
-export function canEditBusiness(role: BusinessRole): boolean {
-  return role === 'owner' || role === 'admin' || role === 'manager' || role === 'editor';
 }
 
 /**

@@ -198,13 +198,6 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
       return;
     }
 
-    // Artifact registry contract (Stage 1): a locked artifact must never
-    // reach Lane B, regardless of DOM scope override.
-    if (!editScope.aiEditable) {
-      setError('This element is locked for AI edits. Use the manual editor or Business Center for this content.');
-      return;
-    }
-
     setLoading(true);
     setError(null);
     setSuccess(false);
@@ -361,8 +354,6 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
             editableRange: editScope.editableRange ?? undefined,
             lockedBindings: editScope.lockedBindings,
             riskLevel: editScope.riskLevel,
-            artifactId: editScope.artifactId ?? undefined,
-            aiEditScope: editScope.aiEditScope ?? undefined,
           }).filter(([, v]) => v !== null && v !== undefined),
         ),
         selectedSlot,
@@ -516,13 +507,9 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
           value={prompt}
           onChange={e => { setPrompt(e.target.value); setError(null); }}
           onKeyDown={handleKeyDown}
-          placeholder={
-            editScope.aiEditable
-              ? `Describe changes to this ${element.tagName || 'element'}… (Enter to send, Shift+Enter for newline)`
-              : 'This element is locked for AI edits — use the manual editor or Business Center.'
-          }
+          placeholder={`Describe changes to this ${element.tagName || 'element'}… (Enter to send, Shift+Enter for newline)`}
           rows={2}
-          disabled={loading || success || !editScope.aiEditable}
+          disabled={loading || success}
           className={cn(
             'flex-1 min-w-0 resize-none text-xs py-1.5 px-2.5 rounded-lg',
             'bg-white/[0.07] border-white/10 text-white placeholder:text-white/30',
@@ -532,7 +519,7 @@ const InlineAIPanel: React.FC<InlineAIPanelProps> = ({
         />
         <Button
           onClick={handleSubmit}
-          disabled={!prompt.trim() || loading || success || !editScope.aiEditable}
+          disabled={!prompt.trim() || loading || success}
           size="sm"
           className={cn(
             'h-[54px] w-9 p-0 shrink-0 rounded-lg',
@@ -685,12 +672,12 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
 
   return (
     <div className={cn(
-      'flex flex-col gap-0 rounded-lg border border-white/[0.08] bg-[#0d0d18]/95 p-1.5 shadow-[0_18px_44px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl',
-      'animate-in fade-in-0 slide-in-from-bottom-1 duration-150',
+      'bg-[#0d0d18] rounded-xl shadow-[0_0_25px_rgba(0,255,255,0.3)] p-2 flex flex-col gap-0',
+      'animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2',
       className
     )}>
       {readiness && (
-        <div className="mb-1.5 flex flex-wrap items-center gap-1.5 border-b border-white/[0.06] px-1.5 py-1.5">
+        <div className="mb-2 flex items-center gap-1.5 flex-wrap rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
           {readiness.surfaceLabel ? (
             <span className="text-[10px] font-semibold text-cyan-300">{readiness.surfaceLabel}</span>
           ) : null}
@@ -768,9 +755,9 @@ export const ElementFloatingToolbar: React.FC<ElementFloatingToolbarProps> = ({
         </div>
       )}
       {/* ── Buttons row ── */}
-      <div className="flex flex-wrap items-center gap-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
         {/* Element badge */}
-        <div className="px-2 py-1 text-[10px] font-semibold uppercase text-white/55">
+        <div className="px-2.5 py-1 bg-cyan-500 text-black rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-[0_0_10px_rgba(0,255,255,0.4)]">
           {element.tagName || 'element'}
         </div>
 

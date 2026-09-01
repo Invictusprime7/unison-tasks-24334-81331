@@ -10,7 +10,9 @@
  * provider — `useBusinessProfile()` returns { profile: null, loading: false }.
  */
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useState,
@@ -22,22 +24,29 @@ import {
   saveBusinessProfile,
   type BusinessProfilePatch,
 } from '@/services/businessProfileService';
-import {
-  BusinessProfileContext,
-  type BusinessProfileContextValue,
-} from '@/contexts/BusinessProfileContextDef';
+
+interface BusinessProfileContextValue {
+  profile: BusinessProfileDTO | null;
+  loading: boolean;
+  error: string | null;
+  reload: () => Promise<void>;
+  patch: (p: BusinessProfilePatch) => Promise<BusinessProfileDTO | null>;
+}
+
+const DEFAULT: BusinessProfileContextValue = {
+  profile: null,
+  loading: false,
+  error: null,
+  reload: async () => {},
+  patch: async () => null,
+};
+
+const BusinessProfileContext = createContext<BusinessProfileContextValue>(DEFAULT);
+BusinessProfileContext.displayName = 'BusinessProfileContext';
 
 export interface BusinessProfileProviderProps {
   businessId: string | undefined;
   children: ReactNode;
-}
-
-function broadcastProfile(profile: BusinessProfileDTO | null) {
-  if (typeof window === 'undefined') return;
-  const message = { type: 'BUSINESS_PROFILE_CHANGED', profile };
-  for (const iframe of document.querySelectorAll('iframe')) {
-    iframe.contentWindow?.postMessage(message, window.location.origin);
-  }
 }
 
 export function BusinessProfileProvider({ businessId, children }: BusinessProfileProviderProps) {
@@ -58,7 +67,6 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
       // Mirror into window for VFS preview iframe hydration.
       if (typeof window !== 'undefined') {
         (window as unknown as Record<string, unknown>).__UNISON_BUSINESS__ = p ?? null;
-        broadcastProfile(p);
         window.dispatchEvent(
           new CustomEvent('unison:business-profile-changed', { detail: { businessId, profile: p } }),
         );
@@ -78,7 +86,6 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
         setProfile(next);
         if (typeof window !== 'undefined') {
           (window as unknown as Record<string, unknown>).__UNISON_BUSINESS__ = next;
-          broadcastProfile(next);
           window.dispatchEvent(
             new CustomEvent('unison:business-profile-changed', { detail: { businessId, profile: next } }),
           );
@@ -93,20 +100,6 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
     void reload();
   }, [reload]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleProfileRequest = (event: MessageEvent) => {
-      if (event.origin && event.origin !== window.location.origin) return;
-      if ((event.data as { type?: string } | null)?.type !== 'BUSINESS_PROFILE_REQUEST') return;
-      event.source?.postMessage(
-        { type: 'BUSINESS_PROFILE_CHANGED', profile },
-        { targetOrigin: window.location.origin },
-      );
-    };
-    window.addEventListener('message', handleProfileRequest);
-    return () => window.removeEventListener('message', handleProfileRequest);
-  }, [profile]);
-
   const value = useMemo<BusinessProfileContextValue>(
     () => ({ profile, loading, error, reload, patch }),
     [profile, loading, error, reload, patch],
@@ -115,4 +108,9 @@ export function BusinessProfileProvider({ businessId, children }: BusinessProfil
   return (
     <BusinessProfileContext.Provider value={value}>{children}</BusinessProfileContext.Provider>
   );
+}
+
+/** Inline hook (per project rule: no standalone custom hook files). */
+export function useBusinessProfile(): BusinessProfileContextValue {
+  return useContext(BusinessProfileContext);
 }

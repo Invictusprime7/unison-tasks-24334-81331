@@ -24,58 +24,7 @@ export type LauncherEngine = 'sandpack' | 'docker';
 /** @deprecated Use LauncherEngine — kept for backward compat */
 export type PreviewEngine = LauncherEngine;
 
-export type UnisonRuntimeEnvironment = 'builder' | 'preview' | 'published';
-
-/**
- * The tenant identity carried by every builder, preview, and published
- * runtime. Domain data is always resolved through this context, not UI props.
- */
-export interface UnisonRuntimeContext {
-  workspaceId: string;
-  businessId: string;
-  projectId: string;
-  websiteId: string;
-  snapshotId: string;
-  environment: UnisonRuntimeEnvironment;
-  revisionId?: string;
-  deploymentId?: string;
-  permissions?: readonly string[];
-  subscriptionTier?: string;
-  brandProfileVersion?: string;
-  /** @deprecated Read persisted manifests through normalizeUnisonRuntimeContext. */
-  organizationId?: string;
-  /** @deprecated Use websiteId. */
-  siteId?: string;
-}
-
-export function normalizeUnisonRuntimeContext(
-  context: Partial<UnisonRuntimeContext> | null | undefined,
-): UnisonRuntimeContext | undefined {
-  if (!context) return undefined;
-  const workspaceId = context.workspaceId ?? context.organizationId;
-  const websiteId = context.websiteId ?? context.siteId;
-  if (
-    !workspaceId ||
-    !context.businessId ||
-    !context.projectId ||
-    !websiteId ||
-    !context.snapshotId ||
-    !context.environment
-  ) {
-    return undefined;
-  }
-
-  return {
-    ...context,
-    workspaceId,
-    websiteId,
-    organizationId: context.organizationId ?? workspaceId,
-    siteId: context.siteId ?? websiteId,
-  } as UnisonRuntimeContext;
-}
-
 export interface RuntimeAppContext {
-  runtimeContext?: UnisonRuntimeContext;
   businessId?: string;
   projectId?: string;
   manifestId?: string;
@@ -91,13 +40,14 @@ export interface RuntimeAppContext {
   entryPoint?: string;
   routes?: string[];
   wizardSelections?: Record<string, unknown>;
-  businessRuntime?: import('@/platform/core/businessRuntimeContract').BusinessRuntimeContract;
   /** Resolved Style-card preset id (e.g. 'organic'); single source of truth for /src/index.css */
   themePresetId?: string;
   /** Durable semantic HSL token payload selected by the wizard Style card. */
   themeTokens?: import('@/sections/types').ThemeTokens;
   /** Durable constrained plan for the final interaction runtime. */
   interactionManifest?: import('@/services/wizardInteractionEnrichment').WizardInteractionManifest;
+  /** Durable visual-behavior contract derived from the selected wizard cards. */
+  experienceContract?: import('@/services/wizardExperienceContract').WizardExperienceContract;
   /** Shared Preview capability contract for every canonical wizard launch. */
   previewRuntime?: {
     version: '1.0';

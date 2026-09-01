@@ -1,5 +1,4 @@
 const AUTH_USER_PATH = '/auth/v1/user';
-const AUTH_TOKEN_PATH = '/auth/v1/token';
 
 type ResponseLike = Pick<Response, 'status'>;
 
@@ -27,22 +26,6 @@ export function isRejectedAuthUserRequest(
   }
 }
 
-export function isRejectedRefreshTokenRequest(
-  input: RequestInfo | URL,
-  response: ResponseLike,
-): boolean {
-  if (response.status !== 400 && response.status !== 401 && response.status !== 403) return false;
-
-  try {
-    const url = new URL(requestUrl(input));
-    return url.pathname.endsWith(AUTH_TOKEN_PATH)
-      && url.searchParams.get('grant_type') === 'refresh_token';
-  } catch {
-    const url = requestUrl(input);
-    return url.includes(AUTH_TOKEN_PATH) && url.includes('grant_type=refresh_token');
-  }
-}
-
 export function createAuthRecoveryFetch(
   clearLocalSession: () => Promise<unknown>,
   nativeFetch: typeof fetch = fetch,
@@ -51,9 +34,7 @@ export function createAuthRecoveryFetch(
 
   return async (input, init) => {
     const response = await nativeFetch(input, init);
-    const rejectedSession = isRejectedAuthUserRequest(input, response)
-      || isRejectedRefreshTokenRequest(input, response);
-    if (rejectedSession && !recoveryInFlight) {
+    if (isRejectedAuthUserRequest(input, response) && !recoveryInFlight) {
       recoveryInFlight = true;
       void clearLocalSession().finally(() => {
         recoveryInFlight = false;

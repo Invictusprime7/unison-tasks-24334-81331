@@ -26,7 +26,7 @@ Click on "Logs" to see what's failing.
 
 ### 3. Test with Simpler Request
 
-Try a minimal request in the Supabase Dashboard rather than a complex payload.
+The test script sends a complex request. Try a minimal request in the Supabase Dashboard.
 
 ### 4. Verify API Key Works
 
@@ -94,7 +94,13 @@ supabase secrets set OPENAI_API_KEY=sk-your_openai_key_here --project-ref nfrdom
 
 ### Step 4: Verify Deployment
 
-Invoke the deployed function directly (e.g. via the Supabase Dashboard "Invoke" tab or `supabase functions invoke fullstack-ai`) and confirm a successful response.
+Run the test script again:
+
+```powershell
+.\test-function.ps1
+```
+
+You should see: ✅ SUCCESS! Function is working.
 
 ## Quick Deploy All Functions
 
@@ -151,7 +157,7 @@ If CLI doesn't work:
 
 Once deployed:
 
-1. ✅ Invoke the function once (Dashboard or `supabase functions invoke`) - Should show success
+1. ✅ Run `.\test-function.ps1` - Should show success
 2. ✅ Try generating a template in the UI - Should work
 3. ✅ Check browser console - Should see successful API calls
 

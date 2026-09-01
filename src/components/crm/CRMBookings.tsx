@@ -23,12 +23,7 @@ interface BookingRow {
   metadata: Record<string, unknown> | null;
 }
 
-interface CRMBookingsProps {
-  businessId?: string;
-  projectId?: string;
-}
-
-export function CRMBookings({ businessId, projectId }: CRMBookingsProps = {}) {
+export function CRMBookings() {
   const [rows, setRows] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,41 +31,14 @@ export function CRMBookings({ businessId, projectId }: CRMBookingsProps = {}) {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      setError(null);
       try {
-        if (!businessId) {
-          setRows([]);
-          setError('Select a business workspace to view bookings.');
-          return;
-        }
-
-        let siteId: string | null = null;
-        if (projectId) {
-          const { data: project, error: projectError } = await supabase
-            .from('projects')
-            .select('site_id')
-            .eq('id', projectId)
-            .eq('business_id', businessId)
-            .maybeSingle();
-          if (projectError) throw projectError;
-          siteId = project?.site_id ?? null;
-          if (!siteId) {
-            setRows([]);
-            return;
-          }
-        }
-
-        let query = supabase
+        const { data, error: err } = await supabase
           .from('bookings')
           .select(
             'id, created_at, service_id, starts_at, status, customer_name, customer_email, customer_phone, notes, metadata',
           )
-          .eq('business_id', businessId)
           .order('created_at', { ascending: false })
           .limit(200);
-        if (siteId) query = query.eq('site_id', siteId);
-
-        const { data, error: err } = await query;
         if (err) throw err;
         setRows((data as BookingRow[]) ?? []);
       } catch (e) {
@@ -79,7 +47,7 @@ export function CRMBookings({ businessId, projectId }: CRMBookingsProps = {}) {
         setLoading(false);
       }
     })();
-  }, [businessId, projectId]);
+  }, []);
 
   if (loading) {
     return (

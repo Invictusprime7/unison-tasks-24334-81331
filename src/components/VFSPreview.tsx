@@ -31,12 +31,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { SandpackProvider, SandpackPreview, SandpackLayout, useSandpack, useSandpackPreviewProgress } from '@codesandbox/sandpack-react';
 import { usePreviewService } from '@/hooks/usePreviewService';
-import { createExternalPreviewSession } from '@/services/externalPreviewSession';
 import { usePreviewAI } from '@/hooks/usePreviewAI';
 import { getGlobalAITerminalBridge } from '@/services/aiTerminalBridge';
-import { buildPreviewArtifactsAsync } from '@/utils/previewArtifacts';
+import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
 import { PreviewPipelineError, isPreviewPipelineError } from '@/services/previewPipelineError';
-import { createVfsHandoffSignature } from '@/services/vfsHandoffSignature';
 import { PreviewRuntimeError } from '@/components/PreviewRuntimeError';
 import { LaunchGateNotice } from '@/components/creatives/web-builder/LaunchGateNotice';
 import { isCanonicalRuntimeError } from '@/platform/core/canonicalRuntimeContract';
@@ -47,7 +45,6 @@ import { getSelectedElementData, highlightElement, removeHighlight } from '@/uti
 import type { VirtualNode, VirtualFile } from '@/hooks/useVirtualFileSystem';
 import { useLaunch } from '@/contexts/useLaunchHooks';
 import { useVFSSafe } from '@/hooks/useVFSContext';
-import { BuilderSessionContext } from '@/builder/controllers/BuilderSessionProvider';
 
 // ============================================================================
 // Types
@@ -76,22 +73,14 @@ interface PreviewCompileState {
   compiling: boolean;
 }
 
-const MAX_SANDPACK_TIMEOUT_RECOVERIES = 3;
-// Large generated multi-page sites can legitimately take longer than 45s on a
-// cold worker. Keep this aligned with Sandpack's own startup budget.
-const PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS = 180_000;
-
 // Local Vite server URL (for development without Docker)
 const LOCAL_PREVIEW_URL = import.meta.env.VITE_LOCAL_PREVIEW_URL || '';
+
 export interface VFSPreviewProps {
   /** VFS nodes for file content */
   nodes: VirtualNode[];
   /** Files map (alternative to nodes) */
   files?: Record<string, string>;
-  /** Import terminal/AI mutations back into the VFS that owns this preview. */
-  onImportFiles?: (files: Record<string, string>) => void;
-  /** Atomically reconcile a complete terminal/AI VFS snapshot with its owner. */
-  onSyncFiles?: (files: Record<string, string>) => void;
   /** Active file path */
   activeFile?: string;
   /** Additional CSS classes */
@@ -191,38 +180,13 @@ class SandpackErrorBoundary extends Component<
 const SandpackErrorListener: React.FC<{
   onError?: (error: string) => void;
   onTimeout?: () => void;
-  onRunning?: () => void;
-  dependencies: Record<string, string>;
-}> = ({ onError, onTimeout, onRunning, dependencies }) => {
+}> = ({ onError, onTimeout }) => {
   const { sandpack } = useSandpack();
   const lastReportedRef = useRef<string>('');
 
   useEffect(() => {
-    if (sandpack.status === 'running' || sandpack.status === 'timeout' || sandpack.error) return;
-    const watchdog = window.setTimeout(() => {
-      const message = 'Preview runner did not connect in time. Retrying automatically.';
-      if (lastReportedRef.current !== message) {
-        lastReportedRef.current = message;
-        onError?.(message);
-        onTimeout?.();
-      }
-    }, 30_000);
-    return () => window.clearTimeout(watchdog);
-  }, [sandpack.status, sandpack.error, onError, onTimeout]);
-
-  useEffect(() => {
     const status = sandpack.status;
     const error = sandpack.error;
-
-    if (status === 'timeout') {
-      const timeoutMessage = 'Preview runner took too long to connect. Retrying once automatically.';
-      if (lastReportedRef.current !== timeoutMessage) {
-        lastReportedRef.current = timeoutMessage;
-        onError?.(timeoutMessage);
-        onTimeout?.();
-      }
-      return;
-    }
 
     if (error) {
       const msg = typeof error === 'string'
@@ -233,64 +197,28 @@ const SandpackErrorListener: React.FC<{
 
       if (msg !== lastReportedRef.current) {
         lastReportedRef.current = msg;
-        const dependencyFetchFailure = /could not fetch dependencies/i.test(msg);
-        const requestedDependencies = Object.entries(dependencies)
-          .sort(([left], [right]) => left.localeCompare(right))
-          .map(([name, version]) => `${name}@${version}`);
-        const dependencySummary = requestedDependencies.length > 0
-          ? requestedDependencies.slice(0, 12).join(', ') + (requestedDependencies.length > 12 ? `, +${requestedDependencies.length - 12} more` : '')
-          : 'the core preview runtime';
-        const report = dependencyFetchFailure
-          ? `Sandpack could not fetch preview dependencies (${dependencySummary}). Retrying once automatically.`
-          : msg;
-        onError?.(report);
-        if (dependencyFetchFailure || /\bTIME_OUT\b|couldn't connect to server/i.test(msg)) {
+        onError?.(msg);
+        if (/\bTIME_OUT\b|couldn't connect to server/i.test(msg)) {
           onTimeout?.();
         }
       }
-    } else if (status === 'running') {
-      lastReportedRef.current = '';
-      onRunning?.();
-    } else if (status === 'idle') {
+    } else if (status === 'idle' || status === 'running') {
       lastReportedRef.current = '';
     }
-  }, [sandpack.status, sandpack.error, onError, onTimeout, onRunning, dependencies]);
+  }, [sandpack.status, sandpack.error, onError]);
 
   return null;
 };
 
-// Sandpack owns the installation lifecycle; render only its native compiler
-// progress signal in the existing bottom-left preview position.
 const SandpackDependencyProgress: React.FC<{ dependencyCount: number }> = ({ dependencyCount }) => {
-  const { sandpack } = useSandpack();
   const progressMessage = useSandpackPreviewProgress({ timeout: 3000 });
-  const [showInitialInstall, setShowInitialInstall] = useState(true);
 
-  useEffect(() => {
-    if (sandpack.status !== 'initial') {
-      setShowInitialInstall(false);
-      return;
-    }
-
-    // The remote Sandpack compiler does not consistently emit a terminal
-    // completion event. Keep the fallback brief; native progress messages
-    // remain visible whenever the compiler does publish them.
-    const timer = window.setTimeout(() => setShowInitialInstall(false), 4000);
-    return () => window.clearTimeout(timer);
-  }, [sandpack.status]);
-
-  const progressLabel = progressMessage || (
-    sandpack.status === 'initial' && showInitialInstall
-      ? 'Installing preview modules'
-      : null
-  );
-
-  if (!progressLabel) return null;
+  if (!progressMessage) return null;
 
   return (
     <div className="pointer-events-none absolute bottom-3 left-3 z-20 flex items-center gap-2 rounded-md border border-border/70 bg-background/95 px-3 py-2 text-xs text-foreground shadow-sm backdrop-blur">
       <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-      <span>{progressLabel}</span>
+      <span>{progressMessage}</span>
       <span className="text-muted-foreground">({dependencyCount} modules)</span>
     </div>
   );
@@ -335,8 +263,6 @@ function hasRenderablePreviewSource(files: Record<string, string>): boolean {
 export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   nodes,
   files: propFiles,
-  onImportFiles,
-  onSyncFiles,
   activeFile,
   className,
   showConsole = false,
@@ -354,7 +280,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   enableSelection = false,
   onElementSelect,
 }, ref) => {
-  const builderSession = React.useContext(BuilderSessionContext);
   const { launch } = useLaunch();
   const vfsContext = useVFSSafe();
   // State - default to 'sandpack' — no HTML fallback
@@ -362,11 +287,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [sandpackKey, setSandpackKey] = useState(0);
-  const [sandpackTimeoutExhausted, setSandpackTimeoutExhausted] = useState(false);
-  const dependencySignatureRef = useRef<string | null>(null);
   const startAttemptedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const previewContainerRef = useRef<HTMLDivElement>(null);
   const timeoutRecoveryCountRef = useRef(0);
   const timeoutRecoveryTimerRef = useRef<number | null>(null);
   
@@ -395,35 +317,16 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   // AI execution and terminal bridge
   const previewAI = usePreviewAI();
   
-  // React/Sandpack is the sole preview runtime. Docker/local preview
+  // React/Sandpack is the sole preview runtime. Legacy Docker/local preview
   // environment variables must never replace the canonical in-browser VFS.
   const dockerGatewayConfigured = false;
   const localViteConfigured = false;
   
   // Convert nodes to files - ALWAYS recompute to ensure we have latest
-  const rawFiles = useMemo(() => {
+  const files = useMemo(() => {
     const nodeFiles = nodesToFileMap(nodes);
     return { ...nodeFiles, ...propFiles };
   }, [nodes, propFiles]);
-  const filesSignature = useMemo(() => createVfsHandoffSignature(rawFiles) || 'empty-vfs', [rawFiles]);
-  // Identity-stable file map: callers frequently pass inline `nodes={[]}` or a
-  // freshly spread object, which would otherwise re-trigger the (expensive)
-  // preview compile on every parent render and lock up the main thread.
-  const stableFilesRef = useRef<{ signature: string; files: Record<string, string> } | null>(null);
-  if (!stableFilesRef.current || stableFilesRef.current.signature !== filesSignature) {
-    stableFilesRef.current = { signature: filesSignature, files: rawFiles };
-  }
-  const files = stableFilesRef.current.files;
-
-
-  useEffect(() => {
-    timeoutRecoveryCountRef.current = 0;
-    setSandpackTimeoutExhausted(false);
-    if (timeoutRecoveryTimerRef.current !== null) {
-      window.clearTimeout(timeoutRecoveryTimerRef.current);
-      timeoutRecoveryTimerRef.current = null;
-    }
-  }, [filesSignature]);
 
   const [previewCompile, setPreviewCompile] = useState<PreviewCompileState>({
     sandpackFiles: {},
@@ -433,95 +336,21 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     compiling: true,
   });
 
-  // Coarse launch signature — LaunchContext re-publishes a new object on every
-  // status tick. Only the values the preview compiler actually reads may
-  // invalidate compiled artifacts.
-  const launchSignature = useMemo(() => [
-    launch?.themePresetId ?? '',
-    launch?.siteBundleSnapshot?.meta?.themePresetId ?? '',
-    launch?.siteBundleSnapshot?.industry ?? '',
-    launch?.businessName ?? '',
-    launch?.runtimeManifest?.appContext?.themePresetId ?? '',
-  ].join('|'), [launch]);
-  const launchRef = useRef(launch);
-  launchRef.current = launch;
-  const compiledKeyRef = useRef<string | null>(null);
-  const inFlightKeyRef = useRef<string | null>(null);
-  const pendingCompileRef = useRef<{
-    key: string;
-    files: Record<string, string>;
-    launchState: typeof launch;
-  } | null>(null);
-  const [compileDrainVersion, setCompileDrainVersion] = useState(0);
-  const unmountedRef = useRef(false);
-  const compileAttemptRef = useRef(0);
-  const activeCompileControllerRef = useRef<AbortController | null>(null);
-  const activeCompileTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
-    // React StrictMode intentionally runs mount → cleanup → mount in
-    // development. Reset this flag on every setup; otherwise the first cleanup
-    // permanently marks the live component as unmounted and every completed
-    // preview compile is discarded as stale, leaving "Preparing preview"
-    // visible forever despite a fully populated VFS.
-    unmountedRef.current = false;
-    return () => {
-      unmountedRef.current = true;
-      compileAttemptRef.current += 1;
-      activeCompileControllerRef.current?.abort(new Error('Preview component unmounted.'));
-      activeCompileControllerRef.current = null;
-      if (activeCompileTimeoutRef.current !== null) {
-        window.clearTimeout(activeCompileTimeoutRef.current);
-        activeCompileTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const key = `${filesSignature}::${launchSignature}`;
-    if (compiledKeyRef.current === key || inFlightKeyRef.current === key) return;
-
-    // Builder hydration publishes the route handoff, committed revision, and
-    // canonical router in quick succession. Queue the newest snapshot instead
-    // of invalidating the compile already in flight. Invalidating every result
-    // before first paint caused the permanent "Preparing preview" loop even
-    // though every individual VFS snapshot was renderable.
-    pendingCompileRef.current = { key, files, launchState: launchRef.current };
-    setCompileDrainVersion((version) => version + 1);
-  }, [files, filesSignature, launchSignature]);
-
-  useEffect(() => {
-    if (inFlightKeyRef.current) return;
-    const request = pendingCompileRef.current;
-    if (!request || compiledKeyRef.current === request.key) return;
-
-    pendingCompileRef.current = null;
-    const compileKey = request.key;
-    inFlightKeyRef.current = compileKey;
-    const compileAttempt = ++compileAttemptRef.current;
+    let cancelled = false;
 
     setPreviewCompile((current) => ({
       ...current,
       pipelineError: null,
-      emptyDraft: false,
       compiling: true,
     }));
 
-    const isStale = () =>
-      unmountedRef.current || compileAttemptRef.current !== compileAttempt;
-
-    window.setTimeout(async () => {
-      const compileController = new AbortController();
-      activeCompileControllerRef.current = compileController;
-      const compileTimeout = window.setTimeout(() => {
-        compileController.abort(new Error('Preview artifact compilation timed out after 180 seconds.'));
-      }, PREVIEW_ARTIFACT_COMPILE_TIMEOUT_MS);
-      activeCompileTimeoutRef.current = compileTimeout;
+    const timer = window.setTimeout(() => {
       try {
-        const isWizardPreview = resolveSnapshot(request.files, request.launchState).isWizardDraft;
+        const isWizardPreview = resolveSnapshot(files, launch).isWizardDraft;
 
-        if (!isWizardPreview && !hasRenderablePreviewSource(request.files)) {
-          if (!isStale()) {
-            compiledKeyRef.current = compileKey;
+        if (!isWizardPreview && !hasRenderablePreviewSource(files)) {
+          if (!cancelled) {
             setPreviewCompile({
               sandpackFiles: {},
               dependencies: {},
@@ -533,16 +362,12 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           return;
         }
 
-        // Async/Worker-offloaded: the underlying prepareSandpackFiles() call
-        // has no yield points and previously froze the tab (unresponsive
-        // mouse, no repaint) on large or drifted generated sites.
-        const result = await buildPreviewArtifactsAsync({
-          sourceFiles: request.files,
-          launchState: request.launchState,
-        }, { signal: compileController.signal });
+        const result = buildPreviewArtifacts({
+          sourceFiles: files,
+          launchState: launch,
+        });
 
-        if (!isStale()) {
-          compiledKeyRef.current = compileKey;
+        if (!cancelled) {
           setPreviewCompile({
             sandpackFiles: result.sandpackFiles,
             dependencies: result.dependencies,
@@ -552,8 +377,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           });
         }
       } catch (err) {
-        if (isStale()) return;
-
         const pipelineError = isPreviewPipelineError(err)
           ? err
           : new PreviewPipelineError('sandpack', `Preview artifact compile failed: ${err instanceof Error ? err.message : String(err)}`, {
@@ -562,51 +385,23 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
             });
 
         console.error('[VFSPreview] Pipeline error:', pipelineError);
-        compiledKeyRef.current = compileKey;
-        setPreviewCompile({
-          sandpackFiles: {},
-          dependencies: {},
-          pipelineError,
-          emptyDraft: false,
-          compiling: false,
-        });
-      } finally {
-        window.clearTimeout(compileTimeout);
-        if (activeCompileControllerRef.current === compileController) {
-          activeCompileControllerRef.current = null;
-          activeCompileTimeoutRef.current = null;
-        }
-        if (inFlightKeyRef.current === compileKey) {
-          inFlightKeyRef.current = null;
-        }
-        // StrictMode's development mount → cleanup → mount cycle can cancel
-        // this attempt after its queue item was consumed. Once the live setup
-        // has restored unmountedRef, put that exact artifact back into the
-        // drain queue. Without this hand-back there is no dependency change to
-        // schedule another attempt and the UI remains on “Preparing preview”.
-        const attemptWasInvalidated = compileAttemptRef.current !== compileAttempt;
-        if (!unmountedRef.current && attemptWasInvalidated && compiledKeyRef.current !== compileKey) {
-          const pending = pendingCompileRef.current;
-          if (!pending || pending.key === compileKey) {
-            pendingCompileRef.current = request;
-          }
-        }
-        if (!unmountedRef.current && pendingCompileRef.current) {
-          setCompileDrainVersion((version) => version + 1);
+        if (!cancelled) {
+          setPreviewCompile({
+            sandpackFiles: {},
+            dependencies: {},
+            pipelineError,
+            emptyDraft: false,
+            compiling: false,
+          });
         }
       }
     }, 80);
 
     return () => {
-      // Intentionally no abort/clearTimeout here: this effect re-runs on
-      // harmless identity churn, and tearing down the pending compile each
-      // time is what stalled the preview forever. Stale results are ignored
-      // via compileAttemptRef/unmountedRef instead.
+      cancelled = true;
+      window.clearTimeout(timer);
     };
-
-  }, [compileDrainVersion]);
-
-
+  }, [files, launch]);
 
   const {
     sandpackFiles,
@@ -615,65 +410,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     emptyDraft,
     compiling: previewCompiling,
   } = previewCompile;
-  const hasCompiledPreview = Object.keys(sandpackFiles).length > 0;
-  const legacyTimeoutRecoveryKeyRef = useRef<string | null>(null);
-  const retryArtifactCompile = useCallback(() => {
-    const key = `${filesSignature}::${launchSignature}`;
-    compiledKeyRef.current = null;
-    pendingCompileRef.current = {
-      key,
-      files,
-      launchState: launchRef.current,
-    };
-    setPreviewCompile((current) => ({
-      ...current,
-      pipelineError: null,
-      emptyDraft: false,
-      compiling: true,
-    }));
-    setCompileDrainVersion((version) => version + 1);
-  }, [files, filesSignature, launchSignature]);
-
-  useEffect(() => {
-    if (!pipelineError?.message.includes('did not respond within 30 seconds')) return;
-    const key = `${filesSignature}::${launchSignature}`;
-    if (legacyTimeoutRecoveryKeyRef.current === key) return;
-    legacyTimeoutRecoveryKeyRef.current = key;
-    retryArtifactCompile();
-  }, [filesSignature, launchSignature, pipelineError, retryArtifactCompile]);
-
-  // Sandpack HMR handles source-file updates without destroying iframe state.
-  // Dependency graph changes are different: customSetup is read at provider
-  // startup, so remount only when package names/versions actually change.
-  const dependencySignature = useMemo(
-    () => Object.entries(sandpackDeps)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([name, version]) => `${name}@${version}`)
-      .join('|'),
-    [sandpackDeps],
-  );
-  const sandpackCustomSetup = useMemo(() => ({
-    dependencies: sandpackDeps,
-  }), [dependencySignature]);
-
-  useEffect(() => {
-    // The provider is not mounted while artifacts compile. Its first real
-    // dependency graph is initial state, not a runtime change; remounting at
-    // this point aborts the Sandpack runner before it can connect.
-    if (previewCompiling) return;
-    if (!hasCompiledPreview) {
-      dependencySignatureRef.current = null;
-      return;
-    }
-    if (dependencySignatureRef.current === null) {
-      dependencySignatureRef.current = dependencySignature;
-      return;
-    }
-    if (dependencySignatureRef.current !== dependencySignature) {
-      dependencySignatureRef.current = dependencySignature;
-      setSandpackKey((key) => key + 1);
-    }
-  }, [dependencySignature, hasCompiledPreview, previewCompiling]);
 
   // Keep AI terminal bridge state synced with the live preview VFS/dependencies.
   useEffect(() => {
@@ -683,25 +419,13 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [nodes, sandpackDeps]);
 
   useEffect(() => {
-    const importIntoOwner = onImportFiles
-      || (canUseContextPreview && vfsContext ? vfsContext.importFiles : null);
-    const syncIntoOwner = onSyncFiles
-      || (canUseContextPreview && vfsContext ? vfsContext.replaceFiles : null);
-    if (!importIntoOwner && !syncIntoOwner) return;
+    if (!canUseContextPreview || !vfsContext) return;
 
     const bridge = getGlobalAITerminalBridge();
     return bridge.watchVFS((changes) => {
-      const snapshot = bridge.getVFSSnapshot();
       if (!changes || changes.length === 0) return;
 
-      // The terminal bridge is authoritative for its VFS session. Reconcile
-      // its complete snapshot whenever available so deletions cannot leave a
-      // stale generated module in the preview owner.
-      if (syncIntoOwner) {
-        syncIntoOwner(snapshot);
-        return;
-      }
-
+      const snapshot = bridge.getVFSSnapshot();
       const changedFiles: Record<string, string> = {};
       changes.forEach((path) => {
         if (snapshot[path] !== undefined) {
@@ -709,11 +433,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         }
       });
 
-      if (Object.keys(changedFiles).length > 0 && importIntoOwner) {
-        importIntoOwner(changedFiles);
+      if (Object.keys(changedFiles).length > 0) {
+        vfsContext.importFiles(changedFiles);
       }
     });
-  }, [canUseContextPreview, onImportFiles, onSyncFiles, vfsContext]);
+  }, [canUseContextPreview, vfsContext]);
 
   const normalizedActiveFile = useMemo(() => {
     if (!activeFile) return null;
@@ -722,37 +446,24 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     return activeFile;
   }, [activeFile]);
   
-  // Sandpack must run the controlled index entry, which mounts the routed App.
+  // Determine Sandpack entry file — Model B: always prefer App.tsx as the site router
   const sandpackEntryFile = useMemo(() => {
-    const controlledEntries = ['/index.tsx', '/index.jsx'];
-    for (const entry of controlledEntries) {
-      if (sandpackFiles[entry]) return entry;
-    }
+    // Always use App.tsx as the canonical entry (site router model)
+    if (sandpackFiles['/App.tsx']) return '/App.tsx';
+    if (sandpackFiles['/App.jsx']) return '/App.jsx';
 
-    // Fallback to the active file only when artifact preparation did not emit
-    // the controlled mount module.
+    // Fallback to active file only if no App exists
     if (normalizedActiveFile && sandpackFiles[normalizedActiveFile]) {
       return normalizedActiveFile;
     }
 
-    if (sandpackFiles['/App.tsx']) return '/App.tsx';
-    if (sandpackFiles['/App.jsx']) return '/App.jsx';
-
+    const candidates = ['/index.tsx', '/index.jsx'];
+    for (const candidate of candidates) {
+      if (sandpackFiles[candidate]) return candidate;
+    }
     const firstCode = Object.keys(sandpackFiles).find(p => /\.(tsx?|jsx?)$/.test(p) && p !== '/hooks-shim.ts' && p !== '/index.tsx');
     return firstCode || '/App.tsx';
   }, [sandpackFiles, normalizedActiveFile]);
-  const sandpackProviderOptions = useMemo(() => ({
-    externalResources: ['https://cdn.tailwindcss.com'],
-    bundlerURL: new URL('/sandpack/index.html', window.location.origin).toString(),
-    bundlerTimeOut: 120_000,
-    activeFile: sandpackEntryFile,
-    visibleFiles: [sandpackEntryFile],
-    autorun: true,
-    initMode: 'immediate' as const,
-    autoReload: true,
-    recompileMode: 'delayed' as const,
-    recompileDelay: 300,
-  }), [sandpackEntryFile]);
   
   // Track Sandpack iframe + bridge readiness for the Edit-mode selection bridge
   const sandpackIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -978,7 +689,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       // ── Catalog hydration bridge (Track B, Pass 3) ────────────────────────
       // Generated sections post CATALOG_HYDRATE_REQUEST asking the host to
       // resolve their live rows against site_data_bindings. We look up the
-      // binding, project rows plus card metadata, and echo back.
+      // binding, project rows through its displayMapping, and echo back.
       if (data.type === 'CATALOG_HYDRATE_REQUEST') {
         const source = event.source as Window | null;
         const requestId = data.requestId;
@@ -987,14 +698,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         const sectionType: string | null = data.sectionType ?? null;
         const occurrenceIndex: number | null =
           typeof data.occurrenceIndex === 'number' ? data.occurrenceIndex : null;
-        // The canonical runtime context is authoritative. URL parsing remains
-        // only as a compatibility fallback for legacy/non-builder previews.
-        let projectId = builderSession.runtimeContext?.projectId || builderSession.projectId || '';
-        if (!projectId) {
-          try {
-            projectId = new URLSearchParams(window.location.search).get('id') || '';
-          } catch { /* ignore */ }
-        }
+        // Derive projectId from the current builder URL (?id=...).
+        let projectId = '';
+        try {
+          projectId = new URLSearchParams(window.location.search).get('id') || '';
+        } catch { /* ignore */ }
         if (!projectId || !source) {
           try {
             source?.postMessage(
@@ -1013,7 +721,6 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   type: 'CATALOG_HYDRATE_RESPONSE',
                   requestId,
                   rows,
-                  cardBinding: result.cardBinding,
                   fallback: result.fallback,
                 },
                 '*',
@@ -1050,11 +757,11 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
 
     window.addEventListener('message', handlePreviewMessage);
     return () => window.removeEventListener('message', handlePreviewMessage);
-  }, [builderSession.projectId, builderSession.runtimeContext?.projectId, onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
+  }, [onNavigate, onIntentTrigger, businessId, siteId, onError, onElementSelect, enableSelection, getPreviewWindow, clearDirectPreviewSelection]);
 
 
   
-  // Initialize Sandpack as the canonical preview runtime.
+  // Initialize backend — Docker for local dev, Sandpack for production
   useEffect(() => {
     if (startAttemptedRef.current) return;
     startAttemptedRef.current = true;
@@ -1097,39 +804,16 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }, [backend, dockerService, files, launch]);
 
   const handleSandpackTimeout = useCallback(() => {
-    if (
-      timeoutRecoveryCountRef.current >= MAX_SANDPACK_TIMEOUT_RECOVERIES ||
-      timeoutRecoveryTimerRef.current !== null
-    ) {
-      if (timeoutRecoveryCountRef.current >= MAX_SANDPACK_TIMEOUT_RECOVERIES) {
-        setSandpackTimeoutExhausted(true);
-      }
-      return;
-    }
+    // Sandpack's hosted runner occasionally drops its initial connection. Retry
+    // the identical, fully provisioned VFS once per mount; do not retry compile
+    // errors or loop indefinitely when the remote service is unavailable.
+    if (timeoutRecoveryCountRef.current >= 1 || timeoutRecoveryTimerRef.current !== null) return;
 
     timeoutRecoveryCountRef.current += 1;
-    // Sandpack has already unregistered the timed-out client and removed the
-    // iframe src. Remount only after that teardown settles; remounting during
-    // the handshake would abort a client that could still connect.
     timeoutRecoveryTimerRef.current = window.setTimeout(() => {
       timeoutRecoveryTimerRef.current = null;
       setSandpackKey((key) => key + 1);
-    }, 700 * timeoutRecoveryCountRef.current);
-  }, []);
-
-  const handleSandpackRunning = useCallback(() => {
-    timeoutRecoveryCountRef.current = 0;
-    setSandpackTimeoutExhausted(false);
-  }, []);
-
-  const handleRetrySandpackConnection = useCallback(() => {
-    if (timeoutRecoveryTimerRef.current !== null) {
-      window.clearTimeout(timeoutRecoveryTimerRef.current);
-      timeoutRecoveryTimerRef.current = null;
-    }
-    timeoutRecoveryCountRef.current = 0;
-    setSandpackTimeoutExhausted(false);
-    setSandpackKey((key) => key + 1);
+    }, 750);
   }, []);
 
   useEffect(() => () => {
@@ -1147,22 +831,15 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       window.open(LOCAL_PREVIEW_URL, '_blank', 'noopener,noreferrer');
       return;
     }
-    // Sandpack: persist the canonical files and open a stable same-origin route.
+    // Sandpack: locate the preview iframe rendered by SandpackPreview and reuse its src
     try {
-      const root = previewContainerRef.current;
-      if (!root) {
-        onError?.('Preview is still starting — try again in a moment.');
-        return;
-      }
+      const root = (iframeRef.current?.closest?.('.sp-wrapper') as HTMLElement | null)
+        || document.querySelector('.sp-wrapper')
+        || document;
       const spIframe = root.querySelector('iframe.sp-preview-iframe, iframe[title*="Sandpack"], iframe[src*="csb.app"], iframe[src*="codesandbox"]') as HTMLIFrameElement | null;
       const src = spIframe?.src;
       if (src) {
-        const previewTitle = document.title
-          .replace(/\s*[|–—-]\s*Unison Tasks.*$/i, '')
-          .trim() || 'Site preview';
-        const previewKey = createExternalPreviewSession(files, previewTitle);
-        const previewUrl = new URL(`/preview/${previewKey}`, window.location.origin);
-        window.open(previewUrl, '_blank', 'noopener,noreferrer');
+        window.open(src, '_blank', 'noopener,noreferrer');
         return;
       }
       onError?.('Preview is still starting — try again in a moment.');
@@ -1170,7 +847,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       console.error('[VFSPreview] openInNewTab failed:', err);
       onError?.('Failed to open preview in new tab.');
     }
-  }, [backend, dockerService.session, files, onError]);
+  }, [backend, dockerService.session, onError]);
 
   // Navigate preview to a hash route via postMessage
   const handleNavigateToRoute = useCallback((route: string) => {
@@ -1230,9 +907,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
     const goLauncher = () => {
       try {
         sessionStorage.removeItem('unison.launcher.handoff');
-      } catch {
-        // Session storage can be unavailable in privacy-restricted contexts.
-      }
+      } catch {}
       window.location.assign('/system-launcher');
     };
 
@@ -1251,7 +926,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
       <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
         <PreviewRuntimeError
           error={pipelineError}
-          onRetry={retryArtifactCompile}
+          onRetry={() => window.location.reload()}
           onRelaunch={goLauncher}
         />
       </div>
@@ -1289,7 +964,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
   }
 
   return (
-    <div ref={previewContainerRef} className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
+    <div className={cn('flex flex-col h-full bg-background rounded-lg overflow-hidden border border-border', className)}>
       {/* Toolbar */}
       {showToolbar && (
         <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border">
@@ -1419,24 +1094,8 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
           </div>
         )}
 
-        {backend === 'sandpack' && !previewCompiling && !pipelineError && !emptyDraft && sandpackTimeoutExhausted && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-background p-6">
-            <div className="max-w-sm text-center space-y-3">
-              <WifiOff className="h-8 w-8 mx-auto text-muted-foreground" />
-              <h3 className="text-sm font-semibold">Preview runner did not connect</h3>
-              <p className="text-xs text-muted-foreground">
-                The generated site is ready, but the in-browser preview runner could not finish its module connection.
-              </p>
-              <Button size="sm" onClick={handleRetrySandpackConnection}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Retry Preview
-              </Button>
-            </div>
-          </div>
-        )}
-
         {/* Empty draft — no snapshot, no source. Render idle, never a minimal fallback. */}
-        {backend === 'sandpack' && previewCompiling && !hasCompiledPreview && (
+        {backend === 'sandpack' && previewCompiling && (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-6 z-10">
             <div className="max-w-sm text-center space-y-2">
               <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
@@ -1461,15 +1120,27 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
         )}
 
         {/* Sandpack In-Browser React Preview — the primary rendering engine */}
-        {backend === 'sandpack' && (!previewCompiling || hasCompiledPreview) && !pipelineError && !emptyDraft && !sandpackTimeoutExhausted && (
+        {backend === 'sandpack' && !previewCompiling && !pipelineError && !emptyDraft && (
           <SandpackErrorBoundary key={`boundary-${sandpackKey}`}>
             <SandpackProvider
               key={`sandpack-${sandpackKey}`}
               template="react-ts"
               files={sandpackFiles}
               theme="light"
-              options={sandpackProviderOptions}
-              customSetup={sandpackCustomSetup}
+              options={{
+                externalResources: [
+                  'https://cdn.tailwindcss.com',
+                ],
+                activeFile: sandpackEntryFile,
+                visibleFiles: [sandpackEntryFile],
+                autorun: true,
+                autoReload: true,
+                recompileMode: 'delayed',
+                recompileDelay: 300,
+              }}
+              customSetup={{
+                dependencies: sandpackDeps,
+              }}
             >
               <SandpackLayout className="!flex-1 !min-h-0 !border-0 !rounded-none !bg-transparent" style={{ height: '100%' }}>
                 <SandpackPreview
@@ -1479,12 +1150,7 @@ export const VFSPreview = forwardRef<VFSPreviewHandle, VFSPreviewProps>(({
                   style={{ height: '100%', minHeight: 0 }}
                 />
               </SandpackLayout>
-              <SandpackErrorListener
-                onError={onError}
-                onTimeout={handleSandpackTimeout}
-                onRunning={handleSandpackRunning}
-                dependencies={sandpackDeps}
-              />
+              <SandpackErrorListener onError={onError} onTimeout={handleSandpackTimeout} />
               <SandpackDependencyProgress dependencyCount={Object.keys(sandpackDeps).length} />
             </SandpackProvider>
           </SandpackErrorBoundary>

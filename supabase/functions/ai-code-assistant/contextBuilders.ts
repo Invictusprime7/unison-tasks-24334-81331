@@ -292,7 +292,7 @@ These are the AUTHORITATIVE palette. Do NOT invent darker/lighter alternatives.
 RULES:
 1. Output ONLY valid JSON: {"files": {"src/App.tsx": "...", "src/index.css": "..."}}
 2. App.tsx: SINGLE FILE, ALL sections inline, starts with: import React, { useState } from 'react';
-3. Use ONLY react, lucide-react, framer-motion (optional), and any @/unison/ui/* modules explicitly listed in the Wizard UI Foundation manifest. Do not import other local modules.
+3. Use ONLY these imports: react, lucide-react, framer-motion (optional). NO other imports. NO ./components/ or ./pages/ imports.
 4. Use Tailwind semantic tokens whenever possible: bg-primary, text-foreground, bg-card, border-border, text-muted-foreground. NEVER hardcode hex colors or Tailwind palette colors (bg-slate-900, text-white, bg-zinc-800, etc.) — those will fight the wizard theme.
 5. For custom color expressions reference CSS vars: style={{ color: 'hsl(var(--primary))' }}, style={{ background: 'hsl(var(--card) / 0.8)' }}.
 6. Wire ALL interactive buttons with data-ut-intent attributes. EVERY button/CTA must have one:
@@ -416,6 +416,14 @@ export interface WizardSeedShape {
     tokens?: Record<string, string | number | boolean | undefined>;
     [k: string]: unknown;
   };
+  experience?: {
+    version?: string;
+    stylePresetId?: string;
+    templateId?: string;
+    layoutSignature?: string;
+    directives?: string[];
+    [k: string]: unknown;
+  };
   canonical?: {
     pages?: Array<{ slug?: string; role?: string; title?: string; path?: string }>;
     capabilities?: string[];
@@ -426,69 +434,6 @@ export interface WizardSeedShape {
     scaffoldMode?: string;
     customInstructions?: string;
     socials?: Array<{ platform: string; url: string }>;
-    [k: string]: unknown;
-  };
-  uiFoundation?: {
-    version?: string;
-    importRoot?: string;
-    primitiveImports?: string[];
-    iconLibrary?: string;
-    layoutRecipes?: string[];
-    interactions?: string[];
-    requirements?: string[];
-    [k: string]: unknown;
-  };
-  generationBrief?: {
-    research?: {
-      mode?: string;
-      enabled?: boolean;
-      mayInform?: string[];
-      mustNotInvent?: string[];
-    };
-    routes?: Array<{
-      path?: string;
-      role?: string;
-      title?: string;
-      hero?: {
-        headline?: string;
-        contentAngle?: string;
-        mustDifferFromHome?: boolean;
-        geometry?: { layout?: string; variantId?: string; mediaTreatment?: string; source?: string };
-      };
-    }>;
-    ui?: { formFormats?: string[]; buttonFormats?: string[]; iconFormats?: string[] };
-    [k: string]: unknown;
-  };
-  designIntervention?: {
-    version?: string;
-    layoutRecipe?: string;
-    sectionVariants?: string[];
-    motionRecipes?: string[];
-    interactionRecipes?: string[];
-    motionBudget?: string;
-    activeVariants?: Record<string, string>;
-    experienceRecipes?: string[];
-    experienceBudget?: string;
-    envelope?: {
-      heroCandidates?: string[];
-      contentCandidates?: string[];
-      navigationCandidates?: string[];
-      mediaCandidates?: string[];
-      motionCandidates?: string[];
-      canvasBudget?: number;
-      webgl?: string;
-      [k: string]: unknown;
-    };
-    brief?: {
-      visualArchetype?: string;
-      composition?: Record<string, unknown>;
-      typography?: Record<string, unknown>;
-      media?: Record<string, unknown>;
-      motion?: Record<string, unknown>;
-      experience?: Record<string, unknown>;
-      [k: string]: unknown;
-    };
-    aiDirective?: string;
     [k: string]: unknown;
   };
   bindingGuide?: string;
@@ -561,9 +506,8 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   const pages = c.pages || [];
   if (pages.length) {
     lines.push('── CANONICAL TOPOLOGY (Step 4: Pages) — HARD CONTRACT ──');
-    lines.push('Emit ONE complete TSX file per page below. The deterministic App router renders');
-    lines.push('routes ONLY — it injects no navbar and no footer, so each page authors whatever');
-    lines.push('navigation and footer it needs inline, with links matching the routes below.');
+    lines.push('Emit ONE TSX file per page below. Shared chrome (navbar, footer)');
+    lines.push('lives under /src/sections/ and is imported by every page.');
     for (const p of pages) {
       const slug = p.slug || 'home';
       const path = p.path || (slug === 'home' ? '/src/pages/Home.tsx' : `/src/pages/${slug.replace(/(^|-)([a-z])/g, (_, _s, l) => l.toUpperCase())}.tsx`);
@@ -575,25 +519,12 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   if (c.intents?.length)      lines.push(`Wired intents: ${c.intents.join(', ')}`);
   if (c.capabilities?.length || c.intents?.length) lines.push('');
 
-  const brief = seed.generationBrief;
-  if (brief?.research?.enabled) {
-    lines.push('── RESEARCH + ROUTE PLAN (BOUNDED JUDGMENT) ──');
-    lines.push(`Use ${brief.research.mode || 'connected-gateway'} research only to inform: ${(brief.research.mayInform || []).join(', ')}.`);
-    lines.push(`Never invent or alter: ${(brief.research.mustNotInvent || []).join(', ')}. Canonical data bindings and capability contracts remain authoritative.`);
-    for (const route of brief.routes || []) {
-      const hero = route.hero || {};
-      const geometry = hero.geometry;
-      const geometryAttributes = geometry?.layout
-        ? [`data-ut-layout="${geometry.layout}"`, geometry.mediaTreatment ? `data-ut-media-treatment="${geometry.mediaTreatment}"` : '', geometry.variantId ? `data-ut-variant="${geometry.variantId}"` : ''].filter(Boolean).join(' ')
-        : '';
-      const geometryInstruction = geometry?.layout
-        ? `; geometry LOCKED: ${geometry.layout}/${geometry.mediaTreatment || 'media treatment'}. Declare ${geometryAttributes} on the hero section.`
-        : '';
-      lines.push(`  • ${route.title || route.role || 'Page'} (${route.path || 'path'}): hero "${hero.headline || route.title || 'route title'}"; angle: ${hero.contentAngle || 'route intent'}${hero.mustDifferFromHome ? '; MUST differ from Home hero copy.' : ''}${geometryInstruction}`);
-    }
-    if (brief.ui) {
-      lines.push(`Approved UI formats — forms: ${(brief.ui.formFormats || []).join(', ') || 'none'}; buttons: ${(brief.ui.buttonFormats || []).join(', ') || 'none'}; icons: ${(brief.ui.iconFormats || []).join(', ') || 'none'}.`);
-    }
+  const experience = seed.experience || {};
+  if (experience.directives?.length) {
+    lines.push('── EXPERIENCE QUALITY CONTRACT — HARD ──');
+    lines.push(`Selected style/template identity: ${experience.stylePresetId || 'style'} / ${experience.templateId || 'template'}${experience.layoutSignature ? ` (${experience.layoutSignature})` : ''}.`);
+    experience.directives.forEach((directive, index) => lines.push(`${index + 1}. ${directive}`));
+    lines.push('These directives define visual behavior only. Keep the business copy, images, proof, and CTAs specific to this launch industry.');
     lines.push('');
   }
 
@@ -608,45 +539,6 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
     lines.push('');
   }
 
-  const uiFoundation = seed.uiFoundation;
-  if (uiFoundation?.importRoot && uiFoundation.primitiveImports?.length) {
-    lines.push('── WIZARD UI FOUNDATION — SNAPSHOT OWNED ──');
-    lines.push(`Import root: ${uiFoundation.importRoot}`);
-    lines.push(`Allowed local modules: ${uiFoundation.primitiveImports.join(', ')}`);
-    if (uiFoundation.iconLibrary) lines.push(`Icons: ${uiFoundation.iconLibrary} only.`);
-    if (uiFoundation.layoutRecipes?.length) lines.push(`Available layout recipes: ${uiFoundation.layoutRecipes.join(', ')}`);
-    if (uiFoundation.interactions?.length) lines.push(`Available interactions: ${uiFoundation.interactions.join(', ')}`);
-    for (const requirement of uiFoundation.requirements || []) lines.push(`Requirement: ${requirement}`);
-    lines.push('Use these VFS modules for reusable UI. Do not author, replace, or delete their files or /src/index.css.');
-    lines.push('');
-  }
-
-  const designIntervention = seed.designIntervention;
-  if (designIntervention?.layoutRecipe) {
-    lines.push('── DETERMINISTIC DESIGN INTERVENTION — LOCKED ──');
-    lines.push(`Layout recipe: ${designIntervention.layoutRecipe}`);
-    if (designIntervention.sectionVariants?.length) lines.push(`Section variants: ${designIntervention.sectionVariants.join(', ')}`);
-    if (designIntervention.motionRecipes?.length) lines.push(`Motion recipes: ${designIntervention.motionRecipes.join(', ')}`);
-    if (designIntervention.interactionRecipes?.length) lines.push(`Interaction recipes: ${designIntervention.interactionRecipes.join(', ')}`);
-    if (designIntervention.motionBudget) lines.push(`Motion budget: ${designIntervention.motionBudget}`);
-    if (designIntervention.experienceBudget) lines.push(`Experience budget: ${designIntervention.experienceBudget}`);
-    if (designIntervention.experienceRecipes?.length) lines.push(`Experience recipes: ${designIntervention.experienceRecipes.join(', ')}`);
-    if (designIntervention.activeVariants && Object.keys(designIntervention.activeVariants).length > 0) {
-      lines.push(`Locked section variants: ${Object.entries(designIntervention.activeVariants).map(([id, variant]) => `${id}=${variant}`).join(', ')}`);
-    }
-    if (designIntervention.brief?.visualArchetype) lines.push(`Visual archetype: ${designIntervention.brief.visualArchetype}`);
-    if (designIntervention.brief?.composition) lines.push(`Composition brief: ${JSON.stringify(designIntervention.brief.composition)}`);
-    if (designIntervention.brief?.typography) lines.push(`Typography brief: ${JSON.stringify(designIntervention.brief.typography)}`);
-    if (designIntervention.brief?.media) lines.push(`Media brief: ${JSON.stringify(designIntervention.brief.media)}`);
-    if (designIntervention.envelope?.heroCandidates?.length) lines.push(`Approved hero vocabulary: ${designIntervention.envelope.heroCandidates.join(', ')}`);
-    if (designIntervention.envelope?.contentCandidates?.length) lines.push(`Approved content vocabulary: ${designIntervention.envelope.contentCandidates.join(', ')}`);
-    if (designIntervention.envelope?.navigationCandidates?.length) lines.push(`Approved navigation vocabulary: ${designIntervention.envelope.navigationCandidates.join(', ')}`);
-    if (designIntervention.envelope?.mediaCandidates?.length) lines.push(`Approved media vocabulary: ${designIntervention.envelope.mediaCandidates.join(', ')}`);
-    if (designIntervention.aiDirective) lines.push(`Constraint: ${designIntervention.aiDirective}`);
-    lines.push('Select and compose from these recipes. Do not invent a conflicting global style system or replace snapshot-owned files.');
-    lines.push('');
-  }
-
   if (seed.bindingGuide) {
     lines.push('── INTENT BINDING GUIDE ──');
     lines.push(seed.bindingGuide.slice(0, 6000));
@@ -658,13 +550,15 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   lines.push('{');
   lines.push('  "files": {');
   lines.push('    "/src/pages/Home.tsx": "…",');
-  lines.push('    "/src/pages/<OtherPage>.tsx": "…"   // one per canonical page above');
+  lines.push('    "/src/pages/<OtherPage>.tsx": "…",   // one per canonical page above');
+  lines.push('    "/src/sections/SiteNavbar.tsx": "…", // shared chrome');
+  lines.push('    "/src/sections/SiteFooter.tsx": "…"');
   lines.push('  }');
   lines.push('}');
   lines.push('');
   lines.push('RULES:');
   lines.push('1. DO NOT author /src/App.tsx — the deterministic router owns it.');
-  lines.push('2. DO NOT author shared chrome modules (SiteNavbar.tsx / SiteFooter.tsx). Author each page\'s navigation and footer inline in the page file; never render two competing primary nav bars or two footers on one page.');
+  lines.push('2. Every page imports SiteNavbar + SiteFooter from "../sections/...".');
   lines.push('3. Use Tailwind semantic tokens (bg-primary, text-foreground, bg-card, border-border).');
   lines.push('   For raw colors use hsl(var(--token)). Never hardcode hex.');
   if (seed?.theme?.geometryRule) {
@@ -673,16 +567,14 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   lines.push('4. Every interactive CTA needs a data-ut-intent attribute mapped to the');
   lines.push('   wired intents above (contact.submit, booking.create, lead.capture,');
   lines.push('   newsletter.subscribe, quote.request, cart.checkout, nav.anchor, …).');
-  lines.push('5. External imports are limited to react, react-dom, and react-router-dom. Use the allowed @/unison/ui snapshot facades listed above for icons, motion, forms, schemas, styles, and UI controls. No other imports.');
-  lines.push('5a. From @/unison/ui/motion, import only Reveal, RevealGroup, Stagger, StaggerItem, or MotionRecipe.');
+  lines.push('5. Use only react, lucide-react, framer-motion. No other imports.');
   lines.push('6. Lucide social brand casing: Github, Linkedin, Youtube, Twitter (NOT GitHub/LinkedIn/YouTube/X).');
   lines.push('7. Images: prefer https://images.unsplash.com/photo-... static strings.');
   lines.push('8. Home must implement the full template section order with a minimum of 3-5 substantial sections.');
-  lines.push('9. Every secondary page must have at least 4 purpose-specific body regions and 1200+ characters of authored TSX.');
+  lines.push('9. Every secondary page must have at least 3 purpose-specific sections and 1200+ characters of authored TSX.');
   lines.push('   A title, nav, gallery grid, or footer alone is not a complete page.');
   lines.push('10. Each page should be visually unique while sharing the navbar/footer/theme.');
-  lines.push('11. Use the snapshot motion facade only for purposeful fade/reveal and staggered entrances; every generated page must remain fully usable with reduced motion.');
-  lines.push('12. Before returning JSON, silently verify that every requested file parses independently as TSX and that every import matches this contract.');
+  lines.push('11. Use Framer Motion only for purposeful fade/reveal and staggered entrances; every generated page must remain fully usable with reduced motion.');
   lines.push('═══════════════════════════════════════════════════════════════');
   lines.push('');
 

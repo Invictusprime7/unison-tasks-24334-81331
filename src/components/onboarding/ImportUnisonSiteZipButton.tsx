@@ -8,8 +8,6 @@ import { importUnisonSiteZip } from '@/services/export/importUnisonSiteZip';
 import { persistGeneratedBindings } from '@/services/persistGeneratedBindings';
 import { autoEmitSectionBindings } from '@/services/autoEmitSectionBindings';
 import { persistLauncherHandoff } from '@/services/launcherHandoffPersistence';
-import { commitMutation } from '@/services/vfsCommitService';
-import { legacyFilesToPatchPlan } from '@/types/patchPlan';
 import { createLaunchState } from '@/types/launchState';
 import { cn } from '@/lib/utils';
 
@@ -47,26 +45,30 @@ export function ImportUnisonSiteZipButton({
       if (userError) throw userError;
       if (!user) throw new Error('Sign in before restoring a Unison export.');
 
-      const restoredName = `${imported.projectName} (restored)`;
+      const durableCode = imported.vfsFiles['/src/App.tsx'] || imported.vfsFiles['/App.tsx'] || '';
       const { data: draft, error: draftError } = await supabase
         .from('builder_drafts')
         .insert({
           user_id: user.id,
           business_id: businessId,
-          name: restoredName,
-          code: '',
-          editor_code: '',
-          vfs_files: {} as Json,
+          name: `${imported.projectName} (restored)`,
+          code: durableCode,
+          editor_code: durableCode,
+          vfs_files: imported.vfsFiles as unknown as Json,
           metadata: {
-            name: restoredName,
-            projectName: restoredName,
-            description: 'Reserved for a revision-backed Unison export restore',
+            name: `${imported.projectName} (restored)`,
+            projectName: `${imported.projectName} (restored)`,
+            description: 'Restored from an exported Unison source archive',
             source: 'unison-zip-import',
             importedAt: new Date().toISOString(),
             industry: imported.industry,
             systemType: imported.systemType,
             entryPoint: imported.entryPoint,
             themePresetId: imported.themePresetId,
+            runtimeManifest: imported.runtimeManifest,
+            siteBundleSnapshot: imported.siteBundleSnapshot,
+            canonicalPlayground: imported.canonicalPlayground,
+            wizardSeed: imported.wizardSeed,
           } as unknown as Json,
         })
         .select('id, project_id')
@@ -76,48 +78,16 @@ export function ImportUnisonSiteZipButton({
         throw new Error('The restored draft could not be linked to a Cloud project.');
       }
 
-      const restore = await commitMutation({
-        source: 'system-restore',
-        identity: {
-          userId: user.id,
-          businessId,
-          projectId: draft.project_id,
-          draftId: draft.id,
-          revisionId: '',
-          sessionId: `unison-zip-import:${draft.id}`,
-        },
-        current: {
-          vfsFiles: {},
-          siteBundleSnapshot: imported.siteBundleSnapshot,
-          playground: imported.canonicalPlayground as never,
-          activePagePath: imported.entryPoint,
-        },
-        patch: legacyFilesToPatchPlan(imported.vfsFiles, `Restore ${imported.projectName} from Unison export`),
-        options: {
-          requirePreviewPass: true,
-          requireReadinessPass: true,
-          businessName: imported.projectName,
-          industry: imported.industry,
-          selectedTemplateId: imported.templateId,
-          selectedThemeId: imported.themePresetId,
-          themePresetId: imported.themePresetId,
-          themeTokens: imported.siteBundleSnapshot.themeTokens,
-        },
-      });
-      if (!restore.persistedRevisionId) {
-        throw new Error('The restored site could not be recorded in the revision ledger.');
-      }
-
       await Promise.allSettled([
         persistGeneratedBindings({
           businessId,
           projectId: draft.project_id,
-          files: restore.vfsFiles,
+          files: imported.vfsFiles,
         }),
         autoEmitSectionBindings({
           businessId,
           projectId: draft.project_id,
-          snapshot: restore.siteBundleSnapshot as typeof imported.siteBundleSnapshot,
+          snapshot: imported.siteBundleSnapshot,
         }),
       ]);
 
@@ -125,7 +95,7 @@ export function ImportUnisonSiteZipButton({
         fromLauncher: true,
         fromUnisonImport: true,
         startInPreview: true,
-        templateName: restoredName,
+        templateName: `${imported.projectName} (restored)`,
         templateCategory: 'landing' as const,
         templateId: imported.templateId,
         aesthetic: imported.themePresetId || 'imported',
@@ -136,11 +106,10 @@ export function ImportUnisonSiteZipButton({
         projectId: draft.project_id,
         draftId: draft.id,
         entryPoint: imported.entryPoint,
-        vfsFiles: restore.vfsFiles,
-        runtimeManifest: restore.runtimeManifest as typeof imported.runtimeManifest,
-        siteBundleSnapshot: restore.siteBundleSnapshot as typeof imported.siteBundleSnapshot,
-        canonicalPlayground: restore.playground,
-        revisionId: restore.persistedRevisionId,
+        vfsFiles: imported.vfsFiles,
+        runtimeManifest: imported.runtimeManifest,
+        siteBundleSnapshot: imported.siteBundleSnapshot,
+        canonicalPlayground: imported.canonicalPlayground,
         wizardSeed: imported.wizardSeed,
         preloadedIntents: imported.preloadedIntents,
         launchReliabilityMode: 'imported-unison-export',
@@ -149,7 +118,7 @@ export function ImportUnisonSiteZipButton({
         systemType: imported.systemType,
         systemName: imported.systemName,
         businessName: imported.projectName,
-        templateName: restoredName,
+        templateName: `${imported.projectName} (restored)`,
         templateCategory: 'landing',
         aesthetic: imported.themePresetId || 'imported',
         themePresetId: imported.themePresetId,
@@ -161,10 +130,10 @@ export function ImportUnisonSiteZipButton({
         businessId,
         projectId: draft.project_id,
         entryPoint: imported.entryPoint,
-        vfsFiles: restore.vfsFiles,
-        runtimeManifest: restore.runtimeManifest as typeof imported.runtimeManifest,
-        siteBundleSnapshot: restore.siteBundleSnapshot as typeof imported.siteBundleSnapshot,
-        materializedPlayground: restore.playground,
+        vfsFiles: imported.vfsFiles,
+        runtimeManifest: imported.runtimeManifest,
+        siteBundleSnapshot: imported.siteBundleSnapshot,
+        materializedPlayground: imported.canonicalPlayground as never,
         wizardSeed: imported.wizardSeed,
       });
 

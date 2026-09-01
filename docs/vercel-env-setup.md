@@ -6,14 +6,15 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
-# AI services
-# Configure provider credentials such as OPENAI_API_KEY as Supabase Edge
-# Function secrets. Do not add provider keys to Vercel or VITE_ variables.
+# AI Services (Required for Loveable AI)
+OPENAI_API_KEY=sk-...
+LOVABLE_API_KEY=lovable_...
 
 # Production Configuration
 VERCEL_ENV=production
 NODE_ENV=production
 VITE_AI_ENABLED=true
+VITE_AI_PROVIDER=lovable
 
 # Build Configuration
 ENABLE_EXPERIMENTAL_COREPACK=1

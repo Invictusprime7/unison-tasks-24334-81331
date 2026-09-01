@@ -34,7 +34,7 @@ interface RouteEntry {
  */
 export function generateCanonicalRouter(
   registry: PageRegistry,
-  businessName?: string,
+  businessName?: string
 ): string {
   const pages = Object.values(registry.pages).sort((a, b) => a.navOrder - b.navOrder);
   if (pages.length === 0) return '';
@@ -63,10 +63,6 @@ export function generateCanonicalRouterForFiles(
   if (pages.length === 0) return '';
 
   const routes = pagesToRoutes(pages);
-  // Chrome authority lives in the page body: navigation and footer are
-  // deterministic composition sections derived from the wizard selections.
-  // The router therefore never renders its own navbar/footer, which is what
-  // used to produce two competing navbars and two footers per page.
   return buildRouterCode(routes, businessName);
 }
 
@@ -150,10 +146,7 @@ function vfsPathToImport(filePath: string): string {
   return filePath.replace(/^\/src\//, './');
 }
 
-function buildRouterCode(
-  routes: RouteEntry[],
-  businessName?: string,
-): string {
+function buildRouterCode(routes: RouteEntry[], businessName?: string): string {
   if (routes.length === 0) return '';
 
   // Deduplicate by componentName
@@ -169,6 +162,7 @@ function buildRouterCode(
   const imports = uniqueRoutes.map(r =>
     `import ${r.componentName} from '${r.importPath}';`
   ).join('\n');
+
   const routeElements: string[] = [];
 
   // Home route always gets "/"

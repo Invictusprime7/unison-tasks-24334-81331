@@ -46,7 +46,7 @@ update_production_env() {
     printf "yes\n" | vercel env rm "$var_name" production > /dev/null 2>&1 || true
     
     # Add new value
-    if printf '%s' "$var_value" | vercel env add "$var_name" production > /dev/null 2>&1; then
+    if echo "$var_value" | vercel env add "$var_name" production > /dev/null 2>&1; then
         echo -e "${GREEN}✅ Updated $var_name${NC}"
     else
         echo -e "${RED}❌ Failed to update $var_name${NC}"

@@ -7,7 +7,7 @@ import { LayoutTemplatesPanel } from "./LayoutTemplatesPanel";
 import { SectionLayoutPicker } from "./SectionLayoutPicker";
 import { ProjectsPanel } from "./ProjectsPanel";
 import { CloudPanel } from "./CloudPanel";
-import type { BusinessSystemType, LayoutCategory } from "@/data/templates/types";
+import type { BusinessSystemType } from "@/data/templates/types";
 
 interface SavedTemplate {
   id: string;
@@ -28,8 +28,8 @@ interface SavedTemplate {
 type PreviewDevice = 'desktop' | 'tablet' | 'mobile';
 
 interface FloatingDockProps {
-  onSelectTemplate: (code: string, name: string, systemType?: BusinessSystemType, templateId?: string, templateCategory?: LayoutCategory) => void;
-  onDemoTemplate?: (code: string, name: string, systemType?: BusinessSystemType, templateId?: string, templateCategory?: LayoutCategory) => void;
+  onSelectTemplate: (code: string, name: string, systemType?: BusinessSystemType, templateId?: string) => void;
+  onDemoTemplate?: (code: string, name: string, systemType?: BusinessSystemType, templateId?: string) => void;
   onLoadTemplate: (template: SavedTemplate) => void;
   onSaveTemplate: (name: string, description: string, isPublic?: boolean) => Promise<void>;
   currentCode: string;
@@ -84,7 +84,7 @@ export const FloatingDock = ({
   return (
     <div className="relative">
       {/* Dock Bar - inline within the topbar */}
-      <div className="flex items-center gap-0.5 rounded-md bg-white/[0.035] p-0.5">
+      <div className="flex items-center gap-1 px-2 py-1 bg-zinc-900/60 border border-zinc-800/60 rounded-lg backdrop-blur-sm">
         {dockItems.map((item) => {
           const Icon = item.icon;
           const isActive = activePanel === item.id;
@@ -92,17 +92,17 @@ export const FloatingDock = ({
             <Button
               key={item.id}
               variant="ghost"
-              size="icon"
+              size="sm"
               onClick={() => togglePanel(item.id)}
               className={cn(
-                "h-7 w-7 rounded text-xs font-medium transition-colors duration-150",
+                "h-7 px-2.5 rounded-md text-xs font-medium transition-colors duration-150",
                 isActive
-                  ? "bg-white/10 text-white"
-                  : "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-100"
+                  ? "bg-indigo-500/15 text-indigo-300 border border-indigo-500/30"
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 border border-transparent"
               )}
-              title={item.label}
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="h-3.5 w-3.5 mr-1.5" />
+              {item.label}
             </Button>
           );
         })}
@@ -111,19 +111,19 @@ export const FloatingDock = ({
       {/* Expandable Panel - positioned absolutely below the dock */}
       {activePanel && (
         <div className={cn(
-          "absolute left-1/2 top-full z-50 mt-2 max-h-[80vh] -translate-x-1/2 overflow-hidden rounded-lg border border-white/[0.08] bg-[#0f0f11] shadow-[0_18px_48px_-18px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-1 duration-150",
+          "absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50 max-h-[80vh] bg-[#0f0f11] border border-zinc-800/60 rounded-xl shadow-2xl shadow-black/60 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200",
           activePanel === "cloud" ? "w-[860px]" : "w-[520px]"
         )}>
           {/* Panel Header with Device Toggle */}
-          <div className="flex h-10 items-center justify-between border-b border-white/[0.06] bg-[#0a0a0c] px-3">
-            <span className="text-xs font-medium text-zinc-300">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-[#0a0a0c] border-b border-zinc-800/60">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-400">
               {dockItems.find((d) => d.id === activePanel)?.label}
             </span>
 
             <div className="flex items-center gap-2">
               {/* Device Toggle for Templates */}
               {activePanel === "templates" && (
-                <div className="flex items-center gap-0.5 rounded-md bg-white/[0.04] p-0.5">
+                <div className="flex items-center gap-0.5 p-0.5 bg-zinc-900/70 border border-zinc-800/60 rounded-lg">
                   {deviceOptions.map((device) => {
                     const DeviceIcon = device.icon;
                     const isActiveDevice = previewDevice === device.id;
@@ -136,8 +136,8 @@ export const FloatingDock = ({
                         className={cn(
                           "h-6 w-6 rounded-md transition-colors duration-150",
                           isActiveDevice
-                            ? "bg-white/10 text-white"
-                            : "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+                            ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                            : "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60"
                         )}
                         title={device.label}
                       >

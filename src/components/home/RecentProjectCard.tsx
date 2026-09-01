@@ -5,7 +5,7 @@
  * giving users a real "window" into their project.
  */
 
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Clock, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,13 @@ export function RecentProjectCard({
 }: RecentProjectCardProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Build a blob URL for the preview HTML (rendered once)
+  const previewSrc = useMemo(() => {
+    if (!previewHtml) return null;
+    const blob = new Blob([previewHtml], { type: "text/html" });
+    return URL.createObjectURL(blob);
+  }, [previewHtml]);
+
   const formattedDate = new Date(updatedAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -49,10 +56,10 @@ export function RecentProjectCard({
     >
       {/* Live preview window */}
       <div className="relative w-full aspect-[16/10] bg-muted overflow-hidden">
-        {previewHtml ? (
+        {previewSrc ? (
           <iframe
             ref={iframeRef}
-            srcDoc={previewHtml}
+            src={previewSrc}
             title={`Preview of ${name}`}
             className="absolute inset-0 w-[1280px] h-[800px] origin-top-left border-0 pointer-events-none"
             style={{

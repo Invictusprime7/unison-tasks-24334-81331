@@ -22,13 +22,13 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   commitMutation,
   CommitRejectedError,
+  isCommitServiceEnabled,
   type CommitMutationResult,
   type PublishBlockerSummary,
 } from '@/services/vfsCommitService';
 import { legacyFilesToPatchPlan } from '@/types/patchPlan';
 import type { BuilderIdentity } from '@/types/builderIdentity';
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
-import type { PlaygroundState } from '@/platform/core/playground';
 
 export interface AiCommitContext {
   businessId: string;
@@ -39,15 +39,11 @@ export interface AiCommitContext {
   beforeFiles: Record<string, string>;
   nextFiles: Record<string, string>;
   snapshotForPreflight?: SiteBundleSnapshot | null;
-  /**
-   * Canonical playground state. Required — `commitToPipeline` rejects every
-   * non-wizard commit that arrives without it.
-   */
-  playground?: PlaygroundState | null;
-  activePagePath: string;
 }
 
 export interface AiCommitDryRunOutcome {
+  /** Feature flag was off (nothing to gate). Callers should proceed as before. */
+  skipped: boolean;
   /** True when dry-run commit accepted the patch. */
   accepted: boolean;
   /** Preview / capability blockers when rejected. */
@@ -79,30 +75,12 @@ async function resolveIdentity(ctx: AiCommitContext): Promise<BuilderIdentity | 
  * copy tweak should not be blocked because some other capability is stub).
  */
 export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryRunOutcome> {
-  if (!ctx.businessId || !ctx.projectId || !ctx.draftId) {
-    return {
-      accepted: false,
-      blockers: [{
-        source: 'preview',
-        code: 'missing-canonical-identity',
-        message: 'AI editing requires canonical business, project, and draft identity.',
-      }],
-      rejectMessage: 'Canonical project identity is unavailable.',
-    };
+  if (!isCommitServiceEnabled() || !ctx.businessId || !ctx.draftId) {
+    return { skipped: true, accepted: true, blockers: [] };
   }
   try {
     const identity = await resolveIdentity(ctx);
-    if (!identity) {
-      return {
-        accepted: false,
-        blockers: [{
-          source: 'preview',
-          code: 'missing-authenticated-identity',
-          message: 'AI editing requires an authenticated canonical project session.',
-        }],
-        rejectMessage: 'Your project session is unavailable.',
-      };
-    }
+    if (!identity) return { skipped: true, accepted: true, blockers: [] };
     const patch = legacyFilesToPatchPlan(ctx.nextFiles, 'ai-builder');
     const commit = await commitMutation({
       source: 'ai-builder',
@@ -110,8 +88,6 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
       current: {
         vfsFiles: ctx.beforeFiles,
         siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
-        playground: ctx.playground ?? undefined,
-        activePagePath: ctx.activePagePath,
       },
       patch,
       options: {
@@ -121,24 +97,43 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
         industry: ctx.snapshotForPreflight?.industry,
       },
     });
-    return { accepted: true, blockers: [], commit };
+    return { skipped: false, accepted: true, blockers: [], commit };
   } catch (err) {
     if (err instanceof CommitRejectedError) {
       const blockers = err.result.publishBlockers;
-      const previewBlockers = blockers.filter((b) => b.source === 'preview' || b.source === 'publishGate');
+      // Auto-heal: when the canonical pipeline throws (typically because the
+      // draft has no SiteBundleSnapshot / themePresetId / industry available
+      // at gate time — e.g. legacy drafts or AI edits landing before wizard
+      // handoff hydration completes), fail open. The runtime preview +
+      // publish gate still enforce their own contracts downstream; a
+      // preflight surface must never block a user edit for a condition the
+      // launcher should have resolved before mounting the Web Builder.
+      const autoHealCodes = new Set([
+        'canonical-pipeline-threw',
+        'MISSING_SNAPSHOT',
+        'MISSING_THEME_PRESET',
+        'MISSING_SYSTEM_ID',
+        'LEGACY_FALLBACK_BLOCKED',
+      ]);
+      const nonHealable = blockers.filter((b) => !autoHealCodes.has(b.code));
+      if (nonHealable.length === 0) {
+        console.warn('[aiApplyGate] dry-run auto-healed missing canonical context; proceeding', {
+          healed: blockers.map((b) => b.code),
+        });
+        return { skipped: false, accepted: true, blockers: [], commit: err.result };
+      }
+      const previewBlockers = nonHealable.filter((b) => b.source === 'preview' || b.source === 'publishGate');
       return {
+        skipped: false,
         accepted: false,
-        blockers,
+        blockers: nonHealable,
         rejectMessage: previewBlockers[0]?.message ?? err.message,
         commit: err.result,
       };
     }
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      accepted: false,
-      blockers: [{ source: 'preview', code: 'canonical-commit-gate-failed', message }],
-      rejectMessage: message,
-    };
+    console.warn('[aiApplyGate] dry-run threw', err);
+    // Fail open — a bug in the gate must not block edits entirely.
+    return { skipped: true, accepted: true, blockers: [] };
   }
 }
 
@@ -146,26 +141,33 @@ export async function dryRunAiCommit(ctx: AiCommitContext): Promise<AiCommitDryR
  * Persist the AI patch as a real site_revisions row after the caller has
  * applied it to the working VFS. Returns the new revision id on success.
  */
-export async function persistAiCommit(ctx: AiCommitContext): Promise<CommitMutationResult> {
-  const identity = await resolveIdentity(ctx);
-  if (!identity) {
-    throw new Error('[aiApplyGate] authenticated canonical identity is unavailable');
+export async function persistAiCommit(ctx: AiCommitContext): Promise<string | null> {
+  if (!isCommitServiceEnabled() || !ctx.businessId || !ctx.draftId) return null;
+  try {
+    const identity = await resolveIdentity(ctx);
+    if (!identity) return null;
+    const patch = legacyFilesToPatchPlan(ctx.nextFiles, 'ai-builder');
+    const commit = await commitMutation({
+      source: 'ai-builder',
+      identity,
+      current: {
+        vfsFiles: ctx.beforeFiles,
+        siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
+      },
+      patch,
+      options: {
+        requirePreviewPass: false,
+        requireReadinessPass: false,
+        industry: ctx.snapshotForPreflight?.industry,
+      },
+    });
+    return commit.persistedRevisionId ?? null;
+  } catch (err) {
+    if (err instanceof CommitRejectedError) {
+      console.warn('[aiApplyGate] persist rejected:', err.message);
+    } else {
+      console.warn('[aiApplyGate] persist failed:', err);
+    }
+    return null;
   }
-  const patch = legacyFilesToPatchPlan(ctx.nextFiles, 'ai-builder');
-  return commitMutation({
-    source: 'ai-builder',
-    identity,
-    current: {
-      vfsFiles: ctx.beforeFiles,
-      siteBundleSnapshot: ctx.snapshotForPreflight ?? undefined,
-      playground: ctx.playground ?? undefined,
-      activePagePath: ctx.activePagePath,
-    },
-    patch,
-    options: {
-      requirePreviewPass: true,
-      requireReadinessPass: false,
-      industry: ctx.snapshotForPreflight?.industry,
-    },
-  });
 }

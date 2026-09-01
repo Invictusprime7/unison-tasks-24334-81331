@@ -47,7 +47,6 @@ export const AGENCY_COMPOSITIONS: TemplateComposition[] = [
         id: 'agency-bold-nav',
         type: 'navbar',
         props: {
-          layout: 'minimal-dark',
           brand: 'Forge Creative',
           sticky: true,
           links: [
@@ -173,7 +172,6 @@ export const AGENCY_COMPOSITIONS: TemplateComposition[] = [
         id: 'agency-bold-contact',
         type: 'contact',
         props: {
-          layout: 'split-card',
           headline: 'Start a Project',
           description: 'Tell us about your goals and we\'ll get back to you within 24 hours.',
           submitLabel: 'Send Project Brief',
@@ -192,7 +190,6 @@ export const AGENCY_COMPOSITIONS: TemplateComposition[] = [
         id: 'agency-bold-footer',
         type: 'footer',
         props: {
-          layout: 'dark-band',
           brand: 'Forge Creative',
           copyright: '© 2024 Forge Creative Studio. All rights reserved.',
           newsletter: false,
@@ -249,7 +246,6 @@ export const AGENCY_COMPOSITIONS: TemplateComposition[] = [
         id: 'agency-consulting-nav',
         type: 'navbar',
         props: {
-          layout: 'standard',
           brand: 'Meridian Consulting',
           sticky: true,
           links: [
@@ -337,7 +333,6 @@ export const AGENCY_COMPOSITIONS: TemplateComposition[] = [
         id: 'agency-consulting-footer',
         type: 'footer',
         props: {
-          layout: 'columns',
           brand: 'Meridian Consulting',
           copyright: '© 2024 Meridian Consulting Group LLC. All rights reserved.',
           newsletter: false,
@@ -393,7 +388,6 @@ export const AGENCY_COMPOSITIONS: TemplateComposition[] = [
         id: 'agency-editorial-nav',
         type: 'navbar',
         props: {
-          layout: 'centered-logo',
           brand: 'Field & Form',
           sticky: true,
           links: [
@@ -467,7 +461,6 @@ export const AGENCY_COMPOSITIONS: TemplateComposition[] = [
         id: 'agency-editorial-contact',
         type: 'contact',
         props: {
-          layout: 'minimal-inline',
           headline: 'Inquiries',
           submitLabel: 'Send Inquiry',
           submitIntent: 'quote.request',
@@ -478,7 +471,6 @@ export const AGENCY_COMPOSITIONS: TemplateComposition[] = [
         id: 'agency-editorial-footer',
         type: 'footer',
         props: {
-          layout: 'dark-band',
           brand: 'Field & Form',
           copyright: '© 2024 Field & Form Studio.',
           newsletter: true,

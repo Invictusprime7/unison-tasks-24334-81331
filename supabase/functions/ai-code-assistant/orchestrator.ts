@@ -18,7 +18,7 @@ import {
 
 import type { ClassifiedTask } from "./taskClassifier.ts";
 import type { AIRequest } from "./requestSchema.ts";
-import { buildProviderPlan, isGeminiExclusiveProviderMode } from "./providerRouter.ts";
+import { buildProviderPlan } from "./providerRouter.ts";
 import { postProcessContent, buildResponseBody } from "./responseNormalizer.ts";
 import { extractTextContent } from "./utils.ts";
 import { performPromptResearch, formatResearchContext, type ResearchResult } from "./webResearch.ts";
@@ -38,8 +38,6 @@ import { buildTemplateActionContext, buildEditModeContext, buildSurgicalEditRein
 import { buildCodeModePrompt } from "./prompts/codePrompt.ts";
 import { buildTemplateJsonPrompt, buildTemplateHtmlPrompt, buildTemplateReactPrompt } from "./prompts/templatePrompts.ts";
 import { buildEditAssistantPrompt, buildDebugAssistantPrompt, buildGeneralBuilderPrompt } from "./prompts/builderPrompts.ts";
-import { buildDesignDirectorDirective } from "./prompts/designDirector.ts";
-
 import { generateImageIfNeeded } from "./imageGeneration.ts";
 import { runProviderLoop } from "./aiProviderLoop.ts";
 import { compactMessages, buildThinkingInstruction, buildCompactBuilderContext, detectIssueHint } from "./contextCompactor.ts";
@@ -50,15 +48,6 @@ import { buildApplyState, type ApplyState } from "./applyState.ts";
 import { preprocessPrompt } from "./promptPreprocessor.ts";
 import { buildLaunchDeskSystemPrompt, buildLaunchDeskUserMessage } from "./prompts/launchDeskPrompt.ts";
 import { CATALOG_CHAT_TOOLS, renderCatalogToolDirective } from "../_shared/catalogTools.ts";
-import { buildEnvelopeDirective, type EnvelopeShape } from "./envelopeContext.ts";
-import { verifyAgainstEnvelope, buildRepairInstruction } from "./envelopeVerifier.ts";
-import { recordEnvelopeRun, type EnvelopeRunContext } from "./envelopeRunLog.ts";
-import {
-  buildUnisonContextDirective,
-  resolveReasoningEffort,
-  resolveUnisonComplexity,
-} from "./unisonContext.ts";
-
 
 const BUILDER_EDIT_TASKS = new Set<string>([
   'surgical_edit', 'behavioral_edit', 'single_file_edit', 'multi_file_edit', 'template_react_edit',
@@ -88,42 +77,14 @@ OUTPUT RULES:
 - Do not use markdown fences or prose.
 - Do not author /src/App.tsx, /src/main.tsx, config files, or package files.
 - Emit complete React/TypeScript page/section files using semantic Tailwind tokens.
-- Preserve the canonical routes and data-ut-intent contract from the WizardSeed.
-
-RUNTIME + IMPORT CONTRACT (HARD):
-- This project is a Vite + React Router single-page app. It is NOT Next.js, Remix, or Gatsby.
-- External imports are limited to "react", "react-dom", and "react-router-dom". Never import from "next", any "next/*" module, "gatsby", "remix", or another application framework.
-- Import icons, motion, schemas, forms, styling helpers, and UI controls only through the supplied "@/unison/ui" snapshot facades rather than raw packages.
-- Use only "@/unison/ui" and its documented sub-paths for UI primitives: "@/unison/ui/button", "@/unison/ui/card", "@/unison/ui/content", "@/unison/ui/icon", "@/unison/ui/icons", "@/unison/ui/layout", "@/unison/ui/media", "@/unison/ui/motion", "@/unison/ui/animation", "@/unison/ui/navigation", "@/unison/ui/recipes", "@/unison/ui/styles", "@/unison/ui/surface", "@/unison/ui/form-fields", "@/unison/ui/forms", "@/unison/ui/zod", "@/unison/ui/radix".
-- COMPOSE FROM THE VOCABULARY. Build every band from the composition primitives instead of raw <div> + arbitrary utility soup — they already encode the sealed art direction's rhythm, measure, surfaces and motion:
-  - layout: <Section tone wash flush as>, <Container width>, <Stack gap direction align wrap>, <Grid columns gap>, <Split reverse align>, <Divider />, <Bleed>
-  - content: <Eyebrow>, <Heading level size gradient>, <Lead>, <Body>, <Badge>, <Stat value label hint>, <Quote attribution role media>, <CTAGroup>, <SectionHeader eyebrow title lead align>
-  - surface: <Panel tone interactive padded>, <MediaFrame src alt ratio loading overlay>, <FeaturePanel title description icon media actions>
-- Exactly one <h1> per page (a single <Heading level={1}>). Wrap every band in <Section> with a <Container> inside it.
-- Always include the slash in the "@/" alias. Import Input, Textarea, Select, Checkbox, Label, and related form controls from "@/unison/ui/form-fields" or "@/unison/ui"; never from flat input/textarea/select/checkbox/label modules.
-- Radix-derived primitives (accordion, alert-dialog, aspect-ratio, avatar, checkbox, collapsible, context-menu, dialog, dropdown-menu, hover-card, label, menubar, navigation-menu, popover, progress, radio-group, scroll-area, select, separator, slider, slot, switch, tabs, toast, toggle, toggle-group, tooltip) live ONLY at "@/unison/ui/radix/<primitive>" — never at the flat "@/unison/ui/<primitive>" path.
-- "@/unison/ui/icons" is a FLAT module (it re-exports all of lucide-react): import icon components directly from it, e.g. import { Camera, X } from "@/unison/ui/icons". Never invent a nested path like "@/unison/ui/icons/lucide-react".
-- "@/unison/ui/motion" only exports the curated recipes Reveal, RevealGroup, Stagger, StaggerItem, and the MotionRecipe type — nothing else. Raw framer-motion primitives (motion, AnimatePresence, useAnimation, useReducedMotion, useScroll, useInView, etc.) live at "@/unison/ui/animation" instead, e.g. import { motion, AnimatePresence } from "@/unison/ui/animation".
-- IMMERSIVE / 3D EXPERIENCE LAYER: WebGL is available ONLY through the snapshot-owned experience facades "@/unison/ui/experience" (barrel), "@/unison/ui/experience/canvas", "@/unison/ui/experience/tokens", "@/unison/ui/experience/scene", "@/unison/ui/experience/media", "@/unison/ui/experience/stage". They export ExperienceCanvas, LightRig, ImmersiveHero, ParticleField, SceneBackground, FloatingMedia, DepthGallery, ProductStage, ModelViewer, useExperienceMaterial, useExperienceEnabled. Never import "three", "@react-three/fiber", "@react-three/drei" or create a raw WebGL <canvas> yourself; never author files under "/src/unison/ui/experience/".
-- Experience budget: at most ONE heavy scene primitive (ImmersiveHero, ProductStage, ModelViewer, DepthGallery) per page band and TWO per page, only when the sealed design intervention lists the matching recipe. Readable copy and intent-bearing CTAs must live in the DOM, never inside the 3D scene.
-- Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally.
-- Use plain <img alt="..."> for images, not a framework-specific Image component.
-- Every emitted source string must independently parse as TSX. Balance every JSX tag, brace, bracket, parenthesis, quote, and template literal before returning JSON.${buildDesignDirectorDirective()}`;
+- Preserve the canonical routes and data-ut-intent contract from the WizardSeed.`;
 }
-
 
 function buildWizardInteractionBasePrompt(): string {
   return `You are the final interaction planner for a validated System Launcher website.
 Return ONLY raw JSON with this exact shape: {"templateId":"provided template id","layoutSignature":"provided template layout signature","interactions":[{"target":{"kind":"template-root|interactive|intent","value":"only for intent"},"effect":"hover-lift|hover-glow|reveal|stagger-reveal|click-feedback"}]}.
 Do not return TSX, CSS, imports, files, routes, handlers, selectors outside the target vocabulary, or prose.
 You may choose at most 12 interactions. Preserve all template layout, semantic HSL tokens, data-ut-intent attributes, routes, and page topology.`;
-}
-
-function buildWizardContentBasePrompt(): string {
-  return `You are the content planner for a validated System Launcher page.
-Return ONLY raw JSON containing authored content and approved presentation choices. The client compiler owns TSX, routes, imports, theme classes, and behavior.
-Do not return files, source code, JSX, CSS, markdown, prose outside JSON, arbitrary keys, or executable expressions.
-Follow the exact JSON schema and enum values supplied in the user message. Write specific, polished copy grounded in the supplied business and industry context.`;
 }
 
 // ── Main Orchestrator Entry ─────────────────────────────────────────────────
@@ -133,13 +94,12 @@ export function runAssistantOrchestrator(
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
   userId?: string,
-  signal?: AbortSignal,
 ): Promise<Response> {
   if (task.type === "launch_desk") {
-    return runLaunchDeskLane(parsed, task, corsHeaders, signal);
+    return runLaunchDeskLane(parsed, task, corsHeaders);
   }
   // All wizard launches now route through Lane B as `wizard_seed_generation`.
-  return runBuilderLane(parsed, task, corsHeaders, userId, signal);
+  return runBuilderLane(parsed, task, corsHeaders, userId);
 }
 
 // ============================================================================
@@ -158,15 +118,12 @@ async function runLaunchDeskLane(
   parsed: AIRequest,
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
-  signal?: AbortSignal,
 ): Promise<Response> {
   console.log('[orchestrator] LANE C: launch_desk');
 
   const { messages, launchBrief } = parsed;
 
-  let systemPrompt = buildLaunchDeskSystemPrompt();
-  systemPrompt += buildEnvelopeDirective(parsed.requestEnvelope as EnvelopeShape | undefined);
-  systemPrompt += buildUnisonContextDirective(parsed.unisonContext);
+  const systemPrompt = buildLaunchDeskSystemPrompt();
 
   // Build the user turn — synthesise the brief from launchBrief fields,
   // falling back to the last user message if no launchBrief was supplied.
@@ -183,22 +140,13 @@ async function runLaunchDeskLane(
     { role: 'user', content: userContent },
   ];
 
-  const launchComplexity = resolveUnisonComplexity('moderate', parsed.unisonContext);
-  const launchReasoningEffort = resolveReasoningEffort(
-    parsed.gatewayOptions?.reasoningEffort,
-    launchComplexity,
-  );
-  const geminiExclusive = isGeminiExclusiveProviderMode();
   const providerPlan = buildProviderPlan(task, Boolean(
-    Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY') ||
-    (!geminiExclusive && (Deno.env.get('OPENAI_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY'))),
-  ), parsed.gatewayOptions, launchComplexity, userContent);
+    Deno.env.get('OPENAI_API_KEY') || Deno.env.get('GEMINI_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY'),
+  ));
   const providerResult = await runProviderLoop({
     aiMessages,
     providerPlan,
     navPageGen: false,
-    reasoningEffort: launchReasoningEffort,
-    signal,
   });
 
   if (providerResult.earlyError) {
@@ -206,11 +154,7 @@ async function runLaunchDeskLane(
       JSON.stringify({ error: providerResult.earlyError.error }),
       {
         status: providerResult.earlyError.status,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-          ...(providerResult.earlyError.status === 429 ? { 'Retry-After': '1' } : {}),
-        },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       },
     );
   }
@@ -227,20 +171,8 @@ async function runLaunchDeskLane(
   }
 
   return new Response(
-    JSON.stringify({
-      content: JSON.stringify(plan),
-      plan,
-      modelUsed: providerResult.modelUsed,
-      providerUsed: providerResult.providerUsed,
-      mode: 'launch-desk',
-    }),
-    {
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json',
-        ...(providerResult.providerUsed ? { 'X-Unison-AI-Provider': providerResult.providerUsed } : {}),
-      },
-    },
+    JSON.stringify({ content: JSON.stringify(plan), plan, modelUsed: providerResult.modelUsed, mode: 'launch-desk' }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   );
 }
 
@@ -249,7 +181,6 @@ async function runBuilderLane(
   task: ClassifiedTask,
   corsHeaders: Record<string, string>,
   userId?: string,
-  signal?: AbortSignal,
 ): Promise<Response> {
   console.log(`[orchestrator] LANE B: ${task.type} (sub-behavior: ${
     task.type === 'debug_fix' ? 'builder_debug' :
@@ -258,14 +189,14 @@ async function runBuilderLane(
     'builder_generate'
   })`);
 
-  // Only funded providers count toward the full model plan. Gemini-only is the
-  // safe default until AI_PROVIDER_MODE is explicitly switched to "hybrid".
-  const geminiExclusive = isGeminiExclusiveProviderMode();
+  // Gemini or OpenAI direct API both count as configured text providers so
+  // wizard/builder tasks get their full per-task model plan (e.g. 110 s for
+  // wizard_seed_generation) instead of the degraded no-provider fallback plan.
   const hasConfiguredProvider = Boolean(
     Deno.env.get('GEMINI_API_KEY') ||
     Deno.env.get('GOOGLE_API_KEY') ||
-    Deno.env.get('UNISONGEMINI_API_KEY') ||
-    (!geminiExclusive && (Deno.env.get('OPENAI_API_KEY') || Deno.env.get('ANTHROPIC_API_KEY')))
+    Deno.env.get('OPENAI_API_KEY') ||
+    Deno.env.get('ANTHROPIC_API_KEY')
   );
   const {
     messages, mode, savePattern = true, generateImage = false, imagePlacement,
@@ -331,8 +262,6 @@ async function runBuilderLane(
     basePrompt = buildWizardSeedBasePrompt();
   } else if (task.type === 'wizard_interaction_enrichment') {
     basePrompt = buildWizardInteractionBasePrompt();
-  } else if (task.type === 'wizard_content_enrichment') {
-    basePrompt = buildWizardContentBasePrompt();
   } else if (mode === 'template-json' || mode === 'template-html' || mode === 'template-react') {
     const templatePromptText = templateName
       ? `${templateName} ${aesthetic || ''} ${source || ''}`
@@ -475,43 +404,17 @@ async function runBuilderLane(
   }
 
   if (task.type === 'wizard_seed_generation') {
-    finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, root files, or standalone SiteNavbar/SiteFooter modules.\nThe deterministic App router renders routes ONLY — it injects no navbar and no footer. Each page authors its own navigation and footer inline, sized and styled to fit that page, with links matching the registered routes. Never render two competing primary nav bars or two footers on one page.\nThe Home page must be a complete production landing page with at least 5 body content regions, real industry-specific copy, and working data-ut-intent attributes.\nEvery secondary page must contain at least 4 purpose-specific body regions and 1200+ characters of authored TSX, matching the launcher quality gate exactly.\nSilently self-check every requested file for parseable TSX, snapshot-approved imports, accessible image alt text, and canonical data-ut-intent wiring before returning JSON.\n`;
+    finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, or root files.\nThe Home page must be a complete production landing page with at least 5 semantic sections, real industry-specific copy, and working data-ut-intent attributes.\nIf shared components are needed, include them under /src/sections/*.tsx and import them from the page.\n`;
   }
 
   if (task.type === 'wizard_interaction_enrichment') {
     finalSystemPrompt += '\n\n[WIZARD INTERACTION ENRICHMENT — PLAN ONLY]\nReturn the interaction JSON object only. The client compiler owns all implementation and will reject any unsupported value.';
   }
 
-  if (task.type === 'wizard_content_enrichment') {
-    finalSystemPrompt += '\n\n[WIZARD CONTENT ENRICHMENT — DATA ONLY]\nReturn the requested content JSON object only. Never return a files envelope or executable source. The client compiler validates every field and owns implementation.';
-  }
-
   // Inject parsed intent summary into system prompt for better understanding
   if (preprocessed.intentSummary) {
     finalSystemPrompt += preprocessed.intentSummary;
   }
-
-  // Milestone 2: goal-aware generation. The interpreter envelope is authoritative
-  // for WHAT must be built, not just how the request was routed.
-  const envelopeDirective = buildEnvelopeDirective(
-    (parsed as { requestEnvelope?: EnvelopeShape }).requestEnvelope,
-  );
-  if (envelopeDirective) {
-    finalSystemPrompt += envelopeDirective;
-    const env = (parsed as { requestEnvelope?: EnvelopeShape }).requestEnvelope;
-    console.log('[orchestrator] envelope directive injected', {
-      kinds: env?.requestKinds ?? [],
-      domains: env?.domains ?? [],
-      goals: (env?.goals ?? []).length,
-      scope: env?.scope?.level,
-    });
-  }
-
-  const unisonDirective = buildUnisonContextDirective(parsed.unisonContext);
-  if (unisonDirective) {
-    finalSystemPrompt += unisonDirective;
-  }
-
 
   // Inject live preview DOM snapshot for context awareness
   if (previewSnapshot) {
@@ -551,24 +454,8 @@ async function runBuilderLane(
   ];
 
   // ── 8. Call AI providers (complexity-aware model selection) ─────────────
-  const effectiveComplexity = resolveUnisonComplexity(
-    preprocessed.complexity.tier,
-    parsed.unisonContext,
-  );
-  const effectiveReasoningEffort = resolveReasoningEffort(
-    gatewayOptions?.reasoningEffort,
-    effectiveComplexity,
-  );
-  console.log(`[orchestrator] Prompt complexity: ${effectiveComplexity} (server=${preprocessed.complexity.tier}, score=${preprocessed.complexity.score}, unison=${parsed.unisonContext?.estimatedComplexity ?? 'n/a'}, factors=[${preprocessed.complexity.factors.join(',')}])`);
-  const providerRoutingKey = `${userId || 'anonymous'}:${userPromptText}`;
-  const providerPlan = buildProviderPlan(
-    task,
-    hasConfiguredProvider,
-    gatewayOptions,
-    effectiveComplexity,
-    providerRoutingKey,
-  );
-  console.log(`[orchestrator] provider primary=${providerPlan.primaryProvider || 'unavailable'} models=${providerPlan.gatewayModels.map((model) => model.id).join(',')}`);
+  console.log(`[orchestrator] Prompt complexity: ${preprocessed.complexity.tier} (score=${preprocessed.complexity.score}, factors=[${preprocessed.complexity.factors.join(',')}])`);
+  const providerPlan = buildProviderPlan(task, hasConfiguredProvider, gatewayOptions, preprocessed.complexity.tier);
   const enableCatalogTools = BUILDER_EDIT_TASKS.has(task.type);
   if (enableCatalogTools) {
     finalSystemPrompt += renderCatalogToolDirective();
@@ -580,11 +467,10 @@ async function runBuilderLane(
     aiMessages: aiMessagesForCall,
     providerPlan,
     navPageGen,
-    reasoningEffort: effectiveReasoningEffort,
+    reasoningEffort: gatewayOptions?.reasoningEffort,
     allowDirectFallbacks: true,
     tools: enableCatalogTools ? CATALOG_CHAT_TOOLS : undefined,
     toolChoice: enableCatalogTools ? 'auto' : undefined,
-    signal,
   });
 
   if (providerResult.earlyError) {
@@ -592,47 +478,34 @@ async function runBuilderLane(
       JSON.stringify({ error: providerResult.earlyError.error }),
       {
         status: providerResult.earlyError.status,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-          ...(providerResult.earlyError.status === 429 ? { 'Retry-After': '1' } : {}),
-        },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );
   }
 
-  // ── 9. Post-process + review pass + envelope verification + response ─────
-  let content = postProcessContent(providerResult.content);
+  // ── 9. Post-process + review pass + response ────────────────────────────
+  const content = postProcessContent(providerResult.content);
 
-  const requestEnvelope = (parsed as { requestEnvelope?: EnvelopeShape }).requestEnvelope;
-  const existingFiles = vfsFiles ? Object.keys(vfsFiles) : [];
-
-  type ReviewOutcome = {
-    reviewResult: ReturnType<typeof reviewPatch>;
-    files: Record<string, string>;
-    targetFile: string | null;
-  };
-
-  const runReviewPass = (raw: string): ReviewOutcome | undefined => {
-    try {
-      const jsonStr = raw.trim().replace(/^```json?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
-      const payload = JSON.parse(jsonStr);
-      if (!payload.files || typeof payload.files !== "object") return undefined;
-
-      const reviewResult = reviewPatch({
-        files: payload.files,
+  // Run review pass on multi-file output
+  let reviewResult: ReturnType<typeof reviewPatch> | undefined;
+  let applyState: ApplyState | undefined;
+  try {
+    const jsonStr = content.trim().replace(/^```json?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+    const parsed = JSON.parse(jsonStr);
+    if (parsed.files && typeof parsed.files === "object") {
+      const existingFiles = vfsFiles ? Object.keys(vfsFiles) : [];
+      reviewResult = reviewPatch({
+        files: parsed.files,
         existingFiles,
         taskType: task.type,
         goalCategory: memory?.goalCategory,
       });
-      console.log(
-        `[orchestrator] Review: ${reviewResult.approved ? 'APPROVED' : 'FLAGGED'}, ${reviewResult.warnings.length} warnings, ${reviewResult.removedFiles.length} blocked`,
-      );
+      console.log(`[orchestrator] Review: ${reviewResult.approved ? 'APPROVED' : 'FLAGGED'}, ${reviewResult.warnings.length} warnings, ${reviewResult.removedFiles.length} blocked`);
 
       // ── Scope enforcement for scoped edits ──────────────────────────
       const scopeResult = checkEditScope({
         patchFiles: reviewResult.cleanedFiles,
-        targetFile: payload.targetFile ?? editScope?.componentPath ?? null,
+        targetFile: parsed.targetFile ?? editScope?.componentPath ?? null,
         taskType: task.type,
         existingFiles,
         editScope: editScope ?? null,
@@ -647,198 +520,19 @@ async function runBuilderLane(
         reviewResult.requiresApproval = true;
       }
 
-      return {
-        reviewResult,
-        files: reviewResult.cleanedFiles as Record<string, string>,
-        targetFile: payload.targetFile ?? null,
-      };
-    } catch {
-      // Not JSON multi-file output — skip review
-      return undefined;
-    }
-  };
-
-  let repairAttempted = false;
-  let repairAccepted = false;
-  let outcome = runReviewPass(content);
-
-  // A syntactically valid `{ "files": {} }` response (or a response whose
-  // files were all removed by review) still violates the WizardSeed contract.
-  // Treat it exactly like non-JSON/raw output so the same provider turn gets
-  // the existing exact-path contract repair instead of returning an empty
-  // payload that the launcher can only diagnose as an omitted page.
-  if (
-    task.type === 'wizard_seed_generation' &&
-    outcome &&
-    Object.keys(outcome.files).length === 0
-  ) {
-    console.warn('[orchestrator] wizard output contained no approved files — running contract repair');
-    outcome = undefined;
-  }
-
-  // A provider can occasionally follow the visual brief but ignore the
-  // WizardSeed transport contract and emit one raw TSX/HTML document. The
-  // generic envelope repair below only runs after JSON parsing succeeds, so
-  // repair this specific contract miss before verification.
-  if (task.type === 'wizard_seed_generation' && !outcome && content.trim()) {
-    repairAttempted = true;
-    console.warn('[orchestrator] wizard output was not multi-file JSON — running contract repair');
-    try {
-      const contractRepairResult = await runProviderLoop({
-        aiMessages: [
-          ...aiMessagesForCall,
-          { role: 'assistant', content },
-          {
-            role: 'user',
-            content: [
-              'Your previous response violated the WizardSeed output contract.',
-              'Convert it into the complete required multi-page payload now.',
-              'Return ONLY raw JSON shaped as {"files":{"/src/pages/Home.tsx":"..."}}.',
-              'Include one body-only TSX file for every canonical WizardSeed page.',
-              'Do not return markdown, prose, HTML documents, /src/App.tsx, or standalone SiteNavbar/SiteFooter modules.',
-            ].join('\n'),
-          },
-        ],
-        providerPlan,
-        navPageGen,
-        reasoningEffort: effectiveReasoningEffort,
-        allowDirectFallbacks: true,
-        signal,
-      });
-      if (!contractRepairResult.earlyError && contractRepairResult.content) {
-        const repairedContent = postProcessContent(contractRepairResult.content);
-        const repairedOutcome = runReviewPass(repairedContent);
-        if (repairedOutcome && Object.keys(repairedOutcome.files).length > 0) {
-          content = repairedContent;
-          outcome = repairedOutcome;
-          repairAccepted = true;
-          console.log('[orchestrator] wizard contract repair accepted', {
-            files: Object.keys(repairedOutcome.files).length,
-          });
-        }
-      }
-    } catch (error) {
-      console.warn('[orchestrator] wizard contract repair failed:', error);
-    }
-  }
-
-  let verification = verifyAgainstEnvelope({
-    envelope: requestEnvelope,
-    files: outcome?.files ?? {},
-    existingFiles,
-  });
-
-  // ── Milestone 3: one targeted repair turn keyed to unmet goals ───────────
-  if (outcome && verification.checked && !verification.passed) {
-    repairAttempted = true;
-    const allowedTargets = Array.isArray(requestEnvelope?.scope?.targets)
-      ? (requestEnvelope!.scope!.targets as string[]).filter((t) => typeof t === 'string')
-      : [];
-    console.warn('[orchestrator] envelope verification failed — running targeted repair', {
-      unmet: verification.unmetCriteria.length,
-      outOfScope: verification.outOfScopeFiles.length,
-    });
-
-    try {
-      const repairResult = await runProviderLoop({
-        aiMessages: [
-          ...aiMessagesForCall,
-          { role: 'assistant', content: JSON.stringify({ files: outcome.files }) },
-          { role: 'user', content: buildRepairInstruction(verification, allowedTargets) },
-        ],
-        providerPlan,
-        navPageGen,
-        reasoningEffort: effectiveReasoningEffort,
-        allowDirectFallbacks: true,
-        signal,
-      });
-
-      if (!repairResult.earlyError && repairResult.content) {
-        const repairedContent = postProcessContent(repairResult.content);
-        const repairedOutcome = runReviewPass(repairedContent);
-        if (repairedOutcome) {
-          const repairedVerification = verifyAgainstEnvelope({
-            envelope: requestEnvelope,
-            files: repairedOutcome.files,
-            existingFiles,
-          });
-          // Only accept the repair when it is strictly better.
-          const before = verification.unmetCriteria.length + verification.outOfScopeFiles.length;
-          const after = repairedVerification.unmetCriteria.length + repairedVerification.outOfScopeFiles.length;
-          if (after < before) {
-            content = repairedContent;
-            outcome = repairedOutcome;
-            verification = repairedVerification;
-            repairAccepted = true;
-            console.log('[orchestrator] targeted repair accepted', { before, after });
-          } else {
-            console.log('[orchestrator] targeted repair rejected (no improvement)', { before, after });
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[orchestrator] targeted repair failed:', e);
-    }
-  }
-
-  const reviewResult = outcome?.reviewResult;
-
-  if (reviewResult && verification.checked && !verification.passed) {
-    if (verification.outOfScopeFiles.length > 0) {
-      reviewResult.warnings.push({
-        severity: "error",
-        message: `Out of declared scope: ${verification.outOfScopeFiles.join(', ')}`,
-      });
-    }
-    for (const miss of verification.unmetCriteria.slice(0, 8)) {
-      reviewResult.warnings.push({ severity: "warning", message: `Unmet goal: ${miss}` });
-    }
-    // `must`-priority misses and scope violations can never auto-apply.
-    if (verification.blockingMisses.length > 0 || verification.outOfScopeFiles.length > 0) {
-      reviewResult.requiresApproval = true;
-    }
-  }
-
-  const applyState: ApplyState | undefined = reviewResult
-    ? buildApplyState({
+      applyState = buildApplyState({
         actionType: reviewResult.removedFiles.length > 0 ? 'multi_patch' : 'patch',
         touchedFiles: Object.keys(reviewResult.cleanedFiles),
-        applyStatus: 'proposed',
+        applyStatus: reviewResult.approved ? 'proposed' : 'proposed',
         requiredApproval: reviewResult.requiresApproval,
         reviewWarnings: reviewResult.warnings.map(w => w.message),
-      })
-    : undefined;
-
-  if (verification.checked) {
-    console.log('[orchestrator] envelope verification', {
-      passed: verification.passed,
-      summary: verification.summary,
-      blocking: verification.blockingMisses.length,
-    });
+      });
+    }
+  } catch {
+    // Not JSON multi-file output — skip review
   }
 
   if (savePattern) saveLearningSession(parsed, content, userId);
-
-  // ── Milestone 4: durable envelope + verdict log (learning / replay) ───────
-  const envelopeRunId = await recordEnvelopeRun({
-    userId,
-    runContext: (parsed as { runContext?: EnvelopeRunContext }).runContext ?? null,
-    envelope: requestEnvelope as Record<string, unknown> | undefined,
-    verification: {
-      checked: verification.checked,
-      passed: verification.passed,
-      summary: verification.summary,
-      unmetCriteria: verification.unmetCriteria,
-      outOfScopeFiles: verification.outOfScopeFiles,
-      blockingMisses: verification.blockingMisses,
-    },
-    repairAttempted,
-    repairAccepted,
-    touchedFiles: reviewResult ? Object.keys(reviewResult.cleanedFiles) : Object.keys(outcome?.files ?? {}),
-    modelUsed: providerResult.modelUsed,
-    providerUsed: providerResult.providerUsed,
-    mode: mode ?? null,
-  });
 
   const responseBody = buildResponseBody({
     content: reviewResult ? JSON.stringify({ files: reviewResult.cleanedFiles }) : content,
@@ -848,37 +542,17 @@ async function runBuilderLane(
     debugMode: _debugMode,
     mode: mode ?? undefined,
     modelUsed: providerResult.modelUsed,
-    providerUsed: providerResult.providerUsed,
     reviewWarnings: reviewResult?.warnings,
     requiresApproval: reviewResult?.requiresApproval,
     removedFiles: reviewResult?.removedFiles,
     reviewSummary: reviewResult?.reviewSummary,
     applyState: applyState as Record<string, unknown> | undefined,
     toolCalls: providerResult.toolCalls as unknown[] | undefined,
-    envelopeVerification: verification.checked
-      ? {
-          passed: verification.passed,
-          summary: verification.summary,
-          unmetCriteria: verification.unmetCriteria,
-          outOfScopeFiles: verification.outOfScopeFiles,
-          blockingMisses: verification.blockingMisses,
-        }
-      : undefined,
   });
-
-  if (envelopeRunId) {
-    (responseBody as Record<string, unknown>).envelopeRunId = envelopeRunId;
-  }
 
   return new Response(
     JSON.stringify(responseBody),
-    {
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json',
-        ...(providerResult.providerUsed ? { 'X-Unison-AI-Provider': providerResult.providerUsed } : {}),
-      },
-    },
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
 }
 

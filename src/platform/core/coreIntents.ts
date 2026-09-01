@@ -28,7 +28,7 @@ export const ACTION_INTENTS = Object.values(INTENT_REGISTRY)
   .filter(
     (d) =>
       d.triggerType === 'user-action' &&
-      (d.handler === 'site-runtime' || d.handler === 'intent-exec' || d.handler === 'workflow-trigger') &&
+      (d.handler === 'intent-exec' || d.handler === 'workflow-trigger') &&
       d.surface !== 'client',
   )
   .map((d) => d.name);

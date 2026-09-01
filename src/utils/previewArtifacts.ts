@@ -1,18 +1,12 @@
 import type { LaunchState } from '@/types/launchState';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
-import { launchStateToSandpackFiles, launchStateToSandpackFilesAsync } from '@/utils/launchToSandpack';
-import { applySandpackRuntimeShims, prepareSandpackFiles } from '@/utils/sandpackFilePrep';
-import { runPrepareSandpackFilesOffThread } from '@/services/strictImportContractRuntime';
+import { launchStateToSandpackFiles } from '@/utils/launchToSandpack';
+import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
+import { WIZARD_PREVIEW_RUNTIME_DEPENDENCIES } from '@/utils/sandpackDependencies';
 import { applyUnisonCanonicals } from '@/services/unisonCanonicalRegistry';
 import { runPreflightRepair } from '@/services/aiSitePreflightRepair';
-import {
-  assertNoMinimalFallbackPreview,
-  assertSnapshotPreviewFileCoverage,
-  assertSnapshotPreviewRouteReachability,
-  projectSnapshotVfsFiles,
-  resolveSnapshot,
-} from '@/services/snapshotProjector';
+import { assertNoMinimalFallbackPreview, projectSnapshotVfsFiles, resolveSnapshot } from '@/services/snapshotProjector';
 
 export interface PreviewArtifactsOptions {
   sourceFiles: Record<string, string>;
@@ -62,51 +56,6 @@ export function buildPreviewArtifacts(
     baseDependencies = SANDPACK_PREVIEW_CORE_DEPENDENCIES,
   } = options;
 
-  const pre = prepareForCompile(rawSourceFiles, launchState);
-  const rawSandpackFiles = pre.launchStateWithRecoveredTheme
-    ? launchStateToSandpackFiles({
-        launchState: pre.launchStateWithRecoveredTheme,
-        vfsFiles: pre.sourceFiles,
-      })
-    : prepareSandpackFiles(pre.sourceFiles, { themePresetId: pre.themePresetId });
-
-  return finishPreviewArtifacts(rawSandpackFiles, pre, baseDependencies);
-}
-
-/**
- * Same output as buildPreviewArtifacts(), but runs the heavy
- * launchStateToSandpackFiles()/prepareSandpackFiles() compile off the main
- * thread. This is the path Preview mounting after a Wizard launch must use:
- * that compile has no internal yield points and can freeze the tab for as
- * long as it takes on a large/drifted generated site.
- */
-export async function buildPreviewArtifactsAsync(
-  options: PreviewArtifactsOptions,
-  runtimeOptions: { signal?: AbortSignal } = {},
-): Promise<PreviewArtifactsResult> {
-  const {
-    sourceFiles: rawSourceFiles,
-    launchState = null,
-    baseDependencies = SANDPACK_PREVIEW_CORE_DEPENDENCIES,
-  } = options;
-
-  const pre = prepareForCompile(rawSourceFiles, launchState);
-  const rawSandpackFiles = pre.launchStateWithRecoveredTheme
-    ? await launchStateToSandpackFilesAsync({
-        launchState: pre.launchStateWithRecoveredTheme,
-        vfsFiles: pre.sourceFiles,
-      }, runtimeOptions)
-    : await runPrepareSandpackFilesOffThread({
-        files: pre.sourceFiles,
-        themePresetId: pre.themePresetId,
-        signal: runtimeOptions.signal,
-        fallbackCompute: (files, entryPoint, themePresetId) => prepareSandpackFiles(files, { entryPoint, themePresetId }),
-      });
-
-  return finishPreviewArtifacts(rawSandpackFiles, pre, baseDependencies);
-}
-
-function prepareForCompile(rawSourceFiles: Record<string, string>, launchState: LaunchState | null) {
   const initialResolution = resolveSnapshot(rawSourceFiles, launchState);
   const sourceFiles = projectSnapshotVfsFiles(rawSourceFiles, initialResolution);
 
@@ -119,21 +68,21 @@ function prepareForCompile(rawSourceFiles: Record<string, string>, launchState: 
   const launchStateWithRecoveredTheme = launchState && themePresetId && !launchState.themePresetId
     ? { ...launchState, themePresetId }
     : launchState;
+  const dependencySourceFiles = Object.keys(sourceFiles).length > 0
+    ? sourceFiles
+    : launchStateWithRecoveredTheme?.vfsFiles || sourceFiles;
 
-  return { initialResolution, sourceFiles, themePresetId, launchStateWithRecoveredTheme };
-}
-
-function finishPreviewArtifacts(
-  rawSandpackFiles: Record<string, string>,
-  pre: ReturnType<typeof prepareForCompile>,
-  baseDependencies: Record<string, string>,
-): PreviewArtifactsResult {
-  const { initialResolution, sourceFiles, launchStateWithRecoveredTheme } = pre;
+  const rawSandpackFiles = launchStateWithRecoveredTheme
+    ? launchStateToSandpackFiles({
+        launchState: launchStateWithRecoveredTheme,
+        vfsFiles: sourceFiles,
+      })
+    : prepareSandpackFiles(sourceFiles, { themePresetId });
 
   // Re-stamp AUTO-GENERATED canonical Unison files (data + product widgets)
   // on every compile so AI / editor mutations cannot break the preview.
   // See src/services/unisonCanonicalRegistry.ts.
-  const stampedFiles = applySandpackRuntimeShims(applyUnisonCanonicals(rawSandpackFiles));
+  const stampedFiles = applyUnisonCanonicals(rawSandpackFiles);
 
   // ── Final preview-side parse gate ─────────────────────────────────────
   // NO SWALLOW: any PreviewPipelineError (and any other unexpected throw)
@@ -152,16 +101,11 @@ function finishPreviewArtifacts(
   // /.unison metadata files. Preserve the authoritative pre-projection
   // classification so wizard previews still receive their runtime contract.
   const isWizardPreview = initialResolution.isWizardDraft || wizardResolution.isWizardDraft;
-  const finalPreviewResolution = wizardResolution.snapshot
-    ? wizardResolution
-    : initialResolution.snapshot
-      ? initialResolution
-      : wizardResolution;
   assertNoMinimalFallbackPreview(stampedFiles, wizardResolution, 'Preview artifact gate');
 
 
   let sandpackFiles: Record<string, string>;
-  if (isWizardPreview) {
+  if (wizardResolution.isWizardDraft) {
     // Wizard artifacts already passed launch/commit preflight. Re-running the
     // multi-stage compiler synchronously during React render freezes the main
     // thread on generated multi-page sites. Preview only verifies integrity;
@@ -190,17 +134,21 @@ function finishPreviewArtifacts(
     }
   }
 
-  assertNoMinimalFallbackPreview(sandpackFiles, finalPreviewResolution, 'Preview artifact integrity gate');
-  assertSnapshotPreviewFileCoverage(sourceFiles, sandpackFiles, finalPreviewResolution, 'Preview artifact coverage gate');
-  assertSnapshotPreviewRouteReachability(sandpackFiles, finalPreviewResolution, 'Preview artifact route gate');
-
-  // Resolve dependencies from Sandpack's actual entry graph. Snapshot-owned
-  // VFS facades may expose many optional libraries, but an unreferenced
-  // facade must never force Sandpack to fetch its package.
+  // Merge the small preview runtime baseline with dependencies discovered from
+  // both the canonical source VFS (including package.json omitted from the
+  // Sandpack overlay) and final prepared files. Theme identity remains a CSS
+  // concern owned by themePresetId; rich packages are installed only when the
+  // selected artifact actually imports them.
+  const dependencyContextFiles = {
+    ...dependencySourceFiles,
+    ...sandpackFiles,
+  };
+  const previewBaseDependencies = isWizardPreview
+    ? { ...baseDependencies, ...WIZARD_PREVIEW_RUNTIME_DEPENDENCIES }
+    : baseDependencies;
   const { dependencies } = getDependenciesForSandpack(
-    sandpackFiles,
-    baseDependencies,
-    { entryPoints: ['/index.tsx', '/index.jsx', '/index.ts', '/index.js'] },
+    dependencyContextFiles,
+    previewBaseDependencies,
   );
 
   return {
@@ -208,4 +156,3 @@ function finishPreviewArtifacts(
     dependencies,
   };
 }
-

@@ -13,9 +13,7 @@
  *   - `seedCapability`     → light-weight seeders for capabilities that need
  *                            backend rows to satisfy `rowAssertion`
  *                            (currently: booking — inserts one default
- *                            service + a 7-day availability window generated
- *                            from the business's `business_hours`, falling
- *                            back to a 9am-5pm default when none are set).
+ *                            service + a 7-day availability window).
  *
  * Each op is best-effort idempotent: re-running a commit with the same
  * backendOps must NOT produce duplicate rows.
@@ -25,7 +23,6 @@ import { supabase } from '@/integrations/supabase/client';
 import type { BackendOp } from '@/types/patchPlan';
 import type { BuilderIdentity } from '@/types/builderIdentity';
 import type { CapabilityId } from '@/platform/core/capabilityRegistry';
-import { generateAvailabilitySlots, type BusinessHoursWindow } from '@/services/availabilityGeneration';
 
 export type BackendOpStatus = 'ok' | 'skipped' | 'failed';
 
@@ -88,14 +85,13 @@ async function seedBooking(businessId: string): Promise<BackendOpStatus> {
       .select('id', { count: 'exact', head: true })
       .eq('business_id', businessId);
     let serviceId: string | null = null;
-    let durationMinutes = 60;
     if ((svcCount ?? 0) === 0) {
       const { data: svc, error: svcErr } = await supabase
         .from('services')
         .insert({
           business_id: businessId,
           name: 'Default Service',
-          duration_minutes: durationMinutes,
+          duration_minutes: 60,
           price_cents: 0,
           is_active: true,
         })
@@ -106,40 +102,27 @@ async function seedBooking(businessId: string): Promise<BackendOpStatus> {
     } else {
       const { data: existing } = await supabase
         .from('services')
-        .select('id, duration_minutes')
+        .select('id')
         .eq('business_id', businessId)
         .limit(1)
         .maybeSingle();
-      const existingService = existing as { id: string; duration_minutes: number | null } | null;
-      serviceId = existingService?.id ?? null;
-      if (existingService?.duration_minutes && existingService.duration_minutes > 0) {
-        durationMinutes = existingService.duration_minutes;
-      }
+      serviceId = (existing as { id: string } | null)?.id ?? null;
     }
 
-    // Generate a 7-day availability window from the business's configured
-    // hours, falling back to the legacy 9am-5pm default when none are set.
-    const { data: hoursRows } = await supabase
-      .from('business_hours')
-      .select('day_of_week, opens_at, closes_at, is_closed')
-      .eq('business_id', businessId);
-    const hours: BusinessHoursWindow[] = (hoursRows ?? []).map((row) => ({
-      dayOfWeek: row.day_of_week,
-      opensAt: row.opens_at,
-      closesAt: row.closes_at,
-      isClosed: row.is_closed,
-    }));
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const slots = generateAvailabilitySlots({
-      businessId,
-      serviceId: serviceId ?? '',
-      durationMinutes,
-      startDate: tomorrow,
-      days: 7,
-      hours,
-    });
-    if (slots.length === 0) return 'ok';
+    // Seed a 7-day, 9am-5pm availability window.
+    const now = new Date();
+    const slots: Array<Record<string, unknown>> = [];
+    for (let d = 0; d < 7; d++) {
+      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d + 1, 9, 0, 0);
+      const end = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 17, 0, 0);
+      slots.push({
+        business_id: businessId,
+        service_id: serviceId,
+        starts_at: day.toISOString(),
+        ends_at: end.toISOString(),
+        is_booked: false,
+      });
+    }
     const { error: slotErr } = await supabase.from('availability_slots').insert(slots);
     if (slotErr) return 'failed';
     return 'ok';

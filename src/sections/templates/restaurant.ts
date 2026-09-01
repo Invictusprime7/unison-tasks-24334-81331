@@ -47,7 +47,6 @@ export const RESTAURANT_COMPOSITIONS: TemplateComposition[] = [
         id: 'restaurant-premium-nav',
         type: 'navbar',
         props: {
-          layout: 'centered-logo',
           brand: 'Ember & Oak',
           sticky: true,
           transparent: true,
@@ -155,7 +154,6 @@ export const RESTAURANT_COMPOSITIONS: TemplateComposition[] = [
         id: 'restaurant-premium-contact',
         type: 'contact',
         props: {
-          layout: 'split-card',
           headline: 'Find Us',
           description: 'Dinner service Tuesday–Sunday. Private event inquiries welcome.',
           submitLabel: 'Send Enquiry',
@@ -176,7 +174,6 @@ export const RESTAURANT_COMPOSITIONS: TemplateComposition[] = [
         id: 'restaurant-premium-footer',
         type: 'footer',
         props: {
-          layout: 'dark-band',
           brand: 'Ember & Oak',
           copyright: '© 2024 Ember & Oak Restaurant. All rights reserved.',
           newsletter: true,
@@ -233,7 +230,6 @@ export const RESTAURANT_COMPOSITIONS: TemplateComposition[] = [
         id: 'restaurant-casual-nav',
         type: 'navbar',
         props: {
-          layout: 'standard',
           brand: 'The Local Plate',
           sticky: true,
           links: [
@@ -308,7 +304,6 @@ export const RESTAURANT_COMPOSITIONS: TemplateComposition[] = [
         id: 'restaurant-casual-footer',
         type: 'footer',
         props: {
-          layout: 'dark-band',
           brand: 'The Local Plate',
           copyright: '© 2024 The Local Plate. All rights reserved.',
           newsletter: true,
@@ -363,7 +358,6 @@ export const RESTAURANT_COMPOSITIONS: TemplateComposition[] = [
         id: 'restaurant-fine-dining-nav',
         type: 'navbar',
         props: {
-          layout: 'centered-logo',
           brand: 'Maison Atelier',
           sticky: true,
           transparent: true,
@@ -440,7 +434,6 @@ export const RESTAURANT_COMPOSITIONS: TemplateComposition[] = [
         id: 'restaurant-fine-dining-contact',
         type: 'contact',
         props: {
-          layout: 'split-card',
           headline: 'Visit',
           submitLabel: 'Send Inquiry',
           submitIntent: 'contact.submit',
@@ -453,7 +446,6 @@ export const RESTAURANT_COMPOSITIONS: TemplateComposition[] = [
         id: 'restaurant-fine-dining-footer',
         type: 'footer',
         props: {
-          layout: 'centered-minimal',
           brand: 'Maison Atelier',
           copyright: '© 2024 Maison Atelier.',
           newsletter: false,

@@ -1,0 +1,175 @@
+
+    :root {
+      --soft-pink: #ffebee;
+      --deep-rose: #e91e63;
+      --light-rose: #f8bbd0;
+      /* Adjusted text colors to work better with soft pink background */
+      --text-dark: #3f3f46; /* Retain dark text for contrast */
+      --text-medium: #71717a; /* Retain medium text for contrast */
+      --background-primary: #fefefe; /* A very light, almost white, background */
+      --background-secondary: #fff0f5; /* A slightly darker soft pink for secondary sections */
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--background-primary); /* Apply scheme to body */
+    }
+
+    /* Custom Gradient Animation for Hero Background */
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .hero-gradient-bg {
+      background: linear-gradient(-45deg, var(--soft-pink), var(--light-rose), var(--deep-rose));
+      background-size: 400% 400%;
+      animation: gradientShift 15s ease infinite;
+    }
+
+    /* Card hover effect with subtle depth */
+    .card-hover-effect {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .card-hover-effect:hover {
+      transform: translateY(-8px) scale(1.02);
+      box-shadow: 0 15px 30px rgba(233, 30, 99, 0.2), 0 5px 15px rgba(0,0,0,0.05); /* Deep rose tinge */
+    }
+
+    /* Fade in animation for cards */
+    @keyframes fadeInSlideUp {
+      from { opacity: 0; transform: translateY(40px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .animate-fadeInSlideUp {
+      animation: fadeInSlideUp 0.8s ease-out forwards;
+      animation-fill-mode: backwards; /* Ensures element stays hidden before animation */
+    }
+
+    /* Artistic "blob" elements with background blur */
+    .artistic-blob {
+        position: absolute;
+        width: 250px;
+        height: 250px;
+        background: var(--light-rose); /* using the lighter pink */
+        border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
+        opacity: 0.7;
+        filter: blur(80px);
+        animation: blobMovement 15s infinite alternate ease-in-out;
+        z-index: 0; /* Send to background */
+    }
+
+    .artistic-blob-2 {
+        background: var(--deep-rose); /* using the deeper pink */
+        border-radius: 70% 30% 30% 70% / 70% 70% 30% 30%;
+        width: 300px;
+        height: 300px;
+        opacity: 0.6;
+        animation: blobMovement 18s infinite alternate-reverse ease-in-out;
+        z-index: 0;
+    }
+
+    @keyframes blobMovement {
+        0% { transform: translate(0px, 0px) scale(1.0); }
+        33% { transform: translate(30px, -50px) scale(1.1); }
+        66% { transform: translate(-20px, 40px) scale(0.9); }
+        100% { transform: translate(0px, 0px) scale(1.0); }
+    }
+
+    /* Scroll-triggered animation */
+    /* Base state (hidden) */
+    .animate-on-scroll {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+    }
+
+    /* State when visible */
+    .animate-on-scroll.animate-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Carousel specific styles */
+    .carousel-container {
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+      height: 400px; /* Adjust height as needed */
+      border-radius: 1rem; /* Rounded corners for the carousel */
+      box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+      z-index: 1; /* Ensure carousel is above blobs */
+    }
+
+    .carousel-inner {
+      display: flex;
+      transition: transform 0.5s ease-in-out;
+      height: 100%;
+    }
+
+    .carousel-item {
+      min-width: 100%;
+      flex-shrink: 0;
+      height: 100%;
+    }
+
+    .carousel-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+    }
+
+    .carousel-button {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background-color: rgba(255, 255, 255, 0.7);
+      color: var(--deep-rose);
+      border: none;
+      padding: 10px 15px;
+      font-size: 1.5rem;
+      cursor: pointer;
+      border-radius: 50%;
+      transition: background-color 0.3s ease;
+      z-index: 10;
+    }
+
+    .carousel-button:hover {
+      background-color: rgba(255, 255, 255, 0.9);
+    }
+
+    .carousel-button.prev {
+      left: 10px;
+    }
+
+    .carousel-button.next {
+      right: 10px;
+    }
+
+    .carousel-dots {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+
+    .carousel-dot {
+      width: 12px;
+      height: 12px;
+      background-color: rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      cursor: pointer;
+      transition: background-color 0.3s ease, transform 0.3s ease;
+    }
+
+    .carousel-dot.active {
+      background-color: var(--deep-rose);
+      transform: scale(1.2);
+    }
+  

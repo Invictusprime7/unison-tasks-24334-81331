@@ -57,7 +57,7 @@ function rowToDto(row: BindingRow): SectionDataBindingDTO {
     filters: asRecord(row.filters),
     sort: asRecord(row.sort) as SectionDataBindingDTO['sort'],
     limitCount: row.limit_count,
-    displayMapping: asRecord(row.display_mapping),
+    displayMapping: asRecord(row.display_mapping) as Record<string, string>,
     fallbackMode: (row.fallback_mode as SectionDataFallback) ?? 'empty_state',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -114,7 +114,7 @@ export interface UpsertBindingInput {
   filters?: Record<string, unknown>;
   sort?: { field?: string; direction?: 'asc' | 'desc' };
   limitCount?: number | null;
-  displayMapping?: Record<string, unknown>;
+  displayMapping?: Record<string, string>;
   fallbackMode?: SectionDataFallback;
 }
 
@@ -138,19 +138,9 @@ export async function upsertBinding(
     display_mapping: input.displayMapping ?? {},
     fallback_mode: input.fallbackMode ?? 'empty_state',
   };
-  // PostgreSQL considers NULL values distinct in a unique constraint, so the
-  // previous upsert could create multiple bindings for a null slot_key.
-  // Resolve the canonical locator first, then update or insert explicitly.
-  const existing = await getBinding(
-    input.projectId,
-    input.pagePath,
-    input.sectionId,
-    input.slotKey ?? null,
-  );
-  const query = existing
-    ? supabase.from('site_data_bindings' as never).update(row as never).eq('id', existing.id)
-    : supabase.from('site_data_bindings' as never).insert(row as never);
-  const { data, error } = await query
+  const { data, error } = await supabase
+    .from('site_data_bindings' as never)
+    .upsert(row, { onConflict: 'project_id,page_path,section_id,slot_key' })
     .select(COLS)
     .maybeSingle();
   if (error) {
@@ -180,7 +170,7 @@ export interface BindingPatch {
   filters?: Record<string, unknown>;
   sort?: { field?: string; direction?: 'asc' | 'desc' };
   limitCount?: number | null;
-  displayMapping?: Record<string, unknown>;
+  displayMapping?: Record<string, string>;
   fallbackMode?: SectionDataFallback;
 }
 
@@ -208,17 +198,4 @@ export async function patchBindingById(
     return null;
   }
   return data ? rowToDto(data as unknown as BindingRow) : null;
-}
-
-export async function getBindingById(
-  id: string,
-): Promise<SectionDataBindingDTO | null> {
-  if (!id) return null;
-  const { data, error } = await supabase
-    .from('site_data_bindings' as never)
-    .select(COLS)
-    .eq('id', id)
-    .maybeSingle();
-  if (error || !data) return null;
-  return rowToDto(data as unknown as BindingRow);
 }

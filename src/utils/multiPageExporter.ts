@@ -267,7 +267,7 @@ export async function downloadMultiPageSite(options: MultiPageExportOptions): Pr
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  URL.revokeObjectURL(url);
   
   return true;
 }

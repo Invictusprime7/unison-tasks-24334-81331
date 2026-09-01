@@ -60,12 +60,6 @@ function inferSectionType(section: SectionInfo): SectionType {
 interface TemplateCustomizerPanelProps {
   customizer: TemplateCustomizerReturn;
   onApply: () => void;
-  /**
-   * Canonical variant commit (WebBuilder → commitToPipeline). When provided,
-   * layout variant selection writes to the SiteBundleSnapshot instead of the
-   * customizer's local state.
-   */
-  onVariantCommit?: (sectionId: string, variantId: string) => void;
   className?: string;
 }
 
@@ -124,7 +118,6 @@ const ColorSwatch: React.FC<{
 export const TemplateCustomizerPanel: React.FC<TemplateCustomizerPanelProps> = ({
   customizer,
   onApply,
-  onVariantCommit,
   className,
 }) => {
   const [replacingImageId, setReplacingImageId] = useState<string | null>(null);
@@ -241,10 +234,6 @@ export const TemplateCustomizerPanel: React.FC<TemplateCustomizerPanelProps> = (
                 }))}
                 activeVariants={customizer.activeVariants}
                 onVariantSelect={(sectionId, variantId) => {
-                  if (onVariantCommit) {
-                    onVariantCommit(sectionId, variantId);
-                    return;
-                  }
                   customizer.setActiveVariant(sectionId, variantId);
                   onApply();
                 }}

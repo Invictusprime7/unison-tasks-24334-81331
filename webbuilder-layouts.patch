@@ -1,0 +1,76 @@
+# WebBuilder Layout Templates Integration Patch
+# Apply these changes to src/components/creatives/WebBuilder.tsx
+
+# 1. Add imports after line 48 (after ResizableHandle import):
+import { layoutTemplates, LayoutTemplate } from "@/data/layoutTemplates";
+import { Command, CommandGroup, CommandItem, CommandInput, CommandList } from "@/components/ui/command";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Layers } from "lucide-react";
+
+# 2. Add state variable after line 200 (after AUTO_SAVE_INTERVAL):
+const [layoutsOpen, setLayoutsOpen] = useState(false);
+
+# 3. Add function after line 220 (before saveDraft function):
+const applyLayoutTemplate = useCallback((tpl: LayoutTemplate) => {
+  setEditorCode(tpl.code);
+  setPreviewCode(tpl.code);
+  setViewMode("canvas");
+  templateFiles.clearCurrentTemplate();
+  setCurrentTemplateName(tpl.name);
+  toast.success(`Loaded ${tpl.name}`, {
+    description: tpl.description,
+  });
+}, [templateFiles]);
+
+# 4. Add Layouts button after the View Mode Toggle section (around line 1850):
+# Insert this AFTER the closing </div> of the View Mode Toggle and BEFORE {/* Spacer */}
+
+{/* Layouts Template Browser */}
+<Popover open={layoutsOpen} onOpenChange={setLayoutsOpen}>
+  <PopoverTrigger asChild>
+    <Button
+      variant="outline"
+      size="sm"
+      className="ml-2 bg-white/5 border-white/20 text-xs text-white/80 hover:bg-white/10 h-7 px-2"
+    >
+      <Layers className="h-3.5 w-3.5 mr-1" />
+      Layouts
+    </Button>
+  </PopoverTrigger>
+  <PopoverContent className="w-96 p-0" align="start">
+    <Command>
+      <CommandInput placeholder="Search layouts (portfolio, restaurant, landing...)" />
+      <CommandList>
+        {["landing", "portfolio", "restaurant", "ecommerce", "blog", "contractor", "agency", "startup"].map((category) => {
+          const items = layoutTemplates.filter((t) => t.category === category);
+          if (!items.length) return null;
+          return (
+            <CommandGroup key={category} heading={category.toUpperCase()}>
+              {items.map((tpl) => (
+                <CommandItem
+                  key={tpl.id}
+                  value={`${tpl.name} ${tpl.category}`}
+                  onSelect={() => {
+                    applyLayoutTemplate(tpl);
+                    setLayoutsOpen(false);
+                  }}
+                  className="flex items-center gap-3 cursor-pointer"
+                >
+                  <div className="w-10 h-10 rounded-md bg-slate-900 border border-slate-800 flex items-center justify-center text-[10px] text-slate-400 font-semibold">
+                    {tpl.category.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex flex-col flex-1">
+                    <span className="text-xs font-medium">{tpl.name}</span>
+                    <span className="text-[10px] text-slate-400 line-clamp-2">
+                      {tpl.description}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          );
+        })}
+      </CommandList>
+    </Command>
+  </PopoverContent>
+</Popover>

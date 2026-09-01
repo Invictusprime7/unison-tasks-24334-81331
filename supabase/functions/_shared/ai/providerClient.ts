@@ -13,21 +13,14 @@ export type ChatCompletionRequest = {
   [key: string]: unknown;
 };
 
-type Provider = "lovable" | "openai" | "gemini" | "anthropic";
-type EnvReader = (name: string) => string | undefined;
+type Provider = "openai" | "gemini" | "anthropic";
 
-const LOVABLE_GATEWAY_CHAT_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations";
 const GEMINI_CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
-const DEFAULT_TRANSIENT_RETRY_MS = 1_000;
 const MAX_RATE_LIMIT_RETRY_MS = 2_500;
-/** Per-provider slice so a single hanging provider cannot eat the whole window. */
-const PROVIDER_ATTEMPT_TIMEOUT_MS = 75_000;
-/** Even the final provider is bounded so a hung socket cannot hang the turn. */
-const FINAL_PROVIDER_ATTEMPT_TIMEOUT_MS = 120_000;
 
 export function getShortRateLimitRetryMs(headers: Headers, now = Date.now()): number | null {
   const retryAfter = headers.get("retry-after");
@@ -61,55 +54,26 @@ export async function fetchWithShortRateLimitRetry(
   fetcher: typeof fetch = fetch,
 ): Promise<Response> {
   const response = await fetcher(input, init);
-  const retryableStatus = response.status === 429 || response.status === 503;
-  if (!retryableStatus) return response;
+  if (response.status !== 429) return response;
 
-  const retryMs = response.status === 503 && !response.headers.has("retry-after")
-    ? DEFAULT_TRANSIENT_RETRY_MS
-    : getShortRateLimitRetryMs(response.headers);
+  const retryMs = getShortRateLimitRetryMs(response.headers);
   if (retryMs === null || signal?.aborted) return response;
 
-  console.warn(`[providerClient] Provider returned ${response.status}; retrying once after ${retryMs}ms`);
+  console.warn(`[providerClient] Provider rate limited; retrying once after ${retryMs}ms`);
   await waitForRetry(retryMs, signal);
   return fetcher(input, init);
 }
 
-function readGeminiApiKey(readEnv: EnvReader = (name) => Deno.env.get(name)): string | undefined {
-  return readEnv("GEMINI_API_KEY") ?? readEnv("GOOGLE_API_KEY") ?? readEnv("UNISONGEMINI_API_KEY");
-}
-
-function requestedProvider(model?: string): Provider | undefined {
-  if (!model) return undefined;
-  if (model.startsWith("google/") || model.startsWith("gemini-")) return "gemini";
-  if (model.startsWith("openai/") || model.startsWith("gpt-")) return "openai";
-  if (model.startsWith("anthropic/") || model.startsWith("claude-")) return "anthropic";
-  return undefined;
-}
-
-export function resolveConfiguredProviders(
-  model?: string,
-  readEnv: EnvReader = (name) => Deno.env.get(name),
-): Provider[] {
-  // Gemini is the default text provider. Explicit model namespaces override
-  // the default while preserving the other configured providers as fallbacks.
+function configuredProviders(): Provider[] {
   const providers: Provider[] = [];
-  if (readGeminiApiKey(readEnv)) providers.push("gemini");
-  if (readEnv("OPENAI_API_KEY")) providers.push("openai");
-  if (readEnv("ANTHROPIC_API_KEY")) providers.push("anthropic");
-
-  const preferred = requestedProvider(model);
-  const ordered = preferred && providers.includes(preferred)
-    ? [preferred, ...providers.filter((provider) => provider !== preferred)]
-    : providers;
-
-  // The managed Lovable AI Gateway is NEVER primary. It is only appended as a
-  // last-resort fallback after every directly configured provider key.
-  if (readEnv("LOVABLE_API_KEY")) ordered.push("lovable");
-  return ordered;
+  if (Deno.env.get("OPENAI_API_KEY")) providers.push("openai");
+  if (Deno.env.get("GEMINI_API_KEY")) providers.push("gemini");
+  if (Deno.env.get("ANTHROPIC_API_KEY")) providers.push("anthropic");
+  return providers;
 }
 
 export function isTextGenerationConfigured(): boolean {
-  return resolveConfiguredProviders().length > 0;
+  return configuredProviders().length > 0;
 }
 
 export function isImageGenerationConfigured(): boolean {
@@ -144,15 +108,6 @@ export async function createImageGeneration(
 function modelFor(provider: Provider, requestedModel?: string): string {
   const model = requestedModel ?? "";
 
-  if (provider === "lovable") {
-    // Gateway ids are always `vendor/model`; bare ids get their vendor restored.
-    if (model.includes("/")) return model;
-    if (model.startsWith("gpt-")) return `openai/${model}`;
-    if (model.startsWith("gemini-")) return `google/${model}`;
-    if (model.startsWith("claude-")) return `anthropic/${model}`;
-    return "google/gemini-3.6-flash";
-  }
-
   if (provider === "openai") {
     if (Deno.env.get("OPENAI_MODEL")) return Deno.env.get("OPENAI_MODEL")!;
     if (model.startsWith("openai/")) return model.slice("openai/".length);
@@ -180,36 +135,22 @@ function withProviderHeader(response: Response, provider: Provider): Response {
 }
 
 async function callOpenAICompatible(
-  provider: "lovable" | "openai" | "gemini",
+  provider: "openai" | "gemini",
   request: ChatCompletionRequest,
   signal?: AbortSignal,
 ): Promise<Response> {
-  const apiKey = provider === "openai"
-    ? Deno.env.get("OPENAI_API_KEY")
-    : provider === "lovable"
-      ? Deno.env.get("LOVABLE_API_KEY")
-      : readGeminiApiKey();
+  const apiKey = provider === "openai" ? Deno.env.get("OPENAI_API_KEY") : Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) throw new Error(`${provider} is not configured`);
 
-  const model = modelFor(provider, request.model);
-  const body: Record<string, unknown> = { ...request, model };
-  if (/(^|\/)gpt-5/.test(String(model)) && body.max_tokens !== undefined) {
+  const body: Record<string, unknown> = { ...request, model: modelFor(provider, request.model) };
+  if (String(body.model).startsWith("gpt-5") && body.max_tokens !== undefined) {
     body.max_completion_tokens = body.max_completion_tokens ?? body.max_tokens;
     delete body.max_tokens;
   }
 
-  const url = provider === "lovable"
-    ? LOVABLE_GATEWAY_CHAT_URL
-    : provider === "openai"
-      ? OPENAI_CHAT_URL
-      : GEMINI_CHAT_URL;
-  const headers: Record<string, string> = provider === "lovable"
-    ? { "Lovable-API-Key": apiKey, "Content-Type": "application/json" }
-    : { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
-
-  const response = await fetchWithShortRateLimitRetry(url, {
+  const response = await fetchWithShortRateLimitRetry(provider === "openai" ? OPENAI_CHAT_URL : GEMINI_CHAT_URL, {
     method: "POST",
-    headers,
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal,
   }, signal);
@@ -251,86 +192,27 @@ async function callAnthropic(request: ChatCompletionRequest, signal?: AbortSigna
 }
 
 export async function createChatCompletion(request: ChatCompletionRequest, signal?: AbortSignal): Promise<Response> {
-  const providers = resolveConfiguredProviders(request.model).filter((provider) => (
+  const providers = configuredProviders().filter((provider) => (
     provider !== "anthropic" || (!request.stream && !Array.isArray(request.tools))
   ));
   if (providers.length === 0) {
-    throw new Error("No AI provider is configured. Set LOVABLE_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY.");
+    throw new Error("No AI provider is configured. Set OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY.");
   }
 
   let lastResponse: Response | undefined;
   let lastError: unknown;
-  for (let i = 0; i < providers.length; i++) {
-    const provider = providers[i];
-    const isLast = i === providers.length - 1;
-    // Bound each non-final provider attempt so one slow/hanging provider cannot
-    // consume the caller's entire abort window and starve the fallback chain.
-    const child = new AbortController();
-    const onOuterAbort = () => child.abort(signal?.reason);
-    if (signal) {
-      if (signal.aborted) child.abort(signal.reason);
-      else signal.addEventListener("abort", onOuterAbort, { once: true });
-    }
-    const sliceTimer = setTimeout(
-      () => child.abort(new DOMException("provider slice timeout", "AbortError")),
-      isLast ? FINAL_PROVIDER_ATTEMPT_TIMEOUT_MS : PROVIDER_ATTEMPT_TIMEOUT_MS,
-    );
-
+  for (const provider of providers) {
     try {
       const response = provider === "anthropic"
-        ? await callAnthropic(request, child.signal)
-        : await callOpenAICompatible(provider, request, child.signal);
+        ? await callAnthropic(request, signal)
+        : await callOpenAICompatible(provider, request, signal);
       if (response.ok) return response;
-      console.warn(`[providerClient] ${provider} failed with ${response.status}; trying next provider`);
       lastResponse = response;
     } catch (error) {
-      if (signal?.aborted) throw error;
-      console.warn(`[providerClient] ${provider} attempt aborted/failed; trying next provider`);
       lastError = error;
-    } finally {
-      if (sliceTimer !== undefined) clearTimeout(sliceTimer);
-      signal?.removeEventListener("abort", onOuterAbort);
     }
   }
-
 
   if (lastResponse) return lastResponse;
   throw lastError instanceof Error ? lastError : new Error("All configured AI providers failed");
-}
-
-/**
- * Execute exactly the provider named by the model id.
- *
- * The higher-level AI orchestrator already owns model/provider failover. Letting
- * this client run its own fallback chain inside each orchestrator attempt
- * multiplies deadlines (model attempts × provider attempts) and was the source
- * of Wizard requests surviving until the 240 second browser timeout.
- */
-export async function createPlannedChatCompletion(
-  request: ChatCompletionRequest,
-  signal?: AbortSignal,
-): Promise<Response> {
-  const provider = requestedProvider(request.model);
-  if (!provider || provider === "anthropic") {
-    throw new Error(`Unsupported planned chat model: ${request.model ?? "unknown"}`);
-  }
-  return callOpenAICompatible(provider, request, signal);
-}
-
-/**
- * Execute one bounded request through the managed gateway.
- *
- * The orchestrator calls this only after every configured direct provider has
- * failed. Keeping it separate from createPlannedChatCompletion guarantees the
- * gateway can never become the primary provider or create a nested fallback
- * chain inside a planned direct-provider attempt.
- */
-export async function createLastResortGatewayChatCompletion(
-  request: ChatCompletionRequest,
-  signal?: AbortSignal,
-): Promise<Response> {
-  if (!Deno.env.get("LOVABLE_API_KEY")) {
-    throw new Error("Managed AI gateway is not configured");
-  }
-  return callOpenAICompatible("lovable", request, signal);
 }

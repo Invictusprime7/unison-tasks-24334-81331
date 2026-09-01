@@ -4,7 +4,6 @@ import { secureJsonResponse, errorResponse } from '../_shared/response.ts'
 import { verifyAuth, verifyBusinessAccess, authError } from '../_shared/auth.ts'
 import { safeParseBody, isValidUUID, sanitizeString } from '../_shared/validate.ts'
 import { createChatCompletion } from '../_shared/ai/providerClient.ts'
-import { createCanonicalBooking } from '../_shared/canonicalBooking.ts'
 
 // =============================================================================
 // Types
@@ -18,8 +17,6 @@ interface ToolContext {
   supabase: any
   businessId: string
   pluginInstanceId: string | null
-  eventId: string
-  siteId: string | null
 }
 
 interface ToolResult {
@@ -168,7 +165,7 @@ const calendarCheck: ToolHandler = async (payload, context) => {
     const slotStart = new Date(slot.starts_at)
     const slotEnd = new Date(slot.ends_at)
     const slotDuration = (slotEnd.getTime() - slotStart.getTime()) / (1000 * 60)
-    return Boolean(slot.service_id) && slotDuration >= requestedDuration
+    return slotDuration >= requestedDuration
   })
 
   // deno-lint-ignore no-explicit-any
@@ -176,7 +173,6 @@ const calendarCheck: ToolHandler = async (payload, context) => {
     const start = new Date(slot.starts_at)
     return {
       id: slot.id,
-      service_id: slot.service_id,
       time: start.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
       starts_at: slot.starts_at,
       ends_at: slot.ends_at,
@@ -195,182 +191,124 @@ const calendarCheck: ToolHandler = async (payload, context) => {
   }
 }
 
-async function resolveAgentBookingSite(context: ToolContext): Promise<string> {
-  if (!context.siteId) {
-    throw new Error('calendar.book requires a provisioned canonical site')
-  }
-  return context.siteId
-}
-
-async function loadGeneratedAgentAuthorization(
-  supabase: ToolContext['supabase'],
-  businessId: string,
-  pluginInstanceId: string | null,
-  intent: string,
-): Promise<{ agentSlug: string; allowedTools: string[]; siteId: string }> {
-  if (!pluginInstanceId) throw new Error('Generated agent event requires a plugin instance')
-  const { data: instance, error: instanceError } = await supabase
-    .from('ai_plugin_instances')
-    .select('project_id,agent_id,is_enabled')
-    .eq('id', pluginInstanceId)
-    .eq('business_id', businessId)
-    .single()
-  if (instanceError || !instance?.is_enabled || !instance.project_id) {
-    throw new Error('Generated agent plugin is unavailable')
-  }
-
-  const { data: project, error: projectError } = await supabase
-    .from('projects')
-    .select('site_id')
-    .eq('id', instance.project_id)
-    .eq('business_id', businessId)
-    .single()
-  if (projectError || !project?.site_id) throw new Error('Generated agent site is unavailable')
-
-  const { data: runtime, error: runtimeError } = await supabase
-    .from('site_runtime_configs')
-    .select('public_runtime_enabled,settings')
-    .eq('site_id', project.site_id)
-    .single()
-  const manifest = runtime?.settings?.generatedSiteRuntimeManifest
-  if (runtimeError || !runtime?.public_runtime_enabled || manifest?.readiness?.status !== 'ready') {
-    throw new Error('Generated agent runtime is not ready')
-  }
-  if (manifest.siteId !== project.site_id || !Array.isArray(manifest.agents)) {
-    throw new Error('Generated agent runtime identity is invalid')
-  }
-
-  const binding = manifest.agents.find((candidate: Record<string, unknown>) =>
-    Array.isArray(candidate.intents) && candidate.intents.includes(intent)
-  )
-  if (
-    !binding ||
-    typeof binding.agentSlug !== 'string' ||
-    !Array.isArray(binding.allowedTools) ||
-    !binding.allowedTools.every((tool: unknown) => typeof tool === 'string') ||
-    !Array.isArray(binding.requiredCapabilities) ||
-    !binding.requiredCapabilities.every((capability: unknown) =>
-      Array.isArray(manifest.enabledCapabilities) && manifest.enabledCapabilities.includes(capability)
-    )
-  ) {
-    throw new Error(`Generated agent intent ${intent} is not authorized`)
-  }
-  const { data: registryAgent, error: registryError } = await supabase
-    .from('ai_agent_registry')
-    .select('id')
-    .eq('slug', binding.agentSlug)
-    .eq('is_active', true)
-    .single()
-  if (registryError || !registryAgent?.id || registryAgent.id !== instance.agent_id) {
-    throw new Error('Generated agent plugin does not match the runtime manifest')
-  }
-  return {
-    agentSlug: binding.agentSlug,
-    allowedTools: binding.allowedTools,
-    siteId: project.site_id,
-  }
-}
-
-async function resolveAgentBookingSelection(
-  payload: Record<string, unknown>,
-  context: ToolContext,
-): Promise<{ slotId: string; serviceId: string }> {
-  const suppliedSlotId = typeof payload.slot_id === 'string' ? payload.slot_id : ''
-  const suppliedServiceId = typeof payload.service_id === 'string' ? payload.service_id : ''
-  if (isValidUUID(suppliedSlotId) && isValidUUID(suppliedServiceId)) {
-    return { slotId: suppliedSlotId, serviceId: suppliedServiceId }
-  }
-
-  let serviceId = isValidUUID(suppliedServiceId) ? suppliedServiceId : ''
-  const serviceName = sanitizeString(payload.service_name as string || '', 160).trim()
-  if (!serviceId && serviceName) {
-    const { data: service } = await context.supabase
-      .from('services')
-      .select('id')
-      .eq('business_id', context.businessId)
-      .eq('name', serviceName)
-      .eq('is_active', true)
-      .maybeSingle()
-    serviceId = service?.id || ''
-  }
-  if (!serviceId) {
-    const { data: services } = await context.supabase
-      .from('services')
-      .select('id')
-      .eq('business_id', context.businessId)
-      .eq('is_active', true)
-      .limit(2)
-    if (services?.length === 1) serviceId = services[0].id
-  }
-
-  const startsAtInput = typeof payload.starts_at === 'string'
-    ? payload.starts_at
-    : typeof payload.date === 'string' && typeof payload.time === 'string'
-      ? `${payload.date}T${payload.time}`
-      : ''
-  const startsAt = new Date(startsAtInput)
-  if (!isValidUUID(serviceId) || !startsAtInput || Number.isNaN(startsAt.getTime())) {
-    throw new Error('calendar.book requires a service and an existing availability slot')
-  }
-
-  const { data: slot, error: slotError } = await context.supabase
-    .from('availability_slots')
-    .select('id,service_id')
-    .eq('business_id', context.businessId)
-    .eq('service_id', serviceId)
-    .eq('starts_at', startsAt.toISOString())
-    .eq('is_booked', false)
-    .maybeSingle()
-  if (slotError || !slot?.id) {
-    throw new Error('calendar.book could not resolve the requested time to an available slot')
-  }
-  return { slotId: slot.id, serviceId: slot.service_id }
-}
-
 const calendarBook: ToolHandler = async (payload, context) => {
-  const { slotId, serviceId } = await resolveAgentBookingSelection(payload, context)
-  const customerName = sanitizeString(payload.customer_name as string || '', 120).trim()
-  const customerEmail = sanitizeString(payload.customer_email as string || '', 255).trim().toLowerCase()
-  const customerPhone = sanitizeString(payload.customer_phone as string || '', 40).trim() || null
-  const notes = sanitizeString(payload.notes as string || '', 2_000).trim() || null
+  const {
+    slot_id,
+    customer_name,
+    customer_email,
+    customer_phone,
+    service_name,
+    notes,
+    date,
+    time,
+    duration_minutes,
+  } = payload
 
-  if (customerName.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
-    throw new Error('calendar.book requires a valid customer name and email')
+  if (slot_id) {
+    // Verify slot exists and is available
+    const { data: slot, error: slotError } = await context.supabase
+      .from('availability_slots')
+      .select('*')
+      .eq('id', slot_id)
+      .eq('business_id', context.businessId)
+      .eq('is_booked', false)
+      .single()
+
+    if (slotError || !slot) {
+      throw new Error('Slot not available or not found')
+    }
+
+    // Mark slot as booked
+    const { error: updateError } = await context.supabase
+      .from('availability_slots')
+      .update({ is_booked: true })
+      .eq('id', slot_id)
+
+    if (updateError) throw new Error(`Failed to reserve slot: ${updateError.message}`)
+
+    const slotStart = new Date(slot.starts_at)
+    const slotEnd = new Date(slot.ends_at)
+    const bookingDuration = (slotEnd.getTime() - slotStart.getTime()) / (1000 * 60)
+
+    const { data: booking, error: bookingError } = await context.supabase
+      .from('bookings')
+      .insert({
+        business_id: context.businessId,
+        service_id: slot.service_id,
+        service_name: (service_name as string) || 'Appointment',
+        customer_name: customer_name as string,
+        customer_email: customer_email as string,
+        customer_phone: customer_phone as string,
+        booking_date: slotStart.toISOString().split('T')[0],
+        booking_time: slotStart.toTimeString().slice(0, 5),
+        duration_minutes: bookingDuration,
+        starts_at: slot.starts_at,
+        ends_at: slot.ends_at,
+        status: 'confirmed',
+        notes: notes as string,
+        metadata: { source: 'ai_agent', slot_id },
+      })
+      .select('id')
+      .single()
+
+    if (bookingError) throw new Error(`Failed to create booking: ${bookingError.message}`)
+
+    console.log('[agent-runner] calendar.book:', { bookingId: booking.id, slotId: slot_id })
+
+    return {
+      success: true,
+      bookingId: booking.id,
+      confirmation: {
+        date: slotStart.toISOString().split('T')[0],
+        time: slotStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        duration: bookingDuration,
+        customer: customer_name,
+      },
+    }
   }
 
-  const siteId = await resolveAgentBookingSite(context)
-  const state = await createCanonicalBooking({
-    businessId: context.businessId,
-    siteId,
-    serviceId,
-    slotId,
-    sessionId: `agent:${context.pluginInstanceId}`,
-    idempotencyKey: `agent:${context.eventId}`,
-    customerName,
-    customerEmail,
-    customerPhone,
-    notes,
-    source: 'agent-runner/calendar.book',
-  })
-  const startsAt = new Date(state.booking.startsAt)
-  const endsAt = new Date(state.booking.endsAt)
+  // Direct booking without pre-selected slot
+  if (!date || !time) {
+    throw new Error('Either slot_id or date+time required for booking')
+  }
 
-  console.log('[agent-runner] calendar.book:', {
-    bookingId: state.booking.id,
-    siteId,
-    slotId,
-    duplicate: state.duplicate,
-  })
+  const bookingDate = new Date(`${date}T${time}`)
+  const durationMins = (duration_minutes as number) || 30
+  const endTime = new Date(bookingDate.getTime() + durationMins * 60 * 1000)
+
+  const { data: booking, error: bookingError } = await context.supabase
+    .from('bookings')
+    .insert({
+      business_id: context.businessId,
+      service_name: (service_name as string) || 'Appointment',
+      customer_name: customer_name as string,
+      customer_email: customer_email as string,
+      customer_phone: customer_phone as string,
+      booking_date: date as string,
+      booking_time: time as string,
+      duration_minutes: durationMins,
+      starts_at: bookingDate.toISOString(),
+      ends_at: endTime.toISOString(),
+      status: 'pending',
+      notes: notes as string,
+      metadata: { source: 'ai_agent', direct_booking: true },
+    })
+    .select('id')
+    .single()
+
+  if (bookingError) throw new Error(`Failed to create booking: ${bookingError.message}`)
+
+  console.log('[agent-runner] calendar.book (direct):', { bookingId: booking.id, date, time })
+
   return {
     success: true,
-    bookingId: state.booking.id,
-    duplicate: state.duplicate,
+    bookingId: booking.id,
+    requiresConfirmation: true,
     confirmation: {
-      date: startsAt.toISOString().slice(0, 10),
-      time: startsAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-      duration: Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000),
-      customer: customerName,
-      service: state.booking.serviceName,
+      date: date as string,
+      time: time as string,
+      duration: durationMins,
+      customer: customer_name,
     },
   }
 }
@@ -638,9 +576,8 @@ Deno.serve(async (req) => {
 
     // Get agent configuration - route based on intent
     let systemPrompt: string
-    let allowedTools: string[] = []
+    let allowedTools: string[]
     let agentSlug: string = 'lead_qualifier'
-    let generatedAgentSiteId: string | null = null
 
     // Check orchestrator config for routing
     const { data: orchestrator } = await supabase
@@ -658,33 +595,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (event.intent === 'booking.create') {
-      try {
-        const authorization = await loadGeneratedAgentAuthorization(
-          supabase,
-          event.business_id,
-          event.plugin_instance_id,
-          event.intent,
-        )
-        agentSlug = authorization.agentSlug
-        allowedTools = authorization.allowedTools
-        generatedAgentSiteId = authorization.siteId
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Generated agent authorization failed'
-        await supabase
-          .from('ai_events')
-          .update({ status: 'failed', processed_at: new Date().toISOString() })
-          .eq('id', event.id)
-        if (run) {
-          await supabase
-            .from('ai_runs')
-            .update({ status: 'failed', error_message: message, completed_at: new Date().toISOString() })
-            .eq('id', run.id)
-        }
-        return secureJsonResponse({ status: 'failed', eventId: event.id, error: message }, 409, corsHeaders)
-      }
-    }
-
     // Get the target agent
     const { data: agent } = await supabase
       .from('ai_agent_registry')
@@ -695,10 +605,7 @@ Deno.serve(async (req) => {
 
     if (agent) {
       systemPrompt = agent.system_prompt
-      const registryTools = agent.allowed_tools || []
-      allowedTools = generatedAgentSiteId
-        ? allowedTools.filter((tool) => registryTools.includes(tool))
-        : registryTools
+      allowedTools = agent.allowed_tools || []
       console.log('[agent-runner] Using agent:', agent.slug, 'with', allowedTools.length, 'tools')
     } else {
       // Fallback to default lead qualifier
@@ -753,19 +660,9 @@ Deno.serve(async (req) => {
       supabase,
       businessId: event.business_id,
       pluginInstanceId: event.plugin_instance_id,
-      eventId: event.id,
-      siteId: generatedAgentSiteId,
     }
 
-    const proposedToolCalls = [...(llmResult.proposedToolCalls || [])]
-    if (
-      event.intent === 'booking.create' &&
-      !proposedToolCalls.some((toolCall) => toolCall.tool === 'calendar.book')
-    ) {
-      proposedToolCalls.push({ tool: 'calendar.book', payload: event.payload || {} })
-    }
-
-    for (const toolCall of proposedToolCalls) {
+    for (const toolCall of llmResult.proposedToolCalls || []) {
       // Verify tool is allowed
       if (!allowedTools.includes(toolCall.tool)) {
         console.warn('[agent-runner] Tool not allowed:', toolCall.tool)
@@ -777,44 +674,11 @@ Deno.serve(async (req) => {
         continue
       }
 
-      const toolPayload = toolCall.tool === 'calendar.book'
-        ? { ...(event.payload || {}), ...toolCall.payload }
-        : toolCall.payload
-      const result = await executeTool(toolCall.tool, toolPayload, toolContext)
+      const result = await executeTool(toolCall.tool, toolCall.payload, toolContext)
       toolCallResults.push({
         tool: toolCall.tool,
         ...result,
       })
-    }
-
-    const failedBooking = toolCallResults.find((result) => result.tool === 'calendar.book' && !result.success)
-    if (failedBooking) {
-      const latencyMs = Date.now() - startTime
-      await supabase
-        .from('ai_events')
-        .update({ status: 'failed', processed_at: new Date().toISOString() })
-        .eq('id', event.id)
-      if (run) {
-        await supabase
-          .from('ai_runs')
-          .update({
-            status: 'failed',
-            error_message: failedBooking.error || 'Canonical booking failed',
-            output_payload: llmResult,
-            tool_calls: toolCallResults,
-            tokens_used: tokensUsed,
-            latency_ms: latencyMs,
-            completed_at: new Date().toISOString(),
-          })
-          .eq('id', run.id)
-      }
-      return secureJsonResponse({
-        status: 'failed',
-        eventId: event.id,
-        runId: run?.id,
-        error: failedBooking.error || 'Canonical booking failed',
-        toolCalls: toolCallResults,
-      }, 409, corsHeaders)
     }
 
     // Update plugin state if instance exists

@@ -86,6 +86,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   // Generic/manual template imports do not own wizard aesthetics. Wizard and
   // SiteBundle flows overwrite /src/index.css with resolved theme tokens later;
   // this converter must not inject a default "modern/minimal" preset.
+  const baseCSS = '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n';
+
   // Legacy HTML documents — auto-migrate to React/TSX component
   if (code.includes('<!DOCTYPE') || code.includes('<html')) {
     console.warn('[templateToVFSFiles] Migrating legacy HTML document to React/TSX');
@@ -136,10 +138,7 @@ export default function App() {
   }
 
   files['/src/main.tsx'] = mainTSX;
-  // NOTE: /src/index.css is intentionally NOT emitted here. Theme CSS is owned
-  // exclusively by the wizard pipeline (Stage 4b → buildThemedIndexCss); writing
-  // a hardcoded stylesheet from this converter would overwrite the sealed,
-  // style-card-resolved tokens of the draft it is imported into.
+  files['/src/index.css'] = baseCSS;
 
   return files;
 }

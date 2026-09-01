@@ -43,21 +43,6 @@ const MAX_TOTAL_BYTES = 5_000_000;
 const SAFE_PATH_PATTERN = /^(?!\/)(?!.*\.\.)(?!.*\\)[A-Za-z0-9._/-]+$/;
 const SAFE_DOMAIN_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
 const REQUIRE_ATTESTATION = (Deno.env.get("PUBLISH_REQUIRE_ATTESTATION") || "").toLowerCase() === "true";
-const UNISON_ATTRIBUTION_ASSET = "unison-powered-by-unison.js";
-const UNISON_ATTRIBUTION_MARKER = "Powered by Unison";
-const UNISON_ATTRIBUTION_SCRIPT = `(() => {
-  if (document.getElementById('unison-powered-by')) return;
-  const link = document.createElement('a');
-  link.id = 'unison-powered-by';
-  link.href = 'https://unisontasks.com';
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
-  link.textContent = '${UNISON_ATTRIBUTION_MARKER}';
-  link.setAttribute('aria-label', '${UNISON_ATTRIBUTION_MARKER}');
-  link.style.cssText = 'display:block;padding:14px 16px;text-align:center;font:500 12px/1.4 system-ui,sans-serif;color:#64748b;background:#f8fafc;text-decoration:none;';
-  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(link), { once: true });
-})();
-`;
 
 function sanitizeLogPreview(input: string) {
   return input.replace(/[\r\n\t]/g, " ").slice(0, 200);
@@ -132,20 +117,6 @@ function validateFiles(files: Record<string, string>): string | null {
   return null;
 }
 
-function withPoweredByUnisonAttribution(files: Record<string, string>): Record<string, string> {
-  const indexHtml = files["index.html"] || "";
-  const nextIndex = indexHtml.includes(UNISON_ATTRIBUTION_ASSET) || indexHtml.includes(UNISON_ATTRIBUTION_MARKER)
-    ? indexHtml
-    : /<\/body>/i.test(indexHtml)
-      ? indexHtml.replace(/<\/body>/i, `<script defer src="/${UNISON_ATTRIBUTION_ASSET}"></script></body>`)
-      : `${indexHtml}\n<script defer src="/${UNISON_ATTRIBUTION_ASSET}"></script>\n`;
-  return {
-    ...files,
-    "index.html": nextIndex,
-    [UNISON_ATTRIBUTION_ASSET]: UNISON_ATTRIBUTION_SCRIPT,
-  };
-}
-
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   const preflight = handleCorsPreflightRequest(req, corsHeaders);
@@ -173,7 +144,7 @@ Deno.serve(async (req) => {
     const rawSiteName = sanitizeString(body.siteName || "my-site", 80);
     const siteName = sanitizeSiteName(rawSiteName);
     const customDomain = sanitizeString(body.customDomain || "", 255).toLowerCase();
-    const files = withPoweredByUnisonAttribution(body.files || {});
+    const files = body.files || {};
 
     if (provider !== "netlify" && provider !== "vercel") {
       return errorResponse("Unsupported provider", 400, corsHeaders);

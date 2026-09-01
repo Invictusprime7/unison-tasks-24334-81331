@@ -47,7 +47,6 @@ export const STORE_COMPOSITIONS: TemplateComposition[] = [
         id: 'store-premium-nav',
         type: 'navbar',
         props: {
-          layout: 'centered-logo',
           brand: 'Vela',
           sticky: true,
           links: [
@@ -159,7 +158,6 @@ export const STORE_COMPOSITIONS: TemplateComposition[] = [
         id: 'store-premium-footer',
         type: 'footer',
         props: {
-          layout: 'dark-band',
           brand: 'Vela',
           copyright: '© 2024 Vela Co. All rights reserved.',
           newsletter: true,
@@ -216,7 +214,6 @@ export const STORE_COMPOSITIONS: TemplateComposition[] = [
         id: 'store-minimal-nav',
         type: 'navbar',
         props: {
-          layout: 'standard',
           brand: 'Bolt',
           sticky: true,
           links: [
@@ -290,7 +287,6 @@ export const STORE_COMPOSITIONS: TemplateComposition[] = [
         id: 'store-minimal-footer',
         type: 'footer',
         props: {
-          layout: 'centered-minimal',
           brand: 'Bolt',
           copyright: '© 2024 Bolt Tech Inc.',
           newsletter: false,
@@ -345,7 +341,6 @@ export const STORE_COMPOSITIONS: TemplateComposition[] = [
         id: 'store-boutique-nav',
         type: 'navbar',
         props: {
-          layout: 'minimal-dark',
           brand: 'Petal & Stone',
           sticky: true,
           links: [
@@ -422,7 +417,6 @@ export const STORE_COMPOSITIONS: TemplateComposition[] = [
         id: 'store-boutique-footer',
         type: 'footer',
         props: {
-          layout: 'dark-band',
           brand: 'Petal & Stone',
           copyright: '© 2024 Petal & Stone Goods.',
           newsletter: true,

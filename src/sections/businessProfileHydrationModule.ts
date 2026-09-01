@@ -18,7 +18,6 @@
 export const BUSINESS_PROFILE_HYDRATION_PATH = '/src/components/businessProfile.ts';
 
 export const BUSINESS_PROFILE_HYDRATION_MODULE = `import { useEffect, useState } from 'react';
-import { PUBLISHED_RUNTIME_CONFIG } from '@/unison/publishedRuntime';
 
 export interface BusinessProfileLive {
   businessId: string;
@@ -54,41 +53,11 @@ function readFromWindow(): BusinessProfileLive | null {
   return null;
 }
 
-async function readPublishedBusinessProfile(): Promise<BusinessProfileLive | null> {
-  try {
-    const runtime = PUBLISHED_RUNTIME_CONFIG;
-    if (!runtime.siteId || !runtime.runtimeEndpoint) return null;
-    const response = await fetch(runtime.runtimeEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        operation: 'read',
-        runtimeVersion: runtime.runtimeVersion,
-        siteId: runtime.siteId,
-        read: { type: 'profile' },
-      }),
-    });
-    if (!response.ok) return null;
-    const data = await response.json() as { profile?: BusinessProfileLive | null };
-    return data.profile ?? null;
-  } catch {
-    return null;
-  }
-}
-
 export function useBusinessProfile(): BusinessProfileLive | null {
   const [profile, setProfile] = useState<BusinessProfileLive | null>(() => readFromWindow());
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    if (window.parent === window) {
-      let active = true;
-      void readPublishedBusinessProfile().then((nextProfile) => {
-        if (active && nextProfile) setProfile(nextProfile);
-      });
-      return () => { active = false; };
-    }
 
     // Ask the host to re-broadcast the profile on mount.
     try {

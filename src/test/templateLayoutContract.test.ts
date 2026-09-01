@@ -18,8 +18,6 @@ describe('template layout contract', () => {
     expect(premiumContract.templateId).toBe('store-premium');
     expect(premiumContract.signature).not.toBe(minimalContract.signature);
     expect(buildTemplateLayoutPrompt(premiumContract)).toContain('TEMPLATE LAYOUT CONTRACT (LOCKED): store-premium');
-    expect(premiumContract.sections.some((section) => section.variantId)).toBe(true);
-    expect(buildTemplateLayoutPrompt(premiumContract)).toContain('variantId=');
     expect(premiumContract.sections.some((section) => section.hasMedia)).toBe(true);
   });
 

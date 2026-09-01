@@ -56,7 +56,7 @@ export function RouteShellFrame({ children, className, contentClassName }: Route
   }
 
   return (
-    <div className={cn("min-h-[100dvh] bg-background text-foreground", className)}>
+    <div className={cn("min-h-screen bg-background text-foreground", className)}>
       <ShellHeader
         definition={shellData.definition}
         title={shellData.title}

@@ -5,8 +5,8 @@
  * These run on your existing serverless infrastructure.
  */
 
-import { inngest } from "./inngest.js";
-import { executeMatchingRecipes } from "../services/recipeExecutor.js";
+import { inngest } from "./inngest";
+import { executeMatchingRecipes } from "@/services/recipeExecutor";
 
 /**
  * Deal Stage Change Workflow

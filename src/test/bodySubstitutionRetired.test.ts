@@ -19,7 +19,7 @@ describe('body-substitution authorities are retired', () => {
 
     expect(result.quarantinedCount).toBe(1);
     expect(result.files['/src/pages/Home.tsx']).toBe(broken);
-    expect(result.files['/src/pages/Home.tsx']).not.toContain('Auto-quarantined');
+    expect(result.files['/src/pages/Home.tsx']).not.toContain('This page could not be compiled');
   });
 
   it('still quarantines for non-strict callers that opt in', () => {
@@ -28,7 +28,7 @@ describe('body-substitution authorities are retired', () => {
       { context: { industry: 'salon', brand: 'Acme' } },
     );
     expect(result.quarantinedCount).toBe(1);
-    expect(result.files['/src/pages/Home.tsx']).toContain('Auto-quarantined');
+    expect(result.files['/src/pages/Home.tsx']).toContain('This page could not be compiled');
   });
 
   it('makes authorship stage failures fatal even when a fallback is offered', async () => {

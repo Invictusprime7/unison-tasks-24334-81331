@@ -2421,11 +2421,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               const batchNumber = batchOffset + waveIndex + 1;
               const batchPrompt = buildFirstAttemptPrompt(batch);
               try {
+                // The planner estimate is for scheduling, not a provider
+                // deadline. In production it estimated a one-page response at
+                // ~78s and aborted every still-healthy 120s gateway turn. Each
+                // canonical page gets the same proven allowance as targeted
+                // page completion; two calls still run in one bounded wave.
                 const batchBudgetMs = takeWizardGenerationBudget(
-                  Math.min(
-                    WIZARD_INITIAL_AI_TURN_MS,
-                    Math.max(45_000, Math.round(firstAttemptBatchPlan.estimatedMsPerBatch * 1.5)),
-                  ),
+                  WIZARD_ISOLATED_PAGE_COMPLETION_MS,
                 );
                 const batchResult = await withTimeout(
                   (signal) => runBuilderTurn<any>({

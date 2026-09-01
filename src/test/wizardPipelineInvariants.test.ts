@@ -6,6 +6,7 @@ import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { SHADCN_LIBRARY_CSS_MARKER } from '@/components/onboarding/themePresetToIndexCss';
 import { buildCanonicalLaunchArtifacts } from '@/services/canonicalLaunchVfs';
+import { GENERATED_RUNTIME_PROFILE, THREE_D_CAPABILITY } from '@/platform/core/generatedRuntimeCapabilities';
 import { GENERATED_UI_FOUNDATION_VERSION } from '@/platform/core/generatedUiFoundation';
 import { getCompositionsBySystemType } from '@/sections/templates';
 import { getVariantById, getVariantsForSection } from '@/sections/variants';
@@ -90,6 +91,8 @@ describe('wizard pipeline ownership invariants', () => {
       version: GENERATED_UI_FOUNDATION_VERSION,
       manifestPath: '/.unison/ui-manifest.json',
       importRoot: '@/unison/ui',
+      runtimeProfile: GENERATED_RUNTIME_PROFILE.id,
+      experienceCapabilities: [THREE_D_CAPABILITY.id],
     });
     expect(artifacts.siteBundleSnapshot?.meta.generationBrief?.research).toEqual({
       mode: 'connected-gateway',

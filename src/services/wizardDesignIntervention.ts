@@ -36,6 +36,18 @@ export type WizardSectionVariant =
   | 'gallery-lightbox'
   | 'conversion-form';
 
+/** Experience (3D/WebGL) recipes Lane B may compose from @/unison/experience. */
+export type WizardExperienceRecipe =
+  | 'immersive-hero'
+  | 'product-stage'
+  | 'floating-media'
+  | 'depth-gallery'
+  | 'particle-ambience'
+  | 'scene-backdrop'
+  | 'model-showcase';
+
+export type WizardExperienceBudget = 'none' | 'accent' | 'immersive';
+
 export interface WizardDesignIntervention {
   version: typeof WIZARD_DESIGN_INTERVENTION_VERSION;
   source: 'deterministic-baseline';
@@ -58,6 +70,9 @@ export interface WizardDesignIntervention {
   motionRecipes: WizardMotionRecipe[];
   interactionRecipes: Array<'mobile-nav-dialog' | 'image-lightbox' | 'accordion' | 'tabs'>;
   motionBudget: 'restrained' | 'expressive';
+  /** Sealed experience-layer plan; the preflight gate budgets against it. */
+  experienceRecipes: WizardExperienceRecipe[];
+  experienceBudget: WizardExperienceBudget;
   aiDirective: string;
 }
 
@@ -92,6 +107,23 @@ const MOTION_RECIPES = new Set<WizardMotionRecipe>([
 const INTERACTION_RECIPES = new Set<WizardDesignIntervention['interactionRecipes'][number]>([
   'mobile-nav-dialog', 'image-lightbox', 'accordion', 'tabs',
 ]);
+const EXPERIENCE_RECIPES = new Set<WizardExperienceRecipe>([
+  'immersive-hero', 'product-stage', 'floating-media', 'depth-gallery',
+  'particle-ambience', 'scene-backdrop', 'model-showcase',
+]);
+const EXPERIENCE_BUDGETS = new Set<WizardExperienceBudget>(['none', 'accent', 'immersive']);
+
+const MODEL_EXPERIENCE: Record<BusinessModel, { recipes: WizardExperienceRecipe[]; budget: WizardExperienceBudget }> = {
+  appointment_service: { recipes: ['scene-backdrop', 'floating-media'], budget: 'accent' },
+  quote_lead: { recipes: ['scene-backdrop'], budget: 'accent' },
+  ecommerce: { recipes: ['product-stage', 'immersive-hero', 'depth-gallery'], budget: 'immersive' },
+  portfolio_creator: { recipes: ['immersive-hero', 'depth-gallery', 'floating-media'], budget: 'immersive' },
+  restaurant_hospitality: { recipes: ['immersive-hero', 'floating-media'], budget: 'accent' },
+  saas_digital: { recipes: ['particle-ambience', 'immersive-hero'], budget: 'accent' },
+  nonprofit: { recipes: ['scene-backdrop'], budget: 'accent' },
+  general: { recipes: ['scene-backdrop'], budget: 'accent' },
+};
+
 const MOTION_BUDGETS = new Set<WizardDesignIntervention['motionBudget']>(['restrained', 'expressive']);
 
 function hasOnlyAllowedValues<T extends string>(values: unknown, allowed: Set<T>): values is T[] {
@@ -122,9 +154,19 @@ export function readWizardDesignIntervention(
       !hasOnlyAllowedValues(intervention.motionRecipes, MOTION_RECIPES) ||
       !hasOnlyAllowedValues(intervention.interactionRecipes, INTERACTION_RECIPES) ||
       !MOTION_BUDGETS.has(intervention.motionBudget as WizardDesignIntervention['motionBudget']) ||
-      typeof intervention.aiDirective !== 'string'
+      typeof intervention.aiDirective !== 'string' ||
+      (intervention.experienceRecipes !== undefined &&
+        !hasOnlyAllowedValues(intervention.experienceRecipes, EXPERIENCE_RECIPES)) ||
+      (intervention.experienceBudget !== undefined &&
+        !EXPERIENCE_BUDGETS.has(intervention.experienceBudget as WizardExperienceBudget))
     ) {
       return null;
+    }
+    if (!intervention.experienceRecipes || !intervention.experienceBudget) {
+      // Legacy brief written before the experience layer existed.
+      const baseline = MODEL_EXPERIENCE[intervention.businessModel as BusinessModel] ?? MODEL_EXPERIENCE.general;
+      intervention.experienceRecipes = intervention.experienceRecipes ?? [...baseline.recipes];
+      intervention.experienceBudget = intervention.experienceBudget ?? baseline.budget;
     }
     if (!intervention.activeVariants) {
       intervention.activeVariants = buildActiveVariants(intervention.templateId, intervention.seed || 'legacy');
@@ -145,7 +187,7 @@ export function readWizardDesignIntervention(
   }
 }
 
-const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'activeVariants' | 'aiDirective' | 'artDirectionPackId'>> = {
+const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'activeVariants' | 'aiDirective' | 'artDirectionPackId' | 'experienceRecipes' | 'experienceBudget'>> = {
   appointment_service: {
     layoutRecipe: 'collage-hero', sectionVariants: ['split-media-hero', 'bento-services', 'testimonial-rail', 'conversion-form'],
     motionRecipes: ['service-progressive-disclosure', 'proof-led-stagger', 'conversion-feedback'], interactionRecipes: ['mobile-nav-dialog', 'accordion'], motionBudget: 'restrained',
@@ -247,6 +289,12 @@ export function buildWizardDesignIntervention(
   }
 
 
+  const experience = MODEL_EXPERIENCE[input.businessModel] ?? MODEL_EXPERIENCE.general;
+  const experienceRecipes = seededRotate(childSeed(seed, 'experience'), experience.recipes);
+  if (input.sellsProducts && !experienceRecipes.includes('product-stage')) {
+    experienceRecipes.unshift('product-stage');
+  }
+
   return {
     version: WIZARD_DESIGN_INTERVENTION_VERSION,
     source: 'deterministic-baseline',
@@ -265,7 +313,9 @@ export function buildWizardDesignIntervention(
     ),
     interactionRecipes,
     motionBudget: baseline.motionBudget,
-    aiDirective: `Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Art direction is "${pack.name}" — ${pack.description} Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.`,
+    experienceRecipes,
+    experienceBudget: experience.budget,
+    aiDirective: `Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Art direction is "${pack.name}" — ${pack.description} Experience budget is "${experience.budget}" — compose the immersive layer only from @/unison/experience (${experienceRecipes.join(', ')}), at most one heavy primitive per page band and two per page, and never import three/@react-three/* directly. Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.`,
 
   };
 }

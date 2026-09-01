@@ -16,6 +16,7 @@ import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles
 import { runPreflightRepair } from './aiSitePreflightRepair';
 import { preflightNavWiring } from './preflightNavWiring';
 import { closeRequiredIndustryIntents } from './requiredIntentClosure';
+import { runExperiencePreflight, stampExperienceManifest } from './experiencePreflightGate';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
@@ -42,6 +43,7 @@ export interface RunFullPreflightResult {
     navWiring: 'ok' | 'skipped' | 'failed';
     forbiddenStrip: { stripped: number; forbidden: string[] };
     requiredIntentClosure: { injected: string[]; missing: string[] };
+    experienceGate: { instances: number; heavyInstances: number; violations: string[] };
     finalRepair: 'ok' | 'skipped' | 'failed';
   };
 }
@@ -114,7 +116,15 @@ export function runFullPreflight(
     console.info('[runFullPreflight] required intent closure', requiredIntentClosure);
   }
 
-  // 5) Final syntax repair (catches damage from steps 2-4)
+  // 5) Experience (WebGL) budget + safety gate. Instances are stamped onto the
+  // VFS so the builder keeps them WYSIWYG-editable after the seal.
+  const experience = runExperiencePreflight(files);
+  files = stampExperienceManifest(files, experience.manifest);
+  if (experience.violations.length > 0) {
+    console.warn('[runFullPreflight] experience gate violations', experience.violations);
+  }
+
+  // 6) Final syntax repair (catches damage from steps 2-4)
   let finalRepair: 'ok' | 'skipped' | 'failed' = 'skipped';
   try {
     const r = runPreflightRepair(files, { context: ctx });
@@ -137,7 +147,7 @@ export function runFullPreflight(
       files: inputFiles,
       mutated: false,
       mutatedFiles: [],
-      violations: mutatedFiles,
+      violations: [...mutatedFiles, ...experience.violations],
       mode,
       stages: {
         earlyRepair,
@@ -146,6 +156,11 @@ export function runFullPreflight(
         requiredIntentClosure: {
           injected: requiredIntentClosure.injected,
           missing: requiredIntentClosure.missing,
+        },
+        experienceGate: {
+          instances: experience.manifest.totalInstances,
+          heavyInstances: experience.manifest.heavyInstances,
+          violations: experience.violations,
         },
         finalRepair,
       },
@@ -165,6 +180,11 @@ export function runFullPreflight(
       requiredIntentClosure: {
         injected: requiredIntentClosure.injected,
         missing: requiredIntentClosure.missing,
+      },
+      experienceGate: {
+        instances: experience.manifest.totalInstances,
+        heavyInstances: experience.manifest.heavyInstances,
+        violations: experience.violations,
       },
       finalRepair,
     },

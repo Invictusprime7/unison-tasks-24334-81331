@@ -1,5 +1,15 @@
 import { isSandpackAllowedImport } from '@/utils/sandpackDependencies';
 import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
+import {
+  EXPERIENCE_BARREL_EXPORTS,
+  EXPERIENCE_FOUNDATION_PATHS,
+  EXPERIENCE_IMPORT_PATHS,
+  EXPERIENCE_IMPORT_ROOT,
+  EXPERIENCE_PRIMITIVES,
+  EXPERIENCE_RUNTIME_PACKAGES,
+  EXPERIENCE_VOCABULARY_DIRECTIVE,
+  buildExperienceFoundationFiles,
+} from '@/platform/core/experiencePrimitives';
 
 /**
  * Canonical generated UI foundation.
@@ -9,8 +19,8 @@ import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
  * owner of global theme tokens and CSS.
  */
 
-export const GENERATED_UI_FOUNDATION_VERSION = '1.3' as const;
-const LEGACY_GENERATED_UI_FOUNDATION_VERSIONS = new Set(['1.1', '1.2']);
+export const GENERATED_UI_FOUNDATION_VERSION = '1.4' as const;
+const LEGACY_GENERATED_UI_FOUNDATION_VERSIONS = new Set(['1.1', '1.2', '1.3']);
 
 export type GeneratedUiLayoutRecipe =
   | 'floating-navbar'
@@ -44,6 +54,13 @@ export interface GeneratedUiManifest {
     radixPrimitives: readonly string[];
   };
   iconLibrary: 'lucide-react';
+  /** Experience (3D/WebGL) layer — composed by Lane B, budgeted by preflight. */
+  experience: {
+    importRoot: typeof EXPERIENCE_IMPORT_ROOT;
+    imports: readonly string[];
+    primitives: readonly string[];
+    runtimePackages: readonly string[];
+  };
   layoutRecipes: GeneratedUiLayoutRecipe[];
   interactions: GeneratedUiInteraction[];
   formFormats: GeneratedUiFormFormat[];
@@ -102,6 +119,7 @@ export function buildGeneratedUiFoundationDirective(
     '  - "@/unison/ui/animation" is the full framer-motion re-export (motion, AnimatePresence, useReducedMotion, useScroll, useInView, etc.) — use this facade for any raw framer-motion export not in the @/unison/ui/motion list above.',
     'Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally. Use <Image src alt /> or a plain <img alt="...">; there is no framework-specific next/image component.',
     COMPOSITION_VOCABULARY_DIRECTIVE,
+    EXPERIENCE_VOCABULARY_DIRECTIVE,
     requirementsList ? 'Manifest requirements for this snapshot:' : '',
     requirementsList,
   ].filter(Boolean).join('\n');
@@ -146,6 +164,7 @@ const REQUIRED_GENERATED_UI_FOUNDATION_PATHS = [
   '/src/unison/ui/recipes.tsx',
   '/src/unison/ui/surface.tsx',
   '/src/unison/ui/tailwind.css',
+  ...EXPERIENCE_FOUNDATION_PATHS,
 ] as const;
 
 const FOUNDATION_MARKER = 'UNISON GENERATED UI FOUNDATION';
@@ -240,9 +259,16 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
       '@/unison/ui/zod',
       '@/unison/ui/radix',
       ...RADIX_VFS_PRIMITIVES.map((primitive) => `@/unison/ui/radix/${primitive}`),
+      ...EXPERIENCE_IMPORT_PATHS,
     ],
     runtimeFacades: buildRuntimeFacades(),
     iconLibrary: 'lucide-react',
+    experience: {
+      importRoot: EXPERIENCE_IMPORT_ROOT,
+      imports: [...EXPERIENCE_IMPORT_PATHS],
+      primitives: [...EXPERIENCE_PRIMITIVES],
+      runtimePackages: [...EXPERIENCE_RUNTIME_PACKAGES],
+    },
     layoutRecipes: [
       'floating-navbar',
       'collage-hero',
@@ -1094,6 +1120,7 @@ export function FeatureCard({ title, description, media, className }: { title: s
 }
 `,
     '/.unison/ui-manifest.json': JSON.stringify(manifest, null, 2),
+    ...buildExperienceFoundationFiles(marker),
   };
 }
 
@@ -1116,6 +1143,7 @@ export const GENERATED_UI_BARREL_EXPORTS: ReadonlySet<string> = new Set([
   'Reveal', 'RevealGroup', 'StaggerGroup', 'Stagger', 'StaggerItem',
   'FloatingNavbar', 'BentoFeatureGrid', 'FeatureCard',
   'Slot', 'Slottable',
+  ...EXPERIENCE_BARREL_EXPORTS,
 ]);
 
 
@@ -1422,6 +1450,7 @@ export function validateGeneratedUiContract(
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     if (
       normalizedPath.startsWith('/src/unison/ui/') ||
+      normalizedPath.startsWith('/src/unison/experience/') ||
       normalizedPath === '/.unison/ui-manifest.json' ||
       normalizedPath === '/.unison/design-intervention.json'
     ) {
@@ -1433,7 +1462,11 @@ export function validateGeneratedUiContract(
   }
   const generatedSources = Object.entries(files).filter(([path]) => {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    return /\.(tsx|jsx)$/i.test(path) && !normalizedPath.startsWith('/src/unison/ui/');
+    return (
+      /\.(tsx|jsx)$/i.test(path) &&
+      !normalizedPath.startsWith('/src/unison/ui/') &&
+      !normalizedPath.startsWith('/src/unison/experience/')
+    );
   });
   const importPattern = /(?:\bimport\s+(?:type\s+)?(?:[\s\S]*?)\s+from\s*|\bexport\s+(?:[\s\S]*?)\s+from\s*|\bimport\s*)['"]([^'"]+)['"]/g;
   const motionImportPattern = /\bimport\s+(?:type\s+)?\{([^}]+)\}\s+from\s*['"]@\/unison\/ui\/motion['"];?/g;
@@ -1449,6 +1482,15 @@ export function validateGeneratedUiContract(
 
     for (const match of source.matchAll(importPattern)) {
       const specifier = match[1];
+      const experiencePackage = EXPERIENCE_RUNTIME_PACKAGES.find(
+        (name) => specifier === name || specifier.startsWith(`${name}/`),
+      );
+      if (experiencePackage) {
+        violations.push(
+          `${path} imports "${specifier}" directly. Immersive 3D is only available through "${EXPERIENCE_IMPORT_ROOT}".`,
+        );
+        continue;
+      }
       if (
         isSandpackAllowedImport(specifier) ||
         specifier.startsWith('.') ||

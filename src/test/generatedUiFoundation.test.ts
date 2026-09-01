@@ -121,7 +121,7 @@ describe('generated UI foundation', () => {
       '/.unison/ui-manifest.json': JSON.stringify(legacyManifest),
     });
 
-    expect(manifest?.version).toBe('1.3');
+    expect(manifest?.version).toBe('1.4');
     expect(manifest?.formFormats).toContain('appointment');
     expect(manifest?.buttonFormats).toContain('icon');
     expect(manifest?.iconFormats).toContain('social');

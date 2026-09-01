@@ -16,6 +16,8 @@
  *     with a site that matches their 4-step selections.
  */
 
+import { startLaunchTelemetry, type LaunchTelemetryEvent } from '@/services/launch/launchTelemetry';
+
 export type LaunchStageName =
   | 'plan'
   | 'seed'
@@ -182,8 +184,21 @@ const AUTHORSHIP_STAGES: ReadonlySet<LaunchStageName> = new Set<LaunchStageName>
   'preflight',
 ]);
 
+/**
+ * M8 — canonical telemetry event for the completion of each stage. Structural
+ * health is measured on this vocabulary, never on ad-hoc console output.
+ */
+const STAGE_TELEMETRY_EVENT: Partial<Record<LaunchStageName, LaunchTelemetryEvent>> = {
+  seed: 'wizard.lane_a.compiled',
+  enrich: 'wizard.lane_b.completed',
+  preflight: 'wizard.preflight.accepted',
+  commit: 'wizard.revision.committed',
+  handoff: 'wizard.web_builder.ready',
+};
+
 export function createLaunchRun(options: LaunchRunOptions = {}): LaunchRun {
   const controller = new AbortController();
+  const telemetry = startLaunchTelemetry();
   const stageOrder: LaunchStageName[] = ['plan', 'seed', 'enrich', 'preflight', 'commit', 'handoff'];
   const stages: LaunchStageState[] = stageOrder.map((name) => ({
     name,
@@ -209,6 +224,10 @@ export function createLaunchRun(options: LaunchRunOptions = {}): LaunchRun {
     const entry = stages.find((s) => s.name === name);
     if (!entry) return;
     entry.status = status;
+    if (status === 'done') {
+      const event = STAGE_TELEMETRY_EVENT[name];
+      if (event) telemetry.emit(event);
+    }
     if (status === 'active') {
       entry.startedAt = Date.now();
       activeStage = name;
@@ -221,6 +240,7 @@ export function createLaunchRun(options: LaunchRunOptions = {}): LaunchRun {
 
   const degrade = (stage: LaunchStageName, code: string, message: string, detail?: string) => {
     degradations.push({ stage, code, message, detail, at: new Date().toISOString() });
+    telemetry.measure({ degradedPresentation: true });
     console.warn(`[launchRun] degraded ${stage}/${code}`, message, detail ?? '');
     emit();
   };

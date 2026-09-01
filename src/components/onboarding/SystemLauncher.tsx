@@ -55,6 +55,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { runBuilderTurn, isProviderTimeoutError, isRateLimitError, isTransportError } from "@/services/builderBrainClient";
 import { planLaneBBatches, measurePayloadBytes } from "@/services/laneBBatchPlanner";
+import { launchTelemetry } from "@/services/launch/launchTelemetry";
 import {
   createLaunchRun,
   classifyLaunchError,
@@ -4284,6 +4285,38 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         canonicalVfsFiles[launchArtifacts.entryPoint] = wiredVfsFiles[launchArtifacts.entryPoint];
       }
       console.log('[SystemLauncher] canonical revision persisted', launcherRevisionId);
+
+      // ── M6 snapshot continuity ───────────────────────────────────────────
+      // The committed revision must contain exactly the sealed page set. A
+      // silent shortfall here is how a "successful" launch opens the builder
+      // on a partial site, so it is measured and surfaced as a degradation.
+      {
+        const sealedPagePaths = Object.keys(wiredVfsFiles).filter((path) =>
+          /^\/src\/pages\/.+\.(tsx|jsx)$/.test(path),
+        );
+        const missingAfterCommit = sealedPagePaths.filter((path) => !(path in canonicalVfsFiles));
+        launchTelemetry().measure({
+          selectedPageCount: sealedPagePaths.length,
+          sealedPageCount: sealedPagePaths.length - missingAfterCommit.length,
+          snapshotContinuityFailures: missingAfterCommit.length,
+        });
+        launchTelemetry().emit('wizard.snapshot.sealed', {
+          revisionId: launcherRevisionId,
+          pages: sealedPagePaths.length,
+        });
+        if (missingAfterCommit.length > 0) {
+          for (const path of missingAfterCommit) {
+            canonicalVfsFiles[path] = wiredVfsFiles[path];
+          }
+          run.degrade(
+            'commit',
+            'commit.snapshot_continuity',
+            'Some pages finished saving after the builder opened.',
+            missingAfterCommit.join(', '),
+          );
+        }
+      }
+
 
 
 

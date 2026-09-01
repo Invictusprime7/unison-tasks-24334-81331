@@ -2850,8 +2850,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         experienceContract,
         backendRequired: false,
         wizardSelections,
-        allowCanonicalPageFallback: false,
-        strictPreflight: true,
+        // Seamless launch: canonical (Lane A) pages may backfill anything Lane B
+        // could not author, and preflight never blocks the handoff.
+        allowCanonicalPageFallback: true,
+        strictPreflight: false,
+
       });
 
       // Force-overwrite /src/App.tsx with the canonical router. The merge step

@@ -11,6 +11,7 @@
  */
 
 import { expandSandpackRuntimeDependencies } from '@/utils/sandpackDependencies';
+import { GENERATED_RUNTIME_PROFILE } from '@/platform/core/generatedRuntimeCapabilities';
 
 // Built-in Node.js modules that shouldn't be treated as dependencies
 const BUILTIN_MODULES = new Set([
@@ -23,8 +24,8 @@ const BUILTIN_MODULES = new Set([
 
 // Common dependencies with known stable versions
 const KNOWN_VERSIONS: Record<string, string> = {
-  'react': '^18.2.0',
-  'react-dom': '^18.2.0',
+  'react': GENERATED_RUNTIME_PROFILE.react,
+  'react-dom': GENERATED_RUNTIME_PROFILE.reactDom,
   'react-router-dom': '^6.20.0',
   '@swc/helpers': '0.5.23',
   '@babel/standalone': '^7.28.4',

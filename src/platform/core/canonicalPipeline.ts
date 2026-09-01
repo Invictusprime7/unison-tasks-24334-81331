@@ -49,6 +49,8 @@ import type { BusinessSystemState } from './capabilityRegistry';
 import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
 import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
+import { GENERATED_RUNTIME_PROFILE } from './generatedRuntimeCapabilities';
+
 import {
   buildGeneratedUiFoundation,
   ensureGeneratedUiFoundation,
@@ -210,6 +212,10 @@ export interface SiteBundleSnapshotMeta {
     version: typeof GENERATED_UI_FOUNDATION_VERSION;
     manifestPath: '/.unison/ui-manifest.json';
     importRoot: '@/unison/ui';
+    /** Canonical React runtime profile the generated package graph is pinned to. */
+    runtimeProfile: string;
+    /** Advanced runtime capabilities (e.g. experience.three-d) sealed with the site. */
+    experienceCapabilities: readonly string[];
   };
   /**
    * Chain-of-custody for the typed theme contract sidecar. The contract itself
@@ -708,6 +714,8 @@ function projectToSiteBundleSnapshot(
         version: uiFoundation.version,
         manifestPath: '/.unison/ui-manifest.json',
         importRoot: uiFoundation.importRoot,
+        runtimeProfile: uiFoundation.runtimeProfile || GENERATED_RUNTIME_PROFILE.id,
+        experienceCapabilities: [...(uiFoundation.experience?.capabilities || [])],
       } : undefined,
       themeContract: readThemeContract(compileResult.vfsFiles)
         ? {

@@ -10,6 +10,12 @@ import {
   EXPERIENCE_VOCABULARY_DIRECTIVE,
   buildExperienceFoundationFiles,
 } from '@/platform/core/experiencePrimitives';
+import {
+  EXPERIENCE_CAPABILITY_ID,
+  EXPERIENCE_PERFORMANCE_BUDGET,
+  GENERATED_RUNTIME_PROFILE,
+  THREE_D_CAPABILITY,
+} from '@/platform/core/generatedRuntimeCapabilities';
 
 /**
  * Canonical generated UI foundation.
@@ -19,8 +25,8 @@ import {
  * owner of global theme tokens and CSS.
  */
 
-export const GENERATED_UI_FOUNDATION_VERSION = '1.4' as const;
-const LEGACY_GENERATED_UI_FOUNDATION_VERSIONS = new Set(['1.1', '1.2', '1.3']);
+export const GENERATED_UI_FOUNDATION_VERSION = '1.5' as const;
+const LEGACY_GENERATED_UI_FOUNDATION_VERSIONS = new Set(['1.1', '1.2', '1.3', '1.4']);
 
 export type GeneratedUiLayoutRecipe =
   | 'floating-navbar'
@@ -60,7 +66,22 @@ export interface GeneratedUiManifest {
     imports: readonly string[];
     primitives: readonly string[];
     runtimePackages: readonly string[];
+    /** Capability ids this launch may reach (empty = no advanced runtime). */
+    capabilities: readonly string[];
+    /** Exact pinned packages installed when the capability is reached. */
+    runtimeDependencies: Readonly<Record<string, string>>;
+    /** Compiler-visible performance budget enforced by the preflight gate. */
+    budget: {
+      maxCanvasRoots: number;
+      maxHeavyScenes: number;
+      maxHeavyScenesPerSite: number;
+      maxModelBytes: number;
+      reducedMotionFallback: boolean;
+      webglFallback: boolean;
+    };
   };
+  /** React runtime profile the generated preview graph is pinned against. */
+  runtimeProfile: string;
   layoutRecipes: GeneratedUiLayoutRecipe[];
   interactions: GeneratedUiInteraction[];
   formFormats: GeneratedUiFormFormat[];
@@ -263,12 +284,8 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
     ],
     runtimeFacades: buildRuntimeFacades(),
     iconLibrary: 'lucide-react',
-    experience: {
-      importRoot: EXPERIENCE_IMPORT_ROOT,
-      imports: [...EXPERIENCE_IMPORT_PATHS],
-      primitives: [...EXPERIENCE_PRIMITIVES],
-      runtimePackages: [...EXPERIENCE_RUNTIME_PACKAGES],
-    },
+    experience: buildExperienceManifestSection(),
+    runtimeProfile: GENERATED_RUNTIME_PROFILE.id,
     layoutRecipes: [
       'floating-navbar',
       'collage-hero',
@@ -282,6 +299,26 @@ function buildManifest(options: GeneratedUiFoundationOptions): GeneratedUiManife
     buttonFormats: ['primary', 'secondary', 'outline', 'ghost', 'destructive', 'link', 'icon'],
     iconFormats: ['inline', 'icon-button', 'social'],
     requirements,
+  };
+}
+
+/** The experience section of the manifest, derived from the capability registry. */
+function buildExperienceManifestSection(): GeneratedUiManifest['experience'] {
+  return {
+    importRoot: EXPERIENCE_IMPORT_ROOT,
+    imports: [...EXPERIENCE_IMPORT_PATHS],
+    primitives: [...EXPERIENCE_PRIMITIVES],
+    runtimePackages: [...EXPERIENCE_RUNTIME_PACKAGES],
+    capabilities: [EXPERIENCE_CAPABILITY_ID],
+    runtimeDependencies: { ...THREE_D_CAPABILITY.dependencies },
+    budget: {
+      maxCanvasRoots: EXPERIENCE_PERFORMANCE_BUDGET.maxCanvasRootsPerPage,
+      maxHeavyScenes: EXPERIENCE_PERFORMANCE_BUDGET.maxHeavyScenesPerPage,
+      maxHeavyScenesPerSite: EXPERIENCE_PERFORMANCE_BUDGET.maxHeavyScenesPerSite,
+      maxModelBytes: EXPERIENCE_PERFORMANCE_BUDGET.maxModelBytes,
+      reducedMotionFallback: EXPERIENCE_PERFORMANCE_BUDGET.prefersReducedMotionFallback,
+      webglFallback: EXPERIENCE_PERFORMANCE_BUDGET.webglFallback,
+    },
   };
 }
 
@@ -1237,9 +1274,15 @@ export function readGeneratedUiManifest(
       Array.isArray(manifest.runtimeFacades.radixPrimitives)
       ? manifest.runtimeFacades
       : buildRuntimeFacades();
+    const currentExperience = buildExperienceManifestSection();
+    const experience = manifest.experience
+      ? { ...currentExperience, ...manifest.experience, budget: { ...currentExperience.budget, ...(manifest.experience.budget || {}) } }
+      : currentExperience;
     return {
       ...manifest,
       version: GENERATED_UI_FOUNDATION_VERSION,
+      experience,
+      runtimeProfile: manifest.runtimeProfile || GENERATED_RUNTIME_PROFILE.id,
       runtimeFacades,
       formFormats: manifest.formFormats || ['inline-capture', 'contact', 'appointment', 'quote-request', 'checkout'],
       buttonFormats: manifest.buttonFormats || ['primary', 'secondary', 'outline', 'ghost', 'destructive', 'link', 'icon'],
@@ -1450,7 +1493,7 @@ export function validateGeneratedUiContract(
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     if (
       normalizedPath.startsWith('/src/unison/ui/') ||
-      normalizedPath.startsWith('/src/unison/experience/') ||
+      normalizedPath.startsWith('/src/unison/ui/experience/') ||
       normalizedPath === '/.unison/ui-manifest.json' ||
       normalizedPath === '/.unison/design-intervention.json'
     ) {
@@ -1465,7 +1508,7 @@ export function validateGeneratedUiContract(
     return (
       /\.(tsx|jsx)$/i.test(path) &&
       !normalizedPath.startsWith('/src/unison/ui/') &&
-      !normalizedPath.startsWith('/src/unison/experience/')
+      !normalizedPath.startsWith('/src/unison/ui/experience/')
     );
   });
   const importPattern = /(?:\bimport\s+(?:type\s+)?(?:[\s\S]*?)\s+from\s*|\bexport\s+(?:[\s\S]*?)\s+from\s*|\bimport\s*)['"]([^'"]+)['"]/g;

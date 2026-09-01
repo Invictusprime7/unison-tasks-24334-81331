@@ -17,6 +17,12 @@ import { runPreflightRepair } from './aiSitePreflightRepair';
 import { preflightNavWiring } from './preflightNavWiring';
 import { closeRequiredIndustryIntents } from './requiredIntentClosure';
 import { runExperiencePreflight, stampExperienceManifest } from './experiencePreflightGate';
+import {
+  runRuntimeCompatibilityPreflight,
+  type RuntimeCompatibilityReport,
+} from './runtimeCompatibilityPreflight';
+import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
+import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
 
 export interface RunFullPreflightOptions {
   siteBundleSnapshot?: SiteBundleSnapshot | null;
@@ -44,6 +50,7 @@ export interface RunFullPreflightResult {
     forbiddenStrip: { stripped: number; forbidden: string[] };
     requiredIntentClosure: { injected: string[]; missing: string[] };
     experienceGate: { instances: number; heavyInstances: number; violations: string[] };
+    runtimeCompatibility: RuntimeCompatibilityReport;
     finalRepair: 'ok' | 'skipped' | 'failed';
   };
 }
@@ -124,7 +131,33 @@ export function runFullPreflight(
     console.warn('[runFullPreflight] experience gate violations', experience.violations);
   }
 
-  // 6) Final syntax repair (catches damage from steps 2-4)
+  // 6) Technical runtime compatibility. Package graph, approved imports,
+  // React/R3F renderer profile, fallback presence and scene budget. This is a
+  // technical gate only — it never mixes into business provisioning readiness.
+  let runtimeCompatibility: RuntimeCompatibilityReport;
+  try {
+    const { dependencies } = getDependenciesForSandpack(files, SANDPACK_PREVIEW_CORE_DEPENDENCIES);
+    runtimeCompatibility = runRuntimeCompatibilityPreflight({ files, dependencies });
+  } catch (e) {
+    console.warn('[runFullPreflight] runtime compatibility preflight failed', e);
+    runtimeCompatibility = {
+      runtimeProfile: 'unknown',
+      dependenciesResolvable: true,
+      importsApproved: true,
+      reactRuntimeCompatible: true,
+      fallbackPresent: true,
+      budgetValid: true,
+      capabilitiesUsed: [],
+      warnings: ['runtime compatibility preflight could not run'],
+      blockers: [],
+      ok: true,
+    };
+  }
+  if (!runtimeCompatibility.ok) {
+    console.warn('[runFullPreflight] runtime compatibility blockers', runtimeCompatibility.blockers);
+  }
+
+  // 7) Final syntax repair (catches damage from steps 2-4)
   let finalRepair: 'ok' | 'skipped' | 'failed' = 'skipped';
   try {
     const r = runPreflightRepair(files, { context: ctx });
@@ -147,7 +180,7 @@ export function runFullPreflight(
       files: inputFiles,
       mutated: false,
       mutatedFiles: [],
-      violations: [...mutatedFiles, ...experience.violations],
+      violations: [...mutatedFiles, ...experience.violations, ...runtimeCompatibility.blockers],
       mode,
       stages: {
         earlyRepair,
@@ -162,6 +195,7 @@ export function runFullPreflight(
           heavyInstances: experience.manifest.heavyInstances,
           violations: experience.violations,
         },
+        runtimeCompatibility,
         finalRepair,
       },
     };
@@ -186,6 +220,7 @@ export function runFullPreflight(
         heavyInstances: experience.manifest.heavyInstances,
         violations: experience.violations,
       },
+      runtimeCompatibility,
       finalRepair,
     },
   };

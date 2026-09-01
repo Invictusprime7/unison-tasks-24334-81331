@@ -5,7 +5,7 @@
  * budgets them the same way it budgets intents: deterministically, before the
  * snapshot is sealed. The gate answers three questions:
  *
- *   1. Did a page reach WebGL outside `@/unison/experience`? (never allowed)
+ *   1. Did a page reach WebGL outside `@/unison/ui/experience`? (never allowed)
  *   2. Is the per-band / per-page / per-site scene budget respected?
  *   3. Does every model-backed primitive point at an asset that exists?
  *
@@ -19,13 +19,15 @@ import {
   EXPERIENCE_RUNTIME_PACKAGES,
   type ExperiencePrimitive,
 } from '@/platform/core/experiencePrimitives';
+import { EXPERIENCE_PERFORMANCE_BUDGET } from '@/platform/core/generatedRuntimeCapabilities';
 
 export const EXPERIENCE_MANIFEST_PATH = '/.unison/experience-manifest.json';
 
 /** Heavy (own WebGL context) primitives allowed in one page file. */
-export const MAX_HEAVY_PRIMITIVES_PER_PAGE = 2;
+export const MAX_HEAVY_PRIMITIVES_PER_PAGE = EXPERIENCE_PERFORMANCE_BUDGET.maxHeavyScenesPerPage;
 /** Heavy primitives allowed across the whole generated site. */
-export const MAX_HEAVY_PRIMITIVES_PER_SITE = 6;
+export const MAX_HEAVY_PRIMITIVES_PER_SITE = EXPERIENCE_PERFORMANCE_BUDGET.maxHeavyScenesPerSite;
+
 
 export interface ExperienceInstance {
   path: string;

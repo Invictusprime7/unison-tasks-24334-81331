@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   buildGeneratedUiFoundation,
+  GENERATED_UI_FOUNDATION_VERSION,
+
   buildGeneratedUiFoundationDirective,
   ensureGeneratedUiFoundation,
   getGeneratedUiFoundationPersistenceViolations,
@@ -121,7 +123,7 @@ describe('generated UI foundation', () => {
       '/.unison/ui-manifest.json': JSON.stringify(legacyManifest),
     });
 
-    expect(manifest?.version).toBe('1.4');
+    expect(manifest?.version).toBe(GENERATED_UI_FOUNDATION_VERSION);
     expect(manifest?.formFormats).toContain('appointment');
     expect(manifest?.buttonFormats).toContain('icon');
     expect(manifest?.iconFormats).toContain('social');

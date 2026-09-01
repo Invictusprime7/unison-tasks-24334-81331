@@ -1,6 +1,7 @@
 # Roadmap
 
 ## Open
+- [ ] Canonical launcher synchronization — eliminate competing generation/recovery authorities; synchronize Lane A, design/experience resolution, Lane B, Stage 4b seal, revision persistence, builder hydration, and Sandpack from one sealed `SiteBundleSnapshot` revision.
 - [ ] M7 — end-to-end wizard generation walk. Needs one real Wizard launch (live Lane B) to confirm every generated route renders in the builder preview with no scaffold or fallback leak.
 
 ## Landed

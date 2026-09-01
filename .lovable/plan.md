@@ -30,7 +30,7 @@ Keep a single structural rule and let Wizard generation decide everything else a
 ### 3. Preserve strict authorship without fallback leakage
 - Keep the “every registered page is AI-authored” seal and module/import integrity checks.
 - Do not substitute scaffold pages, remove repair/integrity gates, or create a second acceptance path.
-- Classify failures by transport, retryable provider response, syntax/contract rejection, chrome rejection, and unresolved import; only retry the categories that can recover.
+- Classify failures by transport, retryable provider response, syntax error, and unresolved import; only retry the categories that can recover. Chrome and other visual notes never count as failures.
 - Surface the exact terminal reason inline if a real provider/configuration failure remains, rather than the generic missing-pages summary.
 
 ### 4. Make handoff atomic and deterministic

@@ -2820,14 +2820,14 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               })();
               if (earlySyntaxRepair) {
                 if (earlySyntaxRepair.repairedCount > 0 || earlySyntaxRepair.quarantinedCount > 0) {
-                  console.warn('[SystemLauncher] Early syntax repair before binding:', {
+                  console.warn('[SystemLauncher] Early syntax repair before binding:', JSON.stringify({
                     clean: earlySyntaxRepair.cleanCount,
                     repaired: earlySyntaxRepair.repairedCount,
                     quarantined: earlySyntaxRepair.quarantinedCount,
                     details: earlySyntaxRepair.reports.filter((r) => r.status !== 'clean').map((r) => ({
                       path: r.path, status: r.status, passes: r.passes, error: r.finalError?.slice(0, 200),
                     })),
-                  });
+                  }));
                 }
                 if (earlySyntaxRepair.quarantinedCount > 0) {
                   const blockedFiles = earlySyntaxRepair.reports

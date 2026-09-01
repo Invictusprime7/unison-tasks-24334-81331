@@ -29,6 +29,11 @@ import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeS
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
 import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
 import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
+import {
+  evaluateVisualQuality,
+  VISUAL_QUALITY_VERSION,
+  type VisualQualityReport,
+} from './visualQualityEvaluation';
 
 
 import { ensureGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
@@ -90,6 +95,8 @@ export interface CanonicalLaunchArtifacts {
   siteBundleSnapshot?: SiteBundleSnapshot;
   canonicalPlayground?: Record<string, unknown>;
   bindingApplication: WizardBindingApplicationResult | null;
+  /** Compositional quality report for the sealed pages. Advisory only. */
+  visualQuality?: VisualQualityReport;
 }
 
 export interface BuildCanonicalLaunchArtifactsInput {
@@ -1014,6 +1021,7 @@ function* buildCanonicalLaunchArtifactSteps(
     siteBundleSnapshot,
     canonicalPlayground,
     bindingApplication,
+    visualQuality,
   };
 }
 

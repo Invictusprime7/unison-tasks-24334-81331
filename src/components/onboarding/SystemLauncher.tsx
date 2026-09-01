@@ -2357,28 +2357,35 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           }
         }
       }
-      // ── Strict wizard-only gate ────────────────────────────────────────
-      // System Launcher runtime must be authored by the 4-step wizard seed via
-      // Lane B. Do NOT complete missing/invalid AI output from the canonical
-      // scaffold here — that is the minimal fallback path that was masking dead
-      // SiteBundle/orchestration token breaks in production.
+      // ── Lane A fast path (non-blocking, 2026-09-01) ────────────────────
+      // Lane B (AI) is the preferred author, but a Lane B failure must never
+      // stop the launcher. When Lane B errors or returns nothing usable we
+      // fall back to the Lane A canonical composition projected from the
+      // SiteBundleSnapshot + topology (already built from the wizard's
+      // template + style card selections), then let Stage 4b stamp theme
+      // tokens on top. The launch always completes and redirects to the
+      // Web Builder preview.
+      let laneAFallbackReason: string | null = null;
       if (aiError) {
-        launchReliabilityMode = 'lane-b-blocked';
-        const details = await getFunctionErrorMessage(aiError);
-        throw new Error(
-          `Wizard Lane B generation failed; minimal fallback is blocked. ${details}`,
-        );
-      }
-      if (!generationResult) {
-        launchReliabilityMode = 'lane-b-blocked';
-        const reason = lastPayloadIssue?.qualityReason
-          || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'AI returned no usable wizard files');
-        throw new Error(
-          `Wizard Lane B generation did not satisfy the 4-step generation contract; minimal fallback is blocked. ${reason}`,
-        );
+        launchReliabilityMode = 'lane-b-degraded';
+        laneAFallbackReason = `Lane B generation failed: ${await getFunctionErrorMessage(aiError)}`;
+      } else if (!generationResult) {
+        launchReliabilityMode = 'lane-b-degraded';
+        laneAFallbackReason = lastPayloadIssue?.qualityReason
+          || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'Lane B returned no usable wizard files');
       }
 
-      const aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
+      const laneASourceFiles: Record<string, string> = { ...(siteBundleSnapshot?.vfsFiles || {}) };
+      const aiSourcedFiles: Record<string, string> = laneAFallbackReason
+        ? laneASourceFiles
+        : generationResult!.sanitized.files;
+      if (laneAFallbackReason) {
+        console.warn('[SystemLauncher] Falling back to Lane A canonical composition', {
+          reason: laneAFallbackReason,
+          files: Object.keys(aiSourcedFiles).length,
+        });
+      }
+
       const wizardGenerationGaps: {
         aiError?: string;
         payloadIssue?: typeof lastPayloadIssue;
@@ -2387,17 +2394,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         aiFileCount: number;
         scaffoldFileCount: number;
       } = {
-        completedFromScaffold: false,
+        aiError: laneAFallbackReason || undefined,
+        completedFromScaffold: Boolean(laneAFallbackReason),
         scaffoldFilledPaths: [],
         aiFileCount: Object.keys(aiSourcedFiles).length,
         scaffoldFileCount: Object.keys(siteBundleSnapshot?.vfsFiles || {}).length,
       };
 
-      const totalUsableFiles = Object.keys(aiSourcedFiles).length;
-      if (totalUsableFiles === 0) {
-        launchReliabilityMode = 'lane-b-blocked';
-        throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
-      }
       const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .filter((path): path is string => Boolean(path))

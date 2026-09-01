@@ -11,13 +11,13 @@ Make a multi-page Wizard launch complete its AI-authored Lane B output, seal one
 
 ## Implementation
 
-### 1. One ownership rule, no prescriptive chrome contract
-Keep a single structural rule and let Wizard generation decide everything else about navigation and footers.
+### 1. Remove chrome as a platform contract entirely
+Chrome is a design decision the Wizard AI makes per site and per page — not a platform requirement.
 
-- **Ownership (kept, non-negotiable):** each generated page owns its own chrome, because the canonical router is route-only and the final merge already removes shared chrome modules. Ambiguous ownership is what produced both the duplicate-chrome bug and the current false rejections.
-- **Form (removed):** drop the prescriptive rules that dictate a specific primitive, tag, attribute, position, or link set. The AI may author a floating bar, sidebar, split header, overlay menu, minimal mark, or an unconventional per-industry treatment, and may vary it between sites.
-- **Sync every generator to that single rule:** edge prompts/context builders, Stage 4b scaffolding, topology refresh, and generation briefs. Stop producing or depending on `SiteNavbar.tsx` / `SiteFooter.tsx` in Wizard artifacts.
-- **Chrome checking becomes advisory, never fatal:** report missing or duplicated chrome as a launch note and at most one targeted repair turn. It can no longer reject a page or fail a launch, so an unusual-but-valid design ships.
+- **No chrome requirements anywhere:** delete chrome counting, chrome landmark prompts, chrome repair turns, and chrome-based page rejection from the launcher, edge prompts/context builders, generation briefs, and the presentation guard. A page is valid because it parses, resolves its imports, and serves its route — not because of any header/nav/footer shape.
+- **One owner rule only (prevents duplication):** page bodies own whatever chrome the AI chooses to render; the deterministic router stays route-only and never injects nav/footer; the final merge keeps stripping any shared `SiteNavbar.tsx`/`SiteFooter.tsx` modules. This rule exists solely so two systems can never co-author chrome again — it imposes nothing on what pages contain.
+- **Stop producing shared chrome scaffolding:** Stage 4b/topology scaffolding no longer generates `SiteNavbar.tsx`/`SiteFooter.tsx` or skips page-body chrome based on a `globalSharedChrome` assumption; it scaffolds nothing chrome-related at all.
+- **Navigation stays available by prompt, not by mandate:** generation briefs describe the site’s routes and tell the AI it *may* link between them however it sees fit (nav bar, inline links, footer menu, or none) — with zero enforcement.
 
 
 ### 2. Replace stacked timeout races with bounded scheduling
@@ -39,7 +39,7 @@ Keep a single structural rule and let Wizard generation decide everything else a
 - Hand WebBuilder the persisted revision/snapshot identity and verify Sandpack compiles the same resolved files before closing the launcher.
 
 ## Verification
-- Add regression tests proving no generator still emits or depends on shared chrome modules, that varied AI chrome styles (floating bar, sidebar, minimal header, custom footer) all survive the merge, and that a page with unusual chrome is noted but never rejected.
+- Add regression tests proving no generator or prompt references chrome requirements, no scaffold emits `SiteNavbar`/`SiteFooter`, and that pages with any chrome style — or none at all — pass acceptance and merge unchanged.
 - Add scheduler tests for 4-, 7-, and 9-page sites, delayed responses, one retryable failure, one quality repair, and module closure; verify successful siblings are retained and no timer produces HTTP 499.
 - Add an end-to-end Wizard launch test that confirms: all selected routes are AI-authored, PageRegistry paths match the deterministic router, the SiteBundleSnapshot is persisted once, WebBuilder opens, and Sandpack resolves every page/module.
 - Invoke the changed AI route once and inspect the Gateway and edge-function response/logs before completion; then run focused pipeline, chrome, persistence, and preview tests.

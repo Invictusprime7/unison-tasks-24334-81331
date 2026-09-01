@@ -53,7 +53,7 @@ import { resolveVerticalLaunchContract } from "@/services/verticalLaunchContract
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import { runBuilderTurn, isProviderTimeoutError, isRateLimitError, isTransportError } from "@/services/builderBrainClient";
+import { runBuilderTurn, primeBuilderSession, isProviderTimeoutError, isRateLimitError, isTransportError } from "@/services/builderBrainClient";
 import { planLaneBBatches, measurePayloadBytes } from "@/services/laneBBatchPlanner";
 import { launchTelemetry } from "@/services/launch/launchTelemetry";
 import {

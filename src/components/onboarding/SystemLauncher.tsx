@@ -2589,15 +2589,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             const batchOutcomes: Array<{ files?: Record<string, string>; error?: unknown }> = [];
             for (let i = 0; i < batches.length; i += 1) {
               const batch = batches[i];
-              const batchPrompt = [
-                buildFirstAttemptPrompt(batch),
-                '',
-                '── LANE B BATCH TURN ──',
-                `Generate ONLY these page files in this response: ${batch.join(', ')}.`,
-                'Emit the same multi-file JSON payload contract, with full production-quality sections for each listed page.',
-                'Do not emit /src/App.tsx, /src/index.css, SiteNavbar, SiteFooter, or any page outside the list.',
-              ].join('\n');
-              try {
+              const outcome = await (async () => {
+                const batchPrompt = [
+                  buildFirstAttemptPrompt(batch),
+                  '',
+                  '── LANE B BATCH TURN ──',
+                  `Generate ONLY these page files in this response: ${batch.join(', ')}.`,
+                  'Emit the same multi-file JSON payload contract, with full production-quality sections for each listed page.',
+                  'Do not emit /src/App.tsx, /src/index.css, SiteNavbar, SiteFooter, or any page outside the list.',
+                ].join('\n');
+                try {
                 const batchBudgetMs = takeWizardGenerationBudget(
                   Math.max(30_000, Math.round(batchPlan.estimatedMsPerBatch * 1.5)),
                 );
@@ -2654,11 +2655,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 }
                 return { files: batchSyntax.files };
 
-              } catch (batchThrow) {
-                completedBatches += 1;
-                setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
-                return { error: batchThrow };
-              }
+                } catch (batchThrow) {
+                  completedBatches += 1;
+                  setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
+                  return { error: batchThrow };
+                }
               })();
               batchOutcomes.push(outcome);
             }

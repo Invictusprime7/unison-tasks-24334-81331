@@ -127,6 +127,14 @@ async function refreshBuilderSession(
 }
 
 /**
+ * A wizard launch is a minutes-long run of concurrent 135s Lane B calls. Any
+ * access token with less than this much life left is refreshed up-front so the
+ * run cannot 401 halfway through and collapse into empty per-page recoveries.
+ */
+export const BUILDER_TOKEN_MIN_LIFETIME_MS = 300_000;
+
+
+/**
  * Server-verified token check, memoized per access token so a batched Lane B
  * run performs at most one round-trip. `getSession()` alone cannot detect a
  * token issued by another project ref or invalidated by a key rotation.

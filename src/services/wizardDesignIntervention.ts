@@ -267,7 +267,7 @@ export function readWizardDesignIntervention(
   }
 }
 
-const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'activeVariants' | 'aiDirective' | 'artDirectionPackId' | 'experienceRecipes' | 'experienceBudget'>> = {
+const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'activeVariants' | 'aiDirective' | 'artDirectionPackId' | 'experienceRecipes' | 'experienceBudget' | 'envelope' | 'brief'>> = {
   appointment_service: {
     layoutRecipe: 'collage-hero', sectionVariants: ['split-media-hero', 'bento-services', 'testimonial-rail', 'conversion-form'],
     motionRecipes: ['service-progressive-disclosure', 'proof-led-stagger', 'conversion-feedback'], interactionRecipes: ['mobile-nav-dialog', 'accordion'], motionBudget: 'restrained',
@@ -356,7 +356,7 @@ export function buildArtDirectionBrief(
       dominance: envelope.visualDominance,
       cropping: envelope.layoutSymmetry === 'asymmetric' ? 'editorial' : 'uniform',
       treatments: Array.from(new Set([
-        pack.mediaTreatment,
+        pack.design.mediaTreatment,
         ...envelope.mediaCandidates.slice(0, 2),
       ])).filter(Boolean) as string[],
     },

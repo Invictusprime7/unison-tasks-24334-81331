@@ -292,7 +292,7 @@ export function resolveExperienceEnvelope(input: ExperienceEnvelopeInput): Exper
     { category: 'media' as const, id: mediaCandidates[0] },
     { category: 'background' as const, id: backgroundCandidates[0] },
     ...(commerceCandidates[0] ? [{ category: 'commerce' as const, id: commerceCandidates[0] }] : []),
-  ].filter((lead): lead is { category: VocabularyCategory; id: string } => Boolean(lead.id));
+  ].filter((lead) => Boolean(lead.id)) as Array<{ category: VocabularyCategory; id: string }>;
 
   return {
     version: EXPERIENCE_ENVELOPE_VERSION,

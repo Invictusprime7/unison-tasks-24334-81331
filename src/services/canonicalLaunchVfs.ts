@@ -29,6 +29,11 @@ import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeS
 import { isMinimalPreviewFallbackSource } from './snapshotProjector';
 import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
 import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
+import {
+  evaluateVisualQuality,
+  VISUAL_QUALITY_VERSION,
+  type VisualQualityReport,
+} from './visualQualityEvaluation';
 
 
 import { ensureGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
@@ -90,6 +95,8 @@ export interface CanonicalLaunchArtifacts {
   siteBundleSnapshot?: SiteBundleSnapshot;
   canonicalPlayground?: Record<string, unknown>;
   bindingApplication: WizardBindingApplicationResult | null;
+  /** Compositional quality report for the sealed pages. Advisory only. */
+  visualQuality?: VisualQualityReport;
 }
 
 export interface BuildCanonicalLaunchArtifactsInput {
@@ -856,6 +863,26 @@ function* buildCanonicalLaunchArtifactSteps(
     }
   }
 
+  // ── Visual quality evaluation (advisory, never blocking) ───────────────
+  // Compositional scoring runs on the sealed page bodies. It never mutates
+  // source and never triggers a fallback; the report travels with the
+  // artifact so the launcher can record ONE focused refinement directive.
+  let visualQuality: VisualQualityReport;
+  try {
+    visualQuality = evaluateVisualQuality(mergedFiles, { technicalScore: 100 });
+  } catch (error) {
+    console.warn('[canonicalLaunchVfs] visual quality evaluation failed', error);
+    visualQuality = {
+      version: VISUAL_QUALITY_VERSION,
+      compositionScore: 0, hierarchyScore: 0, diversityScore: 0, mediaScore: 0,
+      repetitionPenalty: 0, technicalScore: 0,
+      findings: [], pages: [], refinementDirective: null,
+    };
+  }
+  mergedFiles['/.unison/visual-quality.json'] = JSON.stringify(visualQuality, null, 2);
+
+
+
 
 
 
@@ -994,6 +1021,7 @@ function* buildCanonicalLaunchArtifactSteps(
     siteBundleSnapshot,
     canonicalPlayground,
     bindingApplication,
+    visualQuality,
   };
 }
 

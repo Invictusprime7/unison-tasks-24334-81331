@@ -12,6 +12,7 @@
  * VFS → FileMap Snapshot → ECS Worker (Vite) → Gateway → iframe
  */
 
+import { GENERATED_RUNTIME_PROFILE } from '@/platform/core/generatedRuntimeCapabilities';
 import { extractDependencies } from '@/utils/dependencyExtractor';
 import type { RuntimeManifest } from '@/types/runtimeManifest';
 import { PreviewPipelineError } from './previewPipelineError';
@@ -91,12 +92,12 @@ const DEFAULT_PACKAGE_JSON = `{
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
@@ -271,8 +272,8 @@ export function ensureViteRootFiles(
 
   // Merge: extracted deps (widest coverage) < worker-template base < VFS pkg overrides
   const baseDeps: Record<string, string> = {
-    'react': '^18.3.1',
-    'react-dom': '^18.3.1',
+    'react': GENERATED_RUNTIME_PROFILE.react,
+    'react-dom': GENERATED_RUNTIME_PROFILE.reactDom,
   };
 
   const mergedDeps: Record<string, string> = {
@@ -284,8 +285,8 @@ export function ensureViteRootFiles(
 
   // Standard devDependencies for the Vite/React/TS toolchain
   const defaultDevDeps: Record<string, string> = {
-    '@types/react': '^18.3.12',
-    '@types/react-dom': '^18.3.1',
+    '@types/react': GENERATED_RUNTIME_PROFILE.reactTypes,
+    '@types/react-dom': GENERATED_RUNTIME_PROFILE.reactDomTypes,
     '@vitejs/plugin-react': '^4.3.4',
     'autoprefixer': '^10.4.20',
     'postcss': '^8.4.49',

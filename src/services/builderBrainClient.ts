@@ -154,6 +154,32 @@ async function isTokenAcceptedByAuth(token: string): Promise<boolean> {
   return ok;
 }
 
+/**
+ * Prime the builder session BEFORE a batched run (wizard launch, Lane B page
+ * completion). Rotating once up-front means every concurrent batch shares a
+ * long-lived, server-verified token instead of discovering expiry mid-flight.
+ *
+ * Returns false when no usable session can be established — the caller should
+ * surface a sign-in prompt rather than start a run that will 401 on every call.
+ */
+export async function primeBuilderSession(): Promise<boolean> {
+  const { data } = await supabase.auth.getSession();
+  const session = data.session;
+  if (!session) return false;
+  const expiresAt = (session.expires_at ?? 0) * 1000;
+  if (
+    expiresAt - Date.now() > BUILDER_TOKEN_MIN_LIFETIME_MS &&
+    await isTokenAcceptedByAuth(session.access_token)
+  ) {
+    return true;
+  }
+  builderTokenChecks.delete(session.access_token);
+  const refreshed = await refreshBuilderSession(true, session.access_token);
+  if (!refreshed?.access_token) return false;
+  return isTokenAcceptedByAuth(refreshed.access_token);
+}
+
+
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
 
 const MAX_RATE_LIMIT_RETRY_MS = 2_500;

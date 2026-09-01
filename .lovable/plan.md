@@ -39,7 +39,7 @@ Keep a single structural rule and let Wizard generation decide everything else a
 - Hand WebBuilder the persisted revision/snapshot identity and verify Sandpack compiles the same resolved files before closing the launcher.
 
 ## Verification
-- Add regression tests that run real Stage 4b scaffold output through chrome counting and final merge, proving exactly one navbar/footer survives per page and no shared chrome modules remain.
+- Add regression tests proving no generator still emits or depends on shared chrome modules, that varied AI chrome styles (floating bar, sidebar, minimal header, custom footer) all survive the merge, and that a page with unusual chrome is noted but never rejected.
 - Add scheduler tests for 4-, 7-, and 9-page sites, delayed responses, one retryable failure, one quality repair, and module closure; verify successful siblings are retained and no timer produces HTTP 499.
 - Add an end-to-end Wizard launch test that confirms: all selected routes are AI-authored, PageRegistry paths match the deterministic router, the SiteBundleSnapshot is persisted once, WebBuilder opens, and Sandpack resolves every page/module.
 - Invoke the changed AI route once and inspect the Gateway and edge-function response/logs before completion; then run focused pipeline, chrome, persistence, and preview tests.

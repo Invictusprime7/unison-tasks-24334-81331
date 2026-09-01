@@ -545,11 +545,11 @@ const WIZARD_BATCH_REPAIR_MAX_PAGES = 2;
 // shorter per-page cap for multi-page rounds only starved the provider loop
 // without shortening the round's actual wall-clock time.
 const WIZARD_ISOLATED_PAGE_COMPLETION_MS = 132_000;
-// Lane B requests share one workspace/provider budget. Running page groups in
-// parallel made valid full-site generations degrade into malformed per-batch
-// responses under contention. Keep one authoring turn in flight and validate
-// it before advancing to the next canonical page group.
-const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 1;
+// Two concurrent page groups stay below the observed provider quota while
+// leaving enough of the shared Wizard deadline for targeted page completion.
+// Every group is syntax-gated before merge, so bounded concurrency cannot
+// contaminate an already accepted page.
+const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 2;
 const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 // A pure timeout/transport failure never produced content to judge, so it
 // must not consume the 2-attempt content/syntax-repair budget an isolated
@@ -2402,10 +2402,17 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           let completedFirstAttemptBatches = 0;
           setLaunchStatus(`Generating site… (0/${firstAttemptBatchPlan.batches.length} page groups)`);
 
-          for (let batchIndex = 0; batchIndex < firstAttemptBatchPlan.batches.length; batchIndex += 1) {
-            const batch = firstAttemptBatchPlan.batches[batchIndex];
-            const batchNumber = batchIndex + 1;
-            const outcome = await (async () => {
+          for (
+            let batchOffset = 0;
+            batchOffset < firstAttemptBatchPlan.batches.length;
+            batchOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
+          ) {
+            const batchWave = firstAttemptBatchPlan.batches.slice(
+              batchOffset,
+              batchOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS,
+            );
+            const outcomes = await Promise.all(batchWave.map(async (batch, waveIndex) => {
+              const batchNumber = batchOffset + waveIndex + 1;
               const batchPrompt = buildFirstAttemptPrompt(batch);
               try {
                 const batchBudgetMs = takeWizardGenerationBudget(
@@ -2485,24 +2492,29 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               } catch (batchError) {
                 return { error: batchError };
               }
-            })();
+            }));
 
-            completedFirstAttemptBatches += 1;
-            setLaunchStatus(
-              `Generating site… (${completedFirstAttemptBatches}/${firstAttemptBatchPlan.batches.length} page groups)`,
-            );
-            if (outcome.error) {
-              firstAttemptFailure ||= outcome.error;
-              console.warn('[SystemLauncher] Lane B batch rejected before merge', {
-                batch: batchNumber,
-                pages: batch,
-                reason: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
-              });
-              continue;
-            }
-            for (const [path, content] of Object.entries(outcome.files || {})) {
-              if (typeof content === 'string' && content.trim()) {
-                mergedFirstAttemptFiles[path] = content;
+            for (let waveIndex = 0; waveIndex < outcomes.length; waveIndex += 1) {
+              const outcome = outcomes[waveIndex];
+              const batch = batchWave[waveIndex];
+              const batchNumber = batchOffset + waveIndex + 1;
+              completedFirstAttemptBatches += 1;
+              setLaunchStatus(
+                `Generating site… (${completedFirstAttemptBatches}/${firstAttemptBatchPlan.batches.length} page groups)`,
+              );
+              if (outcome.error) {
+                firstAttemptFailure ||= outcome.error;
+                console.warn('[SystemLauncher] Lane B batch rejected before merge', {
+                  batch: batchNumber,
+                  pages: batch,
+                  reason: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+                });
+                continue;
+              }
+              for (const [path, content] of Object.entries(outcome.files || {})) {
+                if (typeof content === 'string' && content.trim()) {
+                  mergedFirstAttemptFiles[path] = content;
+                }
               }
             }
           }
@@ -2542,7 +2554,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         // or a funded provider's single-response window. Neither failure is a
         // contract violation, so retry the SAME Lane B brain over small page
         // batches and merge the results. Minimal/default scaffolds are never used.
-        const canRecoverLaneBInBatches = aiError && (
+        const canRecoverLaneBInBatches = firstAttemptBatchPlan.batches.length === 1 && aiError && (
           isTransportError(aiError) || isProviderTimeoutError(aiError)
         );
         if (canRecoverLaneBInBatches) {

@@ -12,6 +12,7 @@
  * VFS → FileMap Snapshot → ECS Worker (Vite) → Gateway → iframe
  */
 
+import { GENERATED_RUNTIME_PROFILE } from '@/platform/core/generatedRuntimeCapabilities';
 import { extractDependencies } from '@/utils/dependencyExtractor';
 import type { RuntimeManifest } from '@/types/runtimeManifest';
 import { PreviewPipelineError } from './previewPipelineError';
@@ -271,8 +272,8 @@ export function ensureViteRootFiles(
 
   // Merge: extracted deps (widest coverage) < worker-template base < VFS pkg overrides
   const baseDeps: Record<string, string> = {
-    'react': '^18.3.1',
-    'react-dom': '^18.3.1',
+    'react': GENERATED_RUNTIME_PROFILE.react,
+    'react-dom': GENERATED_RUNTIME_PROFILE.reactDom,
   };
 
   const mergedDeps: Record<string, string> = {

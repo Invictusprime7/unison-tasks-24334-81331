@@ -143,8 +143,8 @@ export default defineConfig({
         },
         dependencies: resolvedDeps,
         devDependencies: {
-          '@types/react': '^18.3.18',
-          '@types/react-dom': '^18.3.5',
+          '@types/react': GENERATED_RUNTIME_PROFILE.reactTypes,
+          '@types/react-dom': GENERATED_RUNTIME_PROFILE.reactDomTypes,
           '@vitejs/plugin-react': '^4.3.4',
           typescript: '^5.7.2',
           vite: '^6.0.7',

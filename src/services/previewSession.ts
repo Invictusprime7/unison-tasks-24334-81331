@@ -285,8 +285,8 @@ export function ensureViteRootFiles(
 
   // Standard devDependencies for the Vite/React/TS toolchain
   const defaultDevDeps: Record<string, string> = {
-    '@types/react': '^18.3.12',
-    '@types/react-dom': '^18.3.1',
+    '@types/react': GENERATED_RUNTIME_PROFILE.reactTypes,
+    '@types/react-dom': GENERATED_RUNTIME_PROFILE.reactDomTypes,
     '@vitejs/plugin-react': '^4.3.4',
     'autoprefixer': '^10.4.20',
     'postcss': '^8.4.49',

@@ -46,4 +46,4 @@ Chrome is a design decision the Wizard AI makes per site and per page — not a 
 - Invoke the changed AI route once and inspect the Gateway and edge-function response/logs before completion; then run focused pipeline, chrome, persistence, and preview tests.
 
 ## Technical scope
-Primary areas: `SystemLauncher`, Wizard generation prompts/context builders, Stage 4b/topology scaffolding, provider loop/client request handling, canonical launch merge, launcher persistence/handoff, and focused tests. No scaffold fallback or integrity-boundary removal.
+Primary areas: `SystemLauncher`, Wizard generation prompts/context builders, shared-chrome module and its scaffolding/refresh call sites, Stage 4b/topology scaffolding, presentation guard, provider loop/client request handling, canonical launch merge, launcher persistence/handoff, and focused tests. No scaffold fallback and no removal of syntax, import-closure, or persistence integrity boundaries.

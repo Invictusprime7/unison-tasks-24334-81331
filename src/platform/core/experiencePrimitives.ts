@@ -2,15 +2,25 @@
  * Unison Experience Layer — canonical 3D/immersive primitives.
  *
  * These modules are emitted into the generated VFS by the canonical pipeline
- * (never authored by Lane B) and live under `/src/unison/experience`. They are
+ * (never authored by Lane B) and live under `/src/unison/ui/experience`. They are
  * the ONLY sanctioned way a generated page may reach React Three Fiber:
  * Lane B composes them, Stage 4b themes them through CSS material tokens, and
  * the experience preflight gate budgets them.
  */
 
-export const EXPERIENCE_FOUNDATION_VERSION = '1.0' as const;
+import {
+  EXPERIENCE_CAPABILITY_ID,
+  EXPERIENCE_PERFORMANCE_BUDGET,
+  THREE_D_CAPABILITY,
+} from '@/platform/core/generatedRuntimeCapabilities';
 
-export const EXPERIENCE_IMPORT_ROOT = '@/unison/experience' as const;
+export const EXPERIENCE_FOUNDATION_VERSION = '1.1' as const;
+
+/** The runtime capability that backs this layer (single source of truth). */
+export const EXPERIENCE_CAPABILITY = THREE_D_CAPABILITY;
+export { EXPERIENCE_CAPABILITY_ID, EXPERIENCE_PERFORMANCE_BUDGET };
+
+export const EXPERIENCE_IMPORT_ROOT = '@/unison/ui/experience' as const;
 
 /** The 8 premium experience primitives Lane B may compose. */
 export const EXPERIENCE_PRIMITIVES = [
@@ -43,33 +53,29 @@ export const EXPERIENCE_BARREL_EXPORTS: ReadonlySet<string> = new Set([
 ]);
 
 export const EXPERIENCE_FOUNDATION_PATHS = [
-  '/src/unison/experience/index.ts',
-  '/src/unison/experience/canvas.tsx',
-  '/src/unison/experience/tokens.ts',
-  '/src/unison/experience/scene.tsx',
-  '/src/unison/experience/media.tsx',
-  '/src/unison/experience/stage.tsx',
+  '/src/unison/ui/experience/index.ts',
+  '/src/unison/ui/experience/canvas.tsx',
+  '/src/unison/ui/experience/tokens.ts',
+  '/src/unison/ui/experience/scene.tsx',
+  '/src/unison/ui/experience/media.tsx',
+  '/src/unison/ui/experience/stage.tsx',
 ] as const;
 
 export const EXPERIENCE_IMPORT_PATHS = [
-  '@/unison/experience',
-  '@/unison/experience/canvas',
-  '@/unison/experience/tokens',
-  '@/unison/experience/scene',
-  '@/unison/experience/media',
-  '@/unison/experience/stage',
+  '@/unison/ui/experience',
+  '@/unison/ui/experience/canvas',
+  '@/unison/ui/experience/tokens',
+  '@/unison/ui/experience/scene',
+  '@/unison/ui/experience/media',
+  '@/unison/ui/experience/stage',
 ] as const;
 
 /** npm packages the experience layer is allowed to reach (foundation only). */
-export const EXPERIENCE_RUNTIME_PACKAGES = [
-  'three',
-  '@react-three/fiber',
-  '@react-three/drei',
-] as const;
+export const EXPERIENCE_RUNTIME_PACKAGES: readonly string[] = THREE_D_CAPABILITY.imports;
 
 export const EXPERIENCE_VOCABULARY_DIRECTIVE = [
   '── EXPERIENCE VOCABULARY (3D / immersive — optional, budgeted) ──',
-  'Immersive WebGL is available ONLY through "@/unison/experience". Never import "three", "@react-three/fiber", or "@react-three/drei" directly in a page — those imports are rejected by the experience preflight gate.',
+  'Immersive WebGL is available ONLY through "@/unison/ui/experience". Never import "three", "@react-three/fiber", or "@react-three/drei" directly in a page — those imports are rejected by the experience preflight gate.',
   '  - <ImmersiveHero eyebrow? title lead? actions? intensity="subtle|balanced|cinematic"> — full-bleed hero band with a themed 3D backdrop; DOM copy stays selectable and accessible.',
   '  - <ProductStage src? alt? caption? spin?={boolean}> — centred product/object stage with soft studio lighting and contact shadow.',
   '  - <FloatingMedia src alt caption?> — a single image plane with gentle parallax float.',
@@ -85,7 +91,7 @@ const heavyList = [...EXPERIENCE_HEAVY_PRIMITIVES].join(', ');
 /** Emits the experience foundation module set for the generated VFS. */
 export function buildExperienceFoundationFiles(marker: string): Record<string, string> {
   return {
-    '/src/unison/experience/tokens.ts': `${marker}
+    '/src/unison/ui/experience/tokens.ts': `${marker}
 import * as React from 'react';
 
 /**
@@ -148,7 +154,7 @@ export function useExperienceEnabled(): boolean {
 }
 `,
 
-    '/src/unison/experience/canvas.tsx': `${marker}
+    '/src/unison/ui/experience/canvas.tsx': `${marker}
 import * as React from 'react';
 import { Canvas } from '@react-three/fiber';
 import { cn } from '@/unison/ui';
@@ -195,7 +201,7 @@ export function ExperienceCanvas({
 }
 `,
 
-    '/src/unison/experience/scene.tsx': `${marker}
+    '/src/unison/ui/experience/scene.tsx': `${marker}
 import * as React from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Float, Points, PointMaterial } from '@react-three/drei';
@@ -271,6 +277,8 @@ export interface ImmersiveHeroProps {
 export function ImmersiveHero({ children, intensity = 'balanced', className }: ImmersiveHeroProps) {
   return (
     <div
+      data-ut-component="immersive-hero"
+      data-ut-editable="intensity,children"
       className={cn(
         'relative isolate overflow-hidden rounded-[var(--ut-media-radius)] bg-background min-h-[var(--ut-hero-block)]',
         className,
@@ -314,7 +322,11 @@ const DENSITY: Record<ParticleDensity, number> = { low: 600, medium: 1600, high:
 /** Ambient particle layer. Cheap, decorative, never interactive. */
 export function ParticleField({ density = 'medium', className }: { density?: ParticleDensity; className?: string }) {
   return (
-    <div className={cn('pointer-events-none absolute inset-0', className)}>
+    <div
+      data-ut-component="particle-field"
+      data-ut-editable="density"
+      className={cn('pointer-events-none absolute inset-0', className)}
+    >
       <ExperienceCanvas frameloop="always" fallback={null}>
         <ParticleCloud count={DENSITY[density]} />
       </ExperienceCanvas>
@@ -331,7 +343,11 @@ export function SceneBackground({
 }: { variant?: SceneBackgroundVariant; className?: string }) {
   const material = useExperienceMaterial();
   return (
-    <div className={cn('pointer-events-none absolute inset-0 -z-10 overflow-hidden', className)}>
+    <div
+      data-ut-component="scene-background"
+      data-ut-editable="variant"
+      className={cn('pointer-events-none absolute inset-0 -z-10 overflow-hidden', className)}
+    >
       <ExperienceCanvas
         fallback={<div className="size-full bg-gradient-to-b from-background via-primary/10 to-background" />}
       >
@@ -359,7 +375,7 @@ export function SceneBackground({
 }
 `,
 
-    '/src/unison/experience/media.tsx': `${marker}
+    '/src/unison/ui/experience/media.tsx': `${marker}
 import * as React from 'react';
 import { Float, Image as DreiImage, ScrollControls, Scroll } from '@react-three/drei';
 import { cn } from '@/unison/ui';
@@ -376,7 +392,11 @@ export interface FloatingMediaProps {
 /** Single image plane with gentle parallax float and a DOM image fallback. */
 export function FloatingMedia({ src, alt, caption, className }: FloatingMediaProps) {
   return (
-    <figure className={cn('relative overflow-hidden rounded-[var(--ut-media-radius)]', className)}>
+    <figure
+      data-ut-component="floating-media"
+      data-ut-editable="src,alt,caption"
+      className={cn('relative overflow-hidden rounded-[var(--ut-media-radius)]', className)}
+    >
       <div className="relative min-h-[var(--ut-media-block)]">
         <ExperienceCanvas
           camera={{ position: [0, 0, 5], fov: 45 }}
@@ -404,7 +424,11 @@ export interface DepthGalleryItem {
 export function DepthGallery({ items, className }: { items: DepthGalleryItem[]; className?: string }) {
   const planes = items.slice(0, 8);
   return (
-    <div className={cn('relative overflow-hidden rounded-[var(--ut-media-radius)]', className)}>
+    <div
+      data-ut-component="depth-gallery"
+      data-ut-editable="items"
+      className={cn('relative overflow-hidden rounded-[var(--ut-media-radius)]', className)}
+    >
       <div className="relative min-h-[var(--ut-media-block-lg)]">
         <ExperienceCanvas
           camera={{ position: [0, 0, 7], fov: 50 }}
@@ -443,7 +467,7 @@ export function DepthGallery({ items, className }: { items: DepthGalleryItem[]; 
 }
 `,
 
-    '/src/unison/experience/stage.tsx': `${marker}
+    '/src/unison/ui/experience/stage.tsx': `${marker}
 import * as React from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Bounds, ContactShadows, OrbitControls, useGLTF } from '@react-three/drei';
@@ -488,7 +512,11 @@ export interface ProductStageProps {
 /** Centred product/object stage with studio lighting and a contact shadow. */
 export function ProductStage({ src, alt, caption, spin = true, className }: ProductStageProps) {
   return (
-    <figure className={cn('relative overflow-hidden rounded-[var(--ut-media-radius)] bg-card', className)}>
+    <figure
+      data-ut-component="product-stage"
+      data-ut-editable="src,alt,caption,spin"
+      className={cn('relative overflow-hidden rounded-[var(--ut-media-radius)] bg-card', className)}
+    >
       <div className="relative min-h-[var(--ut-media-block-lg)]">
         <ExperienceCanvas
           camera={{ position: [0, 0.6, 5], fov: 45 }}
@@ -518,6 +546,8 @@ export interface ModelViewerProps {
 export function ModelViewer({ src, alt, spin = false, className }: ModelViewerProps) {
   return (
     <div
+      data-ut-component="model-viewer"
+      data-ut-editable="src,alt,spin"
       className={cn('relative overflow-hidden rounded-[var(--ut-media-radius)] bg-card', className)}
       role="img"
       aria-label={alt}
@@ -542,7 +572,7 @@ export function ModelViewer({ src, alt, spin = false, className }: ModelViewerPr
 }
 `,
 
-    '/src/unison/experience/index.ts': `${marker}
+    '/src/unison/ui/experience/index.ts': `${marker}
 // Experience layer barrel — the ONLY sanctioned WebGL surface for generated
 // pages. Heavy primitives (${heavyList}) are budgeted by the preflight gate.
 export { ExperienceCanvas, type ExperienceCanvasProps } from './canvas';

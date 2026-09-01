@@ -1,3 +1,4 @@
+import { GENERATED_RUNTIME_PROFILE } from '@/platform/core/generatedRuntimeCapabilities';
 /**
  * Sandpack File Preparation Utilities
  * 
@@ -3828,7 +3829,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   // ── Inject conventional IDE JSON / config files ──────────────────────────
   // Ensures the VFS looks like a real project with package.json, tsconfig, etc.
   if (!out['/package.json']) {
-    const detectedDeps: Record<string, string> = { react: '^18.2.0', 'react-dom': '^18.2.0' };
+    const detectedDeps: Record<string, string> = {
+      react: GENERATED_RUNTIME_PROFILE.react,
+      'react-dom': GENERATED_RUNTIME_PROFILE.reactDom,
+    };
     // Scan source for common imports to auto-populate dependencies
     const allCode = Object.values(out).join('\n');
     const importMatches = allCode.matchAll(/from\s+['"]([a-z@][a-z0-9\-_@/.]*)['"]/g);

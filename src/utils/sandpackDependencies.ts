@@ -1,3 +1,9 @@
+import {
+  GENERATED_RUNTIME_CAPABILITY_DEPENDENCIES,
+  GENERATED_RUNTIME_PROFILE,
+  THREE_D_CAPABILITY,
+} from '@/platform/core/generatedRuntimeCapabilities';
+
 /**
  * Shared Sandpack dependency and import constants.
  * Single source of truth for all Sandpack preview consumers
@@ -10,8 +16,8 @@
  */
 export const SANDPACK_DEPENDENCIES: Record<string, string> = {
   // React core
-  'react': '^19.2.0',
-  'react-dom': '^19.2.0',
+  'react': GENERATED_RUNTIME_PROFILE.react,
+  'react-dom': GENERATED_RUNTIME_PROFILE.reactDom,
   'react-router-dom': '^6.20.0',
   '@swc/helpers': '0.5.23',
   '@babel/standalone': '^7.28.4',
@@ -64,10 +70,8 @@ export const SANDPACK_DEPENDENCIES: Record<string, string> = {
   // Animation
   'framer-motion': 'latest',
 
-  // Experience layer (3D / WebGL) — reachable only through @/unison/experience
-  'three': '^0.180.0',
-  '@react-three/fiber': '^9.3.0',
-  '@react-three/drei': '^10.7.0',
+  // Experience layer (3D / WebGL) — reachable only through @/unison/ui/experience
+  ...GENERATED_RUNTIME_CAPABILITY_DEPENDENCIES,
 
   // Data & utilities
   'date-fns': 'latest',
@@ -200,17 +204,7 @@ export const SANDPACK_TRANSITIVE_RUNTIME_DEPENDENCIES: Record<string, string> = 
  * preview actually reaches the experience layer.
  */
 export const SANDPACK_EXPERIENCE_RUNTIME_DEPENDENCIES: Record<string, string> = {
-  'scheduler': '0.27.0',
-  'react-reconciler': '0.32.0',
-  'its-fine': '2.0.0',
-  'suspend-react': '0.1.3',
-  'zustand': '5.0.8',
-  'use-sync-external-store': '1.5.0',
-  '@use-gesture/react': '10.3.1',
-  'maath': '0.10.8',
-  'three-stdlib': '2.36.0',
-  'detect-gpu': '5.0.70',
-  '@babel/runtime': '7.28.4',
+  ...THREE_D_CAPABILITY.transitiveDependencies,
 };
 
 /** Add nested package requirements only when the active preview reaches them. */
@@ -300,7 +294,7 @@ export const WIZARD_RUNTIME_DEPENDENCY_GROUPS = {
     'bootstrap',
   ),
   experience: dependencyGroup('framer-motion', 'lucide-react'),
-  experience3d: dependencyGroup('three', '@react-three/fiber', '@react-three/drei'),
+  experience3d: dependencyGroup(...Object.keys(GENERATED_RUNTIME_CAPABILITY_DEPENDENCIES)),
 } as const;
 
 /** Full Wizard runtime installed by the sole Sandpack preview instance. */

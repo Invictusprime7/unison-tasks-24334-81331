@@ -57,6 +57,9 @@ export {
 export * from './runtimeManifest';
 export * from './canonicalPipeline';
 
+// Generated runtime profile + advanced runtime capability registry (one source).
+export * from './generatedRuntimeCapabilities';
+
 // Playground state model
 export * from './playground';
 

@@ -8,7 +8,7 @@ import {
 import { buildGeneratedUiFoundation } from '@/platform/core/generatedUiFoundation';
 
 const page = (body: string) => `import * as React from 'react';
-import { ImmersiveHero, ProductStage, DepthGallery } from '@/unison/experience';
+import { ImmersiveHero, ProductStage, DepthGallery } from '@/unison/ui/experience';
 export default function Home() {
   return (<main>${body}</main>);
 }

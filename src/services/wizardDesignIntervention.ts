@@ -36,7 +36,7 @@ export type WizardSectionVariant =
   | 'gallery-lightbox'
   | 'conversion-form';
 
-/** Experience (3D/WebGL) recipes Lane B may compose from @/unison/experience. */
+/** Experience (3D/WebGL) recipes Lane B may compose from @/unison/ui/experience. */
 export type WizardExperienceRecipe =
   | 'immersive-hero'
   | 'product-stage'
@@ -315,7 +315,7 @@ export function buildWizardDesignIntervention(
     motionBudget: baseline.motionBudget,
     experienceRecipes,
     experienceBudget: experience.budget,
-    aiDirective: `Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Art direction is "${pack.name}" — ${pack.description} Experience budget is "${experience.budget}" — compose the immersive layer only from @/unison/experience (${experienceRecipes.join(', ')}), at most one heavy primitive per page band and two per page, and never import three/@react-three/* directly. Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.`,
+    aiDirective: `Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Art direction is "${pack.name}" — ${pack.description} Experience budget is "${experience.budget}" — compose the immersive layer only from @/unison/ui/experience (${experienceRecipes.join(', ')}), at most one heavy primitive per page band and two per page, and never import three/@react-three/* directly. Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.`,
 
   };
 }

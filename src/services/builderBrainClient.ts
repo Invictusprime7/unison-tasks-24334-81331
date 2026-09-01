@@ -297,8 +297,9 @@ export async function runBuilderTurn<TResponse = any>(
   /**
    * Resolve a *user* access token. The edge function verifies the bearer token
    * with `auth.getUser()`, so an expired token (or the anon key) yields a hard
-   * 401 "Invalid or expired token". Refresh proactively when the session is
-   * within 60s of expiry, and force a refresh after a 401.
+   * 401 "Invalid or expired token". A wizard launch runs for minutes with
+   * 135s provider calls, so a token that merely has "more than a minute" left
+   * expires mid-run: require a full launch-scale lifetime before trusting it.
    */
   const getAccessToken = async (rejectedToken?: string): Promise<string | null> => {
     const forceRefresh = !!rejectedToken;
@@ -309,7 +310,8 @@ export async function runBuilderTurn<TResponse = any>(
       // The server rejected this exact token — invalidate the memoized verdict.
       builderTokenChecks.delete(rejectedToken!);
     }
-    if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
+    if (session && !forceRefresh && expiresAt - Date.now() > BUILDER_TOKEN_MIN_LIFETIME_MS) {
+
       // `getSession()` is a local read: a token minted by a different project
       // ref, or invalidated by a signing-key rotation, still looks "valid" here
       // and produces a hard 401 on every edge call. Validate once against Auth

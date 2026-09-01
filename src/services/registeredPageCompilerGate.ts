@@ -40,18 +40,29 @@ interface FunctionScope {
   bodyEnd: number;
 }
 
-/** Index of the matching '}' for the '{' at openIndex, or -1 when unbalanced. */
-function matchBrace(source: string, openIndex: number): number {
+/** Index of the matching closer for the bracket at openIndex, or -1. */
+function matchBracket(source: string, openIndex: number, open: string, close: string): number {
   let depth = 0;
   for (let i = openIndex; i < source.length; i += 1) {
     const ch = source[i];
-    if (ch === '{') depth += 1;
-    else if (ch === '}') {
+    if (ch === open) depth += 1;
+    else if (ch === close) {
       depth -= 1;
       if (depth === 0) return i;
     }
   }
   return -1;
+}
+
+function matchBrace(source: string, openIndex: number): number {
+  return matchBracket(source, openIndex, '{', '}');
+}
+
+/** First non-whitespace index at or after `from`. */
+function skipWhitespace(source: string, from: number): number {
+  let i = from;
+  while (i < source.length && /\s/.test(source[i])) i += 1;
+  return i;
 }
 
 /** Collect function scopes with their real body ranges (brace-matched). */
@@ -62,8 +73,31 @@ function collectFunctionScopes(source: string): FunctionScope[] {
   while ((match = FUNCTION_HEAD.exec(source)) !== null) {
     const name = match[1] || match[2];
     if (!name) continue;
-    const bodyStart = source.indexOf('{', match.index + match[0].length - 1);
-    if (bodyStart === -1) continue;
+    const end = match.index + match[0].length;
+
+    let bodyStart: number;
+    if (match[2]) {
+      // Arrow function: the head already consumed `=>`. A concise body (no
+      // braces) has no scope range to track.
+      bodyStart = skipWhitespace(source, end);
+      if (source[bodyStart] !== '{') continue;
+    } else {
+      // Declaration: skip the parameter list before looking for the body, or a
+      // destructured parameter object is mistaken for the function body.
+      const parenStart = source.indexOf('(', end);
+      if (parenStart === -1) continue;
+      const parenEnd = matchBracket(source, parenStart, '(', ')');
+      if (parenEnd === -1) continue;
+      let cursor = skipWhitespace(source, parenEnd + 1);
+      if (source[cursor] === ':') {
+        // Return type annotation — the body brace follows it.
+        cursor = source.indexOf('{', cursor);
+        if (cursor === -1) continue;
+      }
+      if (source[cursor] !== '{') continue;
+      bodyStart = cursor;
+    }
+
     const bodyEnd = matchBrace(source, bodyStart);
     if (bodyEnd === -1) continue;
     scopes.push({ name, bodyStart, bodyEnd });

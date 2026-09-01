@@ -2650,7 +2650,10 @@ function assertLocalJsxImportContracts(sandpackFiles: Record<string, string>): v
   for (const [filePath, content] of Object.entries(sandpackFiles)) {
     if (!/\.(tsx|jsx)$/.test(filePath)) continue;
 
-    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([\s\S]+?)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
+    // `[^}]` (not `[\s\S]`) keeps the named block inside a single import
+    // statement — otherwise a package import (`{ Float } from '@react-three/drei'`)
+    // pairs with the NEXT relative import and reports a phantom violation.
+    const namedImportRegex = /import\s+(?:[A-Z]\w*\s*,\s*)?\{([^}]*)\}\s+from\s+['"](\.\.?\/[^'"]+)['"];?/g;
     let namedMatch: RegExpExecArray | null;
     while ((namedMatch = namedImportRegex.exec(content)) !== null) {
       const targetPath = resolveRelativeModuleTarget(filePath, namedMatch[2], existingPaths);

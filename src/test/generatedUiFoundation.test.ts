@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   buildGeneratedUiFoundation,
+  GENERATED_UI_FOUNDATION_VERSION,
+
   buildGeneratedUiFoundationDirective,
   ensureGeneratedUiFoundation,
   getGeneratedUiFoundationPersistenceViolations,

@@ -466,6 +466,28 @@ export interface WizardSeedShape {
     motionRecipes?: string[];
     interactionRecipes?: string[];
     motionBudget?: string;
+    activeVariants?: Record<string, string>;
+    experienceRecipes?: string[];
+    experienceBudget?: string;
+    envelope?: {
+      heroCandidates?: string[];
+      contentCandidates?: string[];
+      navigationCandidates?: string[];
+      mediaCandidates?: string[];
+      motionCandidates?: string[];
+      canvasBudget?: number;
+      webgl?: string;
+      [k: string]: unknown;
+    };
+    brief?: {
+      visualArchetype?: string;
+      composition?: Record<string, unknown>;
+      typography?: Record<string, unknown>;
+      media?: Record<string, unknown>;
+      motion?: Record<string, unknown>;
+      experience?: Record<string, unknown>;
+      [k: string]: unknown;
+    };
     aiDirective?: string;
     [k: string]: unknown;
   };
@@ -607,6 +629,19 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
     if (designIntervention.motionRecipes?.length) lines.push(`Motion recipes: ${designIntervention.motionRecipes.join(', ')}`);
     if (designIntervention.interactionRecipes?.length) lines.push(`Interaction recipes: ${designIntervention.interactionRecipes.join(', ')}`);
     if (designIntervention.motionBudget) lines.push(`Motion budget: ${designIntervention.motionBudget}`);
+    if (designIntervention.experienceBudget) lines.push(`Experience budget: ${designIntervention.experienceBudget}`);
+    if (designIntervention.experienceRecipes?.length) lines.push(`Experience recipes: ${designIntervention.experienceRecipes.join(', ')}`);
+    if (designIntervention.activeVariants && Object.keys(designIntervention.activeVariants).length > 0) {
+      lines.push(`Locked section variants: ${Object.entries(designIntervention.activeVariants).map(([id, variant]) => `${id}=${variant}`).join(', ')}`);
+    }
+    if (designIntervention.brief?.visualArchetype) lines.push(`Visual archetype: ${designIntervention.brief.visualArchetype}`);
+    if (designIntervention.brief?.composition) lines.push(`Composition brief: ${JSON.stringify(designIntervention.brief.composition)}`);
+    if (designIntervention.brief?.typography) lines.push(`Typography brief: ${JSON.stringify(designIntervention.brief.typography)}`);
+    if (designIntervention.brief?.media) lines.push(`Media brief: ${JSON.stringify(designIntervention.brief.media)}`);
+    if (designIntervention.envelope?.heroCandidates?.length) lines.push(`Approved hero vocabulary: ${designIntervention.envelope.heroCandidates.join(', ')}`);
+    if (designIntervention.envelope?.contentCandidates?.length) lines.push(`Approved content vocabulary: ${designIntervention.envelope.contentCandidates.join(', ')}`);
+    if (designIntervention.envelope?.navigationCandidates?.length) lines.push(`Approved navigation vocabulary: ${designIntervention.envelope.navigationCandidates.join(', ')}`);
+    if (designIntervention.envelope?.mediaCandidates?.length) lines.push(`Approved media vocabulary: ${designIntervention.envelope.mediaCandidates.join(', ')}`);
     if (designIntervention.aiDirective) lines.push(`Constraint: ${designIntervention.aiDirective}`);
     lines.push('Select and compose from these recipes. Do not invent a conflicting global style system or replace snapshot-owned files.');
     lines.push('');

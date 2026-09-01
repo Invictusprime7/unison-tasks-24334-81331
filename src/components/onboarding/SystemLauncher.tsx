@@ -4223,7 +4223,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const preWiredVfsFiles: Record<string, string> = {
         ...launchArtifacts.files,
         '/.unison/wizard-seed.json': JSON.stringify(wizardSeed, null, 2),
-        '/.unison/visual-quality.json': JSON.stringify(visualQuality ?? null, null, 2),
         '/.unison/launch-readiness.json': JSON.stringify({
           ...nativeReadinessManifest,
           previewReady: true,

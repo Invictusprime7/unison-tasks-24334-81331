@@ -61,6 +61,9 @@ export interface SealSnapshotInput {
   /** Runtime context stamped onto the sealed revision. */
   appContext: RuntimeAppContext;
   interactionManifest?: WizardInteractionManifest | null;
+  visualQuality?: SiteBundleSnapshotMeta['visualQuality'];
+  experiencePreflight?: SiteBundleSnapshotMeta['experiencePreflight'];
+  runtimeCompatibility?: SiteBundleSnapshotMeta['runtimeCompatibility'];
   /** Which stage produced the final merge (traceability only). */
   sealedBy?: 'wizard-launch' | 'recompile' | 'builder-commit' | 'import';
   /**
@@ -138,6 +141,9 @@ export function sealSnapshot(input: SealSnapshotInput): SiteBundleSnapshot {
     // must never re-derive or drop it, or the site stops being reproducible.
     generationSeed: baseline.meta?.generationSeed || baseline.meta?.designIntervention?.seed,
     interactionManifest: input.interactionManifest || baseline.meta?.interactionManifest,
+    visualQuality: input.visualQuality || baseline.meta?.visualQuality,
+    experiencePreflight: input.experiencePreflight || baseline.meta?.experiencePreflight,
+    runtimeCompatibility: input.runtimeCompatibility || baseline.meta?.runtimeCompatibility,
     themeInjection: {
       version: '1.0',
       stage: '4b',

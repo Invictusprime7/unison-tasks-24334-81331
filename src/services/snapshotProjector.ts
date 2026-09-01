@@ -21,6 +21,7 @@ import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { PreviewPipelineError } from './previewPipelineError';
 import { CanonicalRuntimeError } from '@/platform/core/canonicalRuntimeError';
 import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
+import { isSealedSnapshot } from '@/platform/core/snapshotSeal';
 
 const SNAPSHOT_VFS_PATH = '/.unison/site-bundle-snapshot.json';
 const WIZARD_SEED_VFS_PATH = '/.unison/wizard-seed.json';
@@ -428,6 +429,16 @@ export function projectSnapshotVfsFiles(
   resolution: SnapshotResolution,
 ): Record<string, string> {
   if (!resolution.isWizardDraft || !resolution.snapshot) return files;
+
+  if (!isSealedSnapshot(resolution.snapshot)) {
+    throw new CanonicalRuntimeError({
+      surface: 'preview',
+      code: 'UNSEALED_SNAPSHOT',
+      userMessage: 'This site has not finished its launch checks yet. Re-run the System Launcher before opening Preview.',
+      developerMessage: 'Preview attempted to project a pre-seal WizardCompileArtifact as a SiteBundleSnapshot.',
+      recoveryActions: ['run-system-launcher'],
+    });
+  }
 
   const snapshotFiles = (resolution.snapshot as { vfsFiles?: Record<string, string> }).vfsFiles || {};
   if (Object.keys(snapshotFiles).length === 0) return files;

@@ -74,6 +74,7 @@ import { ResearchOverlay, type ResearchOverlayPayload } from "./web-builder/Rese
 import { decideIntentUx } from "@/runtime/intentUx";
 import SystemHealthPanel from "@/components/web-builder/SystemHealthPanel";
 import ReadinessCenterPanel from "@/components/web-builder/ReadinessCenterPanel";
+import ThemeTokenEditorPanel from "@/components/web-builder/ThemeTokenEditorPanel";
 import GateVerdictStrip from "@/components/web-builder/GateVerdictStrip";
 import RevisionLedgerStatus from "@/components/web-builder/RevisionLedgerStatus";
 import { useCompiledContract } from "@/hooks/useCompiledContract";

@@ -4380,12 +4380,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const canonicalSiteBundleSnapshot = result.siteBundleSnapshot ?? launchArtifacts.siteBundleSnapshot;
       const canonicalRuntimeManifest = result.runtimeManifest ?? pipelineManifest;
       if (!(launchArtifacts.entryPoint in canonicalVfsFiles)) {
-        run.degrade(
-          'commit',
-          'commit.entry_missing',
-          'The saved copy was missing your home page, so the builder opened the generated one.',
+        throw new LaunchFatalError(
+          `The committed revision is missing its entry module ${launchArtifacts.entryPoint}; refusing a non-canonical builder handoff.`,
         );
-        canonicalVfsFiles[launchArtifacts.entryPoint] = wiredVfsFiles[launchArtifacts.entryPoint];
       }
       console.log('[SystemLauncher] canonical revision persisted', launcherRevisionId);
 
@@ -4408,14 +4405,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           pages: sealedPagePaths.length,
         });
         if (missingAfterCommit.length > 0) {
-          for (const path of missingAfterCommit) {
-            canonicalVfsFiles[path] = wiredVfsFiles[path];
-          }
-          run.degrade(
-            'commit',
-            'commit.snapshot_continuity',
-            'Some pages finished saving after the builder opened.',
-            missingAfterCommit.join(', '),
+          throw new LaunchFatalError(
+            `The committed revision dropped sealed page files (${missingAfterCommit.join(', ')}); refusing a partial builder handoff.`,
           );
         }
       }

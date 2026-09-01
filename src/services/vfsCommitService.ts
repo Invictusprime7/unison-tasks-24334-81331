@@ -335,6 +335,9 @@ export async function commitMutation(
       | null,
     industry: input.options?.industry,
     brand: input.options?.businessName,
+    // The launcher hands this service an already converged and sealed artifact.
+    // Commit may verify it, but must never become a second source-writing stage.
+    mode: input.source === 'wizard-launch' ? 'acceptance' : 'repair',
   });
   files = preflight.files;
   if (input.source === 'wizard-launch') {
@@ -346,7 +349,8 @@ export async function commitMutation(
 
   const previewOk =
     preflight.stages.earlyRepair !== 'failed' &&
-    preflight.stages.finalRepair !== 'failed';
+    preflight.stages.finalRepair !== 'failed' &&
+    preflight.violations.length === 0;
   log('preflight', previewOk ? 'info' : 'warn', 'preflight stages', preflight.stages);
 
   const gate = canonicalResult?.gate ?? null;
@@ -452,6 +456,7 @@ export async function commitMutation(
           | null,
         industry: input.options?.industry,
         brand: input.options?.businessName,
+          mode: input.source === 'wizard-launch' ? 'acceptance' : 'repair',
       });
       files = preflight.files;
     } catch (err) {
@@ -459,7 +464,8 @@ export async function commitMutation(
     }
     const previewOk2 =
       preflight.stages.earlyRepair !== 'failed' &&
-      preflight.stages.finalRepair !== 'failed';
+      preflight.stages.finalRepair !== 'failed' &&
+      preflight.violations.length === 0;
     const readinessOk2 =
       (!gate || gate.previewReady) &&
       (!previewVerdict || previewVerdict.ok) &&
@@ -739,12 +745,15 @@ function mergeWizardLaunchSnapshot(
 ): SiteBundleSnapshot | null {
   if (!snapshot) return null;
   const routerPath = snapshot.routerFile?.path || '/src/App.tsx';
+  const runtimeFiles = Object.fromEntries(
+    Object.entries(files).filter(([path]) => !path.startsWith('/.unison/')),
+  );
   return {
     ...snapshot,
-    vfsFiles: files,
+    vfsFiles: runtimeFiles,
     routerFile: {
       path: routerPath,
-      content: files[routerPath] || files['/src/App.tsx'] || snapshot.routerFile?.content || '',
+      content: runtimeFiles[routerPath] || runtimeFiles['/src/App.tsx'] || snapshot.routerFile?.content || '',
     },
   };
 }

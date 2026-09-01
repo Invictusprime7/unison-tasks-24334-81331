@@ -60,9 +60,11 @@ export function assessWizardHomePresentation(input: {
 }): WizardPresentationAssessment {
   const homePath = input.homePath.startsWith('/') ? input.homePath : `/${input.homePath}`;
   const generatedHome = input.aiFiles[homePath] || input.aiFiles[homePath.slice(1)] || '';
-  const reason = generatedPageFallbackReason(generatedHome, Boolean(
-    input.contract.sections.some((section) => section.hasMedia),
-  ));
+  const reason = generatedPageFallbackReason(
+    generatedHome,
+    Boolean(input.contract.sections.some((section) => section.hasMedia)),
+    resolveLocalImportSources(generatedHome, input.aiFiles, homePath),
+  );
   return reason
     ? { rejections: [{ path: homePath, reason }], rejectedPaths: [homePath], reasons: { [homePath]: reason } }
     : { rejections: [], rejectedPaths: [], reasons: {} };
@@ -89,7 +91,11 @@ function extractCanonicalSections(pageSource: string): Array<{
   }
 }
 
-function canonicalPageFallbackReason(generatedPage: string, canonicalPage: string): string | null {
+function canonicalPageFallbackReason(
+  generatedPage: string,
+  canonicalPage: string,
+  linkedSources: string[] = [],
+): string | null {
   const sections = extractCanonicalSections(canonicalPage);
   const canonicalNeedsMedia = sections.some((section) => {
     const props = section.props || {};
@@ -99,7 +105,7 @@ function canonicalPageFallbackReason(generatedPage: string, canonicalPage: strin
       items.some((item) => item && typeof item === 'object' && ('src' in item || 'image' in item)),
     );
   });
-  return generatedPageFallbackReason(generatedPage, canonicalNeedsMedia);
+  return generatedPageFallbackReason(generatedPage, canonicalNeedsMedia, linkedSources);
 }
 
 function heroIdentity(pageSource: string): string[] {
@@ -289,7 +295,11 @@ export function assessWizardPagePresentations(input: {
     const generatedPage = input.aiFiles[path] || input.aiFiles[path.slice(1)] || '';
     const canonicalPage = input.canonicalFiles[path] || input.canonicalFiles[path.slice(1)];
     if (!canonicalPage) continue;
-    const reason = canonicalPageFallbackReason(generatedPage, canonicalPage) ||
+    const reason = canonicalPageFallbackReason(
+      generatedPage,
+      canonicalPage,
+      resolveLocalImportSources(generatedPage, input.aiFiles, path),
+    ) ||
       heroGeometryFallbackReason(generatedPage, input.requiredHeroGeometry) ||
       pageDepthFallbackReason(generatedPage, floors[path] ?? floors[path.slice(1)]) || (
         path === homePath ? null : routeHeroFallbackReason(generatedPage, canonicalPage, canonicalHomePage)

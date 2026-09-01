@@ -102,7 +102,7 @@ import {
   resolveProjectActivePagePath,
 } from '@/services/projectRuntimeEnvelope';
 import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
-import { emptyPatchPlan, legacyFilesToPatchPlan } from "@/types/patchPlan";
+import { emptyPatchPlan, legacyFilesToPatchPlan, type FileOp } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
 import { normalizeUnisonRuntimeContext } from "@/platform/core/runtimeManifest";
 import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';

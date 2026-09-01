@@ -100,7 +100,7 @@ export function buildGeneratedUiFoundationDirective(
     '  - "@/unison/ui/icon" (singular) exports only the <Icon icon={...} /> wrapper component, not raw icon glyphs.',
     '  - "@/unison/ui/motion" exports ONLY Reveal, RevealGroup, StaggerGroup, Stagger, StaggerItem, and the MotionRecipe type — nothing else.',
     '  - "@/unison/ui/animation" is the full framer-motion re-export (motion, AnimatePresence, useReducedMotion, useScroll, useInView, etc.) — use this facade for any raw framer-motion export not in the @/unison/ui/motion list above.',
-    'Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally. Use plain <img alt="..."> for images, not a framework-specific Image component.',
+    'Do not import "@/unison/ui/tailwind.css" from a page; it is already applied globally. Use <Image src alt /> or a plain <img alt="...">; there is no framework-specific next/image component.',
     COMPOSITION_VOCABULARY_DIRECTIVE,
     requirementsList ? 'Manifest requirements for this snapshot:' : '',
     requirementsList,
@@ -456,7 +456,7 @@ export { Panel, MediaFrame, FeaturePanel, type PanelProps, type PanelTone, type 
 export { FieldLabel, Label, FormLabel, Input, TextInput, Textarea, TextArea, Select, Checkbox, FormField, FormFields, FormGrid, FormHint, FormError, Form, FormItem, FormControl, FormDescription, FormMessage } from './form-fields';
 export { useForm, useFormContext, useFieldArray, Controller, zodResolver, z } from './forms';
 export { Icon } from './icon';
-export { ImageLightbox } from './media';
+export { Image, ImageLightbox } from './media';
 export { Reveal, RevealGroup, StaggerGroup, Stagger, StaggerItem, type MotionRecipe } from './motion';
 export { FloatingNavbar, type NavigationLink } from './navigation';
 export { BentoFeatureGrid, FeatureCard } from './recipes';
@@ -1112,7 +1112,7 @@ export const GENERATED_UI_BARREL_EXPORTS: ReadonlySet<string> = new Set([
   'FieldLabel', 'Label', 'FormLabel', 'Input', 'TextInput', 'Textarea', 'TextArea',
   'Select', 'Checkbox', 'FormField', 'FormFields', 'FormGrid', 'FormHint', 'FormError',
   'Form', 'FormItem', 'FormControl', 'FormDescription', 'FormMessage',
-  'Icon', 'ImageLightbox',
+  'Icon', 'Image', 'ImageLightbox',
   'Reveal', 'RevealGroup', 'StaggerGroup', 'Stagger', 'StaggerItem',
   'FloatingNavbar', 'BentoFeatureGrid', 'FeatureCard',
   'Slot', 'Slottable',

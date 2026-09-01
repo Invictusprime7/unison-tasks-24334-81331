@@ -2400,7 +2400,15 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           basePayloadBytes: firstAttemptPayloadBytes,
           maxPagesPerBatch: WIZARD_LANE_B_PAGES_PER_RESPONSE,
         });
+        // A launch is minutes of concurrent 135s Lane B calls. Rotate the
+        // session ONCE up-front so no batch discovers an expired token
+        // mid-flight and collapses the run into empty per-page recoveries.
+        const sessionReady = await primeBuilderSession();
+        if (!sessionReady) {
+          throw new Error('Your session expired. Please sign in again, then relaunch the wizard.');
+        }
         let result: { data: any | null; error: unknown };
+
 
         if (firstAttemptBatchPlan.batches.length > 1) {
           console.info(

@@ -3495,7 +3495,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           '── LANE B REPAIR TURN — REGENERATE MISSING WIZARD PAGES ──',
           'Your previous response omitted or under-generated the following selected wizard pages.',
           'Re-emit ONLY these complete replacement files in the same multi-file JSON contract.',
-          'Do NOT touch shared chrome (SiteNavbar/SiteFooter), Home, or App.tsx.',
+          'Do NOT touch Home or App.tsx.',
           'Each page must be a complete, production-quality, industry-faithful',
           'React page (5+ sections, real copy, working data-ut-intent CTAs).',
           '',
@@ -3624,7 +3624,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             getWizardPageRoleInstruction(resolvedPageRole)
               ? `Structural requirement for this role: ${getWizardPageRoleInstruction(resolvedPageRole)}`
               : '',
-            'MANDATORY CHROME CONTRACT: the page body owns its chrome. Render EXACTLY ONE navigation landmark as the first element (`<FloatingNavbar ... />` from "@/unison/ui" or a single `<nav aria-label="Primary navigation">`) and EXACTLY ONE `<footer>` as the last element. Zero or duplicate chrome is rejected.',
+            'CHROME: the router injects nothing, so this page body owns whatever navigation and footer it shows. Author chrome that fits the page (FloatingNavbar from "@/unison/ui", a hand-authored <nav>, or a bespoke header) with links matching the registered routes — just never two competing primary nav bars or two footers on one page.',
 
             `Selected template ID: ${wizardSelections.templateId}`,
             `Selected theme preset ID: ${wizardSelections.themePresetId}`,
@@ -3649,9 +3649,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               : '',
             previousFailure?.includes('no canonical data-ut-intent wiring') && pageIntent
               ? `INTENT REPAIR REQUIRED: wire a real page action with data-ut-intent="${pageIntent}".`
-              : '',
-            previousFailure && /navigation landmark|footer landmark|competing (?:navigation|footer) chrome/i.test(previousFailure)
-              ? 'CHROME REPAIR REQUIRED: this page body owns its chrome. The FIRST element inside the returned fragment must be exactly one navigation landmark (`<FloatingNavbar brand={...} links={...} ctaLabel={...} />` from "@/unison/ui", or a single hand-authored `<nav aria-label="Primary navigation">`) and the LAST element must be exactly one `<footer>`. Never emit zero and never emit two of either.'
               : '',
 
             '',
@@ -3684,7 +3681,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             pageIntent
               ? `Include working data-ut-intent="${pageIntent}" behavior appropriate to this page role and industry.`
               : 'Include working data-ut-intent behavior appropriate to this page role.',
-            'Do not emit App.tsx, shared chrome, placeholder copy, quarantine UI, or a preset scaffold.',
+            'Do not emit App.tsx, placeholder copy, quarantine UI, or a preset scaffold.',
             rejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
           ].join('\n');
 
@@ -3864,7 +3861,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           'Each module must be a complete, syntactically valid TypeScript React module with explicit exports matching how the importing file uses it.',
           'You may also return a corrected version of the importing file if that is the cleaner fix.',
           'Modules and styling are universal — use any listed module, layout family, animation primitive, or theme token regardless of industry.',
-          'Do not emit App.tsx, /src/index.css, shared chrome, or any @/unison/ui foundation file.',
+          'Do not emit App.tsx, /src/index.css, or any @/unison/ui foundation file.',
           buildModuleInventoryDirective({
             files: { ...canonicalScaffoldFiles, ...aiSourcedFiles },
             targetPaths,

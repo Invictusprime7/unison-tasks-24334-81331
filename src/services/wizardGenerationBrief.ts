@@ -92,7 +92,7 @@ export interface WizardGenerationBrief {
     classes: string[];
     rule: string;
   };
-  /** Chrome authority: page bodies own exactly one navbar and one footer. */
+  /** Chrome authority: the page body is the only place chrome can exist. */
   chrome: {
     owner: 'page-body';
     rule: string;
@@ -320,7 +320,7 @@ export function buildWizardGenerationBrief(input: {
     },
     chrome: {
       owner: 'page-body',
-      rule: 'Each page body owns its chrome and must render EXACTLY ONE navigation landmark and EXACTLY ONE footer. Start every page with <FloatingNavbar brand={...} links={...} ctaLabel={...} /> imported from "@/unison/ui" (or a single hand-authored <nav>) and end it with exactly one <footer> element — a page with no navigation landmark is rejected. The router renders routes only — it adds no navbar and no footer. Never emit /src/sections/SiteNavbar.tsx or /src/sections/SiteFooter.tsx, never render a second <nav>/<header> nav bar or a second <footer>, and keep the nav links identical to the registered routes below.',
+      rule: 'The router renders routes only — it never injects a navbar or a footer, and there is no platform-owned chrome module. Whatever navigation or footer a visitor sees must be authored inside the page body itself, so give each page the site navigation it needs (a floating bar, a plain header, a hand-authored <nav>, or the shared <FloatingNavbar brand={...} links={...} ctaLabel={...} /> from "@/unison/ui") and keep its links identical to the registered routes below. Design the chrome to fit the page — no fixed count is imposed — but never render two competing primary nav bars or two footers on the same page, and never emit /src/sections/SiteNavbar.tsx or /src/sections/SiteFooter.tsx.',
       routes: routes.map((route) => ({ path: route.path, label: route.title })),
     },
     ui: {

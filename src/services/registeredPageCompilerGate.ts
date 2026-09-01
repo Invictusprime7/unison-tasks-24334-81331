@@ -34,22 +34,62 @@ function normalize(path: string): string {
   return path.startsWith('/') ? path : `/${path}`;
 }
 
-/** Name of the enclosing function declaration for a given source offset. */
-function enclosingFunctionName(source: string, offset: number): string | null {
+interface FunctionScope {
+  name: string;
+  bodyStart: number;
+  bodyEnd: number;
+}
+
+/** Index of the matching '}' for the '{' at openIndex, or -1 when unbalanced. */
+function matchBrace(source: string, openIndex: number): number {
+  let depth = 0;
+  for (let i = openIndex; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Collect function scopes with their real body ranges (brace-matched). */
+function collectFunctionScopes(source: string): FunctionScope[] {
+  const scopes: FunctionScope[] = [];
   FUNCTION_HEAD.lastIndex = 0;
-  let name: string | null = null;
   let match: RegExpExecArray | null;
   while ((match = FUNCTION_HEAD.exec(source)) !== null) {
-    if (match.index > offset) break;
-    name = match[1] || match[2] || null;
+    const name = match[1] || match[2];
+    if (!name) continue;
+    const bodyStart = source.indexOf('{', match.index + match[0].length - 1);
+    if (bodyStart === -1) continue;
+    const bodyEnd = matchBrace(source, bodyStart);
+    if (bodyEnd === -1) continue;
+    scopes.push({ name, bodyStart, bodyEnd });
   }
-  return name;
+  return scopes;
+}
+
+/**
+ * Innermost function scope whose brace-matched body contains the offset.
+ * Purely positional lookup — a helper arrow declared *before* a hook call no
+ * longer shadows the component that actually encloses it.
+ */
+function enclosingFunctionName(scopes: readonly FunctionScope[], offset: number): string | null {
+  let best: FunctionScope | null = null;
+  for (const scope of scopes) {
+    if (offset <= scope.bodyStart || offset >= scope.bodyEnd) continue;
+    if (!best || scope.bodyStart > best.bodyStart) best = scope;
+  }
+  return best?.name ?? null;
 }
 
 function isReactScope(name: string | null): boolean {
   if (!name) return false;
   return /^[A-Z]/.test(name) || /^use[A-Z]/.test(name);
 }
+
 
 export function validateRegisteredPageCompilation(
   files: Record<string, string>,

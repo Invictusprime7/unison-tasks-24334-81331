@@ -350,7 +350,7 @@ export async function commitMutation(
   const previewOk =
     preflight.stages.earlyRepair !== 'failed' &&
     preflight.stages.finalRepair !== 'failed' &&
-    preflight.violations.length === 0;
+    (preflight.violations?.length ?? 0) === 0;
   log('preflight', previewOk ? 'info' : 'warn', 'preflight stages', preflight.stages);
 
   const gate = canonicalResult?.gate ?? null;
@@ -465,7 +465,7 @@ export async function commitMutation(
     const previewOk2 =
       preflight.stages.earlyRepair !== 'failed' &&
       preflight.stages.finalRepair !== 'failed' &&
-      preflight.violations.length === 0;
+      (preflight.violations?.length ?? 0) === 0;
     const readinessOk2 =
       (!gate || gate.previewReady) &&
       (!previewVerdict || previewVerdict.ok) &&

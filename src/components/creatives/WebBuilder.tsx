@@ -2858,6 +2858,86 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     );
   }, [templateCustomizer.activeVariants, commitPresentationOps]);
 
+  /**
+   * Theme-token overrides. The editor only produces FileOps for
+   * `/src/index.css` + `/.unison/theme-overrides.json`; they enter the ledger
+   * as a `theme-change` PatchPlan so the SiteBundleSnapshot owns the result.
+   */
+  const commitThemeTokenOps = useCallback(async (
+    ops: FileOp[],
+    summary: string,
+  ): Promise<boolean> => {
+    if (!businessId || !currentDraftId || ops.length === 0) return false;
+    const beforeFiles = virtualFSRef.current.getSandpackFiles();
+    const snapshot = resolveSnapshot(beforeFiles, effectiveRouteState as any).snapshot
+      ?? effectiveRouteState?.siteBundleSnapshot
+      ?? null;
+    if (!snapshot) {
+      toast.error('No canonical snapshot to restyle yet');
+      return false;
+    }
+    try {
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      if (!user) return false;
+      const patch = emptyPatchPlan(summary);
+      patch.fileOps.push(...ops);
+      const commit = await commitMutation({
+        source: 'theme-change',
+        identity: {
+          userId: user.id,
+          businessId,
+          projectId: resolvedProjectId || currentDraftId,
+          draftId: currentDraftId,
+          revisionId: currentRevisionIdRef.current,
+          sessionId: `web-builder:${currentDraftId}`,
+        },
+        current: {
+          vfsFiles: beforeFiles,
+          siteBundleSnapshot: snapshot,
+          playground: {
+            pageRegistry: creatorPlayground.pageRegistry,
+            creatorData: creatorPlayground.creatorData,
+            calendars: snapshot.calendars ?? {},
+            popups: snapshot.popups ?? {},
+          } as never,
+        },
+        patch,
+        options: {
+          requirePreviewPass: false,
+          requireReadinessPass: false,
+          industry: snapshot.industry,
+          themePresetId: snapshot.meta.themePresetId ?? undefined,
+          themeTokens: snapshot.themeTokens,
+        },
+      });
+      if (commit.status !== 'committed') {
+        throw new CommitRejectedError('theme token override was rejected', commit);
+      }
+      importBuilderFiles(commit.vfsFiles, {
+        replace: true,
+        preferredPath: activePagePath,
+        entryPoint: launchEntryPoint,
+      });
+      if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
+      toast.success('Theme tokens applied');
+      return true;
+    } catch (err) {
+      console.warn('[WebBuilder] theme token commit failed:', err);
+      toast.error('Could not apply the theme tokens');
+      return false;
+    }
+  }, [
+    businessId,
+    currentDraftId,
+    resolvedProjectId,
+    creatorPlayground.pageRegistry,
+    creatorPlayground.creatorData,
+    activePagePath,
+    launchEntryPoint,
+    effectiveRouteState,
+    importBuilderFiles,
+  ]);
+
 
   // ── Preview Floating Toolbar → VFSCommitService bridge ───────────────────
   // Mirrors the layout fast-path effect: persists every toolbar-driven edit

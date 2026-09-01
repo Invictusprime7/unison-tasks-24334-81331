@@ -1,7 +1,7 @@
 # Roadmap
 
 ## Open
-- [ ] M7 — end-to-end wizard generation walk. Blocker: Lane B batch responses intermittently quarantined by the pre-binding syntax gate, forcing slow isolated completions (and one fatal `Booking.tsx` failure). Verified NOT a truncation/parse bug: a captured 8-page Lane B response replayed offline through `sanitizeGeneratedFiles` → import healer → `runPreflightRepair` came back 8/8 clean. Next: capture the *batch* responses that actually quarantine (the launcher now logs `Early syntax repair` details as JSON instead of a collapsed object).
+- [ ] M7 — end-to-end wizard generation walk. Batch orchestration fix landed: Lane B page groups now run serially, each group is syntax-gated before merge, malformed groups cannot poison the VFS, and unrequested top-level pages cannot leak in as companions. Next: verify one complete Wizard walk across every generated route.
 - [x] Builder theme-token editor (persisted overrides through the canonical commit path)
 - [ ] Final consolidation sweep — confirm no parallel body-authoring paths remain; full suite green
 

@@ -545,9 +545,11 @@ const WIZARD_BATCH_REPAIR_MAX_PAGES = 2;
 // shorter per-page cap for multi-page rounds only starved the provider loop
 // without shortening the round's actual wall-clock time.
 const WIZARD_ISOLATED_PAGE_COMPLETION_MS = 132_000;
-// Kept low while only Gemini is funded: 4-way parallel isolated completions
-// contend for the same per-minute quota and starve every request's timeout.
-const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 2;
+// Lane B requests share one workspace/provider budget. Running page groups in
+// parallel made valid full-site generations degrade into malformed per-batch
+// responses under contention. Keep one authoring turn in flight and validate
+// it before advancing to the next canonical page group.
+const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 1;
 const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 // A pure timeout/transport failure never produced content to judge, so it
 // must not consume the 2-attempt content/syntax-repair budget an isolated
@@ -2400,17 +2402,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           let completedFirstAttemptBatches = 0;
           setLaunchStatus(`Generating site… (0/${firstAttemptBatchPlan.batches.length} page groups)`);
 
-          for (
-            let batchOffset = 0;
-            batchOffset < firstAttemptBatchPlan.batches.length;
-            batchOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS
-          ) {
-            const batchWave = firstAttemptBatchPlan.batches.slice(
-              batchOffset,
-              batchOffset + WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS,
-            );
-            const outcomes = await Promise.all(batchWave.map(async (batch, waveIndex) => {
-              const batchNumber = batchOffset + waveIndex + 1;
+          for (let batchIndex = 0; batchIndex < firstAttemptBatchPlan.batches.length; batchIndex += 1) {
+            const batch = firstAttemptBatchPlan.batches[batchIndex];
+            const batchNumber = batchIndex + 1;
+            const outcome = await (async () => {
               const batchPrompt = buildFirstAttemptPrompt(batch);
               try {
                 const batchBudgetMs = takeWizardGenerationBudget(
@@ -2459,26 +2454,55 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 if (Object.keys(scopedPages).length === 0) {
                   return { error: new Error(`Lane B first-pass batch ${batchNumber} omitted every requested page file.`) };
                 }
-                return { files: { ...companions, ...scopedPages } };
+                const scopedFiles = { ...companions, ...scopedPages };
+                const batchSyntax = runPreflightRepair(scopedFiles, {
+                  context: { industry: generationCategory, brand },
+                  allowQuarantine: false,
+                  budgetMs: 8_000,
+                });
+                const malformedRequestedPages = batchSyntax.reports
+                  .filter((report) => report.status === 'quarantined' && batch.includes(report.path))
+                  .map((report) => `${report.path}: ${report.finalError || 'unparseable TSX'}`);
+                if (malformedRequestedPages.length > 0) {
+                  return {
+                    error: new Error(
+                      `Lane B first-pass batch ${batchNumber} returned malformed requested pages: ${malformedRequestedPages.join(' | ')}`,
+                    ),
+                  };
+                }
+                const acceptedFiles = Object.fromEntries(
+                  Object.entries(batchSyntax.files).filter(([path]) => (
+                    !batchSyntax.reports.some((report) => report.path === path && report.status === 'quarantined')
+                  )),
+                );
+                console.info('[SystemLauncher] Lane B batch accepted', {
+                  batch: batchNumber,
+                  pages: batch,
+                  repaired: batchSyntax.repairedCount,
+                });
+                return { files: acceptedFiles };
 
               } catch (batchError) {
                 return { error: batchError };
               }
-            }));
+            })();
 
-            for (const outcome of outcomes) {
-              completedFirstAttemptBatches += 1;
-              setLaunchStatus(
-                `Generating site… (${completedFirstAttemptBatches}/${firstAttemptBatchPlan.batches.length} page groups)`,
-              );
-              if (outcome.error) {
-                firstAttemptFailure ||= outcome.error;
-                continue;
-              }
-              for (const [path, content] of Object.entries(outcome.files || {})) {
-                if (typeof content === 'string' && content.trim()) {
-                  mergedFirstAttemptFiles[path] = content;
-                }
+            completedFirstAttemptBatches += 1;
+            setLaunchStatus(
+              `Generating site… (${completedFirstAttemptBatches}/${firstAttemptBatchPlan.batches.length} page groups)`,
+            );
+            if (outcome.error) {
+              firstAttemptFailure ||= outcome.error;
+              console.warn('[SystemLauncher] Lane B batch rejected before merge', {
+                batch: batchNumber,
+                pages: batch,
+                reason: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+              });
+              continue;
+            }
+            for (const [path, content] of Object.entries(outcome.files || {})) {
+              if (typeof content === 'string' && content.trim()) {
+                mergedFirstAttemptFiles[path] = content;
               }
             }
           }
@@ -2558,12 +2582,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                 ? `Generating site… (0/${batches.length} sections)`
                 : 'Generating site…',
             );
-            // Each batch requests a disjoint, non-overlapping page list against
-            // the same fixed shared context (blueprint, design profile, wizard
-            // seed) — there is no batch-to-batch data dependency, so running
-            // them concurrently is safe and cuts wall-clock from sum(batches)
-            // to max(batches) instead.
-            const batchOutcomes = await Promise.all(batches.map(async (batch, i) => {
+            // Provider capacity and auth are shared across all Lane B calls.
+            // Execute recovery groups serially so a retry cannot contend with a
+            // sibling generation and turn a transient quota/timeout into broken
+            // source that later poisons the merged VFS.
+            const batchOutcomes: Array<{ files?: Record<string, string>; error?: unknown }> = [];
+            for (let i = 0; i < batches.length; i += 1) {
+              const batch = batches[i];
               const batchPrompt = [
                 buildFirstAttemptPrompt(batch),
                 '',
@@ -2611,14 +2636,32 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   (batchStructured?.files || {}) as Record<string, unknown>,
                   batch,
                 );
-                return { files: { ...companions, ...scopedPages } };
+                const scopedFiles = { ...companions, ...scopedPages };
+                const batchSyntax = runPreflightRepair(scopedFiles, {
+                  context: { industry: generationCategory, brand },
+                  allowQuarantine: false,
+                  budgetMs: 8_000,
+                });
+                const malformedRequestedPages = batchSyntax.reports
+                  .filter((report) => report.status === 'quarantined' && batch.includes(report.path));
+                if (malformedRequestedPages.length > 0) {
+                  return {
+                    error: new Error(
+                      `Lane B recovery batch ${i + 1} returned malformed requested pages: ` +
+                      malformedRequestedPages.map((report) => `${report.path}: ${report.finalError || 'unparseable TSX'}`).join(' | '),
+                    ),
+                  };
+                }
+                return { files: batchSyntax.files };
 
               } catch (batchThrow) {
                 completedBatches += 1;
                 setLaunchStatus(`Generating site… (${completedBatches}/${batches.length} sections)`);
                 return { error: batchThrow };
               }
-            }));
+              })();
+              batchOutcomes.push(outcome);
+            }
             for (const outcome of batchOutcomes) {
               if (outcome.error) {
                 batchFailure = outcome.error;

@@ -11,11 +11,14 @@ Make a multi-page Wizard launch complete its AI-authored Lane B output, seal one
 
 ## Implementation
 
-### 1. Establish one chrome contract everywhere
-- Make **page-owned chrome** the sole contract because the canonical router is route-only and final merge already strips legacy shared chrome modules.
-- Update edge prompts/context builders, Stage 4b scaffolding, topology refresh, and generation briefs so every generated page renders exactly one navigation landmark and one footer.
-- Stop generating or depending on `SiteNavbar.tsx` / `SiteFooter.tsx` in Wizard artifacts.
-- Keep the duplicate/missing chrome quality gate, but make it validate the same contract the generators receive.
+### 1. One ownership rule, no prescriptive chrome contract
+Keep a single structural rule and let Wizard generation decide everything else about navigation and footers.
+
+- **Ownership (kept, non-negotiable):** each generated page owns its own chrome, because the canonical router is route-only and the final merge already removes shared chrome modules. Ambiguous ownership is what produced both the duplicate-chrome bug and the current false rejections.
+- **Form (removed):** drop the prescriptive rules that dictate a specific primitive, tag, attribute, position, or link set. The AI may author a floating bar, sidebar, split header, overlay menu, minimal mark, or an unconventional per-industry treatment, and may vary it between sites.
+- **Sync every generator to that single rule:** edge prompts/context builders, Stage 4b scaffolding, topology refresh, and generation briefs. Stop producing or depending on `SiteNavbar.tsx` / `SiteFooter.tsx` in Wizard artifacts.
+- **Chrome checking becomes advisory, never fatal:** report missing or duplicated chrome as a launch note and at most one targeted repair turn. It can no longer reject a page or fail a launch, so an unusual-but-valid design ships.
+
 
 ### 2. Replace stacked timeout races with bounded scheduling
 - Remove client-side timer aborts around in-flight AI/Gateway requests; retain cancellation only for explicit user cancellation.
@@ -27,7 +30,7 @@ Make a multi-page Wizard launch complete its AI-authored Lane B output, seal one
 ### 3. Preserve strict authorship without fallback leakage
 - Keep the “every registered page is AI-authored” seal and module/import integrity checks.
 - Do not substitute scaffold pages, remove repair/integrity gates, or create a second acceptance path.
-- Classify failures by transport, retryable provider response, syntax/contract rejection, chrome rejection, and unresolved import; only retry the categories that can recover.
+- Classify failures by transport, retryable provider response, syntax error, and unresolved import; only retry the categories that can recover. Chrome and other visual notes never count as failures.
 - Surface the exact terminal reason inline if a real provider/configuration failure remains, rather than the generic missing-pages summary.
 
 ### 4. Make handoff atomic and deterministic
@@ -36,7 +39,7 @@ Make a multi-page Wizard launch complete its AI-authored Lane B output, seal one
 - Hand WebBuilder the persisted revision/snapshot identity and verify Sandpack compiles the same resolved files before closing the launcher.
 
 ## Verification
-- Add regression tests that run real Stage 4b scaffold output through chrome counting and final merge, proving exactly one navbar/footer survives per page and no shared chrome modules remain.
+- Add regression tests proving no generator still emits or depends on shared chrome modules, that varied AI chrome styles (floating bar, sidebar, minimal header, custom footer) all survive the merge, and that a page with unusual chrome is noted but never rejected.
 - Add scheduler tests for 4-, 7-, and 9-page sites, delayed responses, one retryable failure, one quality repair, and module closure; verify successful siblings are retained and no timer produces HTTP 499.
 - Add an end-to-end Wizard launch test that confirms: all selected routes are AI-authored, PageRegistry paths match the deterministic router, the SiteBundleSnapshot is persisted once, WebBuilder opens, and Sandpack resolves every page/module.
 - Invoke the changed AI route once and inspect the Gateway and edge-function response/logs before completion; then run focused pipeline, chrome, persistence, and preview tests.

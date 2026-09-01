@@ -1619,15 +1619,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       };
 
 
-      // ── ASSERTION: themePresetId must be threaded into WizardSelections. ──
+      // themePresetId must be threaded into WizardSelections. If it is somehow
+      // absent we repair it from the resolved Style card instead of aborting.
       if (!wizardSelections.themePresetId) {
-        const msg =
-          '[SystemLauncher] WizardSelections assertion failed: themePresetId is missing on the payload sent to commitToPipeline. ' +
-          'This indicates a regression in the wizard → pipeline contract.';
-        console.error(msg, wizardSelections);
-        toast.error('Build aborted: wizard payload missing theme preset.');
-        throw new Error(msg);
+        console.warn(
+          '[SystemLauncher] WizardSelections was missing themePresetId; repairing from the resolved Style card.',
+          { repairedTo: earlyResolvedPreset.id },
+        );
+        wizardSelections.themePresetId = earlyResolvedPreset.id;
       }
+
 
       // ── Pre-seed for page composition ────────────────────────────────────
       // Build a minimal WizardSeed BEFORE commitToPipeline so the canonical

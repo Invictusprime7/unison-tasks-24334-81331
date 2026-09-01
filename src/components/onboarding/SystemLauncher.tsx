@@ -3529,7 +3529,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           '── LANE B REPAIR TURN — REGENERATE MISSING WIZARD PAGES ──',
           'Your previous response omitted or under-generated the following selected wizard pages.',
           'Re-emit ONLY these complete replacement files in the same multi-file JSON contract.',
-          'Do NOT touch Home or App.tsx.',
+          // Home is a regular registry page here: when Lane B's first turn
+          // authored no Home body, Home IS one of the missing pages and the
+          // repair turn must regenerate it. Only App.tsx stays off-limits
+          // (the deterministic router owns it).
+          normalizedMissing.some((path) => /\/Home\.(tsx|jsx)$/i.test(path))
+            ? 'Do NOT emit App.tsx. Home IS listed below and MUST be regenerated in full.'
+            : 'Do NOT touch Home or App.tsx.',
           'Each page must be a complete, production-quality, industry-faithful',
           'React page (5+ sections, real copy, working data-ut-intent CTAs).',
           '',
@@ -3658,6 +3664,35 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             getWizardPageRoleInstruction(resolvedPageRole)
               ? `Structural requirement for this role: ${getWizardPageRoleInstruction(resolvedPageRole)}`
               : '',
+            // The presentation gate measures the completed page against the
+            // sealed generation brief. A regenerated Home that ignores the
+            // selected hero geometry or the route depth floor is rejected
+            // again, so the exact contract travels with the completion turn.
+            ...(() => {
+              const brief = siteBundleSnapshot.meta.generationBrief;
+              if (!brief) return [] as string[];
+              const route = (brief.routes || []).find((candidate) => {
+                const registryPath = page?.path || '/';
+                return candidate.path === registryPath;
+              });
+              const isHome = /\/Home\.(tsx|jsx)$/i.test(missingPath);
+              const geometry = isHome ? brief.homeHeroGeometry : route?.hero?.geometry;
+              const lines: string[] = [];
+              if (geometry) {
+                lines.push(
+                  `HERO GEOMETRY CONTRACT (mandatory): the hero root element must carry data-ut-layout="${geometry.layout}" and data-ut-media-treatment="${geometry.mediaTreatment}"${geometry.variantId ? ` and data-ut-variant="${geometry.variantId}"` : ''}.`,
+                );
+              }
+              if (route?.depth?.minSections) {
+                lines.push(
+                  `PAGE DEPTH CONTRACT (mandatory): author at least ${route.depth.minSections} distinct body content sections (excluding nav/header/footer).`,
+                );
+              }
+              if (route?.hero?.contentAngle) {
+                lines.push(`Hero content angle for this route: ${route.hero.contentAngle}`);
+              }
+              return lines;
+            })(),
             'CHROME: the router injects nothing, so this page body owns whatever navigation and footer it shows. Author chrome that fits the page (FloatingNavbar from "@/unison/ui", a hand-authored <nav>, or a bespoke header) with links matching the registered routes — just never two competing primary nav bars or two footers on one page.',
 
             `Selected template ID: ${wizardSelections.templateId}`,

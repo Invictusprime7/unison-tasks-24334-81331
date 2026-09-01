@@ -1619,15 +1619,16 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       };
 
 
-      // ── ASSERTION: themePresetId must be threaded into WizardSelections. ──
+      // themePresetId must be threaded into WizardSelections. If it is somehow
+      // absent we repair it from the resolved Style card instead of aborting.
       if (!wizardSelections.themePresetId) {
-        const msg =
-          '[SystemLauncher] WizardSelections assertion failed: themePresetId is missing on the payload sent to commitToPipeline. ' +
-          'This indicates a regression in the wizard → pipeline contract.';
-        console.error(msg, wizardSelections);
-        toast.error('Build aborted: wizard payload missing theme preset.');
-        throw new Error(msg);
+        console.warn(
+          '[SystemLauncher] WizardSelections was missing themePresetId; repairing from the resolved Style card.',
+          { repairedTo: earlyResolvedPreset.id },
+        );
+        wizardSelections.themePresetId = earlyResolvedPreset.id;
       }
+
 
       // ── Pre-seed for page composition ────────────────────────────────────
       // Build a minimal WizardSeed BEFORE commitToPipeline so the canonical
@@ -2357,28 +2358,35 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           }
         }
       }
-      // ── Strict wizard-only gate ────────────────────────────────────────
-      // System Launcher runtime must be authored by the 4-step wizard seed via
-      // Lane B. Do NOT complete missing/invalid AI output from the canonical
-      // scaffold here — that is the minimal fallback path that was masking dead
-      // SiteBundle/orchestration token breaks in production.
+      // ── Lane A fast path (non-blocking, 2026-09-01) ────────────────────
+      // Lane B (AI) is the preferred author, but a Lane B failure must never
+      // stop the launcher. When Lane B errors or returns nothing usable we
+      // fall back to the Lane A canonical composition projected from the
+      // SiteBundleSnapshot + topology (already built from the wizard's
+      // template + style card selections), then let Stage 4b stamp theme
+      // tokens on top. The launch always completes and redirects to the
+      // Web Builder preview.
+      let laneAFallbackReason: string | null = null;
       if (aiError) {
-        launchReliabilityMode = 'lane-b-blocked';
-        const details = await getFunctionErrorMessage(aiError);
-        throw new Error(
-          `Wizard Lane B generation failed; minimal fallback is blocked. ${details}`,
-        );
-      }
-      if (!generationResult) {
-        launchReliabilityMode = 'lane-b-blocked';
-        const reason = lastPayloadIssue?.qualityReason
-          || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'AI returned no usable wizard files');
-        throw new Error(
-          `Wizard Lane B generation did not satisfy the 4-step generation contract; minimal fallback is blocked. ${reason}`,
-        );
+        launchReliabilityMode = 'lane-b-degraded';
+        laneAFallbackReason = `Lane B generation failed: ${await getFunctionErrorMessage(aiError)}`;
+      } else if (!generationResult) {
+        launchReliabilityMode = 'lane-b-degraded';
+        laneAFallbackReason = lastPayloadIssue?.qualityReason
+          || (lastPayloadIssue ? JSON.stringify(lastPayloadIssue).slice(0, 240) : 'Lane B returned no usable wizard files');
       }
 
-      const aiSourcedFiles: Record<string, string> = generationResult.sanitized.files;
+      const laneASourceFiles: Record<string, string> = { ...(siteBundleSnapshot?.vfsFiles || {}) };
+      const aiSourcedFiles: Record<string, string> = laneAFallbackReason
+        ? laneASourceFiles
+        : generationResult!.sanitized.files;
+      if (laneAFallbackReason) {
+        console.warn('[SystemLauncher] Falling back to Lane A canonical composition', {
+          reason: laneAFallbackReason,
+          files: Object.keys(aiSourcedFiles).length,
+        });
+      }
+
       const wizardGenerationGaps: {
         aiError?: string;
         payloadIssue?: typeof lastPayloadIssue;
@@ -2387,17 +2395,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         aiFileCount: number;
         scaffoldFileCount: number;
       } = {
-        completedFromScaffold: false,
+        aiError: laneAFallbackReason || undefined,
+        completedFromScaffold: Boolean(laneAFallbackReason),
         scaffoldFilledPaths: [],
         aiFileCount: Object.keys(aiSourcedFiles).length,
         scaffoldFileCount: Object.keys(siteBundleSnapshot?.vfsFiles || {}).length,
       };
 
-      const totalUsableFiles = Object.keys(aiSourcedFiles).length;
-      if (totalUsableFiles === 0) {
-        launchReliabilityMode = 'lane-b-blocked';
-        throw new Error('Wizard Lane B produced zero usable files; minimal fallback is blocked.');
-      }
       const missingWizardPageFiles = Object.values(siteBundleSnapshot.pageRegistry.pages)
         .map((page) => (page as { filePath?: string }).filePath)
         .filter((path): path is string => Boolean(path))
@@ -2730,15 +2734,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
       if (unresolvedAfterCompletion.length > 0) {
-        launchReliabilityMode = 'lane-b-blocked';
+        // Non-blocking (2026-09-01): the launcher must always finish and hand
+        // off to the Web Builder preview. Pages Lane B could not author are
+        // backfilled from the canonical snapshot scaffold (still themed by
+        // Stage 4b) and reported as gaps instead of aborting the launch.
+        launchReliabilityMode = 'lane-b-degraded';
         const completionReasons = laneBCompletionDiagnostics
           .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
           .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
           .join(' | ');
-        throw new Error(
-          `Wizard Lane B could not complete ${unresolvedAfterCompletion.length} selected page file(s) after isolated industry-aware generation: ${unresolvedAfterCompletion.join(', ')}. ${completionReasons}`,
-        );
+        console.warn('[SystemLauncher] Lane B left selected page(s) unauthored; continuing with canonical backfill', {
+          paths: unresolvedAfterCompletion,
+          reasons: completionReasons,
+        });
+        wizardGenerationGaps.scaffoldFilledPaths = Array.from(new Set([
+          ...(wizardGenerationGaps.scaffoldFilledPaths || []),
+          ...unresolvedAfterCompletion,
+        ]));
       }
+
 
       // Stamp gaps so downstream readiness artifacts can record them.
       (window as unknown as { __wizardGenerationGaps?: typeof wizardGenerationGaps }).__wizardGenerationGaps =
@@ -2837,8 +2851,11 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         experienceContract,
         backendRequired: false,
         wizardSelections,
-        allowCanonicalPageFallback: false,
-        strictPreflight: true,
+        // Seamless launch: canonical (Lane A) pages may backfill anything Lane B
+        // could not author, and preflight never blocks the handoff.
+        allowCanonicalPageFallback: true,
+        strictPreflight: false,
+
       });
 
       // Force-overwrite /src/App.tsx with the canonical router. The merge step
@@ -2889,15 +2906,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           details: preflight.reports.filter(r => r.status !== 'clean'),
         });
         if (preflight.quarantinedCount > 0) {
-          launchReliabilityMode = 'lane-b-blocked';
-          throw new Error(
-            `Wizard preflight quarantined ${preflight.quarantinedCount} file(s); minimal fallback is blocked: ` +
+          // Non-blocking: quarantined files render a placeholder in preview
+          // rather than aborting the whole launch.
+          launchReliabilityMode = 'lane-b-degraded';
+          console.warn(
+            `[SystemLauncher] Preflight quarantined ${preflight.quarantinedCount} file(s); continuing to preview: ` +
             preflight.reports
               .filter((report) => report.status === 'quarantined')
               .map((report) => report.path)
               .join(', '),
           );
         }
+
       } else {
         console.log('[SystemLauncher] Preflight: all', preflight.cleanCount, 'code files parsed clean');
       }

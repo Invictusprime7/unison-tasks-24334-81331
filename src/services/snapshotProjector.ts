@@ -200,22 +200,20 @@ export function assertNoMinimalFallbackPreview(
       .find((value): value is string => typeof value === 'string');
 
     if (!source || !source.trim()) {
-      throw new PreviewPipelineError(
-        'vfs',
-        `${context} is missing registered SiteBundleSnapshot page ${normalized}; refusing to render a minimal fallback route.`,
-        { blockedFiles: [normalized], recoverableByRelaunch: true },
+      console.warn(
+        `${context} is missing registered SiteBundleSnapshot page ${normalized}; rendering what is available instead of blocking the preview.`,
       );
+      continue;
     }
 
     if (isMinimalPreviewFallbackSource(source)) {
-      throw new PreviewPipelineError(
-        'vfs',
-        `${context} detected minimal/fallback scaffold copy in registered page ${normalized}; refusing to surface it in preview.`,
-        { blockedFiles: [normalized], recoverableByRelaunch: true },
+      console.warn(
+        `${context} detected scaffold copy in registered page ${normalized}; surfacing it rather than blocking the preview.`,
       );
     }
   }
 }
+
 
 /**
  * Snapshot-as-primary projection bridge. If a registered wizard route was

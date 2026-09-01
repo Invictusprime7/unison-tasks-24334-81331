@@ -33,7 +33,9 @@ import {
   type VisualQualityReport,
 } from './visualQualityEvaluation';
 import { runFullPreflight } from './runFullPreflight';
-import type { RuntimeCompatibilityReport } from './runtimeCompatibilityPreflight';
+import { runRuntimeCompatibilityPreflight, type RuntimeCompatibilityReport } from './runtimeCompatibilityPreflight';
+import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
+import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
 
 
 import { ensureGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
@@ -884,23 +886,20 @@ function* buildCanonicalLaunchArtifactSteps(
       brand: input.businessName || undefined,
       mode: 'acceptance',
     });
-    if (acceptance.violations.length > 0) {
+    const unresolvedAcceptance = [
+      ...acceptance.mutatedFiles,
+      ...acceptance.stages.experienceGate.violations,
+    ];
+    if (unresolvedAcceptance.length > 0) {
       throw new PreviewPipelineError(
         'vfs',
-        `Generated site still requires mutation after Stage 4b finalization: ${acceptance.violations.join(' | ')}`,
+        `Generated site still requires mutation after Stage 4b finalization: ${unresolvedAcceptance.join(' | ')}`,
         { blockedFiles: acceptance.mutatedFiles, recoverableByRelaunch: true },
       );
     }
     convergedPreflight = acceptance;
   }
 
-  if (!convergedPreflight.stages.runtimeCompatibility.ok) {
-    throw new PreviewPipelineError(
-      'vfs',
-      `Generated site is incompatible with the canonical preview runtime: ${convergedPreflight.stages.runtimeCompatibility.blockers.join(' | ')}`,
-      { recoverableByRelaunch: true },
-    );
-  }
   if (convergedPreflight.stages.experienceGate.violations.length > 0) {
     throw new PreviewPipelineError(
       'vfs',
@@ -986,6 +985,21 @@ function* buildCanonicalLaunchArtifactSteps(
     extraDependencies: runtimeManifest.dependencies,
     themePresetId: appContext.themePresetId || (input.aesthetic as string | undefined) || null,
   });
+  const finalRuntimeCompatibility = runRuntimeCompatibilityPreflight({
+    files: viteReadyFiles,
+    dependencies: getDependenciesForSandpack(
+      viteReadyFiles,
+      SANDPACK_PREVIEW_CORE_DEPENDENCIES,
+    ).dependencies,
+    approvedCapabilities: input.enabledCapabilities,
+  });
+  if (!finalRuntimeCompatibility.ok) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `Generated site is incompatible with the canonical preview runtime: ${finalRuntimeCompatibility.blockers.join(' | ')}`,
+      { recoverableByRelaunch: true },
+    );
+  }
   // `safeFiles` already passed the full post-mutation syntax gate. Everything
   // added between that gate and `viteReadyFiles` is deterministic platform
   // runtime code, so reparsing every generated page here only duplicates CPU
@@ -1008,7 +1022,7 @@ function* buildCanonicalLaunchArtifactSteps(
         {
           visualQuality,
           experiencePreflight: convergedPreflight.stages.experienceGate,
-          runtimeCompatibility: convergedPreflight.stages.runtimeCompatibility,
+          runtimeCompatibility: finalRuntimeCompatibility,
         },
       )
     : undefined;
@@ -1082,7 +1096,7 @@ function* buildCanonicalLaunchArtifactSteps(
     bindingApplication,
     visualQuality,
     experiencePreflight: convergedPreflight.stages.experienceGate,
-    runtimeCompatibility: convergedPreflight.stages.runtimeCompatibility,
+    runtimeCompatibility: finalRuntimeCompatibility,
   };
 }
 

@@ -11,11 +11,14 @@ Make a multi-page Wizard launch complete its AI-authored Lane B output, seal one
 
 ## Implementation
 
-### 1. Establish one chrome contract everywhere
-- Make **page-owned chrome** the sole contract because the canonical router is route-only and final merge already strips legacy shared chrome modules.
-- Update edge prompts/context builders, Stage 4b scaffolding, topology refresh, and generation briefs so every generated page renders exactly one navigation landmark and one footer.
-- Stop generating or depending on `SiteNavbar.tsx` / `SiteFooter.tsx` in Wizard artifacts.
-- Keep the duplicate/missing chrome quality gate, but make it validate the same contract the generators receive.
+### 1. One ownership rule, no prescriptive chrome contract
+Keep a single structural rule and let Wizard generation decide everything else about navigation and footers.
+
+- **Ownership (kept, non-negotiable):** each generated page owns its own chrome, because the canonical router is route-only and the final merge already removes shared chrome modules. Ambiguous ownership is what produced both the duplicate-chrome bug and the current false rejections.
+- **Form (removed):** drop the prescriptive rules that dictate a specific primitive, tag, attribute, position, or link set. The AI may author a floating bar, sidebar, split header, overlay menu, minimal mark, or an unconventional per-industry treatment, and may vary it between sites.
+- **Sync every generator to that single rule:** edge prompts/context builders, Stage 4b scaffolding, topology refresh, and generation briefs. Stop producing or depending on `SiteNavbar.tsx` / `SiteFooter.tsx` in Wizard artifacts.
+- **Chrome checking becomes advisory, never fatal:** report missing or duplicated chrome as a launch note and at most one targeted repair turn. It can no longer reject a page or fail a launch, so an unusual-but-valid design ships.
+
 
 ### 2. Replace stacked timeout races with bounded scheduling
 - Remove client-side timer aborts around in-flight AI/Gateway requests; retain cancellation only for explicit user cancellation.

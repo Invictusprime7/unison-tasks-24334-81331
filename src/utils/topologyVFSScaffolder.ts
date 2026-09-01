@@ -43,8 +43,6 @@ export interface ScaffoldOptions {
   strictWizardComposition?: boolean;
   /** Canonical, opt-in visual recipes projected into generated page modules. */
   designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants' | 'activeVariants'> & Partial<Pick<WizardDesignIntervention, 'industry' | 'themePresetId' | 'layoutRecipe' | 'interactionRecipes'>>;
-  /** App.tsx owns the site-wide navbar/footer; page compositions emit body sections only. */
-  globalSharedChrome?: boolean;
 }
 
 
@@ -315,7 +313,6 @@ function buildRoleComposition(
   template: TemplateComposition,
   role: PageRole,
   page: PageRouteNode,
-  globalSharedChrome = false,
 ): TemplateComposition | null {
   const poolList: SectionType[] =
     template.sectionPool?.[role as TemplatePageRole] ??
@@ -356,7 +353,6 @@ function buildRoleComposition(
   };
   for (const source of template.sections) {
     if (!allowedTypes.has(source.type)) continue;
-    if (globalSharedChrome && (source.type === 'navbar' || source.type === 'footer')) continue;
     appendSection(source);
   }
 
@@ -574,7 +570,7 @@ export function tryComposeTopologyPageFiles(
 ): Record<string, string> | null {
   const active = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
   if (!active) return null;
-  const sub = buildRoleComposition(active, page.role, page, options?.globalSharedChrome);
+  const sub = buildRoleComposition(active, page.role, page);
   if (!sub) return null;
   const seeded = applyWizardSeedToComposition(sub, plan);
   try {

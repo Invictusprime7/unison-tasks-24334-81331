@@ -55,7 +55,7 @@ describe('experience preflight gate', () => {
   });
 
   it('never audits the snapshot-owned foundation modules themselves', () => {
-    const foundation = buildGeneratedUiFoundation({});
+    const foundation = buildGeneratedUiFoundation({ themePresetId: 'organic' });
     expect(runExperiencePreflight(foundation.files).violations).toEqual([]);
   });
 

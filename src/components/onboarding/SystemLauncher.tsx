@@ -3579,6 +3579,8 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             getWizardPageRoleInstruction(resolvedPageRole)
               ? `Structural requirement for this role: ${getWizardPageRoleInstruction(resolvedPageRole)}`
               : '',
+            'MANDATORY CHROME CONTRACT: the page body owns its chrome. Render EXACTLY ONE navigation landmark as the first element (`<FloatingNavbar ... />` from "@/unison/ui" or a single `<nav aria-label="Primary navigation">`) and EXACTLY ONE `<footer>` as the last element. Zero or duplicate chrome is rejected.',
+
             `Selected template ID: ${wizardSelections.templateId}`,
             `Selected theme preset ID: ${wizardSelections.themePresetId}`,
             `Wizard seed ID: ${wizardSelections.wizardSeedId}`,
@@ -3603,6 +3605,10 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             previousFailure?.includes('no canonical data-ut-intent wiring') && pageIntent
               ? `INTENT REPAIR REQUIRED: wire a real page action with data-ut-intent="${pageIntent}".`
               : '',
+            previousFailure && /navigation landmark|footer landmark|competing (?:navigation|footer) chrome/i.test(previousFailure)
+              ? 'CHROME REPAIR REQUIRED: this page body owns its chrome. The FIRST element inside the returned fragment must be exactly one navigation landmark (`<FloatingNavbar brand={...} links={...} ctaLabel={...} />` from "@/unison/ui", or a single hand-authored `<nav aria-label="Primary navigation">`) and the LAST element must be exactly one `<footer>`. Never emit zero and never emit two of either.'
+              : '',
+
             '',
             'Return this page AND every companion module it imports, in the WizardSeed multi-file JSON contract. Do not reference any relative module you did not author here.',
             generatedUiFoundation?.primitiveImports?.length

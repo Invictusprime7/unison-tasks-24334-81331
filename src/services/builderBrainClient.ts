@@ -469,19 +469,27 @@ export async function runBuilderTurn<TResponse = any>(
         Math.max(1, remainingMs()),
       );
       let { data, error, usedToken } = await invokeWithSignal(sentPayload, attemptController.signal);
-      // Expired JWT: refresh once and replay immediately (does not consume a
+      // Expired JWT: rotate and replay immediately (does not consume a
       // transport retry — the edge function never ran the model). Pass the
       // rejected token so concurrent batches converge on one rotation instead
-      // of invalidating each other's refresh tokens.
-      if (
-        error &&
-        (error as { context?: { status?: number } }).context?.status === 401 &&
-        usedToken &&
-        !attemptController.signal.aborted
-      ) {
-        console.warn("[builderBrainClient] 401 from edge function — refreshing session and retrying once");
-        ({ data, error } = await invokeWithSignal(sentPayload, attemptController.signal, usedToken));
+      // of invalidating each other's refresh tokens. Under concurrency the
+      // first replay can race another rotation and be rejected too, so replay
+      // up to twice before treating the 401 as terminal.
+      for (let authReplay = 1; authReplay <= 2; authReplay += 1) {
+        const status = (error as { context?: { status?: number } } | null)?.context?.status;
+        if (!error || status !== 401 || !usedToken || attemptController.signal.aborted) break;
+        console.warn(
+          `[builderBrainClient] 401 from edge function — rotating session and replaying (${authReplay}/2)`,
+        );
+        const rejected = usedToken;
+        if (authReplay > 1) await sleep(400, options.signal).catch(() => undefined);
+        ({ data, error, usedToken } = await invokeWithSignal(
+          sentPayload,
+          attemptController.signal,
+          rejected,
+        ));
       }
+
 
       clearTimeout(attemptTimer);
       options.signal?.removeEventListener("abort", onOuterAbort);

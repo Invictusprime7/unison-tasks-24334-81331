@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { prepareSandpackFiles } from '@/utils/sandpackFilePrep';
 
 describe('wizard VFS integrity', () => {
-  it('restores canonical shared wizard chrome instead of synthesizing empty modules', () => {
+  it('refuses to synthesize a missing chrome module — pages must author chrome inline', () => {
     const files = {
       '/src/App.tsx': [
         "import Home from './pages/Home';",
@@ -24,10 +24,7 @@ describe('wizard VFS integrity', () => {
       }),
     };
 
-    const prepared = prepareSandpackFiles(files);
-
-    expect(prepared['/sections/SiteNavbar.tsx']).toContain('export default SiteNavbar');
-    expect(prepared['/sections/SiteNavbar.tsx']).toContain('aria-label="Primary navigation"');
+    expect(() => prepareSandpackFiles(files)).toThrow(/missing local module/i);
   });
 
   it('does not mistake DOM generics in the interaction runtime for JSX components', () => {

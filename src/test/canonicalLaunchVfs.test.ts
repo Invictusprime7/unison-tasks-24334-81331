@@ -65,7 +65,7 @@ function createSnapshot(): SiteBundleSnapshot {
 }
 
 describe("buildCanonicalLaunchArtifacts", () => {
-  it("drops router-level shared chrome so the page body stays the only chrome authority", () => {
+  it("never injects router-level chrome so the page body stays the only chrome authority", () => {
     const snapshot = createSnapshot();
     const aboutPage = createBuilderPage("page_about", "About", "/about", "about", {
       filePath: "/src/pages/About.tsx",
@@ -86,8 +86,6 @@ describe("buildCanonicalLaunchArtifacts", () => {
       snapshot,
     );
 
-    expect(merged["/src/sections/SiteNavbar.tsx"]).toBeUndefined();
-    expect(merged["/src/sections/SiteFooter.tsx"]).toBeUndefined();
     expect(merged["/src/App.tsx"]).not.toContain("<SiteNavbar />");
     expect(merged["/src/App.tsx"]).not.toContain("<SiteFooter />");
   });

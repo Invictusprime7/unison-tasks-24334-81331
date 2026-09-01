@@ -118,10 +118,6 @@ import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { analyzeReactSite } from "@/utils/reactSiteAnalysis";
 import { templateToVFSFiles } from "@/utils/templateToVFS";
 import { normalizeWizardThemeTokens } from "@/utils/wizardThemeTokenNormalizer";
-import {
-  getCanonicalWizardSharedChrome,
-  isCanonicalWizardSharedChromePath,
-} from "@/services/wizardSharedChrome";
 import { closeRequiredIndustryIntents } from "@/services/requiredIntentClosure";
 import {
   buildTemplateLayoutContract,
@@ -214,8 +210,7 @@ function isSnapshotOwnedLaneBPath(path: string): boolean {
     .replace(/^\/?/, '/')
     .replace(/\/+/g, '/')
     .toLowerCase();
-  return isCanonicalWizardSharedChromePath(normalizedPath)
-    || normalizedPath.startsWith('/src/unison/ui/')
+  return normalizedPath.startsWith('/src/unison/ui/')
     || normalizedPath === '/.unison/ui-manifest.json'
     || normalizedPath === '/.unison/design-intervention.json'
     || normalizedPath === '/src/index.css';
@@ -2905,13 +2900,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       .map((path) => (path.startsWith('/') ? path : `/${path}`)),
                   );
                   const blockedRuntimeFiles: string[] = [];
-                  const restoredSharedChrome: string[] = [];
 
                   // Keep every successfully parsed/repaired file, but never
-                  // carry a generated quarantine component forward. The two
-                  // canonical shared chrome modules are deterministic runtime
-                  // infrastructure, so restore them rather than failing an
-                  // otherwise valid wizard launch when Lane B mangles one.
+                  // carry a generated quarantine component forward.
                   for (const [path, source] of Object.entries(earlySyntaxRepair.files)) {
                     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
                     if (blockedFiles.includes(path) || blockedFiles.includes(normalizedPath)) {
@@ -2920,13 +2911,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       if (registeredPagePaths.has(normalizedPath)) {
                         deferredPageCompletions.add(normalizedPath);
                       } else {
-                        const canonicalSharedChrome = getCanonicalWizardSharedChrome(normalizedPath);
-                        if (canonicalSharedChrome) {
-                          normalizedFiles[normalizedPath] = canonicalSharedChrome;
-                          restoredSharedChrome.push(normalizedPath);
-                        } else {
-                          blockedRuntimeFiles.push(normalizedPath);
-                        }
+                        blockedRuntimeFiles.push(normalizedPath);
                       }
                       continue;
                     }
@@ -2941,11 +2926,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   if (deferredPageCompletions.size > 0) {
                     console.warn('[SystemLauncher] Deferring malformed registered pages to isolated Lane B completion', {
                       pages: Array.from(deferredPageCompletions),
-                    });
-                  }
-                  if (restoredSharedChrome.length > 0) {
-                    console.warn('[SystemLauncher] Restored canonical shared wizard chrome after syntax quarantine', {
-                      files: restoredSharedChrome,
                     });
                   }
                   if (blockedRuntimeFiles.length > 0) {

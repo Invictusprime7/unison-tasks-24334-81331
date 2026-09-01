@@ -523,10 +523,17 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
 const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
-// The overall Wizard lifecycle can span several Edge requests, but each request
-// stays below Supabase's 150s request-idle ceiling. Capping the broad turns keeps
-// them from consuming the page-specific completion window.
-const WIZARD_AI_TIMEOUT_MS = 600_000;
+// The overall Wizard lifecycle can span several Edge requests. The edge function
+// and the provider own request deadlines; the client never aborts an in-flight
+// generation (an abort throws away work that still completes and bills). These
+// values are scheduling budgets only — they decide whether it is still worth
+// STARTING another turn, never whether to kill one already running.
+const WIZARD_AI_BASE_BUDGET_MS = 600_000;
+// Each selected page adds a real generation wave, so the lifecycle budget scales
+// with the site the user actually asked for instead of a fixed ceiling.
+const WIZARD_AI_BUDGET_PER_PAGE_MS = 150_000;
+const wizardLifecycleBudgetMs = (pageCount: number): number =>
+  WIZARD_AI_BASE_BUDGET_MS + Math.max(0, pageCount) * WIZARD_AI_BUDGET_PER_PAGE_MS;
 const WIZARD_MIN_AI_TURN_MS = 15_000;
 // The funded Gemini Wizard lead can take up to 125 seconds for a complete
 // multi-page JSON payload. Leave browser and post-processing headroom beyond it.
@@ -783,25 +790,21 @@ function getGenerationCategory(
   return (templateCategory || system.templateCategories[0]) as LayoutCategory;
 }
 
+/**
+ * Runs one AI turn to completion. The client deliberately does NOT arm an abort:
+ * stacked client deadlines were killing generations that the edge function and
+ * provider would have completed, which is what made launches fail mid-run. The
+ * budget argument is retained for scheduling/telemetry only.
+ */
 async function withTimeout<T>(
   operation: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number,
-  timeoutMessage: string,
+  _budgetMs: number,
+  _budgetLabel: string,
 ): Promise<T> {
+  // A live-but-never-aborted controller keeps the call signature intact for the
+  // provider clients that expect a signal.
   const controller = new AbortController();
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => {
-      controller.abort(new DOMException(timeoutMessage, 'TimeoutError'));
-      reject(new Error(timeoutMessage));
-    }, timeoutMs);
-  });
-
-  try {
-    return await Promise.race([operation(controller.signal), timeoutPromise]);
-  } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle);
-  }
+  return await operation(controller.signal);
 }
 
 /**
@@ -2329,8 +2332,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // One deadline governs the entire AI generation lifecycle: initial turn,
       // batches, contract repair, missing-page repair and page completion.
       // No downstream step may reset the clock and extend the user journey.
-      const wizardGenerationDeadlineAt = Date.now() + WIZARD_AI_TIMEOUT_MS;
-      const takeWizardGenerationBudget = (stepCapMs = WIZARD_AI_TIMEOUT_MS): number => {
+      const wizardLifecycleBudget = wizardLifecycleBudgetMs(canonicalPages.length);
+      const wizardGenerationDeadlineAt = Date.now() + wizardLifecycleBudget;
+      const takeWizardGenerationBudget = (stepCapMs = wizardLifecycleBudget): number => {
         const remaining = wizardGenerationDeadlineAt - Date.now();
         if (remaining < WIZARD_MIN_AI_TURN_MS) {
           throw new Error(

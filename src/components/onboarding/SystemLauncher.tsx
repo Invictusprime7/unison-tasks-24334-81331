@@ -4154,6 +4154,19 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           sealedMissingPageFiles.join(', '),
         );
       }
+      // Compositional quality is advisory: it records ONE focused refinement
+      // directive for the in-Builder AI and never blocks or rewrites the site.
+      const visualQuality = launchArtifacts.visualQuality;
+      if (visualQuality?.refinementDirective) {
+        console.warn('[SystemLauncher] visual quality findings', visualQuality.findings);
+        run.degrade(
+          'preflight',
+          'preflight.visual_quality',
+          'The generated composition can be pushed further — a refinement directive is ready in the builder.',
+          visualQuality.refinementDirective,
+        );
+      }
+
       const plannedFormDefinitions = planLaunchFormDefinitions(launchArtifacts.siteBundleSnapshot);
 
       const publishedRuntimeReadiness = evaluatePublishedRuntimeReadiness({
@@ -4177,6 +4190,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const preWiredVfsFiles: Record<string, string> = {
         ...launchArtifacts.files,
         '/.unison/wizard-seed.json': JSON.stringify(wizardSeed, null, 2),
+        '/.unison/visual-quality.json': JSON.stringify(visualQuality ?? null, null, 2),
         '/.unison/launch-readiness.json': JSON.stringify({
           ...nativeReadinessManifest,
           previewReady: true,

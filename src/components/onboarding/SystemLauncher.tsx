@@ -3529,7 +3529,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           '── LANE B REPAIR TURN — REGENERATE MISSING WIZARD PAGES ──',
           'Your previous response omitted or under-generated the following selected wizard pages.',
           'Re-emit ONLY these complete replacement files in the same multi-file JSON contract.',
-          'Do NOT touch Home or App.tsx.',
+          // Home is a regular registry page here: when Lane B's first turn
+          // authored no Home body, Home IS one of the missing pages and the
+          // repair turn must regenerate it. Only App.tsx stays off-limits
+          // (the deterministic router owns it).
+          normalizedMissing.some((path) => /\/Home\.(tsx|jsx)$/i.test(path))
+            ? 'Do NOT emit App.tsx. Home IS listed below and MUST be regenerated in full.'
+            : 'Do NOT touch Home or App.tsx.',
           'Each page must be a complete, production-quality, industry-faithful',
           'React page (5+ sections, real copy, working data-ut-intent CTAs).',
           '',

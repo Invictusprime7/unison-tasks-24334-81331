@@ -118,10 +118,6 @@ import { generateLibraryPrompt } from "@/data/siteElementsLibrary";
 import { analyzeReactSite } from "@/utils/reactSiteAnalysis";
 import { templateToVFSFiles } from "@/utils/templateToVFS";
 import { normalizeWizardThemeTokens } from "@/utils/wizardThemeTokenNormalizer";
-import {
-  getCanonicalWizardSharedChrome,
-  isCanonicalWizardSharedChromePath,
-} from "@/services/wizardSharedChrome";
 import { closeRequiredIndustryIntents } from "@/services/requiredIntentClosure";
 import {
   buildTemplateLayoutContract,
@@ -214,8 +210,7 @@ function isSnapshotOwnedLaneBPath(path: string): boolean {
     .replace(/^\/?/, '/')
     .replace(/\/+/g, '/')
     .toLowerCase();
-  return isCanonicalWizardSharedChromePath(normalizedPath)
-    || normalizedPath.startsWith('/src/unison/ui/')
+  return normalizedPath.startsWith('/src/unison/ui/')
     || normalizedPath === '/.unison/ui-manifest.json'
     || normalizedPath === '/.unison/design-intervention.json'
     || normalizedPath === '/src/index.css';
@@ -528,10 +523,17 @@ function buildCompositionCards(systemId: BusinessSystemType): TemplateCardData[]
 const AI_MESSAGE_CHAR_LIMIT = 8_500;
 const CUSTOM_INSTRUCTION_CHAR_LIMIT = 600;
 const INDUSTRY_CONTEXT_CHAR_LIMIT = 1_200;
-// The overall Wizard lifecycle can span several Edge requests, but each request
-// stays below Supabase's 150s request-idle ceiling. Capping the broad turns keeps
-// them from consuming the page-specific completion window.
-const WIZARD_AI_TIMEOUT_MS = 600_000;
+// The overall Wizard lifecycle can span several Edge requests. The edge function
+// and the provider own request deadlines; the client never aborts an in-flight
+// generation (an abort throws away work that still completes and bills). These
+// values are scheduling budgets only — they decide whether it is still worth
+// STARTING another turn, never whether to kill one already running.
+const WIZARD_AI_BASE_BUDGET_MS = 600_000;
+// Each selected page adds a real generation wave, so the lifecycle budget scales
+// with the site the user actually asked for instead of a fixed ceiling.
+const WIZARD_AI_BUDGET_PER_PAGE_MS = 150_000;
+const wizardLifecycleBudgetMs = (pageCount: number): number =>
+  WIZARD_AI_BASE_BUDGET_MS + Math.max(0, pageCount) * WIZARD_AI_BUDGET_PER_PAGE_MS;
 const WIZARD_MIN_AI_TURN_MS = 15_000;
 // The funded Gemini Wizard lead can take up to 125 seconds for a complete
 // multi-page JSON payload. Leave browser and post-processing headroom beyond it.
@@ -788,25 +790,21 @@ function getGenerationCategory(
   return (templateCategory || system.templateCategories[0]) as LayoutCategory;
 }
 
+/**
+ * Runs one AI turn to completion. The client deliberately does NOT arm an abort:
+ * stacked client deadlines were killing generations that the edge function and
+ * provider would have completed, which is what made launches fail mid-run. The
+ * budget argument is retained for scheduling/telemetry only.
+ */
 async function withTimeout<T>(
   operation: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number,
-  timeoutMessage: string,
+  _budgetMs: number,
+  _budgetLabel: string,
 ): Promise<T> {
+  // A live-but-never-aborted controller keeps the call signature intact for the
+  // provider clients that expect a signal.
   const controller = new AbortController();
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => {
-      controller.abort(new DOMException(timeoutMessage, 'TimeoutError'));
-      reject(new Error(timeoutMessage));
-    }, timeoutMs);
-  });
-
-  try {
-    return await Promise.race([operation(controller.signal), timeoutPromise]);
-  } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle);
-  }
+  return await operation(controller.signal);
 }
 
 /**
@@ -2334,8 +2332,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       // One deadline governs the entire AI generation lifecycle: initial turn,
       // batches, contract repair, missing-page repair and page completion.
       // No downstream step may reset the clock and extend the user journey.
-      const wizardGenerationDeadlineAt = Date.now() + WIZARD_AI_TIMEOUT_MS;
-      const takeWizardGenerationBudget = (stepCapMs = WIZARD_AI_TIMEOUT_MS): number => {
+      const wizardLifecycleBudget = wizardLifecycleBudgetMs(canonicalPages.length);
+      const wizardGenerationDeadlineAt = Date.now() + wizardLifecycleBudget;
+      const takeWizardGenerationBudget = (stepCapMs = wizardLifecycleBudget): number => {
         const remaining = wizardGenerationDeadlineAt - Date.now();
         if (remaining < WIZARD_MIN_AI_TURN_MS) {
           throw new Error(
@@ -2905,13 +2904,9 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       .map((path) => (path.startsWith('/') ? path : `/${path}`)),
                   );
                   const blockedRuntimeFiles: string[] = [];
-                  const restoredSharedChrome: string[] = [];
 
                   // Keep every successfully parsed/repaired file, but never
-                  // carry a generated quarantine component forward. The two
-                  // canonical shared chrome modules are deterministic runtime
-                  // infrastructure, so restore them rather than failing an
-                  // otherwise valid wizard launch when Lane B mangles one.
+                  // carry a generated quarantine component forward.
                   for (const [path, source] of Object.entries(earlySyntaxRepair.files)) {
                     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
                     if (blockedFiles.includes(path) || blockedFiles.includes(normalizedPath)) {
@@ -2920,13 +2915,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                       if (registeredPagePaths.has(normalizedPath)) {
                         deferredPageCompletions.add(normalizedPath);
                       } else {
-                        const canonicalSharedChrome = getCanonicalWizardSharedChrome(normalizedPath);
-                        if (canonicalSharedChrome) {
-                          normalizedFiles[normalizedPath] = canonicalSharedChrome;
-                          restoredSharedChrome.push(normalizedPath);
-                        } else {
-                          blockedRuntimeFiles.push(normalizedPath);
-                        }
+                        blockedRuntimeFiles.push(normalizedPath);
                       }
                       continue;
                     }
@@ -2941,11 +2930,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
                   if (deferredPageCompletions.size > 0) {
                     console.warn('[SystemLauncher] Deferring malformed registered pages to isolated Lane B completion', {
                       pages: Array.from(deferredPageCompletions),
-                    });
-                  }
-                  if (restoredSharedChrome.length > 0) {
-                    console.warn('[SystemLauncher] Restored canonical shared wizard chrome after syntax quarantine', {
-                      files: restoredSharedChrome,
                     });
                   }
                   if (blockedRuntimeFiles.length > 0) {
@@ -3515,7 +3499,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           '── LANE B REPAIR TURN — REGENERATE MISSING WIZARD PAGES ──',
           'Your previous response omitted or under-generated the following selected wizard pages.',
           'Re-emit ONLY these complete replacement files in the same multi-file JSON contract.',
-          'Do NOT touch shared chrome (SiteNavbar/SiteFooter), Home, or App.tsx.',
+          'Do NOT touch Home or App.tsx.',
           'Each page must be a complete, production-quality, industry-faithful',
           'React page (5+ sections, real copy, working data-ut-intent CTAs).',
           '',
@@ -3644,7 +3628,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             getWizardPageRoleInstruction(resolvedPageRole)
               ? `Structural requirement for this role: ${getWizardPageRoleInstruction(resolvedPageRole)}`
               : '',
-            'MANDATORY CHROME CONTRACT: the page body owns its chrome. Render EXACTLY ONE navigation landmark as the first element (`<FloatingNavbar ... />` from "@/unison/ui" or a single `<nav aria-label="Primary navigation">`) and EXACTLY ONE `<footer>` as the last element. Zero or duplicate chrome is rejected.',
+            'CHROME: the router injects nothing, so this page body owns whatever navigation and footer it shows. Author chrome that fits the page (FloatingNavbar from "@/unison/ui", a hand-authored <nav>, or a bespoke header) with links matching the registered routes — just never two competing primary nav bars or two footers on one page.',
 
             `Selected template ID: ${wizardSelections.templateId}`,
             `Selected theme preset ID: ${wizardSelections.themePresetId}`,
@@ -3669,9 +3653,6 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
               : '',
             previousFailure?.includes('no canonical data-ut-intent wiring') && pageIntent
               ? `INTENT REPAIR REQUIRED: wire a real page action with data-ut-intent="${pageIntent}".`
-              : '',
-            previousFailure && /navigation landmark|footer landmark|competing (?:navigation|footer) chrome/i.test(previousFailure)
-              ? 'CHROME REPAIR REQUIRED: this page body owns its chrome. The FIRST element inside the returned fragment must be exactly one navigation landmark (`<FloatingNavbar brand={...} links={...} ctaLabel={...} />` from "@/unison/ui", or a single hand-authored `<nav aria-label="Primary navigation">`) and the LAST element must be exactly one `<footer>`. Never emit zero and never emit two of either.'
               : '',
 
             '',
@@ -3704,7 +3685,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             pageIntent
               ? `Include working data-ut-intent="${pageIntent}" behavior appropriate to this page role and industry.`
               : 'Include working data-ut-intent behavior appropriate to this page role.',
-            'Do not emit App.tsx, shared chrome, placeholder copy, quarantine UI, or a preset scaffold.',
+            'Do not emit App.tsx, placeholder copy, quarantine UI, or a preset scaffold.',
             rejectedCandidate ? `Current page to improve:\n${rejectedCandidate}` : '',
           ].join('\n');
 
@@ -3884,7 +3865,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           'Each module must be a complete, syntactically valid TypeScript React module with explicit exports matching how the importing file uses it.',
           'You may also return a corrected version of the importing file if that is the cleaner fix.',
           'Modules and styling are universal — use any listed module, layout family, animation primitive, or theme token regardless of industry.',
-          'Do not emit App.tsx, /src/index.css, shared chrome, or any @/unison/ui foundation file.',
+          'Do not emit App.tsx, /src/index.css, or any @/unison/ui foundation file.',
           buildModuleInventoryDirective({
             files: { ...canonicalScaffoldFiles, ...aiSourcedFiles },
             targetPaths,

@@ -109,7 +109,7 @@ const HYDRATABLE = new Set([]);`;
     expect(result.reasons['/src/pages/Services.tsx']).toContain('repeats the Home hero identity');
   });
 
-  it('rejects a page that attempts to ship a second navigation or global theme layer', () => {
+  it('rejects a page that attempts to ship a parallel global theme layer (nav count is free-form)', () => {
     const canonicalPage = `const SECTIONS = [
   {"id":"services-hero","type":"hero","props":{"headline":"Services"}}
 ];
@@ -123,7 +123,7 @@ const HYDRATABLE = new Set([]);`;
     });
 
     expect(result.rejectedPaths).toEqual(['/src/pages/Services.tsx']);
-    expect(result.reasons['/src/pages/Services.tsx']).toContain('competing navigation chrome');
+    expect(result.reasons['/src/pages/Services.tsx']).toContain('parallel global theme system');
   });
 
   it('rejects a page that attempts to inject an independent global stylesheet', () => {

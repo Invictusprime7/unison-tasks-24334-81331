@@ -28,7 +28,6 @@ import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
 import { isLiveEditedVfsPath, resolveSnapshot } from '@/services/snapshotProjector';
-import { getCanonicalWizardSharedChromeModules } from '@/services/wizardSharedChrome';
 import { UNISON_VFS_STYLE_BRIDGE } from '@/utils/unisonVfsStyleBridge';
 import { buildGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
 
@@ -2813,8 +2812,10 @@ export default Icon;
 `;
 }
 
+// Chrome is authored by the page body only. No platform-owned navbar/footer
+// module exists, so nothing is synthesized for shared chrome imports.
 function buildCanonicalWizardChromeModules(): Record<string, string> {
-  return getCanonicalWizardSharedChromeModules();
+  return {};
 }
 
 /**

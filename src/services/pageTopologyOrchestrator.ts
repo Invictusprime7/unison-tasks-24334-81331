@@ -16,11 +16,6 @@ import { createBuilderPage } from '@/types/pageRegistry';
 import { generateCanonicalRouterForFiles } from '@/utils/topologyRouterGenerator';
 import { deriveFilePath } from './routeNavigationService';
 import { validatePageTopology, type TopologyValidationResult } from './pageTopologyValidator';
-import {
-  buildCanonicalWizardSharedChromeModules,
-  WIZARD_FOOTER_PATH,
-  WIZARD_NAVBAR_PATH,
-} from './wizardSharedChrome';
 
 // ============================================================================
 // Types
@@ -33,21 +28,6 @@ export type TopologyChangeType =
   | 'set_home'
   | 'toggle_nav'
   | 'reorder';
-
-function refreshSharedChrome(
-  registry: PageRegistry,
-  vfsFiles: Record<string, string>,
-  businessName?: string,
-): Record<string, string> {
-  const hasCanonicalChrome = Boolean(
-    vfsFiles[WIZARD_NAVBAR_PATH]
-    || vfsFiles[WIZARD_FOOTER_PATH]
-    || vfsFiles['/src/App.tsx']?.includes("./sections/SiteNavbar"),
-  );
-  return hasCanonicalChrome
-    ? buildCanonicalWizardSharedChromeModules(registry, businessName || '')
-    : {};
-}
 
 export interface TopologyChange {
   type: TopologyChangeType;
@@ -205,10 +185,6 @@ export function applyTopologyChange(
 
   // Regenerate canonical router for file-backed pages only. Newly added pages
   // become routable after the AI Builder writes their component file.
-  Object.assign(
-    filesToImport,
-    refreshSharedChrome(updated, { ...vfsFiles, ...filesToImport }, businessName),
-  );
   const routerCode = generateCanonicalRouterForFiles(
     updated,
     { ...vfsFiles, ...filesToImport },
@@ -239,7 +215,7 @@ export function syncTopologyAndRouter(
   vfsFiles: Record<string, string>,
   businessName?: string,
 ): { routerCode: string; validation: TopologyValidationResult; filesToImport: Record<string, string> } {
-  const filesToImport = refreshSharedChrome(registry, vfsFiles, businessName);
+  const filesToImport: Record<string, string> = {};
   const mergedForRouter = { ...vfsFiles, ...filesToImport };
   const routerCode = generateCanonicalRouterForFiles(registry, mergedForRouter, businessName);
   if (routerCode) filesToImport['/src/App.tsx'] = routerCode;

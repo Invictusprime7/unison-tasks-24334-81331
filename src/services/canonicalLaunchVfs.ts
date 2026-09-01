@@ -32,12 +32,6 @@ import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
 
 
 import { ensureGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
-import {
-  WIZARD_FOOTER_PATH,
-  WIZARD_NAVBAR_PATH,
-  countPageChromeLandmarks,
-  isCanonicalWizardSharedChromePath,
-} from './wizardSharedChrome';
 import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
 import {
   validateRegisteredPageCompilation,
@@ -570,13 +564,9 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
 
 
   // ── Single chrome authority: the page body ──────────────────────────────
-  // Navigation and footer are composition sections resolved from the wizard
-  // selections (industry + template + art direction), so they must be emitted
-  // by the page body only. The router renders routes and nothing else; any
-  // legacy router-level shared chrome module is dropped here so a site can
-  // never render two navbars / two footers.
-  removePathVariants(merged, WIZARD_NAVBAR_PATH);
-  removePathVariants(merged, WIZARD_FOOTER_PATH);
+  // There is no platform-owned navbar/footer module and the router never
+  // injects chrome, so whatever navigation a page renders is the only chrome
+  // that exists. Nothing to strip, nothing to count.
 
   // Ensure a canonical router exists at /src/App.tsx. Without this the
   // preview's Sandpack bundle has no entry composition and renders blank.
@@ -587,7 +577,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
   const generatedRouter = generateCanonicalRouter(
     snapshot.pageRegistry,
     snapshot.businessName,
-    { withSharedChrome: false },
   );
   if (generatedRouter) {
     merged['/src/App.tsx'] = generatedRouter;
@@ -605,22 +594,6 @@ export function mergeGeneratedVfsWithCanonicalSnapshot(
       'SiteBundleSnapshot is missing injected /src/index.css; refusing to inject default/minimal preview CSS.',
       { recoverableByRelaunch: true },
     );
-  }
-
-  // Page bodies own chrome, so each registered page must render exactly one
-  // navigation landmark and one footer. Zero = unreachable page, more than one
-  // = the duplicate-chrome regression this authority exists to prevent.
-  const duplicateChromePages = Object.values(snapshot.pageRegistry.pages)
-    .map((page) => (page as { filePath?: string }).filePath)
-    .filter((filePath): filePath is string => Boolean(filePath))
-    .filter((filePath) => {
-      const source = merged[filePath.startsWith('/') ? filePath : `/${filePath}`] || merged[filePath] || '';
-      if (!source) return false;
-      return countPageChromeLandmarks(source).navbars > 1
-        || countPageChromeLandmarks(source).footers > 1;
-    });
-  if (duplicateChromePages.length > 0) {
-    console.warn('[canonicalLaunchVfs] Page bodies render duplicate chrome', duplicateChromePages);
   }
 
   return merged;
@@ -691,11 +664,7 @@ function* buildCanonicalLaunchArtifactSteps(
     input.themePresetId,
     'WizardMergeContext -> canonical launch',
   );
-  const generatedFiles = input.siteBundleSnapshot && mergeWithCanonicalSnapshot
-    ? Object.fromEntries(
-        Object.entries(input.generatedFiles).filter(([path]) => !isCanonicalWizardSharedChromePath(path)),
-      )
-    : input.generatedFiles;
+  const generatedFiles = input.generatedFiles;
   yield;
   const normalizedFiles = normalizeLauncherFiles(generatedFiles, {
     entryPoint: input.preferredEntryPoint,

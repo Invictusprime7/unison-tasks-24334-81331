@@ -24,10 +24,6 @@ interface RouteEntry {
   isHome: boolean;
 }
 
-interface CanonicalRouterOptions {
-  withSharedChrome?: boolean;
-}
-
 // ============================================================================
 // Core: Generate canonical App.tsx with HashRouter
 // ============================================================================
@@ -39,13 +35,12 @@ interface CanonicalRouterOptions {
 export function generateCanonicalRouter(
   registry: PageRegistry,
   businessName?: string,
-  options: CanonicalRouterOptions = {},
 ): string {
   const pages = Object.values(registry.pages).sort((a, b) => a.navOrder - b.navOrder);
   if (pages.length === 0) return '';
 
   const routes = pagesToRoutes(pages);
-  return buildRouterCode(routes, businessName, options);
+  return buildRouterCode(routes, businessName);
 }
 
 /**
@@ -72,7 +67,7 @@ export function generateCanonicalRouterForFiles(
   // deterministic composition sections derived from the wizard selections.
   // The router therefore never renders its own navbar/footer, which is what
   // used to produce two competing navbars and two footers per page.
-  return buildRouterCode(routes, businessName, { withSharedChrome: false });
+  return buildRouterCode(routes, businessName);
 }
 
 /**
@@ -158,7 +153,6 @@ function vfsPathToImport(filePath: string): string {
 function buildRouterCode(
   routes: RouteEntry[],
   businessName?: string,
-  options: CanonicalRouterOptions = {},
 ): string {
   if (routes.length === 0) return '';
 
@@ -175,10 +169,6 @@ function buildRouterCode(
   const imports = uniqueRoutes.map(r =>
     `import ${r.componentName} from '${r.importPath}';`
   ).join('\n');
-  const sharedChromeImports = options.withSharedChrome
-    ? "import SiteNavbar from './sections/SiteNavbar.tsx';\nimport SiteFooter from './sections/SiteFooter.tsx';"
-    : '';
-
   const routeElements: string[] = [];
 
   // Home route always gets "/"
@@ -196,17 +186,14 @@ function buildRouterCode(
   return `import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 ${imports}
-${sharedChromeImports}
 
 export default function App() {
   return (
     <HashRouter>
       <div className="unison-runtime-glass">
-        ${options.withSharedChrome ? '<SiteNavbar />' : ''}
         <Routes>
 ${routeElements.join('\n')}
         </Routes>
-        ${options.withSharedChrome ? '<SiteFooter />' : ''}
       </div>
     </HashRouter>
   );

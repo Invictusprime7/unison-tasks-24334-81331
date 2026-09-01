@@ -78,7 +78,6 @@ describe('composition VFS variants', () => {
       filePath: '/src/pages/Contact.tsx', visibleInNav: true, isHome: false, generatedBy: 'wizard',
     };
     const files = generateTopologyPlaceholderFiles(page, routePlan(template.id, template.industry, page), template, {
-      globalSharedChrome: true,
       designIntervention: {
         motionRecipes: [],
         sectionVariants: [],
@@ -103,14 +102,12 @@ describe('composition VFS variants', () => {
         id: `${template.id}-contact`, name: 'Contact', title: 'Contact', route: '/contact', role: 'contact',
         filePath: '/src/pages/Contact.tsx', visibleInNav: true, isHome: false, generatedBy: 'wizard',
       };
-      const files = generateTopologyPlaceholderFiles(page, routePlan(template.id, template.industry, page), template, {
-        globalSharedChrome: true,
-      });
+      const files = generateTopologyPlaceholderFiles(page, routePlan(template.id, template.industry, page), template);
       const sections = readSections(files[page.filePath]);
 
       expect(sections.length, template.id).toBeGreaterThanOrEqual(4);
-      expect(sections[0]?.type, template.id).toBe('hero');
-      expect(sections.some((section) => section.type === 'navbar' || section.type === 'footer'), template.id).toBe(false);
+      // Chrome is page-owned now: a page may open with its own navbar section.
+      expect(sections.some((section) => section.type === 'hero'), template.id).toBe(true);
     }
   });
 

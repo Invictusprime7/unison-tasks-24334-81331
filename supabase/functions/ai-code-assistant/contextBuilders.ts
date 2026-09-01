@@ -539,8 +539,9 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   const pages = c.pages || [];
   if (pages.length) {
     lines.push('── CANONICAL TOPOLOGY (Step 4: Pages) — HARD CONTRACT ──');
-    lines.push('Emit ONE body-only TSX file per page below. The deterministic App router');
-    lines.push('owns SiteNavbar and SiteFooter globally; pages must not author or render shared chrome.');
+    lines.push('Emit ONE complete TSX file per page below. The deterministic App router renders');
+    lines.push('routes ONLY — it injects no navbar and no footer, so each page authors whatever');
+    lines.push('navigation and footer it needs inline, with links matching the routes below.');
     for (const p of pages) {
       const slug = p.slug || 'home';
       const path = p.path || (slug === 'home' ? '/src/pages/Home.tsx' : `/src/pages/${slug.replace(/(^|-)([a-z])/g, (_, _s, l) => l.toUpperCase())}.tsx`);
@@ -628,7 +629,7 @@ export function buildWizardSeedContext(seed: WizardSeedShape | undefined): strin
   lines.push('');
   lines.push('RULES:');
   lines.push('1. DO NOT author /src/App.tsx — the deterministic router owns it.');
-  lines.push('2. DO NOT author or import SiteNavbar/SiteFooter. App.tsx renders route-registry-derived shared chrome exactly once.');
+  lines.push('2. DO NOT author shared chrome modules (SiteNavbar.tsx / SiteFooter.tsx). Author each page\'s navigation and footer inline in the page file; never render two competing primary nav bars or two footers on one page.');
   lines.push('3. Use Tailwind semantic tokens (bg-primary, text-foreground, bg-card, border-border).');
   lines.push('   For raw colors use hsl(var(--token)). Never hardcode hex.');
   if (seed?.theme?.geometryRule) {

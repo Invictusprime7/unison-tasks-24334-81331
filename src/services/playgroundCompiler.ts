@@ -20,7 +20,6 @@ import type { LayoutCategory } from '@/data/templates/types';
 import type { BuilderPage } from '@/types/pageRegistry';
 import type { GeneratedSitePlan, PageRole, PageRouteNode } from '@/platform/core/siteTopologyPlanner';
 import type { WizardDesignIntervention } from '@/services/wizardDesignIntervention';
-import { buildCanonicalWizardSharedChromeModules } from '@/services/wizardSharedChrome';
 
 export interface CompilePlaygroundOptions {
   /** Selected template used to generate real role-filtered page scaffolds. */
@@ -247,7 +246,6 @@ export function compilePlayground(
       // pages and safe to merge by Object.assign.
       const fileSet = generateTopologyPlaceholderFiles(node, scaffoldPlan, undefined, {
         designIntervention: options?.designIntervention,
-        globalSharedChrome: true,
       });
       Object.assign(vfsFiles, fileSet);
     } catch (err) {
@@ -267,8 +265,6 @@ export function compilePlayground(
     );
   }
 
-
-  Object.assign(vfsFiles, buildCanonicalWizardSharedChromeModules(registry, businessName));
 
   const routerContent = generateCanonicalRouterForFiles(registry, vfsFiles, businessName);
   const routerFile = {

@@ -473,7 +473,7 @@ async function runBuilderLane(
   }
 
   if (task.type === 'wizard_seed_generation') {
-    finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, root files, SiteNavbar, or SiteFooter.\nThe deterministic App router renders route-registry-derived shared chrome exactly once around every page. Emit body-only page files and never import or render shared chrome inside them.\nThe Home page must be a complete production landing page with at least 5 body content regions, real industry-specific copy, and working data-ut-intent attributes.\nEvery secondary page must contain at least 4 purpose-specific body regions and 1200+ characters of authored TSX, matching the launcher quality gate exactly.\nSilently self-check every requested file for parseable TSX, snapshot-approved imports, accessible image alt text, and canonical data-ut-intent wiring before returning JSON.\n`;
+    finalSystemPrompt += `\n\n[WIZARD SEED GENERATION — HARD OUTPUT REQUIREMENTS]\nThis is a first-launch website generation, not an explanation and not a patch review.\nReturn ONLY raw JSON in this exact shape: {"files": {"/src/pages/Home.tsx": "..."}}.\nDo NOT return prose, markdown, summaries, skeletons, placeholders, or a minimal fallback.\nDo NOT author /src/App.tsx, /src/main.tsx, package/config files, root files, or standalone SiteNavbar/SiteFooter modules.\nThe deterministic App router renders routes ONLY — it injects no navbar and no footer. Each page authors its own navigation and footer inline, sized and styled to fit that page, with links matching the registered routes. Never render two competing primary nav bars or two footers on one page.\nThe Home page must be a complete production landing page with at least 5 body content regions, real industry-specific copy, and working data-ut-intent attributes.\nEvery secondary page must contain at least 4 purpose-specific body regions and 1200+ characters of authored TSX, matching the launcher quality gate exactly.\nSilently self-check every requested file for parseable TSX, snapshot-approved imports, accessible image alt text, and canonical data-ut-intent wiring before returning JSON.\n`;
   }
 
   if (task.type === 'wizard_interaction_enrichment') {
@@ -693,7 +693,7 @@ async function runBuilderLane(
               'Convert it into the complete required multi-page payload now.',
               'Return ONLY raw JSON shaped as {"files":{"/src/pages/Home.tsx":"..."}}.',
               'Include one body-only TSX file for every canonical WizardSeed page.',
-              'Do not return markdown, prose, HTML documents, /src/App.tsx, SiteNavbar, or SiteFooter.',
+              'Do not return markdown, prose, HTML documents, /src/App.tsx, or standalone SiteNavbar/SiteFooter modules.',
             ].join('\n'),
           },
         ],

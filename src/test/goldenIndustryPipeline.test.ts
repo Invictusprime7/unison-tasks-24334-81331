@@ -25,7 +25,6 @@
  * preflight — it tests the canonical composition contract only.
  */
 
-import { countPageChromeLandmarks } from '@/services/wizardSharedChrome';
 import { describe, expect, it } from 'vitest';
 import { resolveCapabilities } from '@/services/wizardCapabilityResolver';
 import { materializePlayground } from '@/services/wizardPlaygroundMaterializer';
@@ -325,11 +324,11 @@ describe('Golden industry pipeline — canonical round-trip', () => {
       expect(router).not.toContain('./sections/SiteNavbar.tsx');
       expect(router).not.toContain('./sections/SiteFooter.tsx');
 
+      // No platform chrome module exists any more, so no page may import one.
       for (const page of Object.values(state.pageRegistry.pages) as BuilderPage[]) {
         const pageSource = compileA.vfsFiles[page.filePath!] || '';
-        const chrome = countPageChromeLandmarks(pageSource);
-        expect(chrome.navbars, `${page.filePath} must render one navbar`).toBeLessThanOrEqual(1);
-        expect(chrome.footers, `${page.filePath} must render one footer`).toBeLessThanOrEqual(1);
+        expect(pageSource, `${page.filePath} must not import platform chrome`).not.toContain('sections/SiteNavbar');
+        expect(pageSource, `${page.filePath} must not import platform chrome`).not.toContain('sections/SiteFooter');
       }
     });
 

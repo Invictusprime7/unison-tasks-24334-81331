@@ -1,6 +1,5 @@
 import type { TemplateLayoutContract } from '@/services/templateLayoutContract';
 import type { WizardHeroGeometry } from '@/services/wizardGenerationBrief';
-import { countPageChromeLandmarks } from '@/services/wizardSharedChrome';
 
 /**
  * Recovery Phase 4 — this module is a QUALITY GATE, not a design authority.
@@ -169,22 +168,9 @@ export function findHardcodedGeometry(source: string): string[] {
 }
 
 function generatedPageFallbackReason(source: string, requiresMedia: boolean): string | null {
-  // Chrome is page-owned and deterministic: exactly one navigation landmark and
-  // exactly one footer per page. Zero means an unreachable page, more than one
-  // means competing chrome (the two-navbar / two-footer regression).
-  const chrome = countPageChromeLandmarks(source);
-  if (chrome.navbars === 0) {
-    return 'generated page renders no navigation landmark';
-  }
-  if (chrome.navbars > 1) {
-    return 'generated page renders competing navigation chrome';
-  }
-  if (chrome.footers === 0) {
-    return 'generated page renders no footer landmark';
-  }
-  if (chrome.footers > 1) {
-    return 'generated page renders competing footer chrome';
-  }
+  // Chrome is never a validity requirement. A page may render a floating bar,
+  // a plain header, footer-only links, or nothing at all — the Wizard AI owns
+  // that decision per page.
   if (/<style\b|document\.(?:body|documentElement)|createElement\(\s*['"]style['"]/.test(source)) {
     return 'generated page attempts to author a parallel global theme system';
   }
@@ -217,15 +203,11 @@ function generatedPageFallbackReason(source: string, requiresMedia: boolean): st
  */
 function pageDepthFallbackReason(source: string, minSections: number | undefined): string | null {
   if (!minSections || minSections <= 0 || !source.trim()) return null;
-  const chrome = countPageChromeLandmarks(source);
   const semanticRegions = (source.match(/<(?:section|article)\b/gi) || []).length;
   const composedBlocks = new Set(
     (source.match(/<([A-Z][A-Za-z0-9_]*)\b/g) || []).map((tag) => tag.slice(1)),
   ).size;
-  const contentSections = Math.max(
-    semanticRegions + composedBlocks - Math.max(chrome.navbars - 1, 0),
-    0,
-  );
+  const contentSections = Math.max(semanticRegions + composedBlocks, 0);
   const floor = Math.max(minSections - 1, 3);
   if (contentSections < floor) {
     return `generated page is too shallow (${contentSections} content sections, needs ${floor})`;

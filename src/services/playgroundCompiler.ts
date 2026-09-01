@@ -266,8 +266,6 @@ export function compilePlayground(
   }
 
 
-  Object.assign(vfsFiles, buildCanonicalWizardSharedChromeModules(registry, businessName));
-
   const routerContent = generateCanonicalRouterForFiles(registry, vfsFiles, businessName);
   const routerFile = {
     path: '/src/App.tsx',

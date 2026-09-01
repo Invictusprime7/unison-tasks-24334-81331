@@ -73,3 +73,36 @@ export default function Home(){ return <main>{value}</main>; }`,
     expect(result.violations.some((v) => v.kind === 'hook-outside-component')).toBe(true);
   });
 });
+
+describe('registeredPageCompilerGate — handler before hook', () => {
+  it('accepts a component that declares a handler arrow before its hooks', () => {
+    const result = validateRegisteredPageCompilation(
+      {
+        '/src/pages/Home.tsx': `import { useEffect, useState } from 'react';
+export default function Home() {
+  const handleSubmit = (e) => { e.preventDefault(); };
+  const [ready, setReady] = useState(false);
+  useEffect(() => { setReady(true); }, []);
+  return <form onSubmit={handleSubmit}>{ready ? 'y' : 'n'}</form>;
+}`,
+      },
+      snapshotWithHome(),
+    );
+    expect(result.violations).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('still flags a hook called inside a plain handler', () => {
+    const result = validateRegisteredPageCompilation(
+      {
+        '/src/pages/Home.tsx': `import { useState } from 'react';
+export default function Home() {
+  const handleClick = () => { const [a, setA] = useState(0); return a; };
+  return <button onClick={handleClick} />;
+}`,
+      },
+      snapshotWithHome(),
+    );
+    expect(result.violations.some((v) => v.kind === 'hook-outside-component')).toBe(true);
+  });
+});

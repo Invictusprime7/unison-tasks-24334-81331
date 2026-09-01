@@ -79,8 +79,10 @@ export function runRuntimeCompatibilityPreflight(
 
       const capability: GeneratedRuntimeCapability | null = findCapabilityForImport(specifier);
       if (capability) {
-        capabilitiesUsed.add(capability.id);
+        // Capability usage is a property of the generated site, not of the
+        // foundation modules that always ship the facade.
         if (!foundation) {
+          capabilitiesUsed.add(capability.id);
           importsApproved = false;
           blockers.push(
             `${path} imports "${specifier}" directly. ${capability.id} is only reachable through ${capability.facadeImports.join(', ')}.`,

@@ -140,13 +140,15 @@ export function validateRegisteredPageCompilation(
       }
     }
 
+    const functionScopes = collectFunctionScopes(source);
     HOOK_CALL.lastIndex = 0;
     let hookMatch: RegExpExecArray | null;
     while ((hookMatch = HOOK_CALL.exec(source)) !== null) {
       // Skip hook *definitions* / imports, only calls matter.
       const before = source.slice(Math.max(0, hookMatch.index - 20), hookMatch.index);
       if (/\bfunction\s+$/.test(before) || /[.\w]$/.test(before)) continue;
-      const scope = enclosingFunctionName(source, hookMatch.index);
+      const scope = enclosingFunctionName(functionScopes, hookMatch.index);
+
       if (!isReactScope(scope)) {
         violations.push({
           filePath: normalized,

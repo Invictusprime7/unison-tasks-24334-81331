@@ -125,7 +125,9 @@ export function buildThemeOverrideFileOps(input: ThemeOverrideCommitInput): File
   if (nextCss !== currentCss) {
     ops.push({ type: 'replace', path: INDEX_CSS_PATH, contents: nextCss });
   }
-  if ((input.files[THEME_OVERRIDES_PATH] ?? '') !== nextOverrides) {
+  const hasRecord = typeof input.files[THEME_OVERRIDES_PATH] === 'string';
+  const needsRecord = hasRecord || Object.keys(clean).length > 0;
+  if (needsRecord && (input.files[THEME_OVERRIDES_PATH] ?? '') !== nextOverrides) {
     ops.push({
       type: input.files[THEME_OVERRIDES_PATH] ? 'replace' : 'create',
       path: THEME_OVERRIDES_PATH,

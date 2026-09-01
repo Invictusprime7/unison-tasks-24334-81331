@@ -50,6 +50,8 @@ import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
 import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
 import { GENERATED_RUNTIME_PROFILE } from './generatedRuntimeCapabilities';
+import { assertStage4bCompositionPreserved } from './stage4bCompositionGuard';
+
 
 import {
   buildGeneratedUiFoundation,

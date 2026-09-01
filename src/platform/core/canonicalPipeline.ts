@@ -543,10 +543,11 @@ export function recompileFromPlayground(
   const normalizedThemeFiles = normalizeWizardThemeTokens(compileResult.vfsFiles);
   compileResult.vfsFiles = normalizedThemeFiles.files;
 
-  // Stage 4b is an art-direction skin, never a re-composer. If this recompile
-  // simplified a Lane B page body, fail loudly instead of shipping a flattened
-  // preset-looking site.
-  assertStage4bCompositionPreserved(existingVfsFiles, compileResult.vfsFiles, 'Recompile Stage 4b');
+  // Snapshot the composed bodies BEFORE the art-direction skin is applied.
+  // Composition ownership belongs to the compiler above; everything below is
+  // Stage 4b (colour, typography, surfaces, materials, gradients, radius/
+  // shadow, contrast, texture) and may not touch page structure.
+  const preStage4bFiles = { ...compileResult.vfsFiles };
 
   // Stage 4b is mandatory and idempotent: only the token payload paired with
   // the incoming wizard seed may author the final stylesheet.
@@ -565,6 +566,11 @@ export function recompileFromPlayground(
       themePresetId,
     }),
   );
+
+  // Stage 4b is an art-direction skin, never a re-composer. A flatten here is a
+  // contract break, not a warning.
+  assertStage4bCompositionPreserved(preStage4bFiles, compileResult.vfsFiles, 'Recompile Stage 4b');
+
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,

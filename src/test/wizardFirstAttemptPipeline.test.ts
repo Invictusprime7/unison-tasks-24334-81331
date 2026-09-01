@@ -15,6 +15,7 @@ describe('Wizard Lane B first-attempt pipeline', () => {
     expect(planIndex).toBeGreaterThan(-1);
     expect(generationIndex).toBeGreaterThan(planIndex);
     expect(launcher).toContain('if (firstAttemptBatchPlan.batches.length > 1)');
+    expect(launcher).toContain('maxPagesPerBatch: WIZARD_LANE_B_PAGES_PER_RESPONSE');
     expect(launcher).toContain('batchOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS');
     expect(launcher).toContain('Promise.all(batchWave.map');
     expect(launcher).toContain('const batchPrompt = buildFirstAttemptPrompt(batch);');

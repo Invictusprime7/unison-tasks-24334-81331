@@ -550,6 +550,11 @@ const WIZARD_ISOLATED_PAGE_COMPLETION_MS = 132_000;
 // Every group is syntax-gated before merge, so bounded concurrency cannot
 // contaminate an already accepted page.
 const WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS = 2;
+// A Lane B response must author one canonical page body. Real 2-page responses
+// repeatedly returned a complete first file followed by a truncated/malformed
+// second file even when the same model produced valid one-page output. Keep
+// concurrency at the request level, never inside one generated JSON payload.
+const WIZARD_LANE_B_PAGES_PER_RESPONSE = 1;
 const WIZARD_MAX_RECOVERY_PAGE_COUNT = 8;
 // A pure timeout/transport failure never produced content to judge, so it
 // must not consume the 2-attempt content/syntax-repair budget an isolated
@@ -2389,6 +2394,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         const firstAttemptBatchPlan = planLaneBBatches({
           pages: initialTargetPaths,
           basePayloadBytes: firstAttemptPayloadBytes,
+          maxPagesPerBatch: WIZARD_LANE_B_PAGES_PER_RESPONSE,
         });
         let result: { data: any | null; error: unknown };
 
@@ -2578,6 +2584,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
           const batchPlan = planLaneBBatches({
             pages: batchTargets,
             basePayloadBytes: laneBBasePayloadBytes,
+            maxPagesPerBatch: WIZARD_LANE_B_PAGES_PER_RESPONSE,
           });
           const batches = batchPlan.batches;
           if (batches.length > 1) {

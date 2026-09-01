@@ -39,7 +39,8 @@ Chrome is a design decision the Wizard AI makes per site and per page — not a 
 - Hand WebBuilder the persisted revision/snapshot identity and verify Sandpack compiles the same resolved files before closing the launcher.
 
 ## Verification
-- Add regression tests proving no generator or prompt references chrome requirements, no scaffold emits `SiteNavbar`/`SiteFooter`, and that pages with any chrome style — or none at all — pass acceptance and merge unchanged.
+- Add a repo-wide guard test asserting no `SiteNavbar`/`SiteFooter` template, path constant, injector, refresh step, `globalSharedChrome` flag, or chrome requirement remains in any generator, prompt, scaffold, or guard.
+- Add acceptance tests proving pages with any chrome style — floating bar, plain header, footer-only links, or none — pass acceptance and reach the preview unchanged.
 - Add scheduler tests for 4-, 7-, and 9-page sites, delayed responses, one retryable failure, one quality repair, and module closure; verify successful siblings are retained and no timer produces HTTP 499.
 - Add an end-to-end Wizard launch test that confirms: all selected routes are AI-authored, PageRegistry paths match the deterministic router, the SiteBundleSnapshot is persisted once, WebBuilder opens, and Sandpack resolves every page/module.
 - Invoke the changed AI route once and inspect the Gateway and edge-function response/logs before completion; then run focused pipeline, chrome, persistence, and preview tests.

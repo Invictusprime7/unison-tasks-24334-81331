@@ -3175,7 +3175,23 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         .map((page) => (page as { filePath?: string }).filePath)
         .find((path): path is string => /\/Home\.(tsx|jsx)$/i.test(path));
       const homeQualityRejections: string[] = [];
-      if (canonicalHomePath) {
+      const canonicalHomeBody = canonicalHomePath
+        ? (aiSourcedFiles[canonicalHomePath]
+          || aiSourcedFiles[canonicalHomePath.replace(/^\//, '')]
+          || '')
+        : '';
+      if (canonicalHomePath && !canonicalHomeBody.trim()) {
+        // Lane B never authored a Home body (failed turn / unusable payload).
+        // That is a generation gap for the per-page completion loop, NOT a
+        // presentation-quality verdict — assessing an empty string here only
+        // emitted a misleading "too small to replace the canonical
+        // composition" rejection on top of the real failure.
+        homeQualityRejections.push(canonicalHomePath);
+        console.warn('[SystemLauncher] Lane B authored no Home body; deferring to per-page completion', {
+          path: canonicalHomePath,
+          templateId: templateLayoutContract.templateId,
+        });
+      } else if (canonicalHomePath) {
         // Quality gate only — a rejected Home triggers a focused Lane B retry
         // below. The canonical Stage 4b Home is never substituted here.
         const homeAssessment = assessWizardHomePresentation({
@@ -3189,11 +3205,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
             templateId: templateLayoutContract.templateId,
             reason: homeAssessment.rejections[0]?.reason,
             chromeTags: Array.from(new Set(
-              (aiSourcedFiles[canonicalHomePath] || '').match(/<[A-Za-z][A-Za-z0-9]*/g) || [],
+              canonicalHomeBody.match(/<[A-Za-z][A-Za-z0-9]*/g) || [],
             )).slice(0, 40).join(' '),
           });
         }
       }
+
       const wizardGenerationGaps: {
         aiError?: string;
         payloadIssue?: typeof lastPayloadIssue;

@@ -541,6 +541,11 @@ export function recompileFromPlayground(
   const normalizedThemeFiles = normalizeWizardThemeTokens(compileResult.vfsFiles);
   compileResult.vfsFiles = normalizedThemeFiles.files;
 
+  // Stage 4b is an art-direction skin, never a re-composer. If this recompile
+  // simplified a Lane B page body, fail loudly instead of shipping a flattened
+  // preset-looking site.
+  assertStage4bCompositionPreserved(existingVfsFiles, compileResult.vfsFiles, 'Recompile Stage 4b');
+
   // Stage 4b is mandatory and idempotent: only the token payload paired with
   // the incoming wizard seed may author the final stylesheet.
   compileResult.vfsFiles['/src/index.css'] = themedCss;

@@ -166,6 +166,7 @@ import { buildThemeContractDirectiveFromFiles } from '@/platform/core/themeContr
 
 import { evaluatePublishedRuntimeReadiness } from '@/services/publishedRuntimeReadiness';
 import type { BusinessProfileDTO } from '@/types/businessProfile';
+import { describeArtDirectionBrief } from "@/services/wizardDesignIntervention";
 import type { WizardDesignIntervention } from "@/services/wizardDesignIntervention";
 
 // ============================================================================
@@ -719,6 +720,7 @@ function buildWizardAiSeedPrompt(opts: {
     opts.designIntervention
       ? `DESIGN INTERVENTION (LOCKED): Use ${opts.designIntervention.layoutRecipe}; prioritize ${opts.designIntervention.sectionVariants.join(', ')}; use ${opts.designIntervention.motionRecipes.join(', ')} within a ${opts.designIntervention.motionBudget} motion budget; and compose only these interactions: ${opts.designIntervention.interactionRecipes.join(', ')}. ${opts.designIntervention.aiDirective}`
       : '',
+    opts.designIntervention ? describeArtDirectionBrief(opts.designIntervention) : '',
     `INDUSTRY + TEMPLATE CONTEXT (binding; never replace with generic business copy):`,
     opts.industryTemplateGuidance,
     `CONTENT CONTRACT: Copy must be specific to the ${opts.resolvedIndustry} industry and reflect the primary goal "${opts.primaryGoal || 'collect_leads'}". No lorem ipsum, no generic placeholders.`,

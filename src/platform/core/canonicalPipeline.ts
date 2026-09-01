@@ -50,6 +50,8 @@ import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
 import type { WizardInteractionManifest } from '@/services/wizardInteractionEnrichment';
 import { assertSnapshotThemeSeed, assertThemeSeed } from './themeSeedAssert';
 import { GENERATED_RUNTIME_PROFILE } from './generatedRuntimeCapabilities';
+import { assertStage4bCompositionPreserved } from './stage4bCompositionGuard';
+
 
 import {
   buildGeneratedUiFoundation,
@@ -541,6 +543,12 @@ export function recompileFromPlayground(
   const normalizedThemeFiles = normalizeWizardThemeTokens(compileResult.vfsFiles);
   compileResult.vfsFiles = normalizedThemeFiles.files;
 
+  // Snapshot the composed bodies BEFORE the art-direction skin is applied.
+  // Composition ownership belongs to the compiler above; everything below is
+  // Stage 4b (colour, typography, surfaces, materials, gradients, radius/
+  // shadow, contrast, texture) and may not touch page structure.
+  const preStage4bFiles = { ...compileResult.vfsFiles };
+
   // Stage 4b is mandatory and idempotent: only the token payload paired with
   // the incoming wizard seed may author the final stylesheet.
   compileResult.vfsFiles['/src/index.css'] = themedCss;
@@ -558,6 +566,11 @@ export function recompileFromPlayground(
       themePresetId,
     }),
   );
+
+  // Stage 4b is an art-direction skin, never a re-composer. A flatten here is a
+  // contract break, not a warning.
+  assertStage4bCompositionPreserved(preStage4bFiles, compileResult.vfsFiles, 'Recompile Stage 4b');
+
 
   const siteBundleSnapshot = projectToSiteBundleSnapshot(
     playground,

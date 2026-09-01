@@ -21,6 +21,11 @@ import {
   runRuntimeCompatibilityPreflight,
   type RuntimeCompatibilityReport,
 } from './runtimeCompatibilityPreflight';
+import {
+  evaluateVisualQuality,
+  VISUAL_QUALITY_VERSION,
+  type VisualQualityReport,
+} from './visualQualityEvaluation';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
 
@@ -53,6 +58,8 @@ export interface RunFullPreflightResult {
     runtimeCompatibility: RuntimeCompatibilityReport;
     finalRepair: 'ok' | 'skipped' | 'failed';
   };
+  /** Compositional quality report — advisory, never blocking. */
+  visualQuality: VisualQualityReport;
 }
 
 export function runFullPreflight(
@@ -168,8 +175,30 @@ export function runFullPreflight(
     finalRepair = 'failed';
   }
 
+  // 8) Visual quality evaluation — COMPOSITIONAL, non-destructive. It never
+  // mutates source and never triggers a fallback; it only reports, and may
+  // hand the caller ONE focused refinement directive for Lane B.
+  let visualQuality: VisualQualityReport;
+  try {
+    visualQuality = evaluateVisualQuality(files, {
+      technicalScore: runtimeCompatibility.ok && experience.violations.length === 0 ? 100 : 70,
+    });
+    if (visualQuality.refinementDirective) {
+      console.warn('[runFullPreflight] visual quality findings', visualQuality.findings);
+    }
+  } catch (e) {
+    console.warn('[runFullPreflight] visual quality evaluation failed', e);
+    visualQuality = {
+      version: VISUAL_QUALITY_VERSION,
+      compositionScore: 0, hierarchyScore: 0, diversityScore: 0, mediaScore: 0,
+      repetitionPenalty: 0, technicalScore: 0,
+      findings: [], pages: [], refinementDirective: null,
+    };
+  }
+
   const mutatedFiles = Object.keys(files).filter((p) => files[p] !== inputFiles[p]);
   const mutated = mutatedFiles.length > 0 || Object.keys(files).length !== Object.keys(inputFiles).length;
+
 
   if (mode === 'acceptance') {
     // Validation-only: nothing this pass produced may reach the seal.
@@ -198,6 +227,7 @@ export function runFullPreflight(
         runtimeCompatibility,
         finalRepair,
       },
+      visualQuality,
     };
   }
 
@@ -223,6 +253,7 @@ export function runFullPreflight(
       runtimeCompatibility,
       finalRepair,
     },
+    visualQuality,
   };
 }
 

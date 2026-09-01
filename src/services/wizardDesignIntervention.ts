@@ -13,9 +13,25 @@ import {
   resolveArtDirectionPackId,
   type ArtDirectionPackId,
 } from '@/sections/variants/artDirectionPacks';
+import {
+  describeExperienceEnvelope,
+  resolveExperienceEnvelope,
+  EXPERIENCE_ENVELOPE_VERSION,
+  type ExperienceEnvelope,
+} from '@/services/experienceCapabilityResolver';
+import type {
+  VocabularyDensity,
+  VocabularySymmetry,
+  VocabularyVisualDominance,
+  VocabularyMotionIntensity,
+} from '@/platform/core/designVocabulary';
 
 
-export const WIZARD_DESIGN_INTERVENTION_VERSION = '1.0' as const;
+
+export const WIZARD_DESIGN_INTERVENTION_VERSION = '2.0' as const;
+/** Briefs written before the Phase 2 design brief existed. Migrated on read. */
+const LEGACY_INTERVENTION_VERSIONS = new Set(['1.0']);
+
 
 export type WizardMotionRecipe =
   | 'editorial-reveal'
@@ -48,6 +64,40 @@ export type WizardExperienceRecipe =
 
 export type WizardExperienceBudget = 'none' | 'accent' | 'immersive';
 
+/**
+ * Phase 2 art-direction brief. This is what turns Lane B from "make something
+ * premium" into an actual design commission: archetype, composition rules,
+ * typography contrast, media treatment, motion intensity and experience budget.
+ */
+export interface WizardArtDirectionBrief {
+  visualArchetype: string;
+  composition: {
+    symmetry: VocabularySymmetry;
+    density: VocabularyDensity;
+    sectionRhythm: 'uniform' | 'variable';
+    heroScale: 'contained' | 'generous' | 'monumental';
+  };
+  typography: {
+    contrast: 'subtle' | 'strong' | 'extreme';
+    displayTreatment: 'restrained' | 'balanced' | 'oversized';
+  };
+  media: {
+    dominance: VocabularyVisualDominance;
+    cropping: 'uniform' | 'editorial';
+    treatments: string[];
+  };
+  motion: {
+    intensity: VocabularyMotionIntensity;
+    scrollLinked: boolean;
+  };
+  experience: {
+    webglEligible: boolean;
+    canvasBudget: number;
+  };
+}
+
+
+
 export interface WizardDesignIntervention {
   version: typeof WIZARD_DESIGN_INTERVENTION_VERSION;
   source: 'deterministic-baseline';
@@ -73,8 +123,13 @@ export interface WizardDesignIntervention {
   /** Sealed experience-layer plan; the preflight gate budgets against it. */
   experienceRecipes: WizardExperienceRecipe[];
   experienceBudget: WizardExperienceBudget;
+  /** Phase 2: the constrained vocabulary Lane B may compose from. */
+  envelope: ExperienceEnvelope;
+  /** Phase 2: the art-direction brief handed to Lane B. */
+  brief: WizardArtDirectionBrief;
   aiDirective: string;
 }
+
 
 export interface WizardDesignInterventionInput {
   businessName: string;
@@ -139,7 +194,8 @@ export function readWizardDesignIntervention(
   try {
     const intervention = JSON.parse(raw) as Partial<WizardDesignIntervention>;
     if (
-      intervention.version !== WIZARD_DESIGN_INTERVENTION_VERSION ||
+      (intervention.version !== WIZARD_DESIGN_INTERVENTION_VERSION &&
+        !LEGACY_INTERVENTION_VERSIONS.has(String(intervention.version))) ||
       intervention.source !== 'deterministic-baseline' ||
       typeof intervention.layoutRecipe !== 'string' ||
       !LAYOUT_RECIPES.has(intervention.layoutRecipe as WizardDesignIntervention['layoutRecipe']) ||
@@ -180,14 +236,38 @@ export function readWizardDesignIntervention(
         seed: intervention.seed,
       });
     }
+    // Phase 2 migration: a v1 brief carries no envelope/art-direction brief.
+    // Re-derive them from the SAME sealed inputs so a hydrated draft resolves
+    // exactly what a fresh compile of those selections would.
+    if (
+      !intervention.envelope ||
+      intervention.envelope.version !== EXPERIENCE_ENVELOPE_VERSION ||
+      !intervention.brief
+    ) {
+      const model = (intervention.businessModel as BusinessModel) || 'general';
+      const envelope = resolveExperienceEnvelope({
+        seed: intervention.seed || 'legacy',
+        businessModel: model,
+        industry: intervention.industry || 'general',
+        templateId: intervention.templateId,
+        themePresetId: intervention.themePresetId,
+        styleIntent: intervention.themePresetId,
+        disallowWebgl: intervention.experienceBudget === 'none',
+      });
+      intervention.envelope = envelope;
+      intervention.brief = buildArtDirectionBrief(envelope, intervention.artDirectionPackId);
+    }
+    intervention.version = WIZARD_DESIGN_INTERVENTION_VERSION;
     return intervention as WizardDesignIntervention;
+
+
 
   } catch {
     return null;
   }
 }
 
-const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'activeVariants' | 'aiDirective' | 'artDirectionPackId' | 'experienceRecipes' | 'experienceBudget'>> = {
+const MODEL_RECIPES: Record<BusinessModel, Omit<WizardDesignIntervention, 'version' | 'source' | 'seed' | 'industry' | 'businessModel' | 'templateId' | 'themePresetId' | 'activeVariants' | 'aiDirective' | 'artDirectionPackId' | 'experienceRecipes' | 'experienceBudget' | 'envelope' | 'brief'>> = {
   appointment_service: {
     layoutRecipe: 'collage-hero', sectionVariants: ['split-media-hero', 'bento-services', 'testimonial-rail', 'conversion-form'],
     motionRecipes: ['service-progressive-disclosure', 'proof-led-stagger', 'conversion-feedback'], interactionRecipes: ['mobile-nav-dialog', 'accordion'], motionBudget: 'restrained',
@@ -246,7 +326,68 @@ function buildActiveVariants(templateId: string | null | undefined, seed: string
   })) as Record<string, VariantId>;
 }
 
+
+/**
+ * The art-direction brief. Derived ONLY from the sealed envelope + art
+ * direction pack so every hydration path (fresh compile, legacy migration,
+ * recompile) resolves the identical brief.
+ */
+export function buildArtDirectionBrief(
+  envelope: ExperienceEnvelope,
+  artDirectionPackId: ArtDirectionPackId,
+): WizardArtDirectionBrief {
+  const pack = ART_DIRECTION_PACKS[artDirectionPackId];
+  const expressive = envelope.motion === 'expressive';
+  const oversized = envelope.typographyScale === 'oversized';
+
+  return {
+    visualArchetype: `${artDirectionPackId}/${envelope.layoutSymmetry}-${envelope.visualDominance}-dominance`,
+    composition: {
+      symmetry: envelope.layoutSymmetry,
+      density: envelope.density,
+      sectionRhythm: envelope.layoutSymmetry === 'asymmetric' ? 'variable' : 'uniform',
+      heroScale: oversized ? 'monumental' : envelope.density === 'compact' ? 'contained' : 'generous',
+    },
+    typography: {
+      contrast: oversized ? 'extreme' : envelope.typographyScale === 'restrained' ? 'subtle' : 'strong',
+      displayTreatment: envelope.typographyScale,
+    },
+    media: {
+      dominance: envelope.visualDominance,
+      cropping: envelope.layoutSymmetry === 'asymmetric' ? 'editorial' : 'uniform',
+      treatments: Array.from(new Set([
+        pack.design.mediaTreatment,
+        ...envelope.mediaCandidates.slice(0, 2),
+      ])).filter(Boolean) as string[],
+    },
+    motion: {
+      intensity: envelope.motion,
+      scrollLinked: expressive || envelope.motionCandidates.includes('scroll-linked'),
+    },
+    experience: {
+      webglEligible: envelope.webgl !== 'ineligible',
+      canvasBudget: envelope.canvasBudget,
+    },
+  };
+}
+
+/** Human-readable art-direction block for the Lane B prompt. */
+export function describeArtDirectionBrief(intervention: WizardDesignIntervention): string {
+  const { brief } = intervention;
+  return [
+    `ART DIRECTION BRIEF (LOCKED) — you are the composer, not a template filler.`,
+    `Archetype: ${brief.visualArchetype}.`,
+    `Composition: ${brief.composition.symmetry}, ${brief.composition.density} density, ${brief.composition.sectionRhythm} section rhythm, ${brief.composition.heroScale} hero scale.`,
+    `Typography: ${brief.typography.contrast} contrast, ${brief.typography.displayTreatment} display treatment.`,
+    `Media: ${brief.media.dominance} dominance, ${brief.media.cropping} cropping, treatments ${brief.media.treatments.join(', ')}.`,
+    `Motion: ${brief.motion.intensity}${brief.motion.scrollLinked ? ', scroll-linked' : ''}.`,
+    `Experience: WebGL ${brief.experience.webglEligible ? 'eligible' : 'not eligible'}, canvas budget ${brief.experience.canvasBudget}.`,
+    describeExperienceEnvelope(intervention.envelope),
+  ].join('\n');
+}
+
 export function buildWizardDesignIntervention(
+
   input: WizardDesignInterventionInput,
 ): WizardDesignIntervention {
   const industry = input.industryOverlay || 'general';
@@ -295,6 +436,22 @@ export function buildWizardDesignIntervention(
     experienceRecipes.unshift('product-stage');
   }
 
+  // PHASE 2 — resolve the constrained vocabulary envelope, then the brief.
+  const envelope = resolveExperienceEnvelope({
+    seed,
+    businessModel: input.businessModel,
+    industry: typeof industry === 'string' ? industry : String(industry),
+    templateId: input.templateId,
+    themePresetId: input.themePresetId,
+    styleIntent: input.themePresetId,
+    primaryGoal: input.primaryGoal,
+    sellsProducts: input.sellsProducts,
+    needsBooking: input.needsBooking,
+    wantsLeadCapture: input.wantsLeadCapture,
+    disallowWebgl: experience.budget === 'none',
+  });
+  const brief = buildArtDirectionBrief(envelope, artDirectionPackId);
+
   return {
     version: WIZARD_DESIGN_INTERVENTION_VERSION,
     source: 'deterministic-baseline',
@@ -315,7 +472,10 @@ export function buildWizardDesignIntervention(
     motionBudget: baseline.motionBudget,
     experienceRecipes,
     experienceBudget: experience.budget,
-    aiDirective: `Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Art direction is "${pack.name}" — ${pack.description} Experience budget is "${experience.budget}" — compose the immersive layer only from @/unison/ui/experience (${experienceRecipes.join(', ')}), at most one heavy primitive per page band and two per page, and never import three/@react-three/* directly. Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.`,
+    envelope,
+    brief,
+    aiDirective: `Compose only with snapshot-owned UI primitives and semantic Stage 4b tokens. Art direction is "${pack.name}" — ${pack.description} Lead the composition with the ${envelope.heroCandidates[0]} hero family, ${envelope.contentCandidates[0]} content pattern and ${envelope.navigationCandidates[0]} navigation; vary the pattern between pages instead of repeating one section shape. Experience budget is "${experience.budget}" — compose the immersive layer only from @/unison/ui/experience (${experienceRecipes.join(', ')}), at most one heavy primitive per page band and two per page, and never import three/@react-three/* directly. Preserve the motion budget, selected recipes, accessibility, responsive constraints, and canonical intent bindings.`,
+
 
   };
 }

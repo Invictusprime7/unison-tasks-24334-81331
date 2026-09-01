@@ -6,5 +6,7 @@
 - [ ] Final consolidation sweep — confirm no parallel body-authoring paths remain; full suite green
 
 ## Landed
+- Phase 2 design intelligence: design vocabulary registry, experience capability resolver, v2.0 art-direction brief in the Lane B prompt, visual quality evaluation gate, Stage 4b composition guard
+- Preview typecheck errors cleared (design-intervention Omit keys, `pack.design.mediaTreatment`, resolver lead predicate)
 - M1–M6, M8 (canonical ownership, Stage 4b theming, compiler gate, UI/binding closure, snapshot continuity, telemetry)
 - Quarantine scaffolds decommissioned (diagnostic surface only)

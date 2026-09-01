@@ -24,7 +24,18 @@
  */
 
 import * as Babel from '@babel/standalone';
-import { renderQuarantineComponent, type QuarantineContext } from './aiSiteQuarantineScaffolds';
+
+/**
+ * Context carried into the quarantine diagnostic. It is deliberately NOT a
+ * content authority: no industry vocabulary, no scaffold sections. The old
+ * `aiSiteQuarantineScaffolds` module authored full on-brand page bodies, which
+ * made it a second authoring pipeline competing with Lane B. It is deleted.
+ */
+export interface QuarantineContext {
+  industry?: string | null;
+  brand?: string | null;
+}
+
 
 export interface PreflightFileReport {
   path: string;

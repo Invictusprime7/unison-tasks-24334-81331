@@ -2730,15 +2730,25 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         wizardGenerationGaps.scaffoldFilledPaths = laneBRepairedPaths;
       }
       if (unresolvedAfterCompletion.length > 0) {
-        launchReliabilityMode = 'lane-b-blocked';
+        // Non-blocking (2026-09-01): the launcher must always finish and hand
+        // off to the Web Builder preview. Pages Lane B could not author are
+        // backfilled from the canonical snapshot scaffold (still themed by
+        // Stage 4b) and reported as gaps instead of aborting the launch.
+        launchReliabilityMode = 'lane-b-degraded';
         const completionReasons = laneBCompletionDiagnostics
           .filter((diagnostic) => unresolvedAfterCompletion.includes(diagnostic.path))
           .map((diagnostic) => `${diagnostic.path} attempt ${diagnostic.attempt}: ${diagnostic.reason}`)
           .join(' | ');
-        throw new Error(
-          `Wizard Lane B could not complete ${unresolvedAfterCompletion.length} selected page file(s) after isolated industry-aware generation: ${unresolvedAfterCompletion.join(', ')}. ${completionReasons}`,
-        );
+        console.warn('[SystemLauncher] Lane B left selected page(s) unauthored; continuing with canonical backfill', {
+          paths: unresolvedAfterCompletion,
+          reasons: completionReasons,
+        });
+        wizardGenerationGaps.scaffoldFilledPaths = Array.from(new Set([
+          ...(wizardGenerationGaps.scaffoldFilledPaths || []),
+          ...unresolvedAfterCompletion,
+        ]));
       }
+
 
       // Stamp gaps so downstream readiness artifacts can record them.
       (window as unknown as { __wizardGenerationGaps?: typeof wizardGenerationGaps }).__wizardGenerationGaps =

@@ -299,19 +299,48 @@ const REPAIR_PASSES: RepairPass[] = [
   },
 ];
 
-// Industry-aware quarantine fallbacks live in `aiSiteQuarantineScaffolds.ts`.
-// We never render a generic "Welcome / finishing touches" placeholder anymore —
-// every quarantined file is replaced with a real on-brand section keyed on the
-// detected page kind (Home, Footer, Services, Contact, Menu, Properties, etc.)
-// and the launcher's industry context.
+// Quarantine is a DIAGNOSTIC, not an authoring path. A quarantined file keeps
+// its identity (default export + route) but renders an explicit build-error
+// panel. No industry copy, no substituted sections: only Lane B may author a
+// page body, and every launch path runs with `allowQuarantine: false`.
 
 function isCodeFile(path: string): boolean {
   return /\.(tsx|jsx|ts|js)$/.test(path) && !path.includes('/node_modules/');
 }
 
-function deriveQuarantineComponent(path: string, error: string, ctx: QuarantineContext): string {
-  return renderQuarantineComponent(path, error.slice(0, 800), ctx);
+function quarantineComponentName(path: string): string {
+  const base = (path.split('/').pop() || 'Page').replace(/\.(tsx|jsx|ts|js)$/, '');
+  const safe = base.replace(/[^A-Za-z0-9]/g, '');
+  return /^[A-Za-z]/.test(safe) ? safe : `Page${safe || 'X'}`;
 }
+
+function deriveQuarantineComponent(path: string, error: string, _ctx: QuarantineContext): string {
+  const name = quarantineComponentName(path);
+  const safeError = JSON.stringify(error.slice(0, 600));
+  const safePath = JSON.stringify(path);
+  return `import React from 'react';
+
+/**
+ * Quarantined by aiSitePreflightRepair. The authored source for ${path} failed
+ * to parse after every repair pass. This is a diagnostic surface only — it
+ * never pretends to be finished content.
+ */
+export default function ${name}() {
+  if (typeof window !== 'undefined') {
+    try { console.error('[preflight] quarantined', ${safePath}, ${safeError}); } catch {}
+  }
+  return (
+    <main role="main" className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-4 p-8 text-foreground">
+      <p className="text-sm font-medium uppercase tracking-widest text-muted-foreground">Build error</p>
+      <h1 className="text-2xl font-semibold">This page could not be compiled</h1>
+      <p className="text-sm text-muted-foreground">{${safePath}}</p>
+      <pre className="overflow-auto rounded-md bg-muted p-4 text-xs text-muted-foreground">{${safeError}}</pre>
+    </main>
+  );
+}
+`;
+}
+
 
 /**
  * Lane B occasionally completes a valid page and then emits a small suffix

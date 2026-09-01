@@ -12,7 +12,7 @@ import {
   Monitor, Tablet, Smartphone, MousePointer2, MoreHorizontal,
   Sparkles, Code, Undo2, Redo2, Save, Keyboard, Zap, RefreshCcw,
   ChevronsDown, ChevronsUp, ArrowDown, ArrowUp, FileCode, Copy, Maximize2, Trash2,
-  FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch, Shield
+  FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch, Shield, Palette
 } from "lucide-react";
 import { CloudPanel } from "./web-builder/CloudPanel";
 import { PageNavigationBar, type PageTab } from "./web-builder/PageNavigationBar";

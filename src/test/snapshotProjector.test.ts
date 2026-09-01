@@ -36,6 +36,13 @@ function snapshotWith(files: Record<string, string>): SiteBundleSnapshot {
         presetId: 'restaurant-warm',
         cssPath: '/src/index.css',
       },
+      seal: {
+        version: '1.0',
+        sealedAt: '2026-07-21T00:00:00.000Z',
+        sealedBy: 'wizard-launch',
+        compileArtifactId: 'compile-authority-test',
+        fileCount: Object.keys(files).length,
+      },
     },
   };
 }

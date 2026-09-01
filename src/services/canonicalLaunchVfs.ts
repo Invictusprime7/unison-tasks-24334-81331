@@ -30,10 +30,12 @@ import { isMinimalPreviewFallbackSource } from './snapshotProjector';
 import { RESOLVED_COMPOSITION_ROOT } from '@/platform/core/resolvedComposition';
 import { normalizeWizardThemeTokens } from '@/utils/wizardThemeTokenNormalizer';
 import {
-  evaluateVisualQuality,
-  VISUAL_QUALITY_VERSION,
   type VisualQualityReport,
 } from './visualQualityEvaluation';
+import { runFullPreflight } from './runFullPreflight';
+import { runRuntimeCompatibilityPreflight, type RuntimeCompatibilityReport } from './runtimeCompatibilityPreflight';
+import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
+import { SANDPACK_PREVIEW_CORE_DEPENDENCIES } from '@/utils/sandpackDependencies';
 
 
 import { ensureGeneratedUiFoundation, normalizeFoundationLocalImports } from '@/platform/core/generatedUiFoundation';
@@ -97,6 +99,12 @@ export interface CanonicalLaunchArtifacts {
   bindingApplication: WizardBindingApplicationResult | null;
   /** Compositional quality report for the sealed pages. Advisory only. */
   visualQuality?: VisualQualityReport;
+  experiencePreflight?: {
+    instances: number;
+    heavyInstances: number;
+    violations: string[];
+  };
+  runtimeCompatibility?: RuntimeCompatibilityReport;
 }
 
 export interface BuildCanonicalLaunchArtifactsInput {
@@ -216,6 +224,11 @@ function cloneSnapshotWithRuntimeVfs(
   files: Record<string, string>,
   interactionManifest?: WizardInteractionManifest | null,
   missingPageFilePolicy: 'throw' | 'report' = 'throw',
+  preflight?: {
+    visualQuality: VisualQualityReport;
+    experiencePreflight: CanonicalLaunchArtifacts['experiencePreflight'];
+    runtimeCompatibility: RuntimeCompatibilityReport;
+  },
 ): SiteBundleSnapshot {
   // Pass 1 seal point: Stage 4b artifact + Lane B convergence + preflight
   // become the single authoritative revision here. Nothing downstream may
@@ -226,6 +239,9 @@ function cloneSnapshotWithRuntimeVfs(
     vfsFiles: files,
     interactionManifest,
     missingPageFilePolicy,
+    visualQuality: preflight?.visualQuality,
+    experiencePreflight: preflight?.experiencePreflight,
+    runtimeCompatibility: preflight?.runtimeCompatibility,
     sealedBy: siteBundleSnapshot.meta?.source === 'recompile' ? 'recompile' : 'wizard-launch',
   });
 }
@@ -844,6 +860,54 @@ function* buildCanonicalLaunchArtifactSteps(
   mergedFiles[FORM_RUNTIME_PATH] = FORM_RUNTIME_MODULE;
   mergedFiles[PUBLISHED_ACTION_RUNTIME_PATH] = PUBLISHED_ACTION_RUNTIME_MODULE;
 
+  // ── Canonical convergence preflight ────────────────────────────────────
+  // This is the shared launcher/builder authority. It runs against the exact
+  // merged VFS that will be sealed, including companion modules and runtime
+  // facades, and stamps the experience manifest before snapshot sealing.
+  let convergedPreflight = runFullPreflight(mergedFiles, {
+    siteBundleSnapshot: input.siteBundleSnapshot,
+    industry: input.industry || input.siteBundleSnapshot?.industry,
+    brand: input.businessName || undefined,
+    mode: 'repair',
+  });
+  for (const path of Object.keys(mergedFiles)) delete mergedFiles[path];
+  Object.assign(mergedFiles, convergedPreflight.files);
+
+  // Preflight repair is the final source-writing stage. Re-apply Stage 4b's
+  // token contract if it touched source, then prove a validation-only pass
+  // would make no further edits before the snapshot can be sealed.
+  if (convergedPreflight.mutated) {
+    const refinalized = normalizeWizardThemeTokens(mergedFiles);
+    for (const path of Object.keys(mergedFiles)) delete mergedFiles[path];
+    Object.assign(mergedFiles, refinalized.files);
+    const acceptance = runFullPreflight(mergedFiles, {
+      siteBundleSnapshot: input.siteBundleSnapshot,
+      industry: input.industry || input.siteBundleSnapshot?.industry,
+      brand: input.businessName || undefined,
+      mode: 'acceptance',
+    });
+    const unresolvedAcceptance = [
+      ...acceptance.mutatedFiles,
+      ...acceptance.stages.experienceGate.violations,
+    ];
+    if (unresolvedAcceptance.length > 0) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `Generated site still requires mutation after Stage 4b finalization: ${unresolvedAcceptance.join(' | ')}`,
+        { blockedFiles: acceptance.mutatedFiles, recoverableByRelaunch: true },
+      );
+    }
+    convergedPreflight = acceptance;
+  }
+
+  if (convergedPreflight.stages.experienceGate.violations.length > 0) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `Generated experience failed preflight: ${convergedPreflight.stages.experienceGate.violations.join(' | ')}`,
+      { recoverableByRelaunch: true },
+    );
+  }
+
   // ── M4 compiler gate ───────────────────────────────────────────────────
   // Mutation-free structural assertion: every registered page must compile in
   // the supported Sandpack runtime (default export, supported UI facade
@@ -867,18 +931,7 @@ function* buildCanonicalLaunchArtifactSteps(
   // Compositional scoring runs on the sealed page bodies. It never mutates
   // source and never triggers a fallback; the report travels with the
   // artifact so the launcher can record ONE focused refinement directive.
-  let visualQuality: VisualQualityReport;
-  try {
-    visualQuality = evaluateVisualQuality(mergedFiles, { technicalScore: 100 });
-  } catch (error) {
-    console.warn('[canonicalLaunchVfs] visual quality evaluation failed', error);
-    visualQuality = {
-      version: VISUAL_QUALITY_VERSION,
-      compositionScore: 0, hierarchyScore: 0, diversityScore: 0, mediaScore: 0,
-      repetitionPenalty: 0, technicalScore: 0,
-      findings: [], pages: [], refinementDirective: null,
-    };
-  }
+  const visualQuality = convergedPreflight.visualQuality;
   mergedFiles['/.unison/visual-quality.json'] = JSON.stringify(visualQuality, null, 2);
 
 
@@ -932,6 +985,21 @@ function* buildCanonicalLaunchArtifactSteps(
     extraDependencies: runtimeManifest.dependencies,
     themePresetId: appContext.themePresetId || (input.aesthetic as string | undefined) || null,
   });
+  const finalRuntimeCompatibility = runRuntimeCompatibilityPreflight({
+    files: viteReadyFiles,
+    dependencies: getDependenciesForSandpack(
+      viteReadyFiles,
+      SANDPACK_PREVIEW_CORE_DEPENDENCIES,
+    ).dependencies,
+    approvedCapabilities: input.enabledCapabilities,
+  });
+  if (!finalRuntimeCompatibility.ok) {
+    throw new PreviewPipelineError(
+      'vfs',
+      `Generated site is incompatible with the canonical preview runtime: ${finalRuntimeCompatibility.blockers.join(' | ')}`,
+      { recoverableByRelaunch: true },
+    );
+  }
   // `safeFiles` already passed the full post-mutation syntax gate. Everything
   // added between that gate and `viteReadyFiles` is deterministic platform
   // runtime code, so reparsing every generated page here only duplicates CPU
@@ -951,6 +1019,11 @@ function* buildCanonicalLaunchArtifactSteps(
         verifiedViteFiles,
         input.interactionManifest,
         missingPageFilePolicy,
+        {
+          visualQuality,
+          experiencePreflight: convergedPreflight.stages.experienceGate,
+          runtimeCompatibility: finalRuntimeCompatibility,
+        },
       )
     : undefined;
 
@@ -1022,6 +1095,8 @@ function* buildCanonicalLaunchArtifactSteps(
     canonicalPlayground,
     bindingApplication,
     visualQuality,
+    experiencePreflight: convergedPreflight.stages.experienceGate,
+    runtimeCompatibility: finalRuntimeCompatibility,
   };
 }
 

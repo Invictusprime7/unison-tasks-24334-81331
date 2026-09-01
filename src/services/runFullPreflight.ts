@@ -2,14 +2,14 @@
  * Single end-to-end preflight pipeline shared by the System Launcher and the
  * Web Builder's AI/template apply paths.
  *
- * Order of operations (must match canonicalLaunchVfs):
+ * Order of operations (canonicalLaunchVfs delegates its converged VFS here):
  *   1. Early syntax repair  (runPreflightRepair)
  *   2. Nav-intent stamping  (preflightNavWiring)
  *   3. Industry forbidden-intent stripping
  *   4. Final syntax repair  (runPreflightRepair) — catches damage from steps 2-3
  *
- * Every step is best-effort: a thrown error in any stage logs a warning and the
- * pipeline continues with the last good file set.
+ * Repair transforms are best-effort; safety and runtime violations are returned
+ * to the caller so the launcher/commit boundary can enforce them before seal.
  */
 import type { SiteBundleSnapshot } from '@/platform/core/canonicalPipeline';
 import { getIndustryIntentProfile } from '@/platform/core/industryIntentProfiles';

@@ -233,6 +233,38 @@ export interface SiteBundleSnapshotMeta {
   generationBrief?: WizardGenerationBrief;
   /** Deterministic composition, interaction, and motion recipes for this launch. */
   designIntervention?: WizardDesignIntervention;
+  /** Final, non-destructive visual evaluation produced by canonical preflight. */
+  visualQuality?: {
+    version: string;
+    compositionScore: number;
+    hierarchyScore: number;
+    diversityScore: number;
+    mediaScore: number;
+    repetitionPenalty: number;
+    technicalScore: number;
+    findings: unknown[];
+    pages: unknown[];
+    refinementDirective: string | null;
+  };
+  /** Experience instances and scene budget measured against the converged VFS. */
+  experiencePreflight?: {
+    instances: number;
+    heavyInstances: number;
+    violations: string[];
+  };
+  /** Package/import/renderer compatibility of the exact VFS that was sealed. */
+  runtimeCompatibility?: {
+    runtimeProfile: string;
+    dependenciesResolvable: boolean;
+    importsApproved: boolean;
+    reactRuntimeCompatible: boolean;
+    fallbackPresent: boolean;
+    budgetValid: boolean;
+    capabilitiesUsed: string[];
+    warnings: string[];
+    blockers: string[];
+    ok: boolean;
+  };
   /**
    * Seal stamp written by `sealSnapshot()`. Present only on the final sealed
    * revision — Stage 4b compile artifacts never carry it.

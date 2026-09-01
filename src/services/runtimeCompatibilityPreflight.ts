@@ -71,6 +71,10 @@ export function runRuntimeCompatibilityPreflight(
 
   for (const [path, source] of Object.entries(files)) {
     if (typeof source !== 'string' || !/\.(tsx|jsx|ts|js)$/i.test(path)) continue;
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    // Vite/Node build configuration is never executed inside the browser
+    // preview and must not be judged against Sandpack's client import allowlist.
+    if (!normalizedPath.startsWith('/src/')) continue;
     const foundation = isFoundationFile(path);
 
     for (const match of source.matchAll(IMPORT_PATTERN)) {

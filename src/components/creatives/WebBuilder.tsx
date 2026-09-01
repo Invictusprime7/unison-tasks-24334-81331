@@ -12,7 +12,7 @@ import {
   Monitor, Tablet, Smartphone, MousePointer2, MoreHorizontal,
   Sparkles, Code, Undo2, Redo2, Save, Keyboard, Zap, RefreshCcw,
   ChevronsDown, ChevronsUp, ArrowDown, ArrowUp, FileCode, Copy, Maximize2, Trash2,
-  FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch, Shield
+  FolderOpen, Cloud, CloudOff, Server, Layers, Settings, ExternalLink, GitBranch, Shield, Palette
 } from "lucide-react";
 import { CloudPanel } from "./web-builder/CloudPanel";
 import { PageNavigationBar, type PageTab } from "./web-builder/PageNavigationBar";
@@ -74,6 +74,7 @@ import { ResearchOverlay, type ResearchOverlayPayload } from "./web-builder/Rese
 import { decideIntentUx } from "@/runtime/intentUx";
 import SystemHealthPanel from "@/components/web-builder/SystemHealthPanel";
 import ReadinessCenterPanel from "@/components/web-builder/ReadinessCenterPanel";
+import ThemeTokenEditorPanel from "@/components/web-builder/ThemeTokenEditorPanel";
 import GateVerdictStrip from "@/components/web-builder/GateVerdictStrip";
 import RevisionLedgerStatus from "@/components/web-builder/RevisionLedgerStatus";
 import { useCompiledContract } from "@/hooks/useCompiledContract";
@@ -101,7 +102,7 @@ import {
   resolveProjectActivePagePath,
 } from '@/services/projectRuntimeEnvelope';
 import { dryRunAiCommit, persistAiCommit } from "@/services/aiApplyGate";
-import { emptyPatchPlan, legacyFilesToPatchPlan } from "@/types/patchPlan";
+import { emptyPatchPlan, legacyFilesToPatchPlan, type FileOp } from "@/types/patchPlan";
 import type { BuilderIdentity } from "@/types/builderIdentity";
 import { normalizeUnisonRuntimeContext } from "@/platform/core/runtimeManifest";
 import type { BusinessRuntimeContract } from '@/platform/core/businessRuntimeContract';
@@ -2856,6 +2857,86 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       })),
     );
   }, [templateCustomizer.activeVariants, commitPresentationOps]);
+
+  /**
+   * Theme-token overrides. The editor only produces FileOps for
+   * `/src/index.css` + `/.unison/theme-overrides.json`; they enter the ledger
+   * as a `theme-change` PatchPlan so the SiteBundleSnapshot owns the result.
+   */
+  const commitThemeTokenOps = useCallback(async (
+    ops: FileOp[],
+    summary: string,
+  ): Promise<boolean> => {
+    if (!businessId || !currentDraftId || ops.length === 0) return false;
+    const beforeFiles = virtualFSRef.current.getSandpackFiles();
+    const snapshot = resolveSnapshot(beforeFiles, effectiveRouteState as any).snapshot
+      ?? effectiveRouteState?.siteBundleSnapshot
+      ?? null;
+    if (!snapshot) {
+      toast.error('No canonical snapshot to restyle yet');
+      return false;
+    }
+    try {
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      if (!user) return false;
+      const patch = emptyPatchPlan(summary);
+      patch.fileOps.push(...ops);
+      const commit = await commitMutation({
+        source: 'theme-change',
+        identity: {
+          userId: user.id,
+          businessId,
+          projectId: resolvedProjectId || currentDraftId,
+          draftId: currentDraftId,
+          revisionId: currentRevisionIdRef.current,
+          sessionId: `web-builder:${currentDraftId}`,
+        },
+        current: {
+          vfsFiles: beforeFiles,
+          siteBundleSnapshot: snapshot,
+          playground: {
+            pageRegistry: creatorPlayground.pageRegistry,
+            creatorData: creatorPlayground.creatorData,
+            calendars: snapshot.calendars ?? {},
+            popups: snapshot.popups ?? {},
+          } as never,
+        },
+        patch,
+        options: {
+          requirePreviewPass: false,
+          requireReadinessPass: false,
+          industry: snapshot.industry,
+          themePresetId: snapshot.meta.themePresetId ?? undefined,
+          themeTokens: snapshot.themeTokens,
+        },
+      });
+      if (commit.status !== 'committed') {
+        throw new CommitRejectedError('theme token override was rejected', commit);
+      }
+      importBuilderFiles(commit.vfsFiles, {
+        replace: true,
+        preferredPath: activePagePath,
+        entryPoint: launchEntryPoint,
+      });
+      if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
+      toast.success('Theme tokens applied');
+      return true;
+    } catch (err) {
+      console.warn('[WebBuilder] theme token commit failed:', err);
+      toast.error('Could not apply the theme tokens');
+      return false;
+    }
+  }, [
+    businessId,
+    currentDraftId,
+    resolvedProjectId,
+    creatorPlayground.pageRegistry,
+    creatorPlayground.creatorData,
+    activePagePath,
+    launchEntryPoint,
+    effectiveRouteState,
+    importBuilderFiles,
+  ]);
 
 
   // ── Preview Floating Toolbar → VFSCommitService bridge ───────────────────
@@ -6998,7 +7079,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       <Shield className="h-3 w-3 mr-1" />
                       Health
                     </TabsTrigger>
+                    <TabsTrigger value="theme" className="text-[9px] px-1.5 py-0.5 data-[state=active]:bg-fuchsia-500/20 data-[state=active]:text-fuchsia-400">
+                      <Palette className="h-3 w-3 mr-1" />
+                      Theme
+                    </TabsTrigger>
                   </TabsList>
+                  <TabsContent value="theme" className="flex-1 m-0 min-h-0 overflow-hidden">
+                    <ThemeTokenEditorPanel
+                      vfsFiles={virtualFS.getSandpackFiles()}
+                      onCommitTokens={commitThemeTokenOps}
+                    />
+                  </TabsContent>
                   <TabsContent value="intents" className="flex-1 m-0 min-h-0 overflow-hidden">
                     <IntentDirectoryPanel
                       businessId={businessId}

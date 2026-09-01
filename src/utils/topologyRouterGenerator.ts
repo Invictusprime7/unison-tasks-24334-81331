@@ -153,7 +153,6 @@ function vfsPathToImport(filePath: string): string {
 function buildRouterCode(
   routes: RouteEntry[],
   businessName?: string,
-  options: CanonicalRouterOptions = {},
 ): string {
   if (routes.length === 0) return '';
 

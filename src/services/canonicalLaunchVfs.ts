@@ -862,7 +862,7 @@ function* buildCanonicalLaunchArtifactSteps(
   // This is the shared launcher/builder authority. It runs against the exact
   // merged VFS that will be sealed, including companion modules and runtime
   // facades, and stamps the experience manifest before snapshot sealing.
-  const convergedPreflight = runFullPreflight(mergedFiles, {
+  let convergedPreflight = runFullPreflight(mergedFiles, {
     siteBundleSnapshot: input.siteBundleSnapshot,
     industry: input.industry || input.siteBundleSnapshot?.industry,
     brand: input.businessName || undefined,
@@ -870,6 +870,29 @@ function* buildCanonicalLaunchArtifactSteps(
   });
   for (const path of Object.keys(mergedFiles)) delete mergedFiles[path];
   Object.assign(mergedFiles, convergedPreflight.files);
+
+  // Preflight repair is the final source-writing stage. Re-apply Stage 4b's
+  // token contract if it touched source, then prove a validation-only pass
+  // would make no further edits before the snapshot can be sealed.
+  if (convergedPreflight.mutated) {
+    const refinalized = normalizeWizardThemeTokens(mergedFiles);
+    for (const path of Object.keys(mergedFiles)) delete mergedFiles[path];
+    Object.assign(mergedFiles, refinalized.files);
+    const acceptance = runFullPreflight(mergedFiles, {
+      siteBundleSnapshot: input.siteBundleSnapshot,
+      industry: input.industry || input.siteBundleSnapshot?.industry,
+      brand: input.businessName || undefined,
+      mode: 'acceptance',
+    });
+    if (acceptance.violations.length > 0) {
+      throw new PreviewPipelineError(
+        'vfs',
+        `Generated site still requires mutation after Stage 4b finalization: ${acceptance.violations.join(' | ')}`,
+        { blockedFiles: acceptance.mutatedFiles, recoverableByRelaunch: true },
+      );
+    }
+    convergedPreflight = acceptance;
+  }
 
   if (!convergedPreflight.stages.runtimeCompatibility.ok) {
     throw new PreviewPipelineError(

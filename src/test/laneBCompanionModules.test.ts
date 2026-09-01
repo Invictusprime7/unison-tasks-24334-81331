@@ -40,6 +40,22 @@ describe('Lane B companion modules', () => {
     expect(isLaneAAuthorityPath('/src/pages/components/Card.tsx')).toBe(false);
   });
 
+  it('drops unrequested top-level pages instead of treating them as companions', () => {
+    const { pages, companions } = scopeLaneBBatchFiles(
+      {
+        '/src/pages/Home.tsx': 'export default () => <main>home</main>;',
+        '/src/pages/About.tsx': 'export default () => <main>stale about</main>;',
+        '/src/pages/components/Hero.tsx': 'export default () => <section />;',
+      },
+      ['/src/pages/Home.tsx'],
+    );
+
+    expect(Object.keys(pages)).toEqual(['/src/pages/Home.tsx']);
+    expect(companions).toEqual({
+      '/src/pages/components/Hero.tsx': 'export default () => <section />;',
+    });
+  });
+
   it('detects a page whose companion module is missing', () => {
     const unresolved = findUnresolvedLocalImports({
       '/src/pages/Gallery.tsx': 'import GalleryItem from "./components/GalleryItem";',

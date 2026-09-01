@@ -44,6 +44,13 @@ function isAcceptableCompanionPath(path: string): boolean {
   const normalized = normalizeVfsPath(path);
   if (!normalized.startsWith('/src/')) return false;
   if (isLaneAAuthorityPath(normalized)) return false;
+  // A top-level page is a canonical PageRegistry target, never a companion.
+  // Models sometimes ignore a batch's exact-key instruction and repeat other
+  // pages. Treating those repeats as companions allowed a later batch to
+  // overwrite an earlier batch's accepted page with unrelated or truncated
+  // source. Nested page modules (for example pages/components/Card.tsx) remain
+  // valid companions.
+  if (/^\/src\/pages\/[^/]+\.(?:tsx|jsx|ts|js)$/i.test(normalized)) return false;
   return /\.(tsx|jsx|ts|js|css|json)$/i.test(normalized);
 }
 

@@ -326,7 +326,8 @@ describe('wizard pipeline ownership invariants', () => {
     // (the shared deadline), not by pre-shrinking each page's nominal cap.
     expect(constantValue('WIZARD_ISOLATED_PAGE_COMPLETION_MS')).toBeGreaterThanOrEqual(105_000);
     expect(constantValue('WIZARD_ISOLATED_PAGE_COMPLETION_MS')).toBeLessThanOrEqual(120_000 + 12_000);
-    expect(constantValue('WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS')).toBeLessThanOrEqual(2);
+    expect(constantValue('WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS')).toBe(2);
+    expect(constantValue('WIZARD_LANE_B_PAGES_PER_RESPONSE')).toBe(1);
     expect(constantValue('WIZARD_INITIAL_AI_TURN_MS')).toBeGreaterThanOrEqual(140_000);
     expect(launcherSource).toContain(
       'takeWizardGenerationBudget(WIZARD_INITIAL_AI_TURN_MS)',

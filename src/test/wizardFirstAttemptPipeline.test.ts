@@ -15,9 +15,14 @@ describe('Wizard Lane B first-attempt pipeline', () => {
     expect(planIndex).toBeGreaterThan(-1);
     expect(generationIndex).toBeGreaterThan(planIndex);
     expect(launcher).toContain('if (firstAttemptBatchPlan.batches.length > 1)');
+    expect(launcher).toContain('maxPagesPerBatch: WIZARD_LANE_B_PAGES_PER_RESPONSE');
+    expect(launcher).toContain('takeWizardGenerationBudget(\n                  WIZARD_ISOLATED_PAGE_COMPLETION_MS');
     expect(launcher).toContain('batchOffset += WIZARD_MAX_PARALLEL_PAGE_COMPLETIONS');
+    expect(launcher).toContain('Promise.all(batchWave.map');
     expect(launcher).toContain('const batchPrompt = buildFirstAttemptPrompt(batch);');
     expect(launcher).toContain('wizardSeed: scopeWizardSeedToPageFiles(wizardSeed, batch)');
+    expect(launcher).toContain('Lane B batch rejected before merge');
+    expect(launcher).toContain('firstAttemptBatchPlan.batches.length === 1 && aiError');
     // Batch responses are scoped through the companion-module contract, which
     // keeps the requested pages plus the supporting modules they import.
     expect(launcher).toContain('scopeLaneBBatchFiles(');

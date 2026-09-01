@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -129,6 +129,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "ai_builder_proposals_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "ai_builder_proposals_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
@@ -222,6 +229,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
           {
@@ -326,6 +340,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_plugin_instances_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
           {
@@ -472,6 +493,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "ai_runs_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "ai_runs_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
@@ -544,6 +572,13 @@ export type Database = {
             referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "audit_logs_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       automation_events: {
@@ -583,6 +618,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
         ]
@@ -786,9 +828,11 @@ export type Database = {
           created_at: string
           editor_code: string | null
           id: string
+          last_revision_id: string | null
           metadata: Json | null
           name: string | null
           project_id: string | null
+          site_id: string | null
           template_id: string | null
           updated_at: string
           user_id: string
@@ -800,9 +844,11 @@ export type Database = {
           created_at?: string
           editor_code?: string | null
           id?: string
+          last_revision_id?: string | null
           metadata?: Json | null
           name?: string | null
           project_id?: string | null
+          site_id?: string | null
           template_id?: string | null
           updated_at?: string
           user_id: string
@@ -814,9 +860,11 @@ export type Database = {
           created_at?: string
           editor_code?: string | null
           id?: string
+          last_revision_id?: string | null
           metadata?: Json | null
           name?: string | null
           project_id?: string | null
+          site_id?: string | null
           template_id?: string | null
           updated_at?: string
           user_id?: string
@@ -831,6 +879,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "builder_drafts_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "builder_drafts_last_revision_id_fkey"
+            columns: ["last_revision_id"]
+            isOneToOne: false
+            referencedRelation: "site_revisions"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "builder_drafts_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
@@ -838,6 +900,96 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      builder_envelope_runs: {
+        Row: {
+          blocking_count: number
+          business_id: string | null
+          confidence: number | null
+          created_at: string
+          domains: string[]
+          draft_id: string | null
+          envelope: Json
+          envelope_source: string | null
+          id: string
+          mode: string | null
+          model_used: string | null
+          out_of_scope_count: number
+          outcome: string
+          outcome_detail: Json | null
+          project_id: string | null
+          prompt: string | null
+          provider_used: string | null
+          repair_accepted: boolean
+          repair_attempted: boolean
+          request_kinds: string[]
+          touched_files: string[]
+          unmet_count: number
+          updated_at: string
+          user_id: string | null
+          verification: Json
+          verification_checked: boolean
+          verification_passed: boolean | null
+        }
+        Insert: {
+          blocking_count?: number
+          business_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          domains?: string[]
+          draft_id?: string | null
+          envelope?: Json
+          envelope_source?: string | null
+          id?: string
+          mode?: string | null
+          model_used?: string | null
+          out_of_scope_count?: number
+          outcome?: string
+          outcome_detail?: Json | null
+          project_id?: string | null
+          prompt?: string | null
+          provider_used?: string | null
+          repair_accepted?: boolean
+          repair_attempted?: boolean
+          request_kinds?: string[]
+          touched_files?: string[]
+          unmet_count?: number
+          updated_at?: string
+          user_id?: string | null
+          verification?: Json
+          verification_checked?: boolean
+          verification_passed?: boolean | null
+        }
+        Update: {
+          blocking_count?: number
+          business_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          domains?: string[]
+          draft_id?: string | null
+          envelope?: Json
+          envelope_source?: string | null
+          id?: string
+          mode?: string | null
+          model_used?: string | null
+          out_of_scope_count?: number
+          outcome?: string
+          outcome_detail?: Json | null
+          project_id?: string | null
+          prompt?: string | null
+          provider_used?: string | null
+          repair_accepted?: boolean
+          repair_attempted?: boolean
+          request_kinds?: string[]
+          touched_files?: string[]
+          unmet_count?: number
+          updated_at?: string
+          user_id?: string | null
+          verification?: Json
+          verification_checked?: boolean
+          verification_passed?: boolean | null
+        }
+        Relationships: []
       }
       business_automation_settings: {
         Row: {
@@ -915,6 +1067,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: true
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "business_automation_settings_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: true
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
         ]
@@ -1030,6 +1189,13 @@ export type Database = {
             referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "business_recipe_toggles_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       business_setup_progress: {
@@ -1069,6 +1235,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "business_setup_progress_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
         ]
@@ -1238,6 +1411,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_collections_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
           {
@@ -1455,6 +1635,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "crm_activities_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "crm_activities_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
@@ -1480,38 +1667,66 @@ export type Database = {
       crm_automations: {
         Row: {
           actions: Json | null
+          business_id: string | null
           conditions: Json | null
           created_at: string | null
           id: string
           is_active: boolean | null
           name: string
+          project_id: string | null
           trigger_event: string
           updated_at: string | null
           user_id: string | null
         }
         Insert: {
           actions?: Json | null
+          business_id?: string | null
           conditions?: Json | null
           created_at?: string | null
           id?: string
           is_active?: boolean | null
           name: string
+          project_id?: string | null
           trigger_event: string
           updated_at?: string | null
           user_id?: string | null
         }
         Update: {
           actions?: Json | null
+          business_id?: string | null
           conditions?: Json | null
           created_at?: string | null
           id?: string
           is_active?: boolean | null
           name?: string
+          project_id?: string | null
           trigger_event?: string
           updated_at?: string | null
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "crm_automations_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_automations_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_automations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       crm_contacts: {
         Row: {
@@ -2040,6 +2255,13 @@ export type Database = {
             referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "featured_offers_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       file_access_tokens: {
@@ -2202,6 +2424,76 @@ export type Database = {
         }
         Relationships: []
       }
+      form_definitions: {
+        Row: {
+          business_id: string
+          created_at: string
+          destination: Json
+          external_id: string
+          fields: Json
+          id: string
+          intent: string
+          is_active: boolean
+          name: string
+          project_id: string | null
+          site_id: string | null
+          success_behavior: Json
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          destination?: Json
+          external_id: string
+          fields?: Json
+          id?: string
+          intent: string
+          is_active?: boolean
+          name: string
+          project_id?: string | null
+          site_id?: string | null
+          success_behavior?: Json
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          destination?: Json
+          external_id?: string
+          fields?: Json
+          id?: string
+          intent?: string
+          is_active?: boolean
+          name?: string
+          project_id?: string | null
+          site_id?: string | null
+          success_behavior?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form_definitions_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_definitions_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_definitions_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_pages: {
         Row: {
           created_at: string | null
@@ -2302,6 +2594,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "ghl_event_reactions_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "ghl_event_reactions_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
@@ -2380,6 +2679,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "ghl_webhook_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "ghl_webhook_events_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
@@ -2430,6 +2736,13 @@ export type Database = {
             referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "image_slot_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       installed_recipe_packs: {
@@ -2460,6 +2773,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "installed_recipe_packs_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
           {
@@ -2746,7 +3066,47 @@ export type Database = {
             referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "menu_items_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      onboarding_state: {
+        Row: {
+          business_name: string | null
+          completed: boolean
+          created_at: string
+          current_step: string | null
+          industry: string | null
+          project_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          business_name?: string | null
+          completed?: boolean
+          created_at?: string
+          current_step?: string | null
+          industry?: string | null
+          project_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          business_name?: string | null
+          completed?: boolean
+          created_at?: string
+          current_step?: string | null
+          industry?: string | null
+          project_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       orders: {
         Row: {
@@ -2980,6 +3340,13 @@ export type Database = {
             referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "portfolio_projects_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       pricing_plans: {
@@ -3043,6 +3410,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pricing_plans_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
         ]
@@ -3286,6 +3660,7 @@ export type Database = {
       }
       projects: {
         Row: {
+          active_published_revision_id: string | null
           business_id: string | null
           created_at: string | null
           custom_domain: string | null
@@ -3296,12 +3671,14 @@ export type Database = {
           publish_status: string
           published_at: string | null
           settings: Json
+          site_id: string | null
           slug: string | null
           status: string
           template_type: string | null
           updated_at: string | null
         }
         Insert: {
+          active_published_revision_id?: string | null
           business_id?: string | null
           created_at?: string | null
           custom_domain?: string | null
@@ -3312,12 +3689,14 @@ export type Database = {
           publish_status?: string
           published_at?: string | null
           settings?: Json
+          site_id?: string | null
           slug?: string | null
           status?: string
           template_type?: string | null
           updated_at?: string | null
         }
         Update: {
+          active_published_revision_id?: string | null
           business_id?: string | null
           created_at?: string | null
           custom_domain?: string | null
@@ -3328,6 +3707,7 @@ export type Database = {
           publish_status?: string
           published_at?: string | null
           settings?: Json
+          site_id?: string | null
           slug?: string | null
           status?: string
           template_type?: string | null
@@ -3335,10 +3715,24 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "projects_active_published_revision_id_fkey"
+            columns: ["active_published_revision_id"]
+            isOneToOne: false
+            referencedRelation: "site_revisions"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "projects_business_id_fkey"
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
           {
@@ -3393,6 +3787,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "security_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
         ]
@@ -3495,6 +3896,140 @@ export type Database = {
           },
         ]
       }
+      site_builds: {
+        Row: {
+          context: Json
+          created_at: string
+          current_stage: string | null
+          finished_at: string | null
+          id: string
+          mode: string
+          site_id: string
+          started_at: string | null
+          status: string
+          version: number
+        }
+        Insert: {
+          context?: Json
+          created_at?: string
+          current_stage?: string | null
+          finished_at?: string | null
+          id?: string
+          mode?: string
+          site_id: string
+          started_at?: string | null
+          status?: string
+          version?: number
+        }
+        Update: {
+          context?: Json
+          created_at?: string
+          current_stage?: string | null
+          finished_at?: string | null
+          id?: string
+          mode?: string
+          site_id?: string
+          started_at?: string | null
+          status?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_builds_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_bundles: {
+        Row: {
+          build_id: string | null
+          bundle: Json
+          created_at: string
+          id: string
+          revision_id: string | null
+          schema_version: number
+          site_id: string
+          version: string
+        }
+        Insert: {
+          build_id?: string | null
+          bundle?: Json
+          created_at?: string
+          id?: string
+          revision_id?: string | null
+          schema_version?: number
+          site_id: string
+          version?: string
+        }
+        Update: {
+          build_id?: string | null
+          bundle?: Json
+          created_at?: string
+          id?: string
+          revision_id?: string | null
+          schema_version?: number
+          site_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_bundles_build_id_fkey"
+            columns: ["build_id"]
+            isOneToOne: false
+            referencedRelation: "site_builds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_bundles_revision_id_fkey"
+            columns: ["revision_id"]
+            isOneToOne: false
+            referencedRelation: "site_revisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_bundles_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_capabilities: {
+        Row: {
+          capability_id: string
+          created_at: string
+          enabled_by: string | null
+          site_id: string
+          status: string
+        }
+        Insert: {
+          capability_id: string
+          created_at?: string
+          enabled_by?: string | null
+          site_id: string
+          status?: string
+        }
+        Update: {
+          capability_id?: string
+          created_at?: string
+          enabled_by?: string | null
+          site_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_capabilities_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       site_data_bindings: {
         Row: {
           binding_type: string
@@ -3562,6 +4097,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_data_bindings_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
           {
@@ -3714,6 +4256,101 @@ export type Database = {
           },
         ]
       }
+      site_runtime_configs: {
+        Row: {
+          api_version: string
+          attribution_required: boolean
+          created_at: string
+          external_deploy_allowed: boolean
+          public_runtime_enabled: boolean
+          settings: Json
+          site_id: string
+          updated_at: string
+        }
+        Insert: {
+          api_version?: string
+          attribution_required?: boolean
+          created_at?: string
+          external_deploy_allowed?: boolean
+          public_runtime_enabled?: boolean
+          settings?: Json
+          site_id: string
+          updated_at?: string
+        }
+        Update: {
+          api_version?: string
+          attribution_required?: boolean
+          created_at?: string
+          external_deploy_allowed?: boolean
+          public_runtime_enabled?: boolean
+          settings?: Json
+          site_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_runtime_configs_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sites: {
+        Row: {
+          business_id: string
+          created_at: string
+          current_build_id: string | null
+          id: string
+          name: string
+          owner_user_id: string
+          settings: Json
+          slug: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          current_build_id?: string | null
+          id?: string
+          name: string
+          owner_user_id: string
+          settings?: Json
+          slug?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          current_build_id?: string | null
+          id?: string
+          name?: string
+          owner_user_id?: string
+          settings?: Json
+          slug?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sites_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sites_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_packs: {
         Row: {
           created_at: string
@@ -3800,6 +4437,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
           {
@@ -3907,6 +4551,13 @@ export type Database = {
             referencedRelation: "businesses"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "testimonials_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       timelines: {
@@ -3969,6 +4620,51 @@ export type Database = {
             columns: ["timeline_id"]
             isOneToOne: false
             referencedRelation: "timelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      usage_events: {
+        Row: {
+          business_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          metadata: Json
+          resource_id: string | null
+          resource_type: string | null
+        }
+        Insert: {
+          business_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          metadata?: Json
+          resource_id?: string | null
+          resource_type?: string | null
+        }
+        Update: {
+          business_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          metadata?: Json
+          resource_id?: string | null
+          resource_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usage_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "usage_events_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
             referencedColumns: ["id"]
           },
         ]
@@ -4094,6 +4790,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "vfs_snapshots_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "businesses_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "vfs_snapshots_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
@@ -4104,9 +4807,82 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      businesses_public: {
+        Row: {
+          address: Json | null
+          brand_color: string | null
+          description: string | null
+          hours: Json | null
+          id: string | null
+          industry: string | null
+          logo_url: string | null
+          name: string | null
+          slug: string | null
+          social_links: Json | null
+          tagline: string | null
+          timezone: string | null
+          updated_at: string | null
+          website: string | null
+        }
+        Insert: {
+          address?: Json | null
+          brand_color?: string | null
+          description?: string | null
+          hours?: Json | null
+          id?: string | null
+          industry?: string | null
+          logo_url?: string | null
+          name?: string | null
+          slug?: string | null
+          social_links?: Json | null
+          tagline?: string | null
+          timezone?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Update: {
+          address?: Json | null
+          brand_color?: string | null
+          description?: string | null
+          hours?: Json | null
+          id?: string | null
+          industry?: string | null
+          logo_url?: string | null
+          name?: string | null
+          slug?: string | null
+          social_links?: Json | null
+          tagline?: string | null
+          timezone?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      commit_canonical_site_revision: {
+        Args: {
+          p_active_page_path: string
+          p_backend_ops_applied: Json
+          p_business_id: string
+          p_diagnostics: Json
+          p_draft_id: string
+          p_parent_revision_id: string
+          p_patch_json: Json
+          p_playground_state: Json
+          p_project_id: string
+          p_publish_blockers: Json
+          p_publish_ready: boolean
+          p_readiness_report: Json
+          p_runtime_manifest: Json
+          p_site_bundle_snapshot: Json
+          p_source: string
+          p_status: string
+          p_vfs_files: Json
+          p_vfs_hash: string
+        }
+        Returns: string
+      }
       current_session_id: { Args: never; Returns: string }
       has_role: {
         Args: {

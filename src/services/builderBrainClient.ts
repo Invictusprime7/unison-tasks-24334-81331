@@ -127,6 +127,14 @@ async function refreshBuilderSession(
 }
 
 /**
+ * A wizard launch is a minutes-long run of concurrent 135s Lane B calls. Any
+ * access token with less than this much life left is refreshed up-front so the
+ * run cannot 401 halfway through and collapse into empty per-page recoveries.
+ */
+export const BUILDER_TOKEN_MIN_LIFETIME_MS = 300_000;
+
+
+/**
  * Server-verified token check, memoized per access token so a batched Lane B
  * run performs at most one round-trip. `getSession()` alone cannot detect a
  * token issued by another project ref or invalidated by a key rotation.
@@ -145,6 +153,32 @@ async function isTokenAcceptedByAuth(token: string): Promise<boolean> {
   if (!ok) builderTokenChecks.delete(token);
   return ok;
 }
+
+/**
+ * Prime the builder session BEFORE a batched run (wizard launch, Lane B page
+ * completion). Rotating once up-front means every concurrent batch shares a
+ * long-lived, server-verified token instead of discovering expiry mid-flight.
+ *
+ * Returns false when no usable session can be established — the caller should
+ * surface a sign-in prompt rather than start a run that will 401 on every call.
+ */
+export async function primeBuilderSession(): Promise<boolean> {
+  const { data } = await supabase.auth.getSession();
+  const session = data.session;
+  if (!session) return false;
+  const expiresAt = (session.expires_at ?? 0) * 1000;
+  if (
+    expiresAt - Date.now() > BUILDER_TOKEN_MIN_LIFETIME_MS &&
+    await isTokenAcceptedByAuth(session.access_token)
+  ) {
+    return true;
+  }
+  builderTokenChecks.delete(session.access_token);
+  const refreshed = await refreshBuilderSession(true, session.access_token);
+  if (!refreshed?.access_token) return false;
+  return isTokenAcceptedByAuth(refreshed.access_token);
+}
+
 
 const DEFAULT_RATE_LIMIT_RETRY_MS = 750;
 
@@ -297,8 +331,9 @@ export async function runBuilderTurn<TResponse = any>(
   /**
    * Resolve a *user* access token. The edge function verifies the bearer token
    * with `auth.getUser()`, so an expired token (or the anon key) yields a hard
-   * 401 "Invalid or expired token". Refresh proactively when the session is
-   * within 60s of expiry, and force a refresh after a 401.
+   * 401 "Invalid or expired token". A wizard launch runs for minutes with
+   * 135s provider calls, so a token that merely has "more than a minute" left
+   * expires mid-run: require a full launch-scale lifetime before trusting it.
    */
   const getAccessToken = async (rejectedToken?: string): Promise<string | null> => {
     const forceRefresh = !!rejectedToken;
@@ -309,7 +344,8 @@ export async function runBuilderTurn<TResponse = any>(
       // The server rejected this exact token — invalidate the memoized verdict.
       builderTokenChecks.delete(rejectedToken!);
     }
-    if (session && !forceRefresh && expiresAt - Date.now() > 60_000) {
+    if (session && !forceRefresh && expiresAt - Date.now() > BUILDER_TOKEN_MIN_LIFETIME_MS) {
+
       // `getSession()` is a local read: a token minted by a different project
       // ref, or invalidated by a signing-key rotation, still looks "valid" here
       // and produces a hard 401 on every edge call. Validate once against Auth
@@ -433,19 +469,27 @@ export async function runBuilderTurn<TResponse = any>(
         Math.max(1, remainingMs()),
       );
       let { data, error, usedToken } = await invokeWithSignal(sentPayload, attemptController.signal);
-      // Expired JWT: refresh once and replay immediately (does not consume a
+      // Expired JWT: rotate and replay immediately (does not consume a
       // transport retry — the edge function never ran the model). Pass the
       // rejected token so concurrent batches converge on one rotation instead
-      // of invalidating each other's refresh tokens.
-      if (
-        error &&
-        (error as { context?: { status?: number } }).context?.status === 401 &&
-        usedToken &&
-        !attemptController.signal.aborted
-      ) {
-        console.warn("[builderBrainClient] 401 from edge function — refreshing session and retrying once");
-        ({ data, error } = await invokeWithSignal(sentPayload, attemptController.signal, usedToken));
+      // of invalidating each other's refresh tokens. Under concurrency the
+      // first replay can race another rotation and be rejected too, so replay
+      // up to twice before treating the 401 as terminal.
+      for (let authReplay = 1; authReplay <= 2; authReplay += 1) {
+        const status = (error as { context?: { status?: number } } | null)?.context?.status;
+        if (!error || status !== 401 || !usedToken || attemptController.signal.aborted) break;
+        console.warn(
+          `[builderBrainClient] 401 from edge function — rotating session and replaying (${authReplay}/2)`,
+        );
+        const rejected = usedToken;
+        if (authReplay > 1) await sleep(400, options.signal).catch(() => undefined);
+        ({ data, error, usedToken } = await invokeWithSignal(
+          sentPayload,
+          attemptController.signal,
+          rejected,
+        ));
       }
+
 
       clearTimeout(attemptTimer);
       options.signal?.removeEventListener("abort", onOuterAbort);

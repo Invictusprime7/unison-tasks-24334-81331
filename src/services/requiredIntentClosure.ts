@@ -23,6 +23,7 @@ function labelForIntent(intent: string): string {
     'lead.capture': 'Get Started',
     'donation.start': 'Donate Now',
     'quote.request': 'Request a Quote',
+    'newsletter.subscribe': 'Subscribe',
   };
   return labels[intent] || intent.split('.').map((part) => part[0]?.toUpperCase() + part.slice(1)).join(' ');
 }
@@ -30,6 +31,7 @@ function labelForIntent(intent: string): string {
 function preferredFilePaths(intent: string): RegExp[] {
   if (/^cart\./.test(intent)) return [/\/Cart\.(?:tsx|jsx)$/i, /\/Checkout\.(?:tsx|jsx)$/i, /\/Shop\.(?:tsx|jsx)$/i, /\/Home\.(?:tsx|jsx)$/i];
   if (/booking|reservation/.test(intent)) return [/\/Booking\.(?:tsx|jsx)$/i, /\/Home\.(?:tsx|jsx)$/i];
+  if (/newsletter/.test(intent)) return [/\/Contact\.(?:tsx|jsx)$/i, /\/Home\.(?:tsx|jsx)$/i];
   if (/contact|lead|quote|location/.test(intent)) return [/\/Contact\.(?:tsx|jsx)$/i, /\/Home\.(?:tsx|jsx)$/i];
   if (/donation/.test(intent)) return [/\/Donate\.(?:tsx|jsx)$/i, /\/Home\.(?:tsx|jsx)$/i];
   return [/\/Home\.(?:tsx|jsx)$/i];

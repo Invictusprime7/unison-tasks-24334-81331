@@ -167,22 +167,65 @@ export function findHardcodedGeometry(source: string): string[] {
   ].map((match) => match.trim());
 }
 
-function generatedPageFallbackReason(source: string, requiresMedia: boolean): string | null {
+/**
+ * Pages legitimately extract their sections into local component files, so
+ * measuring only the page shell under-counts a rich composition. Resolve one
+ * level of local imports and evaluate the composed surface.
+ */
+function resolveLocalImportSources(
+  source: string,
+  files: Record<string, string> | undefined,
+  pagePath: string,
+): string[] {
+  if (!files) return [];
+  const specifiers = Array.from(source.matchAll(/from\s+['"]([^'"]+)['"]/g)).map((m) => m[1]);
+  const dir = pagePath.replace(/\/[^/]*$/, '');
+  const out: string[] = [];
+  for (const spec of specifiers) {
+    if (!spec.startsWith('.') && !spec.startsWith('@/') && !spec.startsWith('/')) continue;
+    let base = spec.startsWith('@/')
+      ? `/src/${spec.slice(2)}`
+      : spec.startsWith('/')
+        ? spec
+        : `${dir}/${spec}`;
+    base = base.replace(/\/\.\//g, '/');
+    while (/\/[^/]+\/\.\.\//.test(base)) base = base.replace(/\/[^/]+\/\.\.\//, '/');
+    for (const candidate of [base, `${base}.tsx`, `${base}.jsx`, `${base}.ts`, `${base}/index.tsx`]) {
+      const hit = files[candidate] || files[candidate.replace(/^\//, '')];
+      if (hit) {
+        out.push(hit);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+function generatedPageFallbackReason(
+  source: string,
+  requiresMedia: boolean,
+  linkedSources: string[] = [],
+): string | null {
   // Chrome is never a validity requirement. A page may render a floating bar,
   // a plain header, footer-only links, or nothing at all — the Wizard AI owns
   // that decision per page.
   if (/<style\b|document\.(?:body|documentElement)|createElement\(\s*['"]style['"]/.test(source)) {
     return 'generated page attempts to author a parallel global theme system';
   }
-  // Chrome landmarks do not count toward content structure.
-  const semanticRegions = (source.match(/<(?:section|article|aside|main)\b/gi) || []).length;
-  if (source.trim().length < 1_200) return 'generated page is too small to replace the canonical composition';
+  const composed = [source, ...linkedSources].join('\n');
+  // Chrome landmarks do not count toward content structure. Composed block
+  // components count as regions, because the compiler extracts sections.
+  const semanticRegions = (composed.match(/<(?:section|article|aside|main)\b/gi) || []).length
+    + new Set(
+      (source.match(/<([A-Z][A-Za-z0-9_]*)\b/g) || []).map((tag) => tag.slice(1)),
+    ).size;
+  if (composed.trim().length < 1_200) return 'generated page is too small to replace the canonical composition';
   if (semanticRegions < 3) return 'generated page has too few semantic regions';
-  if (!/data-ut-intent\s*=/.test(source)) return 'generated page has no canonical action intent';
-  if (requiresMedia && !/(<img\b|backgroundImage\s*=|background-image\s*:)/i.test(source)) {
+  if (!/data-ut-intent\s*=/.test(composed)) return 'generated page has no canonical action intent';
+  if (requiresMedia && !/(<img\b|backgroundImage\s*=|background-image\s*:)/i.test(composed)) {
     return 'generated page is missing required media treatment';
   }
-  if (/Lorem ipsum|Coming soon|New site preview|Generating page content/i.test(source)) {
+  if (/Lorem ipsum|Coming soon|New site preview|Generating page content/i.test(composed)) {
     return 'generated page contains placeholder content';
   }
   const hardcodedGeometry = findHardcodedGeometry(source);
@@ -191,6 +234,7 @@ function generatedPageFallbackReason(source: string, requiresMedia: boolean): st
   }
   return null;
 }
+
 
 /**
  * Page-depth floor. Premium multi-page sites never ship a two-block route, so

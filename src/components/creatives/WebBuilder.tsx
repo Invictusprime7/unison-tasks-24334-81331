@@ -7079,7 +7079,17 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                       <Shield className="h-3 w-3 mr-1" />
                       Health
                     </TabsTrigger>
+                    <TabsTrigger value="theme" className="text-[9px] px-1.5 py-0.5 data-[state=active]:bg-fuchsia-500/20 data-[state=active]:text-fuchsia-400">
+                      <Palette className="h-3 w-3 mr-1" />
+                      Theme
+                    </TabsTrigger>
                   </TabsList>
+                  <TabsContent value="theme" className="flex-1 m-0 min-h-0 overflow-hidden">
+                    <ThemeTokenEditorPanel
+                      vfsFiles={virtualFS.getSandpackFiles()}
+                      onCommitTokens={commitThemeTokenOps}
+                    />
+                  </TabsContent>
                   <TabsContent value="intents" className="flex-1 m-0 min-h-0 overflow-hidden">
                     <IntentDirectoryPanel
                       businessId={businessId}

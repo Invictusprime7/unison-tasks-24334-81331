@@ -28,13 +28,15 @@ interface LayoutTemplatesPanelProps {
     code: string,
     name: string,
     systemType?: BusinessSystemType,
-    templateId?: string
+    templateId?: string,
+    templateCategory?: LayoutCategory,
   ) => void;
   onDemoTemplate?: (
     code: string,
     name: string,
     systemType?: BusinessSystemType,
-    templateId?: string
+    templateId?: string,
+    templateCategory?: LayoutCategory,
   ) => void;
   previewDevice?: PreviewDevice;
   previewWidth?: string;
@@ -109,13 +111,13 @@ export const LayoutTemplatesPanel: React.FC<LayoutTemplatesPanelProps> = ({
 
   const handleTemplateClick = (template: LayoutTemplate) => {
     const system = businessSystems.find(s => s.templateCategories.includes(template.category));
-    onSelectTemplate(template.code, template.name, system?.id, template.id);
+    onSelectTemplate(template.code, template.name, system?.id, template.id, template.category);
     toast.success(`Loaded: ${template.name}`);
   };
 
   const handleDemoClick = (template: LayoutTemplate) => {
     const system = businessSystems.find(s => s.templateCategories.includes(template.category));
-    onDemoTemplate?.(template.code, template.name, system?.id, template.id);
+    onDemoTemplate?.(template.code, template.name, system?.id, template.id, template.category);
     toast.info(`Demo mode: ${template.name} - Interactions return mock responses`);
   };
 

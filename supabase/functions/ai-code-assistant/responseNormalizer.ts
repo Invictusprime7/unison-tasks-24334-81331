@@ -113,6 +113,8 @@ export interface RichResponseMeta {
   requiresApproval?: boolean;
   /** Model that produced this response (for transparency) */
   modelUsed?: string;
+  /** Provider that served this response (for routing observability) */
+  providerUsed?: string;
   /** Files that were removed during review */
   removedFiles?: string[];
   /** Review pass summary */
@@ -219,12 +221,20 @@ export function buildResponseBody(opts: {
   debugMode?: boolean;
   mode?: string;
   modelUsed?: string;
+  providerUsed?: string;
   reviewWarnings?: Array<{ severity: WarningSeverity; message: string }>;
   requiresApproval?: boolean;
   removedFiles?: string[];
   reviewSummary?: string;
   applyState?: Record<string, unknown>;
   toolCalls?: unknown[];
+  envelopeVerification?: {
+    passed: boolean;
+    summary: string;
+    unmetCriteria: string[];
+    outOfScopeFiles: string[];
+    blockingMisses: string[];
+  };
 }): Record<string, unknown> {
   const fileInfo = detectFileStatuses(opts.content);
 
@@ -240,6 +250,7 @@ export function buildResponseBody(opts: {
     mode: opts.mode,
     requiresApproval: opts.requiresApproval,
     modelUsed: opts.modelUsed,
+    providerUsed: opts.providerUsed,
     removedFiles: opts.removedFiles,
     reviewSummary: opts.reviewSummary,
     applyState: opts.applyState,
@@ -256,6 +267,8 @@ export function buildResponseBody(opts: {
     // Tool-calls (catalog dispatcher on the client executes these)
     tool_calls: hasToolCalls ? opts.toolCalls : undefined,
     catalogToolCalls: hasToolCalls ? opts.toolCalls : undefined,
+    // Envelope-driven verification verdict (Milestone 3)
+    envelopeVerification: opts.envelopeVerification,
     // Rich metadata (new, optional — ignored by old callers)
     ...meta,
   };

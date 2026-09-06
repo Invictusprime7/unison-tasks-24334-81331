@@ -47,6 +47,7 @@ export const PORTFOLIO_COMPOSITIONS: TemplateComposition[] = [
         id: 'portfolio-photography-nav',
         type: 'navbar',
         props: {
+          layout: 'minimal-dark',
           brand: 'Frame Studio',
           sticky: true,
           transparent: true,
@@ -229,6 +230,7 @@ export const PORTFOLIO_COMPOSITIONS: TemplateComposition[] = [
         id: 'portfolio-photography-footer',
         type: 'footer',
         props: {
+          layout: 'centered-minimal',
           brand: 'Frame Studio',
           copyright: '© 2024 Frame Studio Photography. All rights reserved.',
           newsletter: false,
@@ -284,6 +286,7 @@ export const PORTFOLIO_COMPOSITIONS: TemplateComposition[] = [
         id: 'portfolio-designer-nav',
         type: 'navbar',
         props: {
+          layout: 'standard',
           brand: 'Alex Rivera',
           sticky: true,
           links: [
@@ -371,6 +374,7 @@ export const PORTFOLIO_COMPOSITIONS: TemplateComposition[] = [
         id: 'portfolio-designer-footer',
         type: 'footer',
         props: {
+          layout: 'centered-minimal',
           brand: 'Alex Rivera',
           copyright: '© 2024 Alex Rivera Design.',
           newsletter: false,
@@ -425,6 +429,7 @@ export const PORTFOLIO_COMPOSITIONS: TemplateComposition[] = [
         id: 'portfolio-architect-nav',
         type: 'navbar',
         props: {
+          layout: 'centered-logo',
           brand: 'Studio K—M',
           sticky: true,
           links: [
@@ -501,6 +506,7 @@ export const PORTFOLIO_COMPOSITIONS: TemplateComposition[] = [
         id: 'portfolio-architect-contact',
         type: 'contact',
         props: {
+          layout: 'split-card',
           headline: 'Contact',
           submitLabel: 'Send',
           submitIntent: 'contact.submit',
@@ -512,6 +518,7 @@ export const PORTFOLIO_COMPOSITIONS: TemplateComposition[] = [
         id: 'portfolio-architect-footer',
         type: 'footer',
         props: {
+          layout: 'dark-band',
           brand: 'Studio K—M',
           copyright: '© 2024 Studio K—M Architects.',
           newsletter: false,

@@ -29,14 +29,14 @@ update_env_var() {
     echo "Setting $var_name for $environment environment..."
     
     # Try to add the variable, if it exists, remove and add again
-    if vercel env add "$var_name" "$environment" <<< "$var_value" 2>/dev/null; then
+    if printf '%s' "$var_value" | vercel env add "$var_name" "$environment" 2>/dev/null; then
         echo "✅ Added $var_name to $environment"
     else
         echo "🔄 $var_name already exists, updating..."
         # Remove existing variable first
         echo "y" | vercel env rm "$var_name" "$environment" > /dev/null 2>&1 || true
         # Add the new value
-        if vercel env add "$var_name" "$environment" <<< "$var_value"; then
+        if printf '%s' "$var_value" | vercel env add "$var_name" "$environment"; then
             echo "✅ Updated $var_name in $environment"
         else
             echo "❌ Failed to update $var_name in $environment"

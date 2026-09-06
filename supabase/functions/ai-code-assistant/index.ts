@@ -51,7 +51,10 @@ serve(async (req: Request) => {
       });
     }
 
-    const task = classifyTask({
+    const envelope = (parsed.data as { requestEnvelope?: Record<string, unknown> }).requestEnvelope;
+    const clientSkipResearch = (parsed.data as { skipResearch?: boolean }).skipResearch;
+
+    const baseTask = classifyTask({
       mode: parsed.data.mode ?? undefined,
       systemsBuildContext: parsed.data.systemsBuildContext,
       currentCode: parsed.data.currentCode ?? undefined,
@@ -66,11 +69,21 @@ serve(async (req: Request) => {
       wizardSeed: (parsed.data as { wizardSeed?: unknown }).wizardSeed,
     });
 
+    // The interpreter envelope refines (never widens) the deterministic task:
+    // it may turn research off, and turns it on when it says research is needed.
+    const needsResearch = envelope?.needsExternalResearch === true;
+    const task = {
+      ...baseTask,
+      skipResearch: needsResearch ? false : (clientSkipResearch ?? baseTask.skipResearch),
+    };
+
     console.log(
-      `[ai-code-assistant] task=${task.type} fastPath=${task.fastPath} elapsed-classify=${Date.now() - startMs}ms`,
+      `[ai-code-assistant] task=${task.type} fastPath=${task.fastPath} skipResearch=${task.skipResearch} envelopeKinds=${
+        JSON.stringify((envelope?.requestKinds as string[] | undefined) ?? [])
+      } elapsed-classify=${Date.now() - startMs}ms`,
     );
 
-    const response = await runAssistantOrchestrator(parsed.data, task, corsHeaders, auth.user.id);
+    const response = await runAssistantOrchestrator(parsed.data, task, corsHeaders, auth.user.id, req.signal);
     console.log(`[ai-code-assistant] completed task=${task.type} total=${Date.now() - startMs}ms`);
     return response;
   } catch (error) {

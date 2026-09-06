@@ -1,220 +1,326 @@
 # Unison Tasks
 
-**Unison Framework is a source-backed AI website and business-workspace platform.** It turns a guided business brief into a React/TypeScript project, preserves the generated source in a cloud workspace, and provides a visual builder, live preview, publishing readiness, and intent-driven business actions.
+**Unison helps turn a business idea into a working React website and a lasting Business workspace.** A guided launch flow learns about the business, its industry, the pages it needs, the actions visitors should be able to take, and the visual style it should use. Unison then carries that same project through AI editing, hands-on editing, preview, recovery, setup, and publishing.
+
+The important part is continuity: Unison does not treat a launch or an AI edit as a one-time response. The project remains connected to its source files, business workspace, saved history, and live preview throughout its life.
 
 ## What Unison Does
 
-Unison is designed around a durable build contract rather than a one-off AI response:
+- The **System Launcher** gathers the business goals, industry, page choices, visitor actions, and preferred style.
+- Unison creates one complete React/TypeScript project instead of a collection of disconnected page mockups.
+- The selected industry remains part of the site's real design identity; changing the style does not quietly turn it into a generic template.
+- A confirmed launch creates the site, project, editable draft, build record, and workspace connections together.
+- Builder AI receives clear information about the page, section, desired outcome, and allowed actions before it makes a change.
+- The Web Builder, AI tools, preview, recovery system, and publishing flow all work from the same project files.
+- Every accepted AI edit is saved locally for recovery and then saved to the Cloud before Unison reports success.
+- Cloud projects stay inside the correct business workspace and reopen with their latest source-backed draft.
+- Visitor actions such as booking, lead capture, checkout, and navigation come from an approved list of behaviors.
+- The preview runs the real React project in Sandpack, so a broken build is shown as a real error rather than replaced with a placeholder page.
 
-- **System Launcher** captures business type, goals, template composition, and visual direction.
-- **Canonical launch pipeline** creates the site topology, routes, runtime manifest, and React/TSX VFS before handoff.
-- **Lane B builder AI** authors full page bodies through the authenticated `ai-code-assistant` Edge Function using task-specific provider routing.
-- **Web Builder** loads and edits the same multi-page VFS used by the preview runtime.
-- **Cloud workspace** persists projects and source-backed drafts so work can be reopened and recovered.
-- **Fixed intent system** binds approved actions such as booking, lead capture, checkout, and navigation at build time.
-- **Preview and publish readiness** validate generated source rather than silently substituting placeholder pages.
-
-## Framework Contract
-
-Every launched project has three independent layers:
-
-| Layer | Owns | Does not own |
-| --- | --- | --- |
-| `SystemBlueprint` | Business type, goals, pages, workflows, intent contracts | Layout and visual styling |
-| `TemplateStructure` | Page composition, section order, navigation, layout density | Business behavior and theme tokens |
-| `ThemeSkin` | Color, typography, spacing, shape, motion | Page structure and intent bindings |
-
-The launch contract is:
-
-```text
-template structure -> intent wiring -> theme override -> canonical build -> AI page authoring
-```
-
-Theme selection changes presentation only. It does not replace topology, page contracts, or business actions.
-
-## Launch Lifecycle
+## How a Site Comes Together
 
 ```mermaid
 flowchart LR
-    A[System Launcher] --> B[Canonical topology and VFS]
-    B --> C[Runtime manifest and intent bindings]
-    C --> D[Lane B builder AI]
-    D --> E[Validated React/TSX VFS]
-    E --> F[Durable Cloud draft]
-    F --> G[Web Builder and live preview]
-    G --> H[Publish readiness]
+    A[Choose the business, pages, and style] --> B[Plan the site and create its React files]
+    B --> C[Connect pages to approved visitor actions]
+    C --> D[AI writes the page content and components]
+    D --> E[Check that the React project works]
+    E --> F[Save the complete launch together]
+    F --> G[Open the project in its Cloud workspace]
+    G --> H[Edit, preview, finish setup, and publish]
 ```
 
-1. The launcher resolves an industry, composition, theme preset, pages, and allowed intents.
-2. The canonical pipeline compiles a source-backed VFS plus `.unison` metadata, runtime manifest, and navigation contracts.
-3. Lane B generates the page implementation against that contract. Minimal fallback pages are intentionally blocked when generation fails.
-4. The complete VFS is saved to `builder_drafts` and linked to the workspace project before the builder handoff.
-5. The Web Builder restores the project from durable source and renders it through the preview runtime.
+1. The launcher combines the chosen industry, page layout, theme, and visitor actions.
+2. Unison creates the page plan, navigation, runtime rules, and complete set of project files.
+3. Builder AI fills in the registered pages while following that plan. If generation fails, Unison reports the problem instead of showing a generic fallback site.
+4. When the user confirms the launch, the backend checks the files and saves the business, site, project, draft, build, and bundle as one operation.
+5. The Web Builder opens the saved source and uses it for editing, previewing, recovery, and publishing.
+6. Setup tasks and publishing checks continue from the same confirmed site instead of trying to guess which project they belong to later.
 
-The Style card is required. Its resolved semantic HSL tokens are injected into
-the wizard seed and `WizardSelections`; Stage 4b builds `/src/index.css`
-directly from that payload. Preset identifiers are trace metadata only and are
-not used to reconstruct launch colors. Lane B output containing hardcoded hex,
-raw color functions, or Tailwind palette colors is rejected rather than merged.
+Style choices travel with the project. Unison saves the selected colors as reusable theme values, builds the shared stylesheet from those values, and prevents AI output from silently replacing them with unrelated hardcoded colors. The original style selection is kept for reference, but the saved theme values are what determine the site's appearance.
 
-Topology is planned once inside the canonical pipeline. That same
-`GeneratedSitePlan` populates the PageRegistry and is returned for launcher
-audits, persistence, and Builder handoff, keeping page IDs aligned end-to-end.
-Lane B owns registered page bodies, the SiteBundleSnapshot owns topology,
-router and bindings, and Stage 4b owns `/src/index.css`.
+The site plan is also created once and shared across launch, persistence, the Web Builder, and publishing. This keeps page identities, navigation, visitor actions, and saved source aligned from beginning to end.
 
-## Core Architecture
+## How Unison Keeps Projects Consistent
 
-| Area | Current implementation |
-| --- | --- |
-| Application | React 19, TypeScript 5.9, Vite 7, React Router 7 |
-| UI and state | Tailwind, Radix UI, TanStack Query, React Context |
-| Builder | Monaco, CodeMirror, Fabric, shared virtual file system |
-| Preview | Sandpack browser preview with optional Docker/Vite preview service |
-| Backend | Supabase Auth, Postgres, RLS, Realtime, and Deno Edge Functions |
-| AI | Authenticated `ai-code-assistant` orchestration with direct provider routing and task-aware model selection |
-| Automation | Inngest events and workflow endpoints for business actions |
-| Deployment | Vercel application deployment; Supabase deploys database and Edge Function infrastructure |--
+Every project has three separate parts:
 
-### Source Is the Product State
+| Project part                      | What it decides                                                     | What it leaves alone               |
+| --------------------------------- | ------------------------------------------------------------------- | ---------------------------------- |
+| Business plan (`SystemBlueprint`) | Business type, goals, pages, workflows, and allowed visitor actions | Page layout and visual styling     |
+| Page layout (`TemplateStructure`) | Section order, navigation, composition, and content density         | Business behavior and theme colors |
+| Visual style (`ThemeSkin`)        | Color, typography, spacing, shape, and motion                       | Page structure and visitor actions |
 
-The canonical deliverable is a React/TSX virtual file system, not HTML text or an in-memory wizard result. Generated projects include application source under `/src`, public assets, project configuration, and Unison runtime metadata under `/.unison`.
+They come together in this order:
 
-The builder and preview share this source model. A launch or edit that cannot produce valid, renderable source is surfaced as an error rather than converted into a generic placeholder site.
+```text
+page layout -> visitor actions -> visual style -> complete project -> AI-authored pages
+```
 
-### Intent Safety
+This separation lets someone change the look of a site without losing its pages, business purpose, or working actions.
 
-Project actions use a closed catalog of business intents. The build process annotates the generated UI with approved intent bindings; runtime code resolves those bindings to fixed action handlers. Templates cannot invent arbitrary runtime actions.
+## What You Can Rely On
 
-### Cloud Recovery
+| Promise                 | What it means                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| One saved source        | The full project file set is the main saved version. Older single-file fields are used only to reopen legacy projects. |
+| Stable project identity | A draft remains linked to its Cloud project and, after confirmation, to its site.                                      |
+| Complete launches       | Unison creates and connects the business, site, project, draft, build, and bundle before opening the builder.          |
+| React-only preview      | The active Web Builder uses the React/Sandpack preview. It does not switch to Docker or a local Vite fallback.         |
+| Safe AI changes         | AI file paths are cleaned up, checked, previewed, applied, journaled for recovery, and saved before success is shown.  |
+| Interruption recovery   | Pending full-project edits can survive a refresh, navigation, a closed tab, or an interrupted process.                 |
+| Newer saves win         | Draft saves run in order, so an older slow request cannot overwrite a newer edit.                                      |
+| Live edits stay visible | Recently accepted source changes remain authoritative while the durable site snapshot catches up.                      |
+| Useful history          | Accepted commits may be added to site revision history while autosave continues to hold the current working draft.     |
+| Workspace privacy       | Business, site, setup, form, and revision data stay behind membership-based access rules.                              |
 
-Cloud projects are backed by `businesses`, `projects`, `builder_drafts`, and canonical site revisions. The Cloud workspace distinguishes source-backed projects that can be previewed from metadata-only historical records that need source recovery.
+For maintainers, the complete saved source lives in `builder_drafts.vfs_files`, and `builder_drafts.project_id` is the direct draft-to-project relationship. Confirmed launches also save `site_id`. The older `editor_code` and `code` fields remain available only for backward compatibility.
 
-## Repository Layout
+## AI Edits Are Saved Safely
+
+```mermaid
+sequenceDiagram
+    participant AI as Builder AI
+    participant Files as Project files
+    participant Safety as Local safety copy
+    participant Cloud as Cloud draft
+    participant Preview as React preview
+
+    AI->>Files: Suggest a checked file change
+    Files->>Preview: Show the updated project
+    Files->>Safety: Save the complete project immediately
+    Safety->>Cloud: Save changes in order
+    Cloud-->>Safety: Confirm the newest version
+    Cloud-->>AI: Report that the edit is saved
+    Note over Safety,Cloud: An interrupted save resumes from the safety copy
+```
+
+Before an AI request is sent, Unison describes what is being changed: the route, page or section, intended outcome, allowed actions, important constraints, related files, required confirmations, and the order of work. This gives the model enough context to make a focused edit instead of guessing about the whole project.
+
+AI responses are handled as structured file changes. Unison can recover the file data when a model wraps it in explanatory text, translate preview-friendly paths into the project's real `/src/...` paths, and correctly apply stylesheet-only changes to `/src/index.css`. A whole-site restyle may update shared theme values and several components, while a targeted request stays limited to its intended area.
+
+As soon as an edit is accepted, `builderStateRecovery.ts` records a versioned copy of the full project before the Cloud request begins. Cloud writes are queued in order and confirmed against the exact saved version. If the session ends before the latest write finishes, the pending copy is replayed the next time the project opens. This also covers a project's first save and anonymous work before it receives its permanent draft ID.
+
+## Previewing the Site
+
+The Web Builder has one active preview: `VFSPreview`. It runs the same React files that the editor and AI tools change, using the self-hosted Sandpack runtime. Normal source edits update the preview without a full restart. If project dependencies change, Sandpack reloads cleanly. While a new version is compiling, the last working preview remains visible instead of flashing an empty frame.
+
+The preview runner comes from the Unison application itself:
+
+- During local development, Vite serves the runner for preview frames opened by the Web Builder.
+- In production, the build includes the Sandpack runtime under `dist/sandpack`, and Vercel routes preview requests to it.
+- **Open preview** creates a browser-scoped external session that lasts for 24 hours and uses the same React runtime.
+
+Older Docker and local-preview helpers remain in the repository for historical tooling, but the active Web Builder does not use them as fallbacks.
+
+## What a Confirmed Launch Creates
+
+A confirmed launch is saved as one connected unit. Unison checks the user's access, file paths, file count, and payload size before writing anything. It then creates or links:
+
+- the business, site, Cloud project, and editable source draft;
+- the completed build, site bundle, and current runtime settings;
+- enabled business features and a site-specific setup checklist;
+- working form definitions and tenant-scoped CRM submissions;
+- framework version information so older projects can be upgraded and reopened safely;
+- attribution and export rules that stay with exported source projects;
+- a usage event for the completed launch.
+
+If any required part fails, the transaction rolls back so the user is not left with a half-created project.
+
+For maintainers, this work is handled by the authenticated `provision-launch-site` Edge Function. The supporting records include `site_runtime_configs`, `site_capabilities`, `site_setup_steps`, and `form_definitions`, along with the source-backed draft, build, and bundle.
+
+## The Main Parts of the Platform
+
+| Area                | Role in Unison                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Application         | React 19, TypeScript 5.9, Vite 7, and React Router 7 power the main product.                                        |
+| Interface and state | Tailwind, Radix UI, TanStack Query, and React Context support the editing experience.                               |
+| Web Builder         | Monaco, CodeMirror, Fabric, and a shared virtual file system provide code and visual editing.                       |
+| Preview             | Sandpack runs the real React project from an application-hosted, same-origin runner.                                |
+| Cloud backend       | Supabase provides sign-in, Postgres data, row-level access rules, live updates, and Edge Functions.                 |
+| Saving and recovery | Full source drafts, the interruption journal, the component graph, and site revisions preserve project state.       |
+| AI                  | Structured task context and the authenticated `ai-code-assistant` function turn requests into checked file changes. |
+| Site runtime        | Site identity, builds, bundles, capabilities, setup steps, forms, and runtime settings support the finished site.   |
+| Automation          | Inngest events and workflow endpoints connect business actions to background work.                                  |
+| Deployment          | Vercel hosts the application and preview assets; Supabase hosts data and Edge Functions.                            |
+
+### The Source Files Are the Project
+
+The deliverable is a complete React/TSX file system, not a block of generated HTML or a result that exists only in memory. Each project includes source under `/src`, public assets, project configuration, and Unison metadata under `/.unison`.
+
+The builder, AI tools, preview, recovery flow, and publishing pipeline all share these files. If a launch or edit cannot produce valid, renderable source, Unison surfaces the error instead of disguising it with a generic placeholder.
+
+### Visitor Actions Stay Predictable
+
+Unison uses a closed catalog of business actions. During the build, approved actions are connected to the relevant buttons, forms, and links. At runtime, those connections resolve to known handlers. A template cannot invent an unreviewed action of its own.
+
+### How Cloud Recovery Works
+
+Cloud project cards combine the project record with its latest source-backed draft and stay scoped to the active business workspace. They refresh when project events occur, when the browser regains focus, and through Supabase Realtime.
+
+When a project reopens, Unison uses this order:
+
+1. A pending local safety copy wins if the latest Cloud save was interrupted.
+2. The full saved Cloud file set is the normal resume point.
+3. Older single-file draft fields can reopen legacy projects.
+4. Known historical file layouts are upgraded once and record the migration version that was applied.
+5. Very old metadata-only projects remain clearly identified instead of receiving a made-up preview.
+
+The related Cloud records include `businesses`, `sites`, `projects`, `builder_drafts`, site builds and bundles, and project revisions.
+
+## Repository Guide
 
 ```text
 src/
   components/onboarding/   System Launcher and launch controls
   components/creatives/    Web Builder surfaces
   components/cloud/        Cloud workspace and project recovery UI
-  platform/core/           Topology, industry, intent, and canonical pipeline
-  services/                VFS, launch, preview, persistence, and publish services
-  contexts/                Launch and VFS state providers
+  builder/controllers/     Builder session, topology, and Playground controllers
+  platform/core/           Site planning, industry rules, actions, and launch pipeline
+  unison/                  AI task planning and context
+  services/                Files, launch, recovery, preview, saving, and publishing
+  contexts/                Launch and shared project-file state
 
 supabase/
-  functions/               Deno Edge Functions, including ai-code-assistant
-  migrations/              Database schema and RLS migrations
+  functions/               Server-side AI, public runtime, and launch functions
+  migrations/              Database schema and row-level access rules
 
 api/                       Vercel API and Inngest endpoints
-preview-service/           Optional Docker/Vite preview runtime
 docs/                      Architecture, setup, operations, and integration guides
 scripts/                   Local setup, deployment, and infrastructure helpers
 ```
 
-## Local Development
+## Running Locally
 
-### Prerequisites
+### What You Need
 
 - Node.js `>=20 <23`
 - npm or Bun
-- A Supabase project for authentication, persistence, and Edge Functions
-- Docker Desktop only when using the optional containerized preview runtime
-- Supabase CLI when running the local stack, applying migrations, or deploying functions
+- A Supabase project for sign-in, saved projects, and Edge Functions
+- The Supabase CLI when running the backend locally, applying database changes, or deploying functions
 
-### Install and Run
+### Install and Start
 
 ```bash
 git clone https://github.com/Invictusprime7/unison-tasks-official.git
 cd unison-tasks-official
 npm install
 
-# Copy the public client configuration template, then add your own values.
+# Copy the public browser configuration template, then add your own values.
 cp .env.example .env.local
 
 npm run dev
 ```
 
-Vite prints the local URL after startup. The application can use a configured remote Supabase project during ordinary frontend development. Use the Supabase CLI only when you need a local backend stack or infrastructure changes.
+Vite prints the local address after startup. For everyday frontend work, the application can use a configured remote Supabase project. Run the local Supabase stack only when the work calls for local backend or infrastructure changes.
 
-### Environment Configuration
+### Environment Settings
 
-Use [`.env.example`](.env.example) as the reference. The browser requires only public Supabase configuration:
+Use [`.env.example`](.env.example) as the reference. The browser needs only the public Supabase settings:
 
-| Variable | Purpose |
-| --- | --- |
-| `VITE_SUPABASE_URL` | Supabase project URL |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Browser-safe Supabase publishable/anon key |
-| `VITE_PREVIEW_GATEWAY_URL` | Optional local Docker preview gateway |
+| Variable                        | Purpose                                         |
+| ------------------------------- | ----------------------------------------------- |
+| `VITE_SUPABASE_URL`             | Supabase project URL                            |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Browser-safe Supabase publishable/anonymous key |
 
-Keep provider and privileged keys server-side. Configure `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` as Supabase Edge Function secrets or equivalent server-only environment variables. Never expose them with a `VITE_` prefix.
+Keep privileged credentials on the server. Add `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` as Supabase Edge Function secrets or equivalent server-only environment variables. Never expose them with a `VITE_` prefix.
 
-### Local Supabase and Preview Runtime
+### Optional Local Supabase Stack
 
 ```bash
-# Optional: run the local Supabase stack and apply migrations.
 npx supabase start
 npx supabase db push
-
-# Optional: run the Docker preview runtime.
-npm run preview:docker:start
-npm run preview:docker:status
 ```
 
-## Common Commands
+The React preview does not need a separate preview service. Vite serves the same-origin Sandpack runner during development, and the production build copies the runner assets automatically.
+
+## Useful Commands
 
 ```bash
-# Application validation
+# Check the application
+npx vitest run
 npm run lint
 npm run type-check
 npm run build
+npm run lint:pipeline-bypass
+npm run lint:single-source-of-truth
+npm run lint:catalog-contracts
 
-# Local application and preview
+# Run the application and React preview
 npm run dev
 npm run preview
-npm run preview:docker:start
-npm run preview:docker:stop
-npm run preview:docker:status
 
-# Automation development
+# Work on automations
 npm run inngest:dev
 npm run automation:dev
 
-# Deployments
+# Deploy
 npm run deploy             # Vercel production deployment
 npm run deploy:preview     # Vercel preview deployment
-supabase functions deploy ai-code-assistant --use-api
+npx supabase db push --linked --dry-run
+npx supabase functions deploy
 ```
 
-## Operating Principles
+## Project Principles
 
-- **React/TSX only:** the build and preview pipeline accepts source-backed React projects, not HTML-only generation.
-- **One VFS per builder:** editor, AI actions, autosave, and preview operate on the same project source.
-- **Durable before navigation:** launcher-generated source is persisted before redirecting into the builder.
-- **Strict generation failures:** the wizard does not mask Lane B failures with a generic site fallback.
-- **Authenticated Edge Functions:** browser calls use Supabase auth and production CORS policy.
-- **No client secrets:** provider and service-role credentials stay in server-side configuration.
+- **Build real React projects.** Unison creates source-backed React/TSX projects, not HTML-only mockups.
+- **Keep one shared project source.** The editor, AI actions, autosave, recovery, and preview all work on the same files.
+- **Use one React preview.** Sandpack owns the active Web Builder preview; Docker and local Vite are not runtime fallbacks.
+- **Save before reporting success.** AI edits receive a local recovery copy and an ordered Cloud save before Unison says they are complete.
+- **Save before moving on.** Launcher-generated source and confirmed site identity are stored before the user enters the builder.
+- **Protect the newest work.** An older response or save confirmation cannot replace a more recent project version.
+- **Respect accepted edits.** Generated snapshots describe the site plan, while newer source edits remain visible until the snapshot includes them.
+- **Show generation failures honestly.** The launcher does not hide an AI failure behind a generic site.
+- **Protect private operations.** Builder and launch changes require authentication; public runtimes validate the site, allowed inputs, and abuse limits.
+- **Keep secrets off the client.** Provider keys and service-role credentials stay in server-side settings.
 
-## Documentation
+## Where to Look in the Code
 
-| Guide | Focus |
-| --- | --- |
-| [Architecture](docs/ARCHITECTURE.md) | Historical and detailed system architecture notes |
-| [AI setup](docs/AI_SETUP_GUIDE.md) | AI provider and key setup |
-| [AI template troubleshooting](docs/AI_TEMPLATE_TROUBLESHOOTING.md) | Generation diagnostics and repair guidance |
-| [Build to canvas workflow](docs/BUILD_TO_CANVAS_WORKFLOW.md) | Builder and preview workflow details |
-| [Preview runtime](docs/PREVIEW_RUNTIME_ARCHITECTURE.md) | Preview runtime architecture and operations |
-| [VFS preview](docs/VFS_PREVIEW_ARCHITECTURE.md) | VFS and Sandpack integration |
-| [Universal intent system](docs/UNIVERSAL_INTENT_SYSTEM.md) | Intent contracts and fixed action execution |
-| [Automation recipes](docs/AUTOMATION_RECIPES_ENGINE.md) | Workflow recipe engine |
-| [CRM pipeline automation](docs/CRM_PIPELINE_AUTOMATION.md) | CRM workflows and pipeline automation |
-| [Inngest CRM setup](docs/INNGEST_CRM_SETUP.md) | Inngest and CRM integration |
-| [Stripe setup](docs/STRIPE_SETUP.md) | Payment configuration |
-| [CRM schema reference](docs/CRM_SCHEMA_DEPLOYMENT.sql) | CRM database schema deployment reference |
-| [Vercel environment setup](docs/vercel-env-setup.md) | Production environment configuration |
+| If you are working on...                 | Start here                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------- |
+| System launch and confirmed handoff      | [`SystemLauncher.tsx`](src/components/onboarding/SystemLauncher.tsx)            |
+| Site planning and snapshot creation      | [`canonicalPipeline.ts`](src/platform/core/canonicalPipeline.ts)                |
+| Web Builder coordination and autosave    | [`WebBuilder.tsx`](src/components/creatives/WebBuilder.tsx)                     |
+| AI task planning and edit controls       | [`AIBuilderPanel.tsx`](src/components/creatives/web-builder/AIBuilderPanel.tsx) |
+| Structured AI context                    | [`aiContext.ts`](src/unison/aiContext.ts)                                       |
+| Reading structured AI responses          | [`aiResponseParser.ts`](src/utils/aiResponseParser.ts)                          |
+| Turning AI output into project files     | [`aiVFSOrchestrator.ts`](src/services/aiVFSOrchestrator.ts)                     |
+| Interruption recovery                    | [`builderStateRecovery.ts`](src/services/builderStateRecovery.ts)               |
+| Keeping snapshots and live edits aligned | [`snapshotProjector.ts`](src/services/snapshotProjector.ts)                     |
+| React/Sandpack preview                   | [`VFSPreview.tsx`](src/components/VFSPreview.tsx)                               |
+| External preview sessions                | [`externalPreviewSession.ts`](src/services/externalPreviewSession.ts)           |
+| Cloud project and draft merging          | [`cloudProjectDrafts.ts`](src/services/cloudProjectDrafts.ts)                   |
+| Confirmed launch requests                | [`confirmedLaunchProvisioner.ts`](src/services/confirmedLaunchProvisioner.ts)   |
+| Confirmed launch transaction             | [`provision-launch-site`](supabase/functions/provision-launch-site/index.ts)    |
+| Site setup checklist                     | [`siteSetupPlan.ts`](src/services/siteSetupPlan.ts)                             |
+| Upgrading historical projects            | [`frameworkVfsMigration.ts`](src/services/frameworkVfsMigration.ts)             |
+| Source export attribution                | [`unisonAttribution.ts`](src/services/export/unisonAttribution.ts)              |
+
+## More Documentation
+
+| Guide                                                              | What it covers                                          |
+| ------------------------------------------------------------------ | ------------------------------------------------------- |
+| [Architecture](docs/ARCHITECTURE.md)                               | Detailed and historical system architecture             |
+| [AI setup](docs/AI_SETUP_GUIDE.md)                                 | AI provider and key setup                               |
+| [AI template troubleshooting](docs/AI_TEMPLATE_TROUBLESHOOTING.md) | Finding and repairing generation problems               |
+| [Build to canvas workflow](docs/BUILD_TO_CANVAS_WORKFLOW.md)       | How the builder and preview work together               |
+| [Preview runtime](docs/PREVIEW_RUNTIME_ARCHITECTURE.md)            | Sandpack preview pipeline and runtime operations |
+| [VFS preview](docs/VFS_PREVIEW_ARCHITECTURE.md)                    | Project files and Sandpack integration                  |
+| [Universal intent system](docs/UNIVERSAL_INTENT_SYSTEM.md)         | Approved visitor actions and their runtime behavior     |
+| [Automation recipes](docs/AUTOMATION_RECIPES_ENGINE.md)            | Workflow recipe engine                                  |
+| [CRM pipeline automation](docs/CRM_PIPELINE_AUTOMATION.md)         | CRM workflows and pipeline automation                   |
+| [Inngest CRM setup](docs/INNGEST_CRM_SETUP.md)                     | Inngest and CRM integration                             |
+| [Stripe setup](docs/STRIPE_SETUP.md)                               | Payment configuration                                   |
+| [CRM schema reference](docs/CRM_SCHEMA_DEPLOYMENT.sql)             | CRM database schema reference                           |
+| [Vercel environment setup](docs/vercel-env-setup.md)               | Production environment configuration                    |
 
 ## Security
 
-Supabase RLS controls access to workspace data. Edge Functions validate authenticated requests and maintain CORS allowlists for browser clients. Keep deploy-time credentials and AI provider keys out of the browser bundle, and run the validation commands before deploying changes.
+Supabase row-level rules keep workspace, site, setup, form, and revision data limited to the right business and project members. Private builder and launch changes go through authenticated Edge Functions that check inputs, payload sizes, and allowed origins.
+
+Public forms use the intentionally public `form-submit` runtime. It checks the site and intended action, limits payloads, rejects duplicate or suspicious submissions, applies rate limits, and prevents browsers from writing directly to CRM tables.
+
+Keep deployment credentials, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`, and AI provider keys out of the browser bundle. Run the validation commands above before deploying changes.
 
 ## License
 

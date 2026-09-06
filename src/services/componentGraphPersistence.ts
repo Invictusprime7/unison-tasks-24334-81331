@@ -1,4 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
+import { getCatalogSurface } from "@/platform/core/catalogSurfaceRegistry";
+import { listBindingsForProject } from "@/services/sectionDataBindingService";
+import type { SectionDataBindingDTO } from "@/types/catalog";
 import type { CreatorComponentInstance } from "@/types/creatorData";
 
 type CanonicalPlaygroundPayload = {
@@ -30,6 +33,7 @@ function isMissingRelationError(error: unknown) {
 }
 
 function inferTargetKind(bindingKey: string) {
+  if (bindingKey === "dataBindingId") return "catalog";
   if (bindingKey === "formId") return "form";
   if (bindingKey === "calendarId") return "calendar";
   if (bindingKey === "productId") return "product";
@@ -37,16 +41,43 @@ function inferTargetKind(bindingKey: string) {
   return "reference";
 }
 
+export function resolveComponentDataBinding(
+  instance: CanonicalPlaygroundPayload["creatorData"] extends { componentInstances?: Record<string, infer T> } ? T : never,
+  bindings: SectionDataBindingDTO[],
+) {
+  const surface = getCatalogSurface(instance.componentType);
+  if (!surface) return null;
+
+  const explicitId = instance.bindings?.dataBindingId;
+  if (explicitId) {
+    return bindings.find((binding) => binding.id === explicitId) ?? null;
+  }
+
+  const sectionId = instance.bindings?.sectionId;
+  if (sectionId) {
+    return bindings.find((binding) => binding.sectionId === sectionId) ?? null;
+  }
+
+  const candidates = bindings.filter(
+    (binding) =>
+      binding.sourceKind === surface.catalogKind &&
+      binding.sourceTable === surface.sourceTable,
+  );
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
 export async function syncCanonicalComponentGraph({
+  businessId,
   projectId,
   draftId,
   canonicalPlayground,
 }: {
+  businessId?: string | null;
   projectId?: string | null;
   draftId?: string | null;
   canonicalPlayground?: Record<string, unknown>;
 }) {
-  if (!projectId || componentGraphTablesUnsupported) {
+  if (!businessId || !projectId || componentGraphTablesUnsupported) {
     return false;
   }
 
@@ -54,6 +85,9 @@ export async function syncCanonicalComponentGraph({
   const componentInstances = Object.values(
     typedPayload.creatorData?.componentInstances || {},
   );
+  const sectionBindings = componentInstances.some((instance) => getCatalogSurface(instance.componentType))
+    ? await listBindingsForProject(projectId)
+    : [];
 
   try {
     const { error: deleteBindingsError } = await supabase
@@ -73,6 +107,7 @@ export async function syncCanonicalComponentGraph({
     }
 
     const instanceRows = componentInstances.map((instance) => ({
+      business_id: businessId,
       project_id: projectId,
       builder_draft_id: draftId ?? null,
       source_instance_id: instance.instanceId,
@@ -104,14 +139,31 @@ export async function syncCanonicalComponentGraph({
       const persistedInstanceId = instanceIdBySourceId.get(instance.instanceId);
       if (!persistedInstanceId) return [];
 
-      return Object.entries(instance.bindings || {}).map(([bindingKey, targetRef]) => ({
+      const explicitBindings = Object.entries(instance.bindings || {})
+        .filter(([bindingKey]) => bindingKey !== "dataBindingId" && bindingKey !== "sectionId")
+        .map(([bindingKey, targetRef]) => ({
+          business_id: businessId,
+          project_id: projectId,
+          component_instance_id: persistedInstanceId,
+          binding_key: bindingKey,
+          target_kind: inferTargetKind(bindingKey),
+          target_ref: targetRef,
+          config: {},
+        }));
+      const dataBinding = resolveComponentDataBinding(instance, sectionBindings);
+      if (!dataBinding) return explicitBindings;
+
+      return [...explicitBindings, {
+        business_id: businessId,
         project_id: projectId,
         component_instance_id: persistedInstanceId,
-        binding_key: bindingKey,
-        target_kind: inferTargetKind(bindingKey),
-        target_ref: targetRef,
+        binding_key: "dataBindingId",
+        target_kind: "catalog",
+        target_ref: dataBinding.id,
+        site_data_binding_id: dataBinding.id,
+        verified_at: new Date().toISOString(),
         config: {},
-      }));
+      }];
     });
 
     if (bindingRows.length > 0) {

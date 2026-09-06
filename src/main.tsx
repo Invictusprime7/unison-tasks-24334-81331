@@ -27,6 +27,11 @@ const isBenignError = (msg: unknown): boolean => {
 
 // Add global error handler
 window.addEventListener('error', (event) => {
+  if (event.error === undefined && !event.message) {
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    return;
+  }
   if (isBenignError(event.message) || isBenignError(event.error)) {
     event.stopImmediatePropagation();
     event.preventDefault();

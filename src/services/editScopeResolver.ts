@@ -9,6 +9,11 @@
  *   • Pick a default scope (block / element / section) per click target.
  *   • Surface locked intent bindings (`data-ut-intent`) that must survive
  *     any patch.
+ *   • Cap the scope and gate submission against the artifact's own
+ *     `ArtifactDef.aiEditScope` contract (Stage 1, artifact registry) when
+ *     the clicked section/component resolves to a known artifact. Unknown
+ *     artifacts stay permissive so unmigrated sections keep working exactly
+ *     as before.
  *
  * Resolution order (from inside → out):
  *   data-ut-element → data-ut-slot → data-ut-block → data-ut-section →
@@ -17,6 +22,8 @@
  * See the preview floating-toolbar architecture documentation
  * memory entry under mem://features/web-builder/preview-floating-toolbar.
  */
+
+import { resolveArtifact, type ArtifactAIEditScope } from '@/platform/core/artifactRegistry';
 
 export type EditScopeType = 'element' | 'block' | 'section' | 'page';
 
@@ -61,6 +68,12 @@ export interface EditScope {
   lockedBindings: string[];
   /** Coarse risk hint surfaced in toolbar UI / passed to reviewPass. */
   riskLevel: 'low' | 'medium' | 'high';
+  /** Canonical artifact id this scope resolved to, when the section/component is known. */
+  artifactId: string | null;
+  /** The artifact's own AI edit contract (`ArtifactDef.aiEditScope`), when known. */
+  aiEditScope: ArtifactAIEditScope | null;
+  /** False when the resolved artifact is `locked` — callers must refuse to submit an AI edit. */
+  aiEditable: boolean;
 }
 
 export interface ResolveEditScopeInput {
@@ -104,7 +117,24 @@ export function defaultScopeFor(ancestors: ScopeAncestors): EditScopeType {
 /** Resolve a user-overridable EditScope from captured DOM ancestors. */
 export function resolveEditScope(input: ResolveEditScopeInput): EditScope {
   const { ancestors, selectedScope, componentPath, editableRange } = input;
-  const scopeType: EditScopeType = selectedScope || defaultScopeFor(ancestors);
+  let scopeType: EditScopeType = selectedScope || defaultScopeFor(ancestors);
+
+  // Resolve the clicked artifact from whichever identity the DOM captured.
+  // First writer wins, most specific first: componentType > sectionType > surfaceId.
+  const resolved = [ancestors.componentType, ancestors.sectionType, ancestors.surfaceId]
+    .filter((spelling): spelling is string => Boolean(spelling))
+    .map((spelling) => resolveArtifact(spelling))
+    .find((artifact) => artifact !== null) ?? null;
+  const artifactId = resolved?.artifactId ?? null;
+  const aiEditScope = resolved?.aiEditScope ?? null;
+  const aiEditable = aiEditScope !== 'locked';
+
+  // A 'content'-only artifact (e.g. curated catalog copy) must not accept a
+  // layout-level rewrite — cap the scope down to 'block' so the AI prompt
+  // never touches structure, ordering, or bindings for that artifact.
+  if (aiEditScope === 'content' && (scopeType === 'section' || scopeType === 'page')) {
+    scopeType = 'block';
+  }
 
   let targetId = '';
   switch (scopeType) {
@@ -122,10 +152,17 @@ export function resolveEditScope(input: ResolveEditScopeInput): EditScope {
       break;
   }
 
-  const lockedBindings = Array.from(new Set(ancestors.intents || [])).filter(Boolean);
-  // Section-scope edits carry more risk than element edits.
-  const riskLevel: EditScope['riskLevel'] =
-    scopeType === 'page' ? 'high' : scopeType === 'section' ? 'medium' : 'low';
+  // Union DOM-captured intents with the artifact's own validated bindings so
+  // a canonical intent (e.g. booking.create) stays locked even if the click
+  // target's ancestor walk missed it.
+  const lockedBindings = Array.from(
+    new Set([...(ancestors.intents || []), ...(resolved?.knownIntents || [])]),
+  ).filter(Boolean);
+  // Section-scope edits carry more risk than element edits; a locked artifact
+  // is always high risk regardless of DOM scope.
+  const riskLevel: EditScope['riskLevel'] = !aiEditable
+    ? 'high'
+    : scopeType === 'page' ? 'high' : scopeType === 'section' ? 'medium' : 'low';
 
   return {
     scopeType,
@@ -136,6 +173,9 @@ export function resolveEditScope(input: ResolveEditScopeInput): EditScope {
     editableRange: editableRange || null,
     lockedBindings,
     riskLevel,
+    artifactId,
+    aiEditScope,
+    aiEditable,
   };
 }
 
@@ -162,6 +202,13 @@ export function buildScopedPromptPrefix(scope: EditScope): string {
     `Scope type: ${scope.scopeType}`,
     `Scope id: ${scope.targetId}`,
   ];
+  if (scope.artifactId) lines.push(`Artifact: ${scope.artifactId} (AI edit scope: ${scope.aiEditScope})`);
+  if (scope.aiEditScope === 'content') {
+    lines.push('This artifact only allows copy/imagery edits — do not change layout, structure, ordering, or data bindings.');
+  }
+  if (!scope.aiEditable) {
+    lines.push('⛔ This artifact is LOCKED for AI edits. Refuse the request and state that it must be changed manually.');
+  }
   if (scope.owningSectionId) lines.push(`Owning section: ${scope.owningSectionId}`);
   if (scope.pageId) lines.push(`Page: ${scope.pageId}`);
   if (scope.componentPath) lines.push(`Component path: ${scope.componentPath}`);

@@ -1,0 +1,4 @@
+/docs/
+zip_extract/
+*.tar.gz
+*.zip

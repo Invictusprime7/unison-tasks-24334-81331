@@ -24,10 +24,10 @@ This script will:
 - **Format**: Starts with `sk-`
 - **Usage**: Image generation via the `generate-image` edge function
 
-### 2. Lovable API Key  
-- **Required for**: AI code generation, page generation, copy rewriting
-- **Get it from**: Your Lovable workspace
-- **Usage**: Most AI features via multiple edge functions
+### 2. Gemini text generation
+- **Used for**: Builder and Wizard text/code generation through Supabase Edge Functions
+- **Runtime**: A configurable weighted distribution with OpenAI, with automatic fallback
+- **Secret**: `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) on Supabase only
 
 ## 🚀 AI Features Available
 
@@ -43,29 +43,21 @@ Once configured, your app will have:
 - **Component**: `AICodeAssistant`
 - **Service**: `generateAICode()` in `openaiService.ts`
 - **Edge Function**: `ai-code-assistant`
-- **Uses**: Lovable AI Gateway
+- **Uses**: Direct Gemini/OpenAI runtime with configurable traffic distribution
 
 ### Copy Rewriting
 - **Service**: `rewriteCopy()` in `openaiService.ts`
 - **Edge Function**: `copy-rewrite`
-- **Uses**: Lovable AI Gateway
+- **Uses**: Direct OpenAI API
 
 ### Page Generation
 - **Service**: `generatePage()` in `openaiService.ts`
 - **Edge Function**: `generate-page`
-- **Uses**: Lovable AI Gateway
-
-### Template Generation
-- **Edge Functions**: `generate-template`, `generate-ai-template`
-- **Uses**: Lovable AI Gateway
-
-### Design Assistant
-- **Edge Function**: `ai-design-assistant`
-- **Uses**: Lovable AI Gateway
+- **Uses**: Direct OpenAI API
 
 ### Web Builder AI
 - **Edge Function**: `web-builder-ai`
-- **Uses**: Lovable AI Gateway
+- **Uses**: Direct OpenAI API
 
 ## 📁 Environment Files
 
@@ -77,43 +69,32 @@ VITE_SUPABASE_PUBLISHABLE_KEY=your_key
 VITE_SUPABASE_PROJECT_ID=your_project_id
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-# AI Service API Keys
-OPENAI_API_KEY=sk-your_openai_key_here
-LOVABLE_API_KEY=your_lovable_key_here
+# AI provider keys belong in Supabase Edge Function secrets, never VITE_ variables.
 ```
 
 ### Supabase Secrets (Edge Functions)
 ```bash
-# Set these in your Supabase project
-supabase secrets set OPENAI_API_KEY="sk-your_key_here"
-supabase secrets set LOVABLE_API_KEY="your_lovable_key_here"
+# Set these in your Supabase project. Provider keys are server-only.
+supabase secrets set GEMINI_API_KEY="your_gemini_key" OPENAI_API_KEY="sk-your_key_here" AI_PROVIDER_DISTRIBUTION="gemini=50,openai=50"
 ```
 
 ### Vercel Environment Variables
 ```bash
-# These are automatically set by the update script
-OPENAI_API_KEY=sk-your_key_here
-LOVABLE_API_KEY=your_lovable_key_here
-# ... plus all Supabase variables
+# Configure only frontend-safe VITE_SUPABASE_* values in Vercel.
+# Keep provider keys in Supabase Edge Function secrets.
 ```
 
 ## 🛠️ Manual Setup
 
 If you prefer to set things up manually:
 
-### 1. Update `.env` File
+### 1. Configure Supabase Secrets and deploy the provider runtime
 ```bash
-echo "OPENAI_API_KEY=sk-your_key_here" >> .env
-echo "LOVABLE_API_KEY=your_lovable_key_here" >> .env
+supabase secrets set GEMINI_API_KEY="your_gemini_key" OPENAI_API_KEY="sk-your_key_here" AI_PROVIDER_DISTRIBUTION="gemini=50,openai=50"
+supabase functions deploy ai-code-assistant --no-verify-jwt
 ```
 
-### 2. Configure Supabase Secrets
-```bash
-supabase secrets set OPENAI_API_KEY="sk-your_key_here"
-supabase secrets set LOVABLE_API_KEY="your_lovable_key_here"
-```
-
-### 3. Update Vercel (if deployed)
+### 2. Update Vercel (if deployed)
 ```bash
 ./scripts/update-vercel-env.sh
 ```
@@ -153,7 +134,7 @@ const result = await generateAICode({
 ## 🐛 Troubleshooting
 
 ### "AI features unavailable in local development"
-- Set up your API keys in `.env` file
+- Configure provider keys as Supabase Edge Function secrets
 - Configure Supabase secrets with `supabase secrets set`
 - Restart your local Supabase instance: `supabase stop && supabase start`
 
@@ -164,7 +145,7 @@ const result = await generateAICode({
 
 ### Rate Limits or Credit Issues
 - **OpenAI**: Check your OpenAI account billing and usage limits
-- **Lovable**: Check your Lovable workspace credits
+- **Direct providers**: Check the provider dashboard for usage limits and billing
 
 ## 📚 Development Notes
 

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -13,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 
 type BusinessRow = {
   id: string;
@@ -21,6 +22,32 @@ type BusinessRow = {
   notification_email: string | null;
   notification_phone: string | null;
 };
+
+type BusinessHoursRow = {
+  day_of_week: number;
+  opens_at: string;
+  closes_at: string;
+  is_closed: boolean;
+};
+
+type StaffRow = {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string | null;
+  is_active: boolean;
+};
+
+const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function defaultHours(): BusinessHoursRow[] {
+  return DAY_LABELS.map((_, day_of_week) => ({
+    day_of_week,
+    opens_at: "09:00",
+    closes_at: "17:00",
+    is_closed: day_of_week === 0 || day_of_week === 6,
+  }));
+}
 
 export default function BusinessSettings() {
   const navigate = useNavigate();
@@ -85,6 +112,138 @@ export default function BusinessSettings() {
       notification_phone: selectedBusiness.notification_phone ?? "",
     });
   }, [selectedBusiness?.id]);
+
+  // ── Business hours ────────────────────────────────────────────────────
+  const [hours, setHours] = useState<BusinessHoursRow[]>(defaultHours());
+  const [hoursLoading, setHoursLoading] = useState(false);
+  const [hoursSaving, setHoursSaving] = useState(false);
+
+  useEffect(() => {
+    if (!selectedBusinessId) return;
+    let cancelled = false;
+    setHoursLoading(true);
+    supabase
+      .from("business_hours" as any)
+      .select("day_of_week,opens_at,closes_at,is_closed")
+      .eq("business_id", selectedBusinessId)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("[BusinessSettings] load hours failed", error);
+          setHours(defaultHours());
+        } else {
+          const byDay = new Map((data as BusinessHoursRow[] | null ?? []).map((row) => [row.day_of_week, row]));
+          setHours(defaultHours().map((fallback) => byDay.get(fallback.day_of_week) ?? fallback));
+        }
+        setHoursLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedBusinessId]);
+
+  function updateHoursRow(day_of_week: number, patch: Partial<BusinessHoursRow>) {
+    setHours((prev) => prev.map((row) => (row.day_of_week === day_of_week ? { ...row, ...patch } : row)));
+  }
+
+  async function handleSaveHours() {
+    if (!selectedBusinessId) return;
+    setHoursSaving(true);
+    try {
+      const { error } = await supabase
+        .from("business_hours" as any)
+        .upsert(
+          hours.map((row) => ({ ...row, business_id: selectedBusinessId })),
+          { onConflict: "business_id,day_of_week" },
+        );
+      if (error) throw error;
+      toast.success("Business hours saved");
+    } catch (e) {
+      console.error("[BusinessSettings] save hours failed", e);
+      toast.error("Failed to save business hours");
+    } finally {
+      setHoursSaving(false);
+    }
+  }
+
+  // ── Staff ──────────────────────────────────────────────────────────────
+  const [staff, setStaff] = useState<StaffRow[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [newStaff, setNewStaff] = useState({ name: "", email: "", role: "" });
+  const [addingStaff, setAddingStaff] = useState(false);
+
+  useEffect(() => {
+    if (!selectedBusinessId) return;
+    let cancelled = false;
+    setStaffLoading(true);
+    supabase
+      .from("staff" as any)
+      .select("id,name,email,role,is_active")
+      .eq("business_id", selectedBusinessId)
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("[BusinessSettings] load staff failed", error);
+          setStaff([]);
+        } else {
+          setStaff((data as StaffRow[] | null) ?? []);
+        }
+        setStaffLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedBusinessId]);
+
+  async function handleAddStaff() {
+    if (!selectedBusinessId || !newStaff.name.trim()) return;
+    setAddingStaff(true);
+    try {
+      const { data, error } = await supabase
+        .from("staff" as any)
+        .insert({
+          business_id: selectedBusinessId,
+          name: newStaff.name.trim(),
+          email: newStaff.email.trim() || null,
+          role: newStaff.role.trim() || null,
+          is_active: true,
+        })
+        .select("id,name,email,role,is_active")
+        .single();
+      if (error) throw error;
+      setStaff((prev) => [...prev, data as StaffRow]);
+      setNewStaff({ name: "", email: "", role: "" });
+      toast.success("Staff member added");
+    } catch (e) {
+      console.error("[BusinessSettings] add staff failed", e);
+      toast.error("Failed to add staff member");
+    } finally {
+      setAddingStaff(false);
+    }
+  }
+
+  async function handleToggleStaffActive(row: StaffRow) {
+    try {
+      const { error } = await supabase
+        .from("staff" as any)
+        .update({ is_active: !row.is_active })
+        .eq("id", row.id);
+      if (error) throw error;
+      setStaff((prev) => prev.map((s) => (s.id === row.id ? { ...s, is_active: !s.is_active } : s)));
+    } catch (e) {
+      console.error("[BusinessSettings] toggle staff failed", e);
+      toast.error("Failed to update staff member");
+    }
+  }
+
+  async function handleDeleteStaff(row: StaffRow) {
+    try {
+      const { error } = await supabase.from("staff" as any).delete().eq("id", row.id);
+      if (error) throw error;
+      setStaff((prev) => prev.filter((s) => s.id !== row.id));
+      toast.success("Staff member removed");
+    } catch (e) {
+      console.error("[BusinessSettings] delete staff failed", e);
+      toast.error("Failed to remove staff member");
+    }
+  }
 
   async function handleSave() {
     if (!selectedBusinessId) return;
@@ -200,6 +359,121 @@ export default function BusinessSettings() {
               <Button variant="outline" onClick={() => navigate("/dashboard")}>Dashboard</Button>
               <Button onClick={handleSave} disabled={!selectedBusinessId || saving}>
                 {saving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Business hours</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Drives the availability generated for booking — visitors see these
+              hours before booking, and closed days never produce time slots.
+            </p>
+            {hoursLoading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : (
+              <div className="space-y-3">
+                {hours.map((row) => (
+                  <div key={row.day_of_week} className="flex flex-wrap items-center gap-3">
+                    <span className="w-24 shrink-0 text-sm font-medium">{DAY_LABELS[row.day_of_week]}</span>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={!row.is_closed}
+                        onCheckedChange={(checked) => updateHoursRow(row.day_of_week, { is_closed: !checked })}
+                      />
+                      <span className="text-sm text-muted-foreground">{row.is_closed ? "Closed" : "Open"}</span>
+                    </div>
+                    {!row.is_closed && (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="time"
+                          className="w-32"
+                          value={row.opens_at}
+                          onChange={(e) => updateHoursRow(row.day_of_week, { opens_at: e.target.value })}
+                        />
+                        <span className="text-sm text-muted-foreground">to</span>
+                        <Input
+                          type="time"
+                          className="w-32"
+                          value={row.closes_at}
+                          onChange={(e) => updateHoursRow(row.day_of_week, { closes_at: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center justify-end">
+              <Button onClick={handleSaveHours} disabled={!selectedBusinessId || hoursSaving}>
+                {hoursSaving ? "Saving…" : "Save hours"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Staff</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Team members who can be assigned to bookings.
+            </p>
+            {staffLoading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : staff.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No staff added yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {staff.map((row) => (
+                  <div key={row.id} className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{row.name}</p>
+                      {(row.email || row.role) && (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {[row.role, row.email].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch checked={row.is_active} onCheckedChange={() => handleToggleStaffActive(row)} />
+                      <span className="text-xs text-muted-foreground">{row.is_active ? "Active" : "Inactive"}</span>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => handleDeleteStaff(row)} aria-label={`Remove ${row.name}`}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="grid gap-3 md:grid-cols-4">
+              <Input
+                placeholder="Name"
+                value={newStaff.name}
+                onChange={(e) => setNewStaff((p) => ({ ...p, name: e.target.value }))}
+              />
+              <Input
+                placeholder="Email (optional)"
+                value={newStaff.email}
+                onChange={(e) => setNewStaff((p) => ({ ...p, email: e.target.value }))}
+                inputMode="email"
+              />
+              <Input
+                placeholder="Role (optional)"
+                value={newStaff.role}
+                onChange={(e) => setNewStaff((p) => ({ ...p, role: e.target.value }))}
+              />
+              <Button
+                onClick={handleAddStaff}
+                disabled={!selectedBusinessId || !newStaff.name.trim() || addingStaff}
+              >
+                {addingStaff ? "Adding…" : "Add staff"}
               </Button>
             </div>
           </CardContent>

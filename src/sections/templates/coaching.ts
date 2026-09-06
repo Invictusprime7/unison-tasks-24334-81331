@@ -47,6 +47,7 @@ export const COACHING_COMPOSITIONS: TemplateComposition[] = [
         id: 'coaching-premium-nav',
         type: 'navbar',
         props: {
+          layout: 'centered-logo',
           brand: 'Elevate Coaching',
           sticky: true,
           links: [
@@ -182,6 +183,7 @@ export const COACHING_COMPOSITIONS: TemplateComposition[] = [
         id: 'coaching-premium-footer',
         type: 'footer',
         props: {
+          layout: 'dark-band',
           brand: 'Elevate Coaching',
           copyright: '© 2024 Dr. Rachel Norris Coaching LLC. All rights reserved.',
           newsletter: true,
@@ -237,6 +239,7 @@ export const COACHING_COMPOSITIONS: TemplateComposition[] = [
         id: 'coaching-fitness-nav',
         type: 'navbar',
         props: {
+          layout: 'minimal-dark',
           brand: 'Flow Fitness',
           sticky: true,
           links: [
@@ -311,6 +314,7 @@ export const COACHING_COMPOSITIONS: TemplateComposition[] = [
         id: 'coaching-fitness-footer',
         type: 'footer',
         props: {
+          layout: 'dark-band',
           brand: 'Flow Fitness',
           copyright: '© 2024 Flow Fitness Coaching. All rights reserved.',
           newsletter: true,
@@ -365,6 +369,7 @@ export const COACHING_COMPOSITIONS: TemplateComposition[] = [
         id: 'coaching-mindful-nav',
         type: 'navbar',
         props: {
+          layout: 'centered-logo',
           brand: 'Quiet Practice',
           sticky: true,
           links: [
@@ -452,6 +457,7 @@ export const COACHING_COMPOSITIONS: TemplateComposition[] = [
         id: 'coaching-mindful-footer',
         type: 'footer',
         props: {
+          layout: 'columns',
           brand: 'Quiet Practice',
           copyright: '© 2024 Quiet Practice.',
           newsletter: false,

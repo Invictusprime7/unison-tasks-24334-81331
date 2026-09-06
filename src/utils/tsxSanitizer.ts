@@ -24,6 +24,7 @@ import {
   fixJsxStyleStrings,
   sanitizeSvgElements,
 } from "@/utils/aiCodeCleaner";
+import { getUnisonVfsFacadeImport } from "@/utils/sandpackDependencies";
 
 export interface SanitizeResult {
   /** Normalized file content. Always a string. */
@@ -228,6 +229,56 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
   // Strip leading "Here's…" prose lines that survived extractCleanCode
   code = code.replace(/^(?:\s*\/\/[^\n]*\n)*\s*(?:Here(?:'s| is)|Sure|Below|This is)\b[^\n]*\n/i, "");
 
+  // Generated Vite snapshots do not provide Next.js image optimization.
+  // Preserve the rendered asset while removing framework-only props.
+  try {
+    const nextImageImports = [...code.matchAll(
+      /^[ \t]*import\s+(?:type\s+)?(?:(?<component>[A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{[^}]*\}\s*)?from\s+['"]next\/image['"]\s*;?\s*$/gm,
+    )];
+    if (nextImageImports.length > 0) {
+      for (const nextImageImport of nextImageImports) {
+        const componentName = nextImageImport.groups?.component;
+        code = code.replace(nextImageImport[0], '');
+        if (!componentName) continue;
+        const escapedName = componentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        code = code
+          .replace(new RegExp(`<${escapedName}\\b`, 'g'), '<img')
+          .replace(new RegExp(`</${escapedName}>`, 'g'), '</img>');
+      }
+      code = code
+        .replace(/\s+(?:priority|fill)(?=\s|\/?>)/g, '')
+        .replace(/\s+(?:placeholder|blurDataURL)=\{?(["'`])[^"'`]*\1\}?/g, '');
+      applied.push('normalizeNextImage');
+    }
+  } catch (e) {
+    issues.push(`normalizeNextImage failed: ${(e as Error).message}`);
+  }
+
+  // Generated snapshots own the UI runtime facade modules. Normalize common
+  // model imports here so every Lane B response uses the same executable VFS
+  // contract while leaving unrelated packages untouched.
+  try {
+    const rewriteFacadeSpecifier = (full: string, prefix: string, specifier: string, suffix: string) => {
+      const facade = getUnisonVfsFacadeImport(specifier);
+      return facade ? `${prefix}${facade}${suffix}` : full;
+    };
+    const next = code
+      .replace(
+        /(\b(?:import|export)\s+(?:type\s+)?(?:[\w*{},\s]+?\s+from\s+)?['"])([^'"]+)(['"])/g,
+        rewriteFacadeSpecifier,
+      )
+      .replace(
+        /(\bimport\s*\(\s*['"])([^'"]+)(['"]\s*\))/g,
+        rewriteFacadeSpecifier,
+      );
+    if (next !== code) {
+      code = next;
+      applied.push('rewriteUnisonVfsImports');
+    }
+  } catch (e) {
+    issues.push(`rewriteUnisonVfsImports failed: ${(e as Error).message}`);
+  }
+
   // Replace FontAwesome <i class="fab fa-…"> stubs with lucide-react components.
   // Preview ships only lucide-react; FA classes render as blank squares.
   try {
@@ -257,15 +308,15 @@ export function sanitizeTsxFile(path: string, raw: string): SanitizeResult {
     );
     if (replacedIcons.size > 0 && next !== code) {
       const needed = Array.from(replacedIcons);
-      const importRe = /import\s+\{([^}]*)\}\s+from\s+['"]lucide-react['"]\s*;?/;
+      const importRe = /import\s+\{([^}]*)\}\s+from\s+['"](?:lucide-react|@\/unison\/ui\/icons)['"]\s*;?/;
       if (importRe.test(next)) {
         next = next.replace(importRe, (_m, group: string) => {
           const existing = group.split(",").map((s) => s.trim()).filter(Boolean);
           const merged = Array.from(new Set([...existing, ...needed])).sort();
-          return `import { ${merged.join(", ")} } from "lucide-react";`;
+          return `import { ${merged.join(", ")} } from "@/unison/ui/icons";`;
         });
       } else {
-        next = `import { ${needed.sort().join(", ")} } from "lucide-react";\n` + next;
+        next = `import { ${needed.sort().join(", ")} } from "@/unison/ui/icons";\n` + next;
       }
       code = next;
       applied.push(`replaceFontAwesomeIcons(${needed.length})`);

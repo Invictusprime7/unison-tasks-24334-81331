@@ -173,6 +173,10 @@ interface CreatorPlaygroundModalProps {
   onPageRemove?: (pageId: string, path: string) => void;
   onFunnelCreate?: (funnelId: string, stepPages: { pageId: string; title: string; path: string; role: FunnelRole }[]) => void;
   businessId?: string | null;
+  siteId?: string | null;
+  projectId?: string | null;
+  industry?: string | null;
+  systemType?: string | null;
   initialSection?: Section;
   initialBindingId?: string;
   initialSetupField?: PlaygroundSetupField;
@@ -222,6 +226,10 @@ export function CreatorPlaygroundModal({
   onPageRemove,
   onFunnelCreate,
   businessId = null,
+  siteId = null,
+  projectId = null,
+  industry = null,
+  systemType = null,
   initialSection,
   initialBindingId,
   initialSetupField,
@@ -237,7 +245,7 @@ export function CreatorPlaygroundModal({
   );
   const [selectedBindingId, setSelectedBindingId] = useState<string | null>(initialBindingId || null);
   const [businessFocusField, setBusinessFocusField] = useState<PlaygroundSetupField | null>(initialSetupField || null);
-  const setupWizard = useSetupWizard(businessId);
+  const setupWizard = useSetupWizard({ siteId, businessId, projectId, industry, systemType });
 
   const playgroundState: PlaygroundState = useMemo(() => ({
     creatorData: playground.creatorData,
@@ -387,7 +395,7 @@ export function CreatorPlaygroundModal({
           <div className="flex-1 min-w-0 flex flex-col">
             <ScrollArea className="flex-1">
               <div className="p-5">
-                {activeSection === "launch" && <SetupWizardPanel wizard={setupWizard} businessId={businessId} />}
+                {activeSection === "launch" && <SetupWizardPanel wizard={setupWizard} businessId={businessId} siteId={siteId} />}
                 {activeSection === "overview" && (
                   <OverviewSection
                     playground={playground}

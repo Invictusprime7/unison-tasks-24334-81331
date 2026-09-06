@@ -70,7 +70,11 @@ export type SectionType =
 /** A single section in a template composition */
 export interface SectionEntry<T extends SectionType = SectionType> {
   id: string;
+  /** Original template section identity retained when this section is cloned for a route. */
+  sourceSectionId?: string;
   type: T;
+  /** Registry-owned visual variant; behavior remains bound through id/type/slots. */
+  variantId?: import('./variants/types').VariantId;
   props: SectionPropsMap[T];
   /** Optional CSS module or scoped styles for this section */
   className?: string;
@@ -169,6 +173,7 @@ export interface SectionPropsMap {
     cta?: CTAButton;
     sticky?: boolean;
     transparent?: boolean;
+    layout?: 'standard' | 'centered-logo' | 'minimal-dark';
   };
   hero: {
     headline: string;
@@ -236,6 +241,7 @@ export interface SectionPropsMap {
   contact: {
     headline?: string;
     description?: string;
+    layout?: 'centered' | 'split-card' | 'minimal-inline';
     fields?: { name: string; type: string; placeholder?: string; required?: boolean }[];
     submitLabel?: string;
     submitIntent?: string;
@@ -247,6 +253,7 @@ export interface SectionPropsMap {
   footer: {
     brand: string;
     logo?: string;
+    layout?: 'columns' | 'centered-minimal' | 'dark-band';
     columns?: { title: string; links: NavLink[] }[];
     socials?: { platform: string; url: string; icon?: string }[];
     copyright?: string;

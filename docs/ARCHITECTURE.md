@@ -71,7 +71,7 @@ System Launcher Wizard                    Web Builder Playground
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Supabase Edge Function                        │
-│              (generate-ai-template/web-builder-ai)               │
+│                       (web-builder-ai)                           │
 │                                                                   │
 │  • Lovable AI (google/gemini-2.5-flash)                         │
 │  • Generates structured template schema                          │
@@ -226,7 +226,7 @@ const safeCss = sanitizeCSS(rawCss);
 
 ### 5. AI Integration
 
-**Edge Function**: `supabase/functions/generate-ai-template/index.ts`
+**Edge Function**: `supabase/functions/web-builder-ai/index.ts`
 
 **Model**: `google/gemini-2.5-flash` (FREE during Sept 29 - Oct 13, 2025)
 
@@ -443,7 +443,6 @@ src/
 - [x] Universal Intent System with build-time annotation — see [UNIVERSAL_INTENT_SYSTEM.md](UNIVERSAL_INTENT_SYSTEM.md)
 - [x] Inngest durable workflow orchestration — see [WORKFLOW_ORCHESTRATION_COMPARISON.md](WORKFLOW_ORCHESTRATION_COMPARISON.md)
 - [x] Trigger.dev background jobs (CRM reports, batch import, data export, AI content)
-- [x] Full-stack app generation (`generate-fullstack-app` edge function)
 - [x] AI Agent Runner for autonomous research and code tasks
 - [x] Enterprise RBAC, multi-tenancy, and audit logging — see [ENTERPRISE_HARDENING.md](ENTERPRISE_HARDENING.md)
 - [x] System Launcher Wizard (4-step guided onboarding with industry/goals/template/aesthetic)

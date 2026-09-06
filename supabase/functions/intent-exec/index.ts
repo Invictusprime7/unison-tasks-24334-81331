@@ -114,11 +114,9 @@ const EDGE_FUNCTION_NAME_PATTERN = /^[a-z0-9-]{1,80}$/;
 const DEFAULT_ALLOWED_INTENT_EDGE_FUNCTIONS = new Set([
   "create-lead",
   "create-lead-lite",
-  "create-booking",
   "create-order-checkout",
   "form-submit",
   "intent-action",
-  "intent-booking",
   "template-backend",
   "template-automation",
 ]);
@@ -402,7 +400,6 @@ function mapIntentToAutomationEvent(intentId: string): string | null {
   const mapping: Record<string, string> = {
     "contact.submit": "lead.capture",
     "lead.capture": "lead.capture",
-    "booking.create": "booking.create",
     "quote.request": "quote.request",
     "newsletter.subscribe": "newsletter.subscribe",
     "form.submit": "form.submit",
@@ -547,11 +544,6 @@ async function executeCoreFallback(
     return await handleNewsletterSubscribe(supabase, params, context);
   }
   
-  // Booking intents
-  if (intentId === "booking.create") {
-    return await handleBookingCreate(supabase, params, context);
-  }
-  
   // Quote request
   if (intentId === "quote.request") {
     return await handleQuoteRequest(supabase, params, context);
@@ -651,53 +643,6 @@ async function handleLeadCapture(
     clientActions: [{
       type: "TOAST",
       message: "Thanks for reaching out! We'll be in touch soon.",
-      level: "success",
-    }],
-  };
-}
-
-async function handleBookingCreate(
-  supabase: SupabaseClient,
-  params: Record<string, unknown>,
-  context: { businessId: string }
-): Promise<{ ok: boolean; result: unknown; clientActions: ClientAction[] }> {
-  // Create booking record
-  const { data, error } = await supabase
-    .from("bookings")
-    .insert({
-      business_id: context.businessId,
-      customer_email: params.email as string,
-      customer_name: (params.name || params.fullName) as string,
-      customer_phone: params.phone as string,
-      service_name: params.service as string,
-      booking_date: params.date as string,
-      booking_time: params.time as string,
-      status: "pending",
-      notes: params.message as string,
-      metadata: { source: "website" },
-    })
-    .select("id")
-    .single();
-  
-  if (error) {
-    console.error("[intent-exec] Booking create error:", error);
-    return {
-      ok: false,
-      result: { error: error.message },
-      clientActions: [{
-        type: "TOAST",
-        message: "Failed to create booking. Please try again.",
-        level: "error",
-      }],
-    };
-  }
-  
-  return {
-    ok: true,
-    result: { bookingId: data?.id },
-    clientActions: [{
-      type: "TOAST",
-      message: "Booking request submitted! We'll confirm shortly.",
       level: "success",
     }],
   };
@@ -957,6 +902,16 @@ serve(async (req: Request) => {
         ok: false,
         error: { code: "INVALID_REQUEST", message: "Invalid intentId format" },
       }, 400, publicCorsHeaders);
+    }
+
+    if (intentId.startsWith("booking.")) {
+      return secureJsonResponse({
+        ok: false,
+        error: {
+          code: "CANONICAL_RUNTIME_REQUIRED",
+          message: "Booking actions must use the versioned site-runtime gateway.",
+        },
+      }, 410, publicCorsHeaders);
     }
 
     if (siteId && !isValidUUID(siteId)) {

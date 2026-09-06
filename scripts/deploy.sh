@@ -27,7 +27,10 @@ deploy_vercel() {
         echo -e "${RED}❌ Vercel CLI not found. Installing...${NC}"
         npm install -g vercel
     fi
-    
+
+    echo -e "${YELLOW}Verifying clean, pushed git tree...${NC}"
+    node scripts/check-clean-git-tree.mjs
+
     echo -e "${YELLOW}Deploying to Vercel...${NC}"
     vercel --prod
 }

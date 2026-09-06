@@ -35,6 +35,7 @@ import {
   isActionIntent,
   isAutomationIntent,
 } from "@/platform/core/coreIntents";
+import { getIntentDef } from '@/platform/core/intentSurfaceRegistry';
 
 
 export interface IntentPayload {
@@ -220,6 +221,22 @@ function adaptIntentExecResult(result: CanonicalIntentExecResponse): IntentResul
 async function invokeCanonicalIntent(intent: ActionIntent, payload: IntentPayload): Promise<IntentResult | null> {
   if (!CANONICAL_ACTION_INTENTS.has(intent)) {
     return null;
+  }
+
+  // The canonical intent registry (intentSurfaceRegistry.ts) is the one
+  // definition of which transport an action intent uses. `booking.create`
+  // declares `handler: 'site-runtime'` — its only real writer is each
+  // generated site's own embedded site-runtime adapter
+  // (publishedActionRuntimeModule.ts), never intent-exec. intent-exec
+  // deliberately 409s every `booking.*` intent (see
+  // supabase/functions/intent-exec/index.ts), so forwarding it there from
+  // this internal test/preview-overlay caller only produces a confusing
+  // technical error. Surface the same honest, established message instead.
+  if (getIntentDef(intent)?.handler === 'site-runtime') {
+    return {
+      success: false,
+      error: 'Booking writes require the generated site-runtime adapter. Test this on the compiled preview or published site to create a real appointment.',
+    };
   }
 
   try {
@@ -566,14 +583,23 @@ export function getCurrentPath(): string {
  * Handle nav.goto - Internal route navigation
  */
 function handleNavGoto(payload: IntentPayload): IntentResult {
-  const path = payload.path as string;
-  if (!path) {
+  const rawPath = payload.path as string;
+  if (!rawPath) {
     return { success: false, error: "nav.goto requires a 'path' payload" };
   }
-  
+
+  // Hardened hash-route normalization: generated pages across every industry
+  // sometimes carry hash-style page links (`#services`, `#/pricing`) for
+  // what is actually a real, separate page rather than an in-page scroll
+  // anchor. Without this, these always failed with "Page not found" here
+  // because they don't start with `/` and rarely match a slug verbatim.
+  // Normalize the hash away before resolving so nav.goto never hard-fails
+  // on a route that simply needed its leading `#`/`#/` stripped.
+  const path = rawPath.startsWith('#') ? `/${rawPath.replace(/^#\/?/, '')}` : rawPath;
+
   // In preview mode: update preview router state
   // In published mode: navigate to real route
-  const page = currentPageMap.find(p => p.slug === path);
+  const page = currentPageMap.find(p => p.slug === path || `/${p.slug}` === path || p.slug === path.replace(/^\//, ''));
   
   if (page || path.startsWith('/')) {
     setCurrentPath(path);

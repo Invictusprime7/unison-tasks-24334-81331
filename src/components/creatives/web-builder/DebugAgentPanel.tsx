@@ -18,12 +18,17 @@ import { debugAgentService, type DebugSession, type AgentStep } from '@/services
 import { diagnosticsAggregator } from '@/services/diagnosticsAggregator';
 import { workspacePatchEngine, type PatchSet } from '@/services/workspacePatchEngine';
 import { terminalOrchestrator, type CommandSpec } from '@/services/terminalOrchestrator';
+import { toast } from 'sonner';
+import {
+  applyAIBuilderFiles,
+  type AIBuilderApplyCallback,
+} from '@/services/aiBuilderApply';
 
 export interface DebugAgentPanelProps {
   iframeErrors: Array<{ type: string; message: string; stack?: string; file?: string; line?: number; column?: number; timestamp: Date }>;
   onFixError?: (error: any) => void;
   onClearErrors?: () => void;
-  onApplyPatch?: (files: Record<string, string>) => void;
+  onApplyPatch?: AIBuilderApplyCallback;
   vfsFiles?: Record<string, string> | null;
   isFixing?: boolean;
 }
@@ -393,11 +398,18 @@ export const DebugAgentPanel: React.FC<DebugAgentPanelProps> = ({
     setInput('');
   }, [input, vfsFiles, iframeErrors, onFixError]);
 
-  const handleApplyPatch = useCallback((patchSetId: string) => {
+  const handleApplyPatch = useCallback(async (patchSetId: string) => {
     const files = workspacePatchEngine.getAcceptedFiles(patchSetId);
     if (files && onApplyPatch) {
-      onApplyPatch(files);
-      workspacePatchEngine.markApplied(patchSetId);
+      const outcome = await applyAIBuilderFiles(onApplyPatch, files, { origin: 'debug-patch' });
+      if (outcome.success) {
+        workspacePatchEngine.markApplied(patchSetId);
+      } else {
+        toast.error('Debug patch was not applied', {
+          description: outcome.errors?.[0] ?? 'The VFS rejected the patch.',
+          duration: 8000,
+        });
+      }
     }
   }, [onApplyPatch]);
 

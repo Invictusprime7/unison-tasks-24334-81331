@@ -26,8 +26,18 @@
  */
 
 import { createContext, useMemo, type ReactNode } from 'react';
+import type { UnisonRuntimeContext } from '@/platform/core/runtimeManifest';
+import {
+  assertProjectRuntimeEnvelope,
+  projectRuntimeContext,
+  type ProjectRuntimeEnvelope,
+} from '@/types/projectRuntimeEnvelope';
 
 export interface BuilderSessionValue {
+  /** Durable project spine. Undefined only on legacy/unsaved entry paths. */
+  projectRuntime: ProjectRuntimeEnvelope | undefined;
+  /** Complete tenant identity when the canonical launch context is available. */
+  runtimeContext: UnisonRuntimeContext | undefined;
   /** Canonical project id, or undefined while in unsaved preview mode. */
   projectId: string | undefined;
   /** Owning business id (may be a synthesized preview id). */
@@ -41,6 +51,8 @@ export interface BuilderSessionValue {
 }
 
 const DEFAULT_VALUE: BuilderSessionValue = {
+  projectRuntime: undefined,
+  runtimeContext: undefined,
   projectId: undefined,
   businessId: undefined,
   currentUserId: '',
@@ -52,7 +64,11 @@ export const BuilderSessionContext = createContext<BuilderSessionValue>(DEFAULT_
 BuilderSessionContext.displayName = 'BuilderSessionContext';
 
 export interface BuilderSessionProviderProps {
-  value: Omit<BuilderSessionValue, 'sessionId'> & { sessionId?: string };
+  value: Omit<BuilderSessionValue, 'sessionId' | 'runtimeContext' | 'projectRuntime'> & {
+    projectRuntime?: ProjectRuntimeEnvelope;
+    runtimeContext?: UnisonRuntimeContext;
+    sessionId?: string;
+  };
   children: ReactNode;
 }
 
@@ -73,14 +89,30 @@ export function BuilderSessionProvider({ value, children }: BuilderSessionProvid
   // Memoize so child controllers can use the context value as a stable
   // dependency without re-rendering on every parent render.
   const resolved = useMemo<BuilderSessionValue>(
-    () => ({
-      projectId: value.projectId,
-      businessId: value.businessId,
+    () => {
+      if (value.projectRuntime) assertProjectRuntimeEnvelope(value.projectRuntime);
+      const runtimeContext = value.projectRuntime
+        ? projectRuntimeContext(value.projectRuntime)
+        : value.runtimeContext;
+      return {
+      projectRuntime: value.projectRuntime,
+      runtimeContext,
+      projectId: value.projectRuntime?.identity.projectId ?? value.projectId,
+      businessId: value.projectRuntime?.identity.businessId ?? value.businessId,
       currentUserId: value.currentUserId,
-      draftId: value.draftId,
+      draftId: value.projectRuntime?.identity.draftId ?? value.draftId,
       sessionId: value.sessionId ?? makeSessionId(),
-    }),
-    [value.projectId, value.businessId, value.currentUserId, value.draftId, value.sessionId],
+      };
+    },
+    [
+      value.projectRuntime,
+      value.runtimeContext,
+      value.projectId,
+      value.businessId,
+      value.currentUserId,
+      value.draftId,
+      value.sessionId,
+    ],
   );
 
   return (

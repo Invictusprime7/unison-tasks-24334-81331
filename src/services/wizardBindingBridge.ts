@@ -292,6 +292,16 @@ function getBindingAttrs(binding: PlaygroundBinding, snapshot: SiteBundleSnapsho
     'data-intent': getDomIntent(binding),
   };
 
+  if (binding.sourceSlot) {
+    attrs['data-ut-slot'] = binding.sourceSlot;
+  }
+  if (binding.sourceSection) {
+    attrs['data-ut-section-role'] = binding.sourceSection;
+  }
+  if (binding.sourcePageId && binding.sourceSection && binding.sourceSlot) {
+    attrs['data-ut-slot-id'] = `${binding.sourcePageId}:${binding.sourceSection}:${binding.sourceSlot}`;
+  }
+
   if (binding.sourceLabel) {
     attrs['data-ut-label'] = binding.sourceLabel;
   }

@@ -20,6 +20,8 @@ import {
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { PreviewPipelineError } from './previewPipelineError';
 import { CanonicalRuntimeError } from '@/platform/core/canonicalRuntimeError';
+import { assertSnapshotThemeSeed, assertThemeSeed } from '@/platform/core/themeSeedAssert';
+import { isSealedSnapshot } from '@/platform/core/snapshotSeal';
 
 const SNAPSHOT_VFS_PATH = '/.unison/site-bundle-snapshot.json';
 const WIZARD_SEED_VFS_PATH = '/.unison/wizard-seed.json';
@@ -50,6 +52,10 @@ function tryParseSnapshot(raw: string | undefined): SiteBundleSnapshot | null {
   }
 }
 
+function hasSnapshotVfs(snapshot: SiteBundleSnapshot | null): snapshot is SiteBundleSnapshot {
+  return !!snapshot && Object.keys(snapshot.vfsFiles || {}).length > 0;
+}
+
 /**
  * Resolve the authoritative SiteBundleSnapshot from either the live LaunchState
  * or the persisted /.unison/site-bundle-snapshot.json. Wizard classification is
@@ -63,11 +69,18 @@ export function resolveSnapshot(
 ): SnapshotResolution {
   const snapshotFromVfs = tryParseSnapshot(sourceFiles[SNAPSHOT_VFS_PATH]);
   const snapshotFromState = launchState?.siteBundleSnapshot ?? null;
-  // Prefer the snapshot embedded in the live VFS. During launcher handoff the
-  // navigation state can still carry the pre-Lane-B canonical snapshot, while
-  // `/.unison/site-bundle-snapshot.json` is rewritten after merge with the final
-  // Lane B page bodies. Using navState first resurrects stale minimal stubs.
-  const snapshot = snapshotFromVfs || snapshotFromState;
+  // Prefer a full snapshot VFS from the live VFS, then from navigation state.
+  // Compact launcher handoffs intentionally store the snapshot VFS once at the
+  // route VFS level; hydrate only when that explicit marker is present. An old
+  // metadata-only snapshot must fail closed, not let a template preset render.
+  const compactSnapshot = snapshotFromVfs || snapshotFromState;
+  const snapshot = hasSnapshotVfs(snapshotFromVfs)
+    ? snapshotFromVfs
+    : hasSnapshotVfs(snapshotFromState)
+      ? snapshotFromState
+      : (compactSnapshot && (launchState as { snapshotVfsCompacted?: unknown } | null)?.snapshotVfsCompacted === true
+        ? { ...compactSnapshot, vfsFiles: { ...sourceFiles } }
+        : null);
 
   const appContext = tryParseRecord(sourceFiles['/.unison/app-context.json']);
   const runtimeManifest = tryParseRecord(sourceFiles['/.unison/runtime-manifest.json']);
@@ -85,17 +98,36 @@ export function resolveSnapshot(
 
   const isWizardDraft = Boolean(
     snapshot ||
+    compactSnapshot ||
     hasWizardSeed ||
     hasExplicitWizardMetadata,
   );
 
-  const themePresetId =
-    snapshot?.meta?.themePresetId ||
-    launchState?.themePresetId ||
-    launchState?.runtimeManifest?.appContext?.themePresetId ||
-    (typeof appContext?.themePresetId === 'string' ? appContext.themePresetId : null) ||
-    (typeof runtimeAppContext?.themePresetId === 'string' ? runtimeAppContext.themePresetId : null) ||
-    null;
+  const snapshotThemePresetId = snapshot
+    ? assertSnapshotThemeSeed(
+        snapshot,
+        assertThemeSeed(snapshot.meta?.themePresetId, 'SiteBundleSnapshot -> snapshotProjector'),
+        'SiteBundleSnapshot -> snapshotProjector',
+      )
+    : null;
+  const candidateSeeds: Array<[string, unknown]> = [
+    ['LaunchState', launchState?.themePresetId],
+    ['RuntimeManifest', launchState?.runtimeManifest?.appContext?.themePresetId],
+    ['app-context', appContext?.themePresetId],
+    ['persisted runtime manifest', runtimeAppContext?.themePresetId],
+  ];
+  if (snapshotThemePresetId) {
+    for (const [boundary, candidate] of candidateSeeds) {
+      if (candidate !== undefined && candidate !== null) {
+        assertThemeSeed(
+          typeof candidate === 'string' ? candidate : null,
+          `${boundary} -> snapshotProjector`,
+          snapshotThemePresetId,
+        );
+      }
+    }
+  }
+  const themePresetId = snapshotThemePresetId;
 
   return { snapshot, isWizardDraft, themePresetId: themePresetId ?? null };
 }
@@ -129,6 +161,10 @@ export function ensureSnapshotTokens(
 
   const existing = existingCss ?? '';
   if (existing && TOKEN_PROBE_RE.test(existing)) {
+    return existing;
+  }
+
+  if (existing && isLiveEditedVfsPath('/src/index.css')) {
     return existing;
   }
 
@@ -200,27 +236,193 @@ export function assertNoMinimalFallbackPreview(
       .find((value): value is string => typeof value === 'string');
 
     if (!source || !source.trim()) {
-      console.warn(
-        `${context} is missing registered SiteBundleSnapshot page ${normalized}; rendering what is available instead of blocking the preview.`,
+      throw new PreviewPipelineError(
+        'vfs',
+        `${context} is missing registered SiteBundleSnapshot page ${normalized}; refusing to render a minimal fallback route.`,
+        { blockedFiles: [normalized], recoverableByRelaunch: true },
       );
-      continue;
     }
 
     if (isMinimalPreviewFallbackSource(source)) {
-      console.warn(
-        `${context} detected scaffold copy in registered page ${normalized}; surfacing it rather than blocking the preview.`,
+      throw new PreviewPipelineError(
+        'vfs',
+        `${context} detected minimal/fallback scaffold copy in registered page ${normalized}; refusing to surface it in preview.`,
+        { blockedFiles: [normalized], recoverableByRelaunch: true },
       );
     }
   }
 }
 
+/**
+ * Verifies the Sandpack overlay still executes every PageRegistry route after
+ * /src flattening and controlled-entry preparation. File presence alone is not
+ * enough: an orphaned page module never reaches the preview iframe.
+ */
+export function assertSnapshotPreviewRouteReachability(
+  files: Record<string, string>,
+  resolution: SnapshotResolution,
+  context = 'Preview route reachability',
+): void {
+  if (!resolution.isWizardDraft) return;
+  assertWizardSnapshotPresent(resolution, context);
+
+  const app = files['/App.tsx'] || files['/App.jsx'] || '';
+  if (!app) {
+    throw new PreviewPipelineError(
+      'sandpack',
+      `${context} is missing flattened /App.tsx router.`,
+      { blockedFiles: ['/App.tsx'], recoverableByRelaunch: true },
+    );
+  }
+
+  for (const page of Object.values(resolution.snapshot?.pageRegistry?.pages || {})) {
+    const filePath = (page as { filePath?: string }).filePath;
+    if (!filePath) continue;
+    const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
+    const flattenedPath = normalizedPath.replace(/^\/src\//, '/');
+    const source = files[flattenedPath] || files[flattenedPath.slice(1)];
+    if (!source || !source.trim()) {
+      throw new PreviewPipelineError(
+        'sandpack',
+        `${context} dropped registered page ${normalizedPath} during VFS flattening.`,
+        { blockedFiles: [normalizedPath], recoverableByRelaunch: true },
+      );
+    }
+
+    const importPath = normalizedPath.replace(/^\/src\//, './').replace(/\.(tsx|jsx)$/i, '');
+    const escapedImportPath = importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!new RegExp(`from\\s*["']${escapedImportPath}(?:\\.(?:tsx|jsx))?["']`).test(app)) {
+      throw new PreviewPipelineError(
+        'sandpack',
+        `${context} leaves registered page ${normalizedPath} disconnected from /App.tsx.`,
+        { blockedFiles: ['/App.tsx', normalizedPath], recoverableByRelaunch: true },
+      );
+    }
+  }
+}
+
+function getSandpackDestinationPath(path: string): string | null {
+  let normalizedPath = normalizeVfsPath(path);
+
+  // Sandpack does not execute project metadata, dependency manifests, or build
+  // configuration. These are still retained in the canonical VFS and are not
+  // considered preview artifacts.
+  if (
+    normalizedPath.includes('node_modules') ||
+    normalizedPath.includes('/.') ||
+    normalizedPath.endsWith('.json') ||
+    normalizedPath.endsWith('.config.ts') ||
+    normalizedPath.endsWith('.config.js')
+  ) {
+    return null;
+  }
+
+  if (normalizedPath.startsWith('/src/')) {
+    normalizedPath = normalizedPath.replace('/src/', '/');
+  } else if (normalizedPath.startsWith('/styles/')) {
+    normalizedPath = normalizedPath.replace('/styles/', '/');
+  }
+
+  if (normalizedPath === '/main.tsx') return '/index.tsx';
+  if (normalizedPath === '/main.jsx') return '/index.jsx';
+  if (normalizedPath === '/main.ts') return '/index.ts';
+  return normalizedPath;
+}
 
 /**
- * Snapshot-as-primary projection bridge. If a registered wizard route was
- * polluted by a legacy placeholder/minimal shell, restore the route from the
- * snapshot VFS before any preview compiler sees it. If the snapshot itself is
- * missing the route, the downstream assert still hard-fails instead of falling
- * back.
+ * Verifies that snapshot-owned runtime files survive VFS projection and
+ * Sandpack path flattening. This protects components, styles, and local assets
+ * beyond the PageRegistry routes validated above.
+ */
+export function assertSnapshotPreviewFileCoverage(
+  sourceFiles: Record<string, string>,
+  previewFiles: Record<string, string>,
+  resolution: SnapshotResolution,
+  context = 'Preview artifact coverage',
+): void {
+  if (!resolution.isWizardDraft) return;
+  assertWizardSnapshotPresent(resolution, context);
+
+  const sourcePathsByDestination = new Map<string, string>();
+  for (const [sourcePath, content] of Object.entries(sourceFiles)) {
+    if (typeof content !== 'string') continue;
+    const destinationPath = getSandpackDestinationPath(sourcePath);
+    if (!destinationPath) continue;
+
+    const previousSourcePath = sourcePathsByDestination.get(destinationPath);
+    if (previousSourcePath && previousSourcePath !== sourcePath) {
+      throw new PreviewPipelineError(
+        'sandpack',
+        `${context} maps both ${previousSourcePath} and ${sourcePath} to ${destinationPath}; refusing to drop either generated file.`,
+        { blockedFiles: [previousSourcePath, sourcePath], recoverableByRelaunch: true },
+      );
+    }
+    sourcePathsByDestination.set(destinationPath, sourcePath);
+
+    if (!(destinationPath in previewFiles)) {
+      throw new PreviewPipelineError(
+        'sandpack',
+        `${context} dropped generated file ${sourcePath} while preparing ${destinationPath}.`,
+        { blockedFiles: [sourcePath], recoverableByRelaunch: true },
+      );
+    }
+  }
+}
+
+/**
+ * Live-edit registry — paths written by the AI Builder (or any in-builder edit)
+ * after the current snapshot was produced. The snapshot stays authoritative for
+ * every other path, but it must never resurrect the pre-edit version of a file
+ * the user just changed while the durable commit is still in flight (or was
+ * skipped because business/draft context wasn't set).
+ */
+const liveEditedPaths = new Map<string, number>();
+
+function normalizeVfsPath(path: string): string {
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+/** Mark paths as edited in the live VFS ahead of the next snapshot commit. */
+export function markLiveEditedVfsPaths(paths: string[]): void {
+  const now = Date.now();
+  for (const path of paths) {
+    if (!path) continue;
+    liveEditedPaths.set(normalizeVfsPath(path), now);
+  }
+}
+
+/**
+ * Clear live-edit protection once a refreshed snapshot has been persisted
+ * (or when the builder switches project identity).
+ */
+export function clearLiveEditedVfsPaths(paths?: string[]): void {
+  if (!paths) {
+    liveEditedPaths.clear();
+    return;
+  }
+  for (const path of paths) liveEditedPaths.delete(normalizeVfsPath(path));
+}
+
+export function getLiveEditedVfsPaths(): string[] {
+  return [...liveEditedPaths.keys()];
+}
+
+export function isLiveEditedVfsPath(path: string): boolean {
+  const normalized = normalizeVfsPath(path);
+  if (liveEditedPaths.has(normalized)) return true;
+  if (normalized === '/index.css') return liveEditedPaths.has('/src/index.css');
+  if (normalized === '/src/index.css') return liveEditedPaths.has('/index.css');
+  return false;
+}
+
+/**
+ * Snapshot-as-primary projection bridge. A wizard SiteBundleSnapshot owns the
+ * entire executable VFS, not only files that resemble a minimal placeholder.
+ * A legacy template preset is valid React and therefore cannot be detected by
+ * a fallback-content heuristic; preserving it lets a template silently render
+ * over the deterministic snapshot manifest. Snapshot files must win every
+ * overlapping path — EXCEPT paths with a newer live edit that the snapshot has
+ * not absorbed yet.
  */
 export function projectSnapshotVfsFiles(
   files: Record<string, string>,
@@ -228,47 +430,47 @@ export function projectSnapshotVfsFiles(
 ): Record<string, string> {
   if (!resolution.isWizardDraft || !resolution.snapshot) return files;
 
+  if (!isSealedSnapshot(resolution.snapshot)) {
+    throw new CanonicalRuntimeError({
+      surface: 'preview',
+      code: 'UNSEALED_SNAPSHOT',
+      userMessage: 'This site has not finished its launch checks yet. Re-run the System Launcher before opening Preview.',
+      developerMessage: 'Preview attempted to project a pre-seal WizardCompileArtifact as a SiteBundleSnapshot.',
+      recoveryActions: ['run-system-launcher'],
+    });
+  }
+
   const snapshotFiles = (resolution.snapshot as { vfsFiles?: Record<string, string> }).vfsFiles || {};
   if (Object.keys(snapshotFiles).length === 0) return files;
 
   const next = { ...files };
-  const pages = Object.values(resolution.snapshot.pageRegistry?.pages || {});
+  const preserved: string[] = [];
 
-  const assignFromSnapshot = (path: string) => {
-    const normalized = path.startsWith('/') ? path : `/${path}`;
-    const flattened = normalized.replace(/^\/src\//, '/');
-    const snapshotSource = snapshotFiles[normalized] || snapshotFiles[normalized.slice(1)] || snapshotFiles[flattened] || snapshotFiles[flattened.slice(1)];
-    if (!snapshotSource) return;
+  for (const [rawPath, content] of Object.entries(snapshotFiles)) {
+    const path = normalizeVfsPath(rawPath);
+    const live = files[path] ?? files[rawPath];
+    const isLiveEdited = liveEditedPaths.has(path);
 
-    const current = next[normalized] || next[normalized.slice(1)] || next[flattened] || next[flattened.slice(1)];
-    if (!current || isMinimalPreviewFallbackSource(current)) {
-      next[normalized] = snapshotSource;
-      if (flattened !== normalized && next[flattened] !== undefined) {
-        next[flattened] = snapshotSource;
-      }
+    // A live edit wins only while it differs from the snapshot copy. Once the
+    // durable commit lands, contents match and the protection is dropped.
+    if (isLiveEdited && typeof live === 'string' && live !== content) {
+      preserved.push(path);
+      continue;
     }
-  };
+    if (isLiveEdited) liveEditedPaths.delete(path);
 
-  for (const page of pages) {
-    const filePath = (page as { filePath?: string }).filePath;
-    if (filePath) assignFromSnapshot(filePath);
+    next[rawPath] = content;
   }
 
-  for (const canonicalPath of ['/src/App.tsx', '/src/main.tsx', '/src/index.css']) {
-    const snapshotSource = snapshotFiles[canonicalPath] || snapshotFiles[canonicalPath.slice(1)];
-    if (!snapshotSource) continue;
-    const current = next[canonicalPath] || next[canonicalPath.slice(1)];
-    if (!current || isMinimalPreviewFallbackSource(current) || (canonicalPath.endsWith('.css') && !TOKEN_PROBE_RE.test(current))) {
-      next[canonicalPath] = snapshotSource;
-    }
+  if (preserved.length > 0) {
+    console.info('[snapshotProjector] Preserved live builder edits over snapshot:', preserved);
   }
 
-  if (!next[SNAPSHOT_VFS_PATH]) {
-    next[SNAPSHOT_VFS_PATH] = JSON.stringify(resolution.snapshot, null, 2);
-  }
+  next[SNAPSHOT_VFS_PATH] = JSON.stringify(resolution.snapshot, null, 2);
 
   return next;
 }
+
 
 function tryParseRecord(raw: string | undefined): Record<string, unknown> | null {
   if (!raw || typeof raw !== 'string') return null;

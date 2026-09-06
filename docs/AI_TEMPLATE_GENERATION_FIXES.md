@@ -23,7 +23,7 @@ supabase functions deploy fullstack-ai --project-ref nfrdomdvyrbwuokathtw
 supabase secrets set LOVABLE_API_KEY=your_key --project-ref nfrdomdvyrbwuokathtw
 
 # 4. Test it works
-.\test-function.ps1
+supabase functions invoke fullstack-ai --project-ref nfrdomdvyrbwuokathtw
 ```
 
 See [DEPLOY_FUNCTION_NOW.md](./DEPLOY_FUNCTION_NOW.md) for detailed deployment instructions.

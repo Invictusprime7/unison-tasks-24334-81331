@@ -12,7 +12,7 @@
  *   └─ Status Bar (file info, cursor, lang, undo stack, graph) ───────┘
  */
 
-import React, { useCallback, useMemo, useRef, useState, useEffect, Component, type ReactNode, type ErrorInfo } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, Component, type ReactNode, type ErrorInfo } from 'react';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { ModernFileExplorer } from './ModernFileExplorer';
 import { ModernEditorTabs } from './ModernEditorTabs';
@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
-  Layout, Plus, Eye, EyeOff, RefreshCw, PanelRightClose, PanelRightOpen,
+  Layout, Plus, Eye, EyeOff, PanelRightClose, PanelRightOpen,
   FileCode, Loader2, Play, ChevronRight, Folder, FolderOpen,
   PanelLeftClose, PanelLeftOpen, Copy, Download, Terminal,
   Sparkles, Save, Monitor, Tablet, Smartphone, Maximize2,
@@ -40,10 +40,9 @@ import { getFileIcon } from '@/hooks/useVirtualFileSystem';
 import { VFSTerminal } from './VFSTerminal';
 import { vfsEventBus } from '@/services/vfsEventBus';
 import { vfsSnapshotManager, type DiffSummary } from '@/services/vfsSnapshotManager';
-import { analyzeImportGraph, getAffectedFiles, type ImportGraph, type AffectedFiles } from '@/services/importGraphAnalyzer';
-import { SandpackProvider, SandpackPreview, SandpackLayout } from '@codesandbox/sandpack-react';
-import { buildPreviewArtifacts } from '@/utils/previewArtifacts';
-import { useLaunch } from '@/contexts/useLaunchHooks';
+import { analyzeImportGraph, getAffectedFiles, type AffectedFiles } from '@/services/importGraphAnalyzer';
+import { VFSPreview } from '@/components/VFSPreview';
+import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 
 // ---------------------------------------------------------------------------
 // Error Boundary
@@ -224,91 +223,6 @@ function AffectedFilesIndicator({ affected, className }: { affected: AffectedFil
 }
 
 // ---------------------------------------------------------------------------
-// Live Preview Panel
-// ---------------------------------------------------------------------------
-
-interface InlinePreviewProps {
-  files: Record<string, string>;
-  className?: string;
-  device: 'desktop' | 'tablet' | 'mobile';
-}
-
-const DEVICE_WIDTHS = { desktop: '100%', tablet: '768px', mobile: '375px' };
-
-function InlinePreview({ files, className, device }: InlinePreviewProps) {
-  const { launch } = useLaunch();
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const { sandpackFiles, dependencies } = useMemo(() => {
-    return buildPreviewArtifacts({
-      sourceFiles: files,
-      launchState: launch,
-    });
-  }, [files, launch, refreshKey]);
-
-  const hasContent = Object.keys(sandpackFiles).length > 0;
-
-  if (!hasContent) {
-    return (
-      <div className={cn('relative w-full h-full flex items-center justify-center bg-muted/20', className)}>
-        <p className="text-sm text-muted-foreground">No previewable content</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className={cn('relative w-full h-full flex flex-col', className)}>
-      {/* Preview toolbar */}
-      <div className="h-9 flex-shrink-0 flex items-center justify-between px-3 bg-gradient-to-r from-[#12121e] to-[#141420] border-b border-white/[0.06]">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[11px] font-medium text-white/50">Preview</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => setRefreshKey((k) => k + 1)}
-                  className="p-1 rounded-md hover:bg-white/[0.08] text-white/30 hover:text-white/60 transition-colors"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">Refresh</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      </div>
-      {/* Sandpack-powered preview */}
-      <div className="flex-1 min-h-0 bg-white overflow-hidden" style={{ width: DEVICE_WIDTHS[device] === '100%' ? '100%' : DEVICE_WIDTHS[device], margin: DEVICE_WIDTHS[device] !== '100%' ? '0 auto' : undefined }}>
-        <SandpackProvider
-          key={refreshKey}
-          template="react-ts"
-          files={sandpackFiles}
-          customSetup={{ dependencies }}
-          options={{
-            externalResources: ['https://cdn.tailwindcss.com'],
-            autorun: true,
-            autoReload: true,
-          }}
-          theme="dark"
-        >
-          <SandpackPreview
-            showNavigator={false}
-            showRefreshButton={false}
-            showOpenInCodeSandbox={false}
-            style={{ height: '100%', width: '100%' }}
-          />
-        </SandpackProvider>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
@@ -333,6 +247,7 @@ export interface VFSCodeViewProps {
   getOpenFiles: () => VirtualFile[];
   updateFileContent: (id: string, content: string) => void;
   importFiles: (files: Record<string, string>) => void;
+  replaceFiles: (files: Record<string, string>) => void;
   loadDefaultTemplate: () => void;
   getSandpackFiles: () => Record<string, string>;
 
@@ -379,6 +294,7 @@ export function VFSCodeView({
   getOpenFiles,
   updateFileContent,
   importFiles,
+  replaceFiles,
   loadDefaultTemplate,
   getSandpackFiles,
   modifiedFiles,
@@ -401,20 +317,62 @@ export function VFSCodeView({
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [terminalCollapsed, setTerminalCollapsed] = useState(true);
 
-  // Import graph analysis (lazy, cached)
-  const graphCacheRef = useRef<{ keys: string; graph: ImportGraph } | null>(null);
-
   // Derive active file
   const activeFile = useMemo(() => getActiveFile(), [getActiveFile, activeFileId, nodes]);
 
   // Open files for tabs
   const openFiles = useMemo(() => getOpenFiles(), [getOpenFiles, nodes, activeFileId]);
 
-  // Files for preview
-  const previewFiles = useMemo(() => {
-    if (!showPreview) return {};
-    return getSandpackFiles();
-  }, [getSandpackFiles, nodes, showPreview]);
+  const previewDependencies = useMemo(
+    () => getDependenciesForSandpack(getSandpackFiles()).dependencies,
+    [getSandpackFiles, nodes],
+  );
+
+  const updatePackageManifest = useCallback((
+    mutate: (dependencies: Record<string, string>, devDependencies: Record<string, string>) => void,
+  ) => {
+    const files = getSandpackFiles();
+    const raw = files['/package.json'] || files['package.json'];
+    let manifest: Record<string, unknown> = {
+      name: 'unison-vfs-site',
+      private: true,
+      version: '0.0.0',
+    };
+    if (raw) {
+      try {
+        manifest = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        // Replace malformed package metadata with a valid VFS manifest.
+      }
+    }
+    const dependencies = {
+      ...((manifest.dependencies && typeof manifest.dependencies === 'object')
+        ? manifest.dependencies as Record<string, string>
+        : {}),
+    };
+    const devDependencies = {
+      ...((manifest.devDependencies && typeof manifest.devDependencies === 'object')
+        ? manifest.devDependencies as Record<string, string>
+        : {}),
+    };
+    mutate(dependencies, devDependencies);
+    importFiles({
+      '/package.json': JSON.stringify({ ...manifest, dependencies, devDependencies }, null, 2),
+    });
+  }, [getSandpackFiles, importFiles]);
+
+  const handleAddDependency = useCallback((pkg: string, version: string) => {
+    updatePackageManifest((dependencies) => {
+      dependencies[pkg] = version;
+    });
+  }, [updatePackageManifest]);
+
+  const handleRemoveDependency = useCallback((pkg: string) => {
+    updatePackageManifest((dependencies, devDependencies) => {
+      delete dependencies[pkg];
+      delete devDependencies[pkg];
+    });
+  }, [updatePackageManifest]);
 
   // Tab data
   const tabs = useMemo(
@@ -439,14 +397,10 @@ export function VFSCodeView({
   }, [activeFile]);
 
   // Import graph — compute lazily on file changes
-  const importGraph = useMemo((): ImportGraph | null => {
+  const importGraph = useMemo(() => {
     const files = getSandpackFiles();
-    const keys = Object.keys(files).sort().join(',');
-    if (graphCacheRef.current?.keys === keys) return graphCacheRef.current.graph;
     try {
-      const graph = analyzeImportGraph(files);
-      graphCacheRef.current = { keys, graph };
-      return graph;
+      return analyzeImportGraph(files);
     } catch {
       return null;
     }
@@ -461,7 +415,7 @@ export function VFSCodeView({
     } catch {
       return null;
     }
-  }, [activeFile?.path, getSandpackFiles, nodes]);
+  }, [activeFile, getSandpackFiles, nodes]);
 
   // Close helpers
   const handleCloseOthers = useCallback(
@@ -824,7 +778,16 @@ export function VFSCodeView({
               <>
                 <ResizableHandle withHandle className="bg-white/[0.03] hover:bg-fuchsia-500/20 transition-colors data-[resize-handle-active]:bg-fuchsia-500/30" />
                 <ResizablePanel defaultSize={showExplorer ? 30 : 35} minSize={20} maxSize={55}>
-                  <InlinePreview files={previewFiles} className="h-full" device={previewDevice} />
+                  <VFSPreview
+                    nodes={nodes}
+                    onImportFiles={importFiles}
+                    onSyncFiles={replaceFiles}
+                    activeFile={activeFile?.path}
+                    className="h-full"
+                    showToolbar={false}
+                    showBackendIndicator={false}
+                    device={previewDevice}
+                  />
                 </ResizablePanel>
               </>
             )}
@@ -836,10 +799,13 @@ export function VFSCodeView({
         {/* ============================================================== */}
         <VFSTerminal
           nodes={nodes}
-          customDeps={{}}
+          customDeps={previewDependencies}
           isCollapsed={terminalCollapsed}
           onToggleCollapse={() => setTerminalCollapsed(v => !v)}
           maxHeight="160px"
+          onAddDep={handleAddDependency}
+          onRemoveDep={handleRemoveDependency}
+          onWriteFile={(path, content) => importFiles({ [path]: content })}
           onRefreshPreview={() => vfsEventBus.emit('preview:refresh', {})}
         />
 

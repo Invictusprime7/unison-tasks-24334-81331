@@ -20,7 +20,7 @@
 
 import type { VirtualNode, VirtualFile, VirtualFolder } from '@/hooks/useVirtualFileSystem';
 import { vfsToFileMap, getFilePaths } from '@/hooks/useVirtualFileSystem';
-import { SANDPACK_DEPENDENCIES, SANDPACK_ALLOWED_IMPORTS } from '@/utils/sandpackDependencies';
+import { SANDPACK_DEPENDENCIES, isSandpackAllowedImport } from '@/utils/sandpackDependencies';
 
 // ============================================================================
 // Types
@@ -638,7 +638,7 @@ export function getDiagnosticsForAI(ctx: CommandContext): Record<string, unknown
       const moduleName = importStr.match(/from ['"]([^'"]+)['"]/)?.[1];
       if (moduleName && !moduleName.startsWith('.') && !moduleName.startsWith('/')) {
         // Check if it's in dependencies
-        if (!ctx.currentDeps[moduleName] && !SANDPACK_ALLOWED_IMPORTS.has(moduleName)) {
+        if (!ctx.currentDeps[moduleName] && !isSandpackAllowedImport(moduleName)) {
           importIssues.push(`${file}: Missing dependency "${moduleName}"`);
         }
       }

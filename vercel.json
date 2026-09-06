@@ -7,7 +7,6 @@
   "regions": ["iad1"],
   "functions": {
     "api/**/*.ts": {
-      "runtime": "@vercel/node@3.2.0",
       "maxDuration": 30
     }
   },
@@ -26,6 +25,26 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/api/onboarding/sessions",
+      "destination": "/api/connected-backend?route=onboarding-sessions"
+    },
+    {
+      "source": "/api/integrations/supabase/authorize",
+      "destination": "/api/connected-backend?route=authorize"
+    },
+    {
+      "source": "/api/integrations/supabase/callback",
+      "destination": "/api/connected-backend?route=callback"
+    },
+    {
+      "source": "/api/integrations/supabase/projects",
+      "destination": "/api/connected-backend?route=projects"
+    },
+    {
+      "source": "/api/integrations/supabase/select-project",
+      "destination": "/api/connected-backend?route=select-project"
+    },
     {
       "source": "/api/(.*)",
       "destination": "/api/$1"

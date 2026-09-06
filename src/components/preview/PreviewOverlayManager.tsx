@@ -126,7 +126,6 @@ const AuthOverlay: React.FC<AuthOverlayProps> = ({ mode, siteId, businessId, onS
             body: {
               action: 'register',
               siteId,
-              businessId,
               email,
               password,
               name,

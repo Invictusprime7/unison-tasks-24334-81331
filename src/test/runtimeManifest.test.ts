@@ -6,6 +6,33 @@
  */
 import { describe, it, expect } from "vitest";
 import { createRuntimeManifest, resolvePreviewEngine } from "@/types/runtimeManifest";
+import { normalizeUnisonRuntimeContext } from "@/platform/core/runtimeManifest";
+
+describe("normalizeUnisonRuntimeContext", () => {
+  it("upgrades legacy persisted organization and site identity", () => {
+    expect(normalizeUnisonRuntimeContext({
+      organizationId: "workspace_123",
+      businessId: "business_123",
+      projectId: "project_123",
+      siteId: "website_123",
+      snapshotId: "snapshot_123",
+      environment: "preview",
+    })).toMatchObject({
+      workspaceId: "workspace_123",
+      websiteId: "website_123",
+      organizationId: "workspace_123",
+      siteId: "website_123",
+    });
+  });
+
+  it("rejects an incomplete tenant identity", () => {
+    expect(normalizeUnisonRuntimeContext({
+      businessId: "business_123",
+      projectId: "project_123",
+      environment: "builder",
+    })).toBeUndefined();
+  });
+});
 
 describe("createRuntimeManifest", () => {
   it("creates manifest with default entry point", () => {

@@ -14,6 +14,7 @@ dist-ssr
 
 # Environment variables
 .env
+.env.vercel
 .env.local
 .env.production
 
@@ -39,6 +40,10 @@ vs code loveable migration.txt
 *.sw?
 .vercel
 .env*.local
+
+# Generated compiler and Supabase CLI state
+*.tsbuildinfo
+supabase/.temp/
 
 supabase.exe
 *.tar.gz

@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { buildCanonicalLaunchArtifacts, CANONICAL_METADATA_FILE_PATHS } from "@/services/canonicalLaunchVfs";
+import { describe, expect, it, vi } from "vitest";
+import {
+  buildCanonicalLaunchArtifacts,
+  buildCanonicalLaunchArtifactsAsync,
+  CANONICAL_METADATA_FILE_PATHS,
+  mergeGeneratedVfsWithCanonicalSnapshot,
+} from "@/services/canonicalLaunchVfs";
 import type { SiteBundleSnapshot } from "@/platform/core/canonicalPipeline";
 import { createEmptyCreatorData } from "@/types/creatorData";
 import { createBuilderPage, createEmptyPageRegistry } from "@/types/pageRegistry";
@@ -48,11 +53,136 @@ function createSnapshot(): SiteBundleSnapshot {
       systemId: "agency",
       industry: "agency",
       verticalContractId: "agency",
+      themePresetId: "modern",
+      themeInjection: {
+        version: "1.0",
+        stage: "4b",
+        presetId: "modern",
+        cssPath: "/src/index.css",
+      },
     },
   };
 }
 
 describe("buildCanonicalLaunchArtifacts", () => {
+  it("never injects router-level chrome so the page body stays the only chrome authority", () => {
+    const snapshot = createSnapshot();
+    const aboutPage = createBuilderPage("page_about", "About", "/about", "about", {
+      filePath: "/src/pages/About.tsx",
+      showInNav: true,
+      navOrder: 1,
+    });
+    snapshot.pageRegistry.pages[aboutPage.pageId] = aboutPage;
+    snapshot.vfsFiles[aboutPage.filePath!] =
+      "export default function About(){ return <main>Canonical About</main>; }";
+
+    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
+      {
+        "/src/pages/Home.tsx": "export default function Home(){ return <main>Lane B Home</main>; }",
+        "/src/pages/About.tsx": "export default function About(){ return <main>Lane B About</main>; }",
+        "/src/sections/SiteNavbar.tsx": "export default function SiteNavbar(){ return <nav>Stale menu</nav>; }",
+      },
+      snapshot.vfsFiles,
+      snapshot,
+    );
+
+    expect(merged["/src/App.tsx"]).not.toContain("<SiteNavbar />");
+    expect(merged["/src/App.tsx"]).not.toContain("<SiteFooter />");
+  });
+
+  it("uses the snapshot fallback policy when accepting generated wizard pages", () => {
+    const snapshot = createSnapshot();
+    snapshot.vfsFiles["/src/pages/Home.tsx"] =
+      "export default function Home(){ return <main>Canonical home</main>; }";
+
+    expect(() => mergeGeneratedVfsWithCanonicalSnapshot(
+      {
+        "/src/pages/Home.tsx":
+          "export default function Home(){ return <main>New site preview</main>; }",
+      },
+      snapshot.vfsFiles,
+      snapshot,
+    )).toThrow("minimal/fallback scaffold");
+  });
+
+  it("preserves snapshot-owned UI foundation files when merging Lane B output", () => {
+    const snapshot = createSnapshot();
+    snapshot.vfsFiles["/src/unison/ui/button.tsx"] =
+      "// canonical UI foundation\nexport const Button = () => null;";
+    snapshot.vfsFiles["/.unison/ui-manifest.json"] =
+      '{"importRoot":"@/unison/ui"}';
+    snapshot.vfsFiles['/.unison/design-intervention.json'] =
+      '{"layoutRecipe":"collage-hero"}';
+
+    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
+      {
+        "/src/pages/Home.tsx": "export default function Home(){ return <main>Lane B page</main>; }",
+        "/src/unison/ui/button.tsx": "export const Button = () => <button>unsafe override</button>;",
+        "/.unison/ui-manifest.json": '{"importRoot":"@/other-ui"}',
+        '/.unison/design-intervention.json': '{"layoutRecipe":"conversion-form"}',
+      },
+      snapshot.vfsFiles,
+      snapshot,
+    );
+
+    expect(merged["/src/pages/Home.tsx"]).toContain("Lane B page");
+    expect(merged["/src/unison/ui/button.tsx"]).toContain("canonical UI foundation");
+    expect(merged["/.unison/ui-manifest.json"]).toContain("@/unison/ui");
+    expect(merged['/.unison/design-intervention.json']).toContain('collage-hero');
+  });
+
+  it("keeps Lane B as the page-body author even when Stage 4b declared a composition", () => {
+    const snapshot = createSnapshot();
+    snapshot.vfsFiles["/src/pages/Home.tsx"] = [
+      'const SECTIONS = [{"id":"home-hero","type":"hero","props":{"headline":"Canonical headline"}}];',
+      'const HYDRATABLE = new Set([]);',
+      'export default function Home(){ return <main>Canonical composed home</main>; }',
+    ].join("\n");
+    snapshot.vfsFiles["/.unison/compositions/src/pages/Home.json"] = JSON.stringify({
+      pageId: "page_home",
+      route: "/",
+      sections: [{ semanticType: "hero", variantId: "hero:full-bleed" }],
+    });
+
+    const laneBHome = [
+      'export default function Home(){',
+      '  return <main><section data-ut-intent="contact.submit">Lane B authored home</section></main>;',
+      '}',
+    ].join("\n");
+
+    const merged = mergeGeneratedVfsWithCanonicalSnapshot(
+      { "/src/pages/Home.tsx": laneBHome },
+      snapshot.vfsFiles,
+      snapshot,
+    );
+
+    expect(merged["/src/pages/Home.tsx"]).toBe(laneBHome);
+    expect(merged["/src/pages/Home.tsx"]).not.toContain("Canonical composed home");
+    // The declared composition survives as the design contract, not as a body.
+    expect(merged["/.unison/compositions/src/pages/Home.json"]).toContain("hero:full-bleed");
+  });
+
+  it("never substitutes the canonical page body unless a caller explicitly opts in", () => {
+    const snapshot = createSnapshot();
+    snapshot.vfsFiles["/src/pages/Home.tsx"] =
+      "export default function Home(){ return <main>Canonical composed home</main>; }";
+
+    // Default (flag omitted) is now strict: no body substitution.
+    const defaults = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot);
+    expect(defaults["/src/pages/Home.tsx"]).toBeUndefined();
+
+    const strict = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot, {
+      allowCanonicalPageFallback: false,
+    });
+    expect(strict["/src/pages/Home.tsx"]).toBeUndefined();
+
+    // Opt-in remains only for non-authoring importers.
+    const optedIn = mergeGeneratedVfsWithCanonicalSnapshot({}, snapshot.vfsFiles, snapshot, {
+      allowCanonicalPageFallback: true,
+    });
+    expect(optedIn["/src/pages/Home.tsx"]).toContain("Canonical composed home");
+  });
+
   it("uses LaunchState VFS when the builder preview mounts before VFS import", () => {
     const launchState = createLaunchState({
       systemType: "agency",
@@ -88,6 +218,8 @@ describe("buildCanonicalLaunchArtifacts", () => {
       compiledPlayground: { vfsFiles: snapshot.vfsFiles },
       businessId: "biz_123",
       projectId: "project_123",
+      organizationId: "biz_123",
+      siteId: "site_123",
       systemType: "agency",
       systemName: "Acme Co",
       templateName: "Acme Launch",
@@ -102,12 +234,132 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files["/src/pages/Home.tsx"]).toContain("motion.div");
     expect(artifacts.files["/package.json"]).toContain("\"framer-motion\"");
     expect(artifacts.runtimeManifest.appContext?.projectId).toBe("project_123");
+    expect(artifacts.runtimeManifest.appContext?.runtimeContext).toMatchObject({
+      workspaceId: 'biz_123',
+      businessId: 'biz_123',
+      projectId: 'project_123',
+      websiteId: 'site_123',
+      snapshotId: 'snap_123',
+    });
     expect(artifacts.runtimeManifest.appContext?.previewRuntime?.foundation).toBe('token-glass');
+    expect(artifacts.appContext).not.toHaveProperty('experienceContract');
     expect(artifacts.runtimeManifest.metadataFiles).toContain(CANONICAL_METADATA_FILE_PATHS.appContext);
     expect(artifacts.runtimeManifest.metadataFiles).toContain(CANONICAL_METADATA_FILE_PATHS.wizardRuntime);
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.runtimeManifest]).toContain("\"sessionKey\"");
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.wizardRuntime]).toContain('token-glass');
     expect(artifacts.files[CANONICAL_METADATA_FILE_PATHS.siteBundleSnapshot]).toContain("\"vfsFilePaths\"");
+    expect(artifacts.files['/src/components/businessProfile.ts']).toContain('useBusinessProfile');
+  });
+
+  it('yields between finalization stages without changing canonical artifacts', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-13T21:00:00.000Z'));
+    const snapshot = createSnapshot();
+    const input = {
+      generatedFiles: {
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      themePresetId: 'modern',
+      strictPreflight: true,
+    };
+    const synchronous = buildCanonicalLaunchArtifacts(input);
+    let yieldCount = 0;
+
+    const asynchronous = await buildCanonicalLaunchArtifactsAsync(input, {
+      yieldToHost: async () => {
+        yieldCount += 1;
+      },
+    });
+
+    expect(yieldCount).toBeGreaterThanOrEqual(8);
+    expect(asynchronous.files).toEqual(synchronous.files);
+    expect(asynchronous.runtimeManifest).toEqual(synchronous.runtimeManifest);
+    expect(asynchronous.siteBundleSnapshot?.snapshotId).toBe(synchronous.siteBundleSnapshot?.snapshotId);
+    vi.useRealTimers();
+  });
+
+  it('stops advancing once the caller aborts, instead of letting an abandoned attempt keep running alongside a fallback', async () => {
+    const snapshot = createSnapshot();
+    const input = {
+      generatedFiles: {
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      themePresetId: 'modern',
+      strictPreflight: true,
+    };
+    const controller = new AbortController();
+    let yieldCount = 0;
+
+    const pending = buildCanonicalLaunchArtifactsAsync(input, {
+      yieldToHost: async () => {
+        yieldCount += 1;
+        // Simulate a stage watchdog giving up partway through the run.
+        if (yieldCount === 3) controller.abort(new Error('preflight stalled'));
+      },
+      signal: controller.signal,
+    });
+
+    await expect(pending).rejects.toThrow('preflight stalled');
+    // The generator must stop being driven at the first yield after abort,
+    // not continue consuming the remaining finalization stages.
+    expect(yieldCount).toBe(3);
+  });
+
+  it("uses SiteBundleSnapshot VFS instead of a stale compile result at launch", () => {
+    const snapshot = createSnapshot();
+    snapshot.meta = { ...snapshot.meta, themePresetId: 'modern' };
+    snapshot.vfsFiles['/src/components/SharedRuntime.tsx'] = 'export const source = "snapshot";';
+
+    const artifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: {
+        vfsFiles: {
+          ...snapshot.vfsFiles,
+          '/src/components/SharedRuntime.tsx': 'export const source = "stale-compile";',
+        },
+      },
+      themePresetId: 'modern',
+      strictPreflight: true,
+    });
+
+    expect(artifacts.files['/src/components/SharedRuntime.tsx']).toContain('snapshot');
+    expect(artifacts.siteBundleSnapshot?.vfsFiles['/src/components/SharedRuntime.tsx']).toContain('snapshot');
+  });
+
+  it('persists an explicit interaction manifest into app context and the cloned snapshot', () => {
+    const snapshot = createSnapshot();
+    const interactionManifest = {
+      version: '1.0' as const,
+      source: 'ai' as const,
+      templateId: 'agency-template',
+      layoutSignature: 'split-hero',
+      industry: 'agency',
+      interactions: [{ target: { kind: 'interactive' as const, value: 'hero-cta' }, effect: 'hover-lift' as const }],
+    };
+    const artifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        '/src/pages/Home.tsx': 'export default function Home(){ return <main>Lane B Home</main>; }',
+      },
+
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      interactionManifest,
+      themePresetId: 'modern',
+    });
+
+    expect(artifacts.appContext.interactionManifest).toEqual(interactionManifest);
+    expect(artifacts.siteBundleSnapshot?.meta.interactionManifest).toEqual(interactionManifest);
   });
 
   it("can preserve generated wizard output without merging canonical snapshot files", () => {
@@ -115,6 +367,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     const artifacts = buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/App.tsx": "export default function App(){ return <main>Wizard First</main>; }",
+        "/src/index.css": snapshot.vfsFiles["/src/index.css"],
       },
       preferredEntryPoint: "/src/App.tsx",
       siteBundleSnapshot: snapshot,
@@ -191,7 +444,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
   });
 
-  it("can block canonical page fallback so wizard launches cannot mask missing Lane B pages", () => {
+  it("fails the launch when Lane B omits a registered page instead of masking it with a canonical body", () => {
     const snapshot = createSnapshot();
     const aboutPage = {
       ...snapshot.pageRegistry.pages[snapshot.pageRegistry.homePageId!],
@@ -205,7 +458,7 @@ describe("buildCanonicalLaunchArtifacts", () => {
     snapshot.vfsFiles["/src/pages/About.tsx"] =
       "export default function About(){ return <div>Canonical About Fallback</div>; }";
 
-    const artifacts = buildCanonicalLaunchArtifacts({
+    expect(() => buildCanonicalLaunchArtifacts({
       generatedFiles: {
         "/src/pages/Home.tsx": "export default function Home(){ return <main>Wizard Home</main>; }",
       },
@@ -223,12 +476,9 @@ describe("buildCanonicalLaunchArtifacts", () => {
       industry: "agency",
       aesthetic: "modern",
       backendRequired: false,
-    });
-
-    expect(artifacts.files["/src/pages/Home.tsx"]).toContain("Wizard Home");
-    expect(artifacts.files["/src/pages/About.tsx"]).toBeUndefined();
-    expect(artifacts.files["/src/App.tsx"]).toContain("Routes");
+    })).toThrow(/did not author 1 registered page/);
   });
+
 
   it("refuses to persist a quarantined wizard page when strict preflight is enabled", () => {
     const snapshot = createSnapshot();
@@ -243,5 +493,46 @@ describe("buildCanonicalLaunchArtifacts", () => {
       themePresetId: "modern",
       strictPreflight: true,
     })).toThrow(/refusing to persist quarantine scaffolds.*Unterminated JSX contents/);
+  });
+
+  it('refuses to persist a Wizard VFS with an unresolved JSX import contract', () => {
+    const snapshot = createSnapshot();
+
+    expect(() => buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        '/src/pages/Home.tsx': [
+          "import { MissingHero, MissingCaption } from '../components/HeroParts';",
+          'export default function Home(){ return <main><MissingHero /><MissingCaption /></main>; }',
+        ].join('\n'),
+        '/src/components/HeroParts.tsx': 'export function HeroTitle(){ return <h1>Ready</h1>; } export function HeroCopy(){ return <p>Ready</p>; }',
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      themePresetId: 'modern',
+      strictPreflight: true,
+    })).toThrow(/Wizard runtime preflight failed before persistence:.*Home\.tsx imports JSX component "MissingHero".*HeroTitle, HeroCopy/i);
+  });
+
+  it('normalizes the legacy relative RevealGroup import onto the primitive kit', () => {
+    const snapshot = createSnapshot();
+
+    const artifacts = buildCanonicalLaunchArtifacts({
+      generatedFiles: {
+        '/src/pages/Faq.tsx': [
+          "import { RevealGroup } from './components/RevealGroup';",
+          'export default function Faq(){ return <RevealGroup><main>Answers</main></RevealGroup>; }',
+        ].join('\n'),
+      },
+      preferredEntryPoint: '/src/App.tsx',
+      siteBundleSnapshot: snapshot,
+      compiledPlayground: { vfsFiles: snapshot.vfsFiles },
+      themePresetId: 'modern',
+      strictPreflight: true,
+    });
+
+    expect(artifacts.files['/src/pages/components/RevealGroup.tsx']).toBeUndefined();
+    expect(artifacts.files['/src/pages/Faq.tsx']).toContain("from '@/unison/ui/motion'");
+    expect(artifacts.files['/src/pages/Faq.tsx']).not.toContain("./components/RevealGroup");
   });
 });

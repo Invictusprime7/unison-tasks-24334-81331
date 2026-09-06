@@ -29,7 +29,7 @@ const heroTemplates: ComponentDefinition[] = [
     type: 'hero',
     variant: 'centered',
     template: `
-<section className="relative min-h-[80vh] flex items-center justify-center {{bgClass}}">
+<section className="relative min-h-[var(--ut-hero-block)] flex items-center justify-center {{bgClass}}">
   {{#if backgroundSlot}}
   <div className="absolute inset-0 z-0">
     <img src="{{backgroundSlot}}" alt="" className="w-full h-full object-cover" />

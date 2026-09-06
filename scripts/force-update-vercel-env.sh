@@ -24,7 +24,7 @@ force_update_env_var() {
     printf "yes\n" | vercel env rm "$var_name" "$environment" > /dev/null 2>&1 || true
     
     # Add the new value
-    if echo "$var_value" | vercel env add "$var_name" "$environment"; then
+    if printf '%s' "$var_value" | vercel env add "$var_name" "$environment"; then
         echo -e "${GREEN}✅ Updated $var_name in $environment${NC}"
     else
         echo -e "${RED}❌ Failed to update $var_name in $environment${NC}"

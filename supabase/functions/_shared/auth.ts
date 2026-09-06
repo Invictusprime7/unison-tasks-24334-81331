@@ -5,7 +5,7 @@
  * validation for all edge functions.
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 export interface AuthenticatedUser {
   id: string;
@@ -39,6 +39,27 @@ function getAdminClient(): ReturnType<typeof createClient> {
 }
 
 /**
+ * Verify user JWTs with the public client and the request's bearer token.
+ * `getClaims()` supports the backend signing-key system and verifies the JWT
+ * locally against the project's published keys. Using the admin client's
+ * legacy `getUser(token)` path here can reject otherwise-valid signing-key
+ * sessions during key migrations or runtime credential drift.
+ */
+function getClaimsClient(authHeader: string): ReturnType<typeof createClient> {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_ANON_KEY");
+
+  if (!url || !key) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY");
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: authHeader } },
+  });
+}
+
+/**
  * Extract and verify the Bearer JWT from the Authorization header.
  * Returns the authenticated user or an error.
  * 
@@ -56,12 +77,62 @@ export async function verifyAuth(req: Request): Promise<AuthResult> {
   const token = authHeader.replace("Bearer ", "");
 
   try {
-    const admin = getAdminClient();
-    const { data: { user }, error } = await admin.auth.getUser(token);
+    const authClient = getClaimsClient(authHeader);
+    // Some edge-runtime bundles still resolve a supabase-js build without
+    // getClaims(). Feature-detect it so those deployments continue through
+    // the server-validated getUser() path instead of throwing a false 503/401.
+    const claimsVerifier = (authClient.auth as unknown as {
+      getClaims?: (jwt: string) => Promise<{
+        data: { claims?: Record<string, unknown> } | null;
+        error: unknown;
+      }>;
+    }).getClaims;
+    const claimsResult = typeof claimsVerifier === "function"
+      ? await claimsVerifier.call(authClient.auth, token)
+      : null;
+    const claims = claimsResult?.data?.claims;
 
-    if (error || !user) {
+    if (!claimsResult?.error && typeof claims?.sub === "string") {
+      return {
+        user: {
+          id: claims.sub,
+          email: typeof claims.email === "string" ? claims.email : "",
+          role: typeof claims.role === "string" ? claims.role : "authenticated",
+        },
+        error: null,
+        status: 200,
+      };
+    }
+
+    // Legacy HS256 sessions do not have an asymmetric JWKS entry for local
+    // claims verification. Validate those against Auth using the same
+    // request-scoped public client rather than the service-role client.
+    const { data: userData, error: userError } = await authClient.auth.getUser(token);
+    const user = userData.user;
+    if (userError || !user) {
+      // Final fallback: verify the token with the service-role client. This
+      // survives anon/publishable key drift or rotation, which otherwise makes
+      // a perfectly valid user session look like an expired token.
+      try {
+        const admin = getAdminClient();
+        const { data: adminData, error: adminError } = await admin.auth.getUser(token);
+        if (!adminError && adminData?.user) {
+          return {
+            user: {
+              id: adminData.user.id,
+              email: adminData.user.email || "",
+              role: adminData.user.role || "authenticated",
+            },
+            error: null,
+            status: 200,
+          };
+        }
+      } catch (adminErr) {
+        console.error("[auth] Service-role token verification failed:", adminErr);
+      }
       return { user: null, error: "Invalid or expired token", status: 401 };
     }
+
 
     return {
       user: {

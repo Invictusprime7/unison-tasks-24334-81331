@@ -163,16 +163,35 @@ export async function importUnisonSiteZip(
   const canonicalPlayground = readJsonRecord(imported.vfsFiles, '/.unison/canonical-playground.json') || undefined;
   const wizardSeed = readJsonRecord(imported.vfsFiles, '/.unison/wizard-seed.json') || undefined;
 
+  // Older/partial archives carry the theme seed but not the Stage 4b injection
+  // record. Rebuild it from the resolved seed so the canonical theme contract
+  // stays intact across export -> import instead of hard-failing the restore.
+  const restoredSnapshot: typeof snapshot = themePresetId && !snapshot.meta.themeInjection?.presetId
+    ? {
+        ...snapshot,
+        meta: {
+          ...snapshot.meta,
+          themePresetId,
+          themeInjection: {
+            version: '1.0',
+            stage: '4b',
+            presetId: themePresetId,
+            cssPath: '/src/index.css',
+          },
+        },
+      }
+    : snapshot;
+
   const artifacts = buildCanonicalLaunchArtifacts({
     generatedFiles: imported.vfsFiles,
     preferredEntryPoint: archivedManifest.entryPoint,
-    siteBundleSnapshot: snapshot,
+    siteBundleSnapshot: restoredSnapshot,
     canonicalPlayground,
     mergeWithCanonicalSnapshot: true,
     allowCanonicalPageFallback: false,
     strictPreflight: true,
-    businessName: snapshot.businessName,
-    industry: snapshot.industry,
+    businessName: restoredSnapshot.businessName,
+    industry: restoredSnapshot.industry,
     systemType,
     systemName,
     templateName: snapshot.businessName,

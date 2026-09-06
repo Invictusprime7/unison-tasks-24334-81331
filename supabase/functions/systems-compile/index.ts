@@ -124,18 +124,15 @@ const pageTemplates: Record<Industry, Array<{ type: string; title: string; path:
 const intentTemplates: Record<Industry, Array<{ intent: string; targetKind: string; targetRef: string }>> = {
   local_service: [
     { intent: "lead.capture", targetKind: "edge_function", targetRef: "intent-exec" },
-    { intent: "booking.create", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "call.now", targetKind: "external_url", targetRef: "tel:" },
     { intent: "contact.submit", targetKind: "edge_function", targetRef: "intent-exec" },
   ],
   restaurant: [
-    { intent: "booking.create", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "lead.capture", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "call.now", targetKind: "external_url", targetRef: "tel:" },
     { intent: "nav.goto_page", targetKind: "route", targetRef: "/menu" },
   ],
   salon_spa: [
-    { intent: "booking.create", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "lead.capture", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "call.now", targetKind: "external_url", targetRef: "tel:" },
     { intent: "contact.submit", targetKind: "edge_function", targetRef: "intent-exec" },
@@ -152,13 +149,11 @@ const intentTemplates: Record<Industry, Array<{ intent: string; targetKind: stri
     { intent: "nav.goto_page", targetKind: "route", targetRef: "/work" },
   ],
   coaching_consulting: [
-    { intent: "booking.create", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "lead.capture", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "newsletter.subscribe", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "contact.submit", targetKind: "edge_function", targetRef: "intent-exec" },
   ],
   real_estate: [
-    { intent: "booking.create", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "lead.capture", targetKind: "edge_function", targetRef: "intent-exec" },
     { intent: "call.now", targetKind: "external_url", targetRef: "tel:" },
     { intent: "contact.submit", targetKind: "edge_function", targetRef: "intent-exec" },

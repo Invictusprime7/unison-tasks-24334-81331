@@ -1,5 +1,11 @@
 # AI Web Builder Template Rendering - Troubleshooting Guide
 
+> **Historical note:** The `generate-ai-template` edge function referenced below was
+> unreferenced by any caller and has been removed. Template generation now runs
+> through the `systems-classify` → `systems-compile` → `systems-build` pipeline
+> and the `web-builder-ai` edge function. This document is kept for historical
+> troubleshooting context only.
+
 ## Overview
 This document outlines the complete AI template generation and rendering pipeline for the Lovable AI Web Builder.
 

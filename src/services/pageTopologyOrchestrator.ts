@@ -214,9 +214,12 @@ export function syncTopologyAndRouter(
   registry: PageRegistry,
   vfsFiles: Record<string, string>,
   businessName?: string,
-): { routerCode: string; validation: TopologyValidationResult } {
-  const routerCode = generateCanonicalRouterForFiles(registry, vfsFiles, businessName);
-  const mergedFiles = routerCode ? { ...vfsFiles, '/src/App.tsx': routerCode } : vfsFiles;
+): { routerCode: string; validation: TopologyValidationResult; filesToImport: Record<string, string> } {
+  const filesToImport: Record<string, string> = {};
+  const mergedForRouter = { ...vfsFiles, ...filesToImport };
+  const routerCode = generateCanonicalRouterForFiles(registry, mergedForRouter, businessName);
+  if (routerCode) filesToImport['/src/App.tsx'] = routerCode;
+  const mergedFiles = { ...vfsFiles, ...filesToImport };
   const validation = validatePageTopology(registry, mergedFiles);
-  return { routerCode, validation };
+  return { routerCode, validation, filesToImport };
 }

@@ -64,6 +64,7 @@ import { vfsEventBus } from '@/services/vfsEventBus';
 import { enhancePromptForAI, type AnalyzedPrompt } from '@/services/promptIntelligence';
 import { DebugAgentPanel } from './DebugAgentPanel';
 import { interpretPrompt, type TaskPlan } from '@/unison';
+import { buildUnisonAIContext } from '@/unison/aiContext';
 import type { PlanStepStatus } from '@/unison/nlTypes';
 import { TaskPlanSteps } from './TaskPlanSteps';
 import {
@@ -80,8 +81,36 @@ import { parseIconWireIntent, stampIconIntentInSource } from '@/utils/iconWireIn
 import { wireGhlBinding } from '@/services/skills/ghlSkillPack';
 import { detectSections } from '@/utils/sectionSwapper';
 import { runBuilderTurn } from '@/services/builderBrainClient';
+import {
+  envelopeRunIdFromResponse,
+  recordRunOutcome,
+} from '@/services/builderEnvelopeRuns';
 import { buildCatalogContext, renderCatalogContextForPrompt } from '@/utils/catalogContext';
 import { executeCatalogToolCalls, type RawToolCall } from '@/services/catalogToolExecutor';
+import type { GeneratedUiManifest } from '@/platform/core/generatedUiFoundation';
+import type { WizardDesignIntervention } from '@/services/wizardDesignIntervention';
+import { sanitizeGeneratedFiles, sanitizeTsxFile } from '@/utils/tsxSanitizer';
+import {
+  applyAIBuilderFiles,
+  type AIBuilderApplyCallback,
+} from '@/services/aiBuilderApply';
+import {
+  planBusinessCapabilities,
+  type CapabilityPlan,
+} from '@/services/businessCapabilityPlanner';
+import { previewCapabilityMigration } from '@/services/capabilityMigrationRunner';
+import { MigrationProposalPanel } from '@/components/ai-builder/MigrationProposalPanel';
+import { LayoutSnapshotCard } from '@/components/creatives/web-builder/ai-chat/LayoutSnapshotCard';
+import {
+  interpretBuilderRequest,
+  requiresRenderableUiPatch,
+} from '@/services/builderRequestInterpreter';
+import { extractMultiFileOutput, extractStylesheetOutput } from '@/utils/aiResponseParser';
+
+import {
+  resolveCapabilityIntentBindings,
+  type CapabilityIntentBindingResolution,
+} from '@/services/capabilityIntentBindingResolver';
 
 // ============================================================================
 /**
@@ -424,29 +453,27 @@ interface AIBuilderPanelProps {
   systemsBuildContext?: SystemsBuildContext | null;
   /** Durable WizardSeed from launcher — forwarded with every Lane B turn for memory/route/theme/intent continuity. */
   wizardSeed?: Record<string, unknown> | null;
+  /** Snapshot-owned UI imports and rules available to every Builder turn. */
+  uiFoundation?: GeneratedUiManifest | null;
+  /** Snapshot-owned deterministic layout, interaction, and motion choices. */
+  designIntervention?: WizardDesignIntervention | null;
   /** Current VFS file list + dependency summary for AI awareness */
   vfsContext?: string | null;
   /** Full VFS file map for component-level site analysis */
   vfsFiles?: Record<string, string> | null;
   /** Direct VFS apply callback — bypasses legacy onCodeGenerated pipeline, uses AI→VFS orchestrator */
-  onApplyToVFS?: (
-    files: Record<string, string>,
-    meta?: {
-      prompt?: string;
-      model?: string;
-      summary?: string;
-      actionType?: string;
-      origin?: string;
-      requiresApproval?: boolean;
-      warnings?: Array<{ severity?: string; message?: string }>;
-    },
-  ) => void;
+  onApplyToVFS?: AIBuilderApplyCallback;
   /** Preview handle ref for building component behavior maps (DOM inspection) */
   previewRef?: React.RefObject<{ getIframe?: () => HTMLIFrameElement | null } | null>;
   /** Active project id — used to scope persisted prompt + edit history. */
   projectId?: string | null;
   /** Active business id — required for GHL fast-path bindings. */
   businessId?: string | null;
+  /** Executes an explicitly approved, fully resolved business capability plan. */
+  onApproveCapabilityPlan?: (
+    plan: CapabilityPlan,
+    resolution: CapabilityIntentBindingResolution,
+  ) => Promise<{ success: boolean; error?: string }>;
   /**
    * Layout-intent fast path. When provided, the panel will pre-flight every
    * prompt through the deterministic layout intent engine (center / move /
@@ -523,12 +550,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   businessDataContext,
   systemsBuildContext,
   wizardSeed,
+  uiFoundation,
+  designIntervention,
   vfsContext,
   vfsFiles,
   onApplyToVFS,
   previewRef,
   projectId,
   businessId,
+  onApproveCapabilityPlan,
   layoutOps,
 }) => {
   // Hydrate persisted messages synchronously so a refresh never wipes history.
@@ -550,10 +580,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'code' | 'debug'>('code');
+  const [activeTab, setActiveTab] = useState<'code' | 'debug' | 'backend'>('code');
+  // Files the auto-apply guard held back. Without this the AI "resolved" a
+  // rewrite that never materialized anywhere — now the user can still apply it.
+  const [heldFiles, setHeldFiles] = useState<{ files: Record<string, string>; reason: string } | null>(null);
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig | undefined>(undefined);
+  const [pendingCapabilityProposal, setPendingCapabilityProposal] = useState<{
+    plan: CapabilityPlan;
+    resolution: CapabilityIntentBindingResolution;
+    isApplying: boolean;
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPromptRef = useRef<string | null>(null);
@@ -706,6 +744,19 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
   // No initial welcome message — AIConversationWelcome handles the empty state
 
+  useEffect(() => {
+    setPendingCapabilityProposal((current) => {
+      if (!current) return current;
+      const resolution = resolveCapabilityIntentBindings(
+        current.plan.proposal.intentBindings,
+        vfsFiles ?? {},
+      );
+      return JSON.stringify(resolution) === JSON.stringify(current.resolution)
+        ? current
+        : { ...current, resolution };
+    });
+  }, [vfsFiles]);
+
   // Live thinking step pusher — updates the streaming message in real-time
   const pushThinkingStep = useCallback((
     streamingId: string,
@@ -755,6 +806,50 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
     setInput('');
     setDroppedFiles([]);
     setIsLoading(true);
+
+    // Milestone 5 / Step 1: classification is envelope-driven. The interpreter
+    // is authoritative; local hints are only used when it is unavailable.
+    const capabilityInterpretation = await interpretBuilderRequest(userContent, {
+      vertical: systemType ?? undefined,
+      filePaths: Object.keys(vfsFiles ?? {}),
+      hasExistingTemplate: Object.keys(vfsFiles ?? {}).length > 0,
+    });
+
+    const capabilityPlan = planBusinessCapabilities({
+      requestId: generateId(),
+      prompt: userContent,
+      interpretation: capabilityInterpretation.degraded ? null : capabilityInterpretation.envelope,
+      scope: 'business-system',
+
+      context: {
+        businessId: businessId ?? undefined,
+        projectId: projectId ?? undefined,
+        industry: systemType ?? undefined,
+      },
+    });
+    const needsRenderableUiPatch = requiresRenderableUiPatch(
+      capabilityInterpretation.envelope,
+      userContent,
+    );
+    if (capabilityPlan.requestedCapabilities.length > 0) {
+      const resolution = resolveCapabilityIntentBindings(
+        capabilityPlan.proposal.intentBindings,
+        vfsFiles ?? {},
+      );
+      setPendingCapabilityProposal({ plan: capabilityPlan, resolution, isApplying: false });
+      if (needsRenderableUiPatch) {
+        toast.info('Backend setup requires approval. Building the requested UI now.');
+      } else {
+        setMessages((prev) => [...prev, {
+          id: generateId(),
+          role: 'assistant',
+          content: capabilityPlan.proposal.summary,
+          timestamp: new Date(),
+        }]);
+        setIsLoading(false);
+        return;
+      }
+    }
 
     // ── Icon Wire Fast Path ──────────────────────────────────────────────
     // Deterministic NL → data-ut-* stamp on the named Lucide icon in the
@@ -961,6 +1056,8 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       const isSurgicalEdit = detectedSurgical && !!currentCode;
       const isBehavioralEdit = detectedBehavioral && !!currentCode;
       const isDebugMode = detectedDebug && !!currentCode;
+      const isThemeEdit = promptAnalysis.intent === 'restyle' || promptAnalysis.secondaryIntents.includes('restyle');
+      const isImageEdit = /\b(add|insert|include|place|replace|swap|change|generate|create|use)\b[\s\S]{0,80}\b(image|images|photo|photos|picture|pictures|visual|visuals)\b/i.test(rawInput);
 
       liveStep('analyzing', `Intent: ${promptAnalysis.intent} · Complexity: ${promptAnalysis.complexity}`, [
         promptAnalysis.targets.length ? `Targets: ${promptAnalysis.targets.map(t => t.section || t.element || t.file).filter(Boolean).join(', ')}` : null,
@@ -995,6 +1092,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       };
       
       const { plan: taskPlan, feedback: unisonFeedback } = interpretPrompt(_userContent, projectContext);
+      const unisonContext = buildUnisonAIContext(taskPlan);
       
       liveStep('analyzing', `Plan: ${taskPlan.steps.length} steps · route: ${taskPlan.route}`,
         `Confidence: ${Math.round(taskPlan.intent.confidence * 100)}% · Complexity: ${taskPlan.estimatedComplexity}`
@@ -1142,6 +1240,38 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       if (vfsContext) contextLines.push(`\nCurrent VFS project files:\n${vfsContext.slice(0, 2400)}`);
       if (siteAnalysisContext && !isSurgicalEdit) contextLines.push(`\nSite component structure:\n${siteAnalysisContext.slice(0, 1500)}`);
       if (themeContextBlock) contextLines.push(`\n${themeContextBlock}`);
+      if (uiFoundation) {
+        const facades = uiFoundation.runtimeFacades;
+        contextLines.push([
+          '\n[Snapshot-owned UI foundation — hard contract]',
+          `Snapshot UI imports: ${uiFoundation.primitiveImports.join(', ')}`,
+          facades
+            ? `VFS UI runtime: Lucide ${facades.icons}; Framer Motion ${facades.animation}; Zod ${facades.schemas}; React Hook Form + zodResolver ${facades.forms}; styles ${facades.styles}; Radix namespace ${facades.radix}; Radix primitive modules ${facades.radixPrimitives.map((primitive) => `@/unison/ui/radix/${primitive}`).join(', ')}.`
+            : 'Prefer VFS imports: @/unison/ui/icons for Lucide, @/unison/ui/zod and @/unison/ui/forms for schemas/forms, @/unison/ui/radix/<primitive> for Radix, @/unison/ui/animation for Framer Motion, and @/unison/ui/styles for typography, colors, component styles, and Tailwind class composition.',
+          isThemeEdit
+            ? 'For this requested theme change, update semantic color/font variables in /src/index.css and token-based classes in affected components. Preserve Tailwind directives and stylesheet structure. Never write /src/unison/ui/*.'
+            : 'Use semantic Stage 4b Tailwind tokens. Never write /src/index.css or /src/unison/ui/*.',
+          'Preserve accessible labels and data-ut-intent attributes.',
+        ].join('\n'));
+      }
+      if (isImageEdit) {
+        contextLines.push([
+          '\n[Image edit contract]',
+          'Apply the image directly in the requested section component and return the complete modified file in the files JSON contract.',
+          'Use a stable HTTPS image URL (prefer a verified images.unsplash.com URL) in src or backgroundImage. Do not create local .png/.jpg asset files, placeholders, or describe the change without modifying code.',
+          'Include descriptive alt text and preserve the section layout unless the user requested a layout change.',
+        ].join('\n'));
+      }
+      if (designIntervention) {
+        contextLines.push([
+          '\n[Snapshot-owned deterministic design intervention — hard contract]',
+          `Layout: ${designIntervention.layoutRecipe}`,
+          `Section variants: ${designIntervention.sectionVariants.join(', ')}`,
+          `Motion recipes: ${designIntervention.motionRecipes.join(', ')} (${designIntervention.motionBudget} budget)`,
+          `Interaction recipes: ${designIntervention.interactionRecipes.join(', ')}`,
+          `${designIntervention.aiDirective} Do not write /.unison/design-intervention.json.`,
+        ].join('\n'));
+      }
 
       // ── M6/M7: Catalog Context Injection (Lane B) ──
       // Give the AI structured awareness of the canonical catalog registry,
@@ -1369,6 +1499,15 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
           response = await runBuilderTurn<any>({
             messages: conversationHistory,
+            // Milestone 4: durable envelope + verdict log, scoped to this draft.
+            runContext: {
+              draftId: projectId ?? null,
+              projectId: projectId ?? null,
+              businessId: businessId ?? null,
+              prompt: _userContent.slice(0, 8000),
+            },
+            requestEnvelope: capabilityInterpretation.envelope,
+            unisonContext,
             // Always use template-react for React projects (even surgical edits)
             // to ensure the AI generates React/TSX output, not raw HTML.
             // The surgicalEdit flag tells the edge function to apply surgical constraints.
@@ -1388,7 +1527,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             userDesignProfile: userDesignProfile ?? undefined,
             systemsBuildContext: systemsBuildContext ?? undefined,
             // Durable WizardSeed → Lane B continuity: same seed/memory/intents/routes.
-            wizardSeed: wizardSeed ?? undefined,
+            wizardSeed: uiFoundation || designIntervention
+              ? { ...(wizardSeed ?? {}), ...(uiFoundation ? { uiFoundation } : {}), ...(designIntervention ? { designIntervention } : {}) }
+              : wizardSeed ?? undefined,
             siteElementsLibraryContext,
             attachments: _attachments.length > 0 ? _attachments : undefined,
             // Send VFS files for edit context (all edit types, not just surgical)
@@ -1472,6 +1613,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       // Extract AI reasoning (works for all models: thinking-tag extraction or native Anthropic blocks)
       const aiReasoning: string | undefined = response.data?.thinking || undefined;
       const isLaunchPlanningResponse = response.data?.mode === 'launch-desk' || !!response.data?.plan;
+      // Milestone 4: id of the persisted envelope/verification run for this turn.
+      const envelopeRunId = envelopeRunIdFromResponse(response.data);
+
       const responseMeta: Message['meta'] = {
         actionType: response.data?.actionType || (isLaunchPlanningResponse ? 'launch_planning' : undefined),
         modelUsed: response.data?.modelUsed,
@@ -1569,16 +1713,24 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
       let generatedCode: string | null = null;
       let explanationText = '';
       let multiFileOutput: Record<string, string> | null = null;
+      let structuredContractExtractionFailed = false;
 
       if (aiContent) {
         const trimmed = aiContent.trim();
 
-        // Strategy 0: Strip markdown JSON fences before checking for JSON structure
-        // AI often returns: ```json\n{ "files": {...} }\n```
-        let jsonCandidate = trimmed;
-        const jsonFenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/i);
-        if (jsonFenceMatch) {
-          jsonCandidate = jsonFenceMatch[1].trim();
+        const structuredOutput = extractMultiFileOutput(trimmed);
+        if (structuredOutput) {
+          multiFileOutput = structuredOutput.files;
+          explanationText = structuredOutput.explanation || '✅ Multi-file project generated and applied.';
+          console.log('[AIBuilderPanel] Parsed multi-file output:', Object.keys(multiFileOutput));
+        }
+        if (!multiFileOutput) {
+          const stylesheetOutput = extractStylesheetOutput(trimmed);
+          if (stylesheetOutput) {
+            multiFileOutput = stylesheetOutput;
+            explanationText = '✅ Theme stylesheet applied.';
+            console.log('[AIBuilderPanel] Parsed stylesheet output for /src/index.css');
+          }
         }
 
       // Pre-processing: Detect if content is AI reasoning/prose with no usable code
@@ -1608,20 +1760,6 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         console.warn('[AIBuilderPanel] Content appears to be pure AI reasoning — skipping code extraction');
         explanationText = trimmed;
       }
-
-        // Strategy 1: Check for JSON multi-file output: {"files": {...}}
-        if (jsonCandidate.startsWith('{') && jsonCandidate.includes('"files"')) {
-          try {
-            const parsed = JSON.parse(jsonCandidate);
-            if (parsed.files && typeof parsed.files === 'object') {
-              multiFileOutput = parsed.files;
-              explanationText = parsed.explanation || '✅ Multi-file project generated and applied.';
-              console.log('[AIBuilderPanel] Parsed multi-file JSON output:', Object.keys(multiFileOutput));
-            }
-          } catch (parseErr) { 
-            console.warn('[AIBuilderPanel] JSON parse failed:', parseErr);
-          }
-        }
 
         // Strategy 2: Check if content IS a React component (starts with import/export/function)
         if (!multiFileOutput && !generatedCode) {
@@ -1681,10 +1819,9 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               generatedCode = bestBlock;
               console.log('[AIBuilderPanel] Extracted React code from fence');
             } else if (isCssOnly) {
-              // CSS extracted from fence — inject via useEffect (no dangerouslySetInnerHTML)
-              const cssJsonStr = JSON.stringify(bestBlock);
-              generatedCode = `import React, { useEffect } from 'react';\n\nconst CSS_CONTENT = ${cssJsonStr};\n\nexport default function App() {\n  useEffect(() => {\n    const s = document.createElement('style');\n    s.textContent = CSS_CONTENT;\n    document.head.appendChild(s);\n    return () => { s.remove(); };\n  }, []);\n\n  return (\n    <div style={{ minHeight: '100vh' }}><p>Styles applied.</p></div>\n  );\n}`;
-              console.log('[AIBuilderPanel] Extracted CSS from fence, wrapped in React component');
+              multiFileOutput = { '/src/index.css': bestBlock };
+              explanationText = '✅ Theme stylesheet applied.';
+              console.log('[AIBuilderPanel] Extracted CSS fence for /src/index.css');
             } else if (hasHtmlStructure) {
               generatedCode = wrapHtmlInReactComponent(bestBlock);
               console.log('[AIBuilderPanel] Extracted HTML from fence, wrapped in React component');
@@ -1719,23 +1856,6 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
           }
         }
 
-        // Strategy 6 (surgical edit fallback): Extract JSON {"files": {...}} from prose
-        // AI may return: "Here's the change:\n```json\n{\"files\": {...}}\n```\nI changed X"
-        if (!multiFileOutput && !generatedCode && isSurgicalEdit) {
-          // Try to find {"files": embedded anywhere in the content
-          const filesJsonMatch = trimmed.match(/\{[\s\S]*?"files"\s*:\s*\{[\s\S]*?\}\s*\}/);
-          if (filesJsonMatch) {
-            try {
-              const parsed = JSON.parse(filesJsonMatch[0]);
-              if (parsed.files && typeof parsed.files === 'object') {
-                multiFileOutput = parsed.files;
-                explanationText = parsed.explanation || '✅ Surgical edit applied.';
-                console.log('[AIBuilderPanel] Strategy 6: Extracted multi-file JSON from prose:', Object.keys(multiFileOutput!));
-              }
-            } catch { /* not valid JSON, continue */ }
-          }
-        }
-
         // Extract explanation: everything that's NOT inside code fences
         if (!explanationText) {
           explanationText = aiContent
@@ -1747,6 +1867,18 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             explanationText = isSurgicalEdit ? '✅ Edit applied successfully.' : '✅ Code generated and applied to your project.';
           }
         }
+
+        structuredContractExtractionFailed = !multiFileOutput && !generatedCode &&
+          /(?:```json\s*)?\{[\s\S]*["']files["']\s*:/i.test(trimmed);
+        if (structuredContractExtractionFailed) {
+          const extractionError = 'The AI returned an invalid or incomplete file contract. No changes were applied.';
+          explanationText = extractionError;
+          liveStep('error', 'Generated files could not be extracted', extractionError);
+          toast.error('AI response could not be applied', {
+            description: 'The generated file contract was malformed. Retry the request.',
+            duration: 8000,
+          });
+        }
       }
 
       // Handle multi-file output — prefer orchestrator, fall back to legacy callback
@@ -1756,7 +1888,7 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         
         // Normalize paths, filter config files, and strip module.exports from component content
         const BLOCKED_FILES = /\/(tailwind\.config|postcss\.config|vite\.config|tsconfig|package\.json|package-lock)/i;
-        const normalizedFiles: Record<string, string> = {};
+        let normalizedFiles: Record<string, string> = {};
         for (const [path, content] of Object.entries(multiFileOutput)) {
           const normalizedPath = path.startsWith('/') ? path : `/${path}`;
           if (BLOCKED_FILES.test(normalizedPath)) {
@@ -1769,6 +1901,11 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
             fileContent = stripModuleExportsBlocks(content);
           }
           normalizedFiles[normalizedPath] = fileContent;
+        }
+        const sanitizedFiles = sanitizeGeneratedFiles(normalizedFiles);
+        normalizedFiles = sanitizedFiles.files;
+        if (sanitizedFiles.invalidFiles.length > 0) {
+          console.warn('[AIBuilderPanel] Sanitized structurally incomplete AI files:', sanitizedFiles.invalidFiles);
         }
 
         // Check if approval is recommended before auto-applying
@@ -1785,16 +1922,22 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
 
         if (scopeBlockReason) {
           console.warn('[AIBuilderPanel] SCOPE BLOCK:', scopeBlockReason);
-          toast.warning(`⚠️ Edit blocked: ${scopeBlockReason}`);
+          setHeldFiles({ files: normalizedFiles, reason: `Edit held back: ${scopeBlockReason}` });
+          toast.warning(`⚠️ Edit held for review: ${scopeBlockReason}`);
         } else if (shouldBlock) {
+          void recordRunOutcome(envelopeRunId, 'rejected', { note: 'requires-approval' });
           console.warn('[AIBuilderPanel] Patch requires approval — NOT auto-applying');
-          toast.warning('⚠️ AI patch flagged for review — check warnings before applying manually');
-          // Store files for manual apply later (user can use View Edits)
+          setHeldFiles({
+            files: normalizedFiles,
+            reason: responseMeta?.warnings?.map((warning) => warning.message).filter(Boolean).join('; ')
+              || 'The reviewer flagged this patch. Review the warnings, then apply.',
+          });
+          toast.warning('⚠️ AI patch flagged for review — apply it from the review card when ready');
         } else {
           if (onApplyToVFS) {
             console.log('[AIBuilderPanel] Calling onApplyToVFS with normalized paths:', Object.keys(normalizedFiles));
             vfsEventBus.emit('ai:apply:start', { source: 'multi-file' });
-            onApplyToVFS(normalizedFiles, {
+            const applyOutcome = await applyAIBuilderFiles(onApplyToVFS, normalizedFiles, {
               prompt: userContent,
               model: modelUsed,
               summary: responseMeta?.reviewSummary,
@@ -1803,10 +1946,26 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
               requiresApproval: responseMeta?.requiresApproval,
               warnings: responseMeta?.warnings,
             });
-            liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
-            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
-            const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
-            toast.success(`✅ Multi-file project applied${approvalNote}`);
+            void recordRunOutcome(
+              envelopeRunId,
+              applyOutcome.success ? 'applied' : 'failed',
+              {
+                appliedPaths: Object.keys(normalizedFiles),
+                error: applyOutcome.success ? undefined : applyOutcome.errors?.[0],
+                note: 'multi-file',
+              },
+            );
+            if (applyOutcome.success) {
+              liveStep('complete', `✅ Applied ${Object.keys(normalizedFiles).length} files to project`);
+              vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalizedFiles), source: 'multi-file' });
+              const approvalNote = responseMeta?.requiresApproval ? ' (review recommended)' : '';
+              toast.success(`✅ Multi-file project applied${approvalNote}`);
+            } else {
+              const applyError = applyOutcome.errors?.[0] ?? 'The VFS rejected the generated files.';
+              liveStep('error', 'AI edit was not applied', applyError);
+              vfsEventBus.emit('ai:apply:error', { message: applyError, source: 'multi-file' });
+              toast.error('AI edit was not applied', { description: applyError, duration: 8000 });
+            }
           } else if (onFilesPatch) {
             onFilesPatch(normalizedFiles);
             toast.success('✅ Multi-file project applied to VFS');
@@ -1822,24 +1981,10 @@ export const AIBuilderPanel: React.FC<AIBuilderPanelProps> = ({
         generatedCode = wrapHtmlInReactComponent(generatedCode);
       }
 
-      // SAFETY NET 2: If generatedCode is raw CSS (:root, body {, @import, etc.), wrap in React component
-      if (generatedCode && /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)\s*[{\/(]/m.test(generatedCode.trim()) && !generatedCode.includes('import ') && !generatedCode.includes('export ')) {
-        console.warn('[AIBuilderPanel] Safety net: detected raw CSS being applied as TSX — wrapping in React component');
-        const cssJsonStr = JSON.stringify(generatedCode);
-        generatedCode = `import React from 'react';
-
-const CSS_CONTENT = ${cssJsonStr};
-
-export default function App() {
-  return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: CSS_CONTENT }} />
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p>Styles applied. Waiting for page content...</p>
-      </div>
-    </>
-  );
-}`;
+      // SAFETY NET 2: CSS should have been routed to /src/index.css above.
+      if (generatedCode && /^\s*(?::root|body|html|\*|@import|@font-face|@media|\/\*)\s*[{/(]/m.test(generatedCode.trim()) && !generatedCode.includes('import ') && !generatedCode.includes('export ')) {
+        console.warn('[AIBuilderPanel] Ignoring raw CSS that escaped stylesheet extraction');
+        generatedCode = null;
       }
 
       // Determine the target file path for single-file output.
@@ -1870,14 +2015,18 @@ export default function App() {
       // Add final thinking step — include a reasoning summary badge if AI thinking was returned
       thinkingSteps.push({
         id: generateId(),
-        type: aiReasoning ? 'reasoning' : 'complete',
-        message: aiReasoning
+        type: structuredContractExtractionFailed ? 'error' : aiReasoning ? 'reasoning' : 'complete',
+        message: structuredContractExtractionFailed
+          ? 'Response validation failed'
+          : aiReasoning
           ? `Extended reasoning complete (${(aiReasoning.length / 1000).toFixed(1)}k chars)`
           : 'Generation complete',
         timestamp: new Date(),
-        details: aiReasoning ? aiReasoning.slice(0, 500) + (aiReasoning.length > 500 ? '…' : '') : undefined,
+        details: structuredContractExtractionFailed
+          ? 'The response contained a files contract that could not be parsed.'
+          : aiReasoning ? aiReasoning.slice(0, 500) + (aiReasoning.length > 500 ? '…' : '') : undefined,
       });
-      if (aiReasoning) {
+      if (aiReasoning && !structuredContractExtractionFailed) {
         thinkingSteps.push({
           id: generateId(),
           type: 'complete',
@@ -1886,21 +2035,28 @@ export default function App() {
         });
       }
 
-      // Mark all remaining plan steps as done
-      advancePlanStep(taskPlan, 'patch', 'done');
-      advancePlanStep(taskPlan, 'bind_intent', 'done');
-      advancePlanStep(taskPlan, 'create_route', 'done');
-      advancePlanStep(taskPlan, 'install_workflow', 'done');
-      advancePlanStep(taskPlan, 'enable_capability', 'done');
-      advancePlanStep(taskPlan, 'update_registry', 'done');
-      advancePlanStep(taskPlan, 'refresh_preview', 'running');
+      if (structuredContractExtractionFailed) {
+        advancePlanStep(taskPlan, 'patch', 'failed');
+        advancePlanStep(taskPlan, 'refresh_preview', 'failed');
+      } else {
+        // Mark all remaining plan steps as done
+        advancePlanStep(taskPlan, 'patch', 'done');
+        advancePlanStep(taskPlan, 'bind_intent', 'done');
+        advancePlanStep(taskPlan, 'create_route', 'done');
+        advancePlanStep(taskPlan, 'install_workflow', 'done');
+        advancePlanStep(taskPlan, 'enable_capability', 'done');
+        advancePlanStep(taskPlan, 'update_registry', 'done');
+        advancePlanStep(taskPlan, 'refresh_preview', 'running');
+      }
 
       // Update message — show ONLY the explanation text, NOT raw code
       setMessages(prev => prev.map(m =>
         m.id === streamingId
           ? {
               ...m,
-              content: explanationText || aiContent,
+              content: explanationText || (structuredContractExtractionFailed
+                ? 'The AI response could not be converted into project files.'
+                : aiContent),
               thinking: thinkingSteps,
               claudeReasoning: aiReasoning,
               meta: responseMeta,
@@ -1916,6 +2072,7 @@ export default function App() {
       if (generatedCode) {
         // Strip any module.exports / tailwind.config blocks that AI embedded in component code
         generatedCode = stripModuleExportsBlocks(generatedCode);
+        generatedCode = sanitizeTsxFile(singleFilePath, generatedCode).code || generatedCode;
         
         // FINAL VALIDATION: Reject code that looks like AI reasoning/prose, not actual code
         const looksLikeCode = generatedCode.includes('import ') || 
@@ -1940,12 +2097,13 @@ export default function App() {
             responseMeta.warnings?.some(w => w.severity === 'error');
 
           if (hasBlockingWarning) {
+            void recordRunOutcome(envelopeRunId, 'rejected', { note: 'single-file requires-approval' });
             console.warn('[AIBuilderPanel] Single-file patch flagged — not auto-applying');
             toast.warning('⚠️ Patch flagged for review — check warnings');
           } else if (onApplyToVFS && !multiFileOutput) {
             console.log('[AIBuilderPanel] Auto-applying to VFS:', { targetPath: singleFilePath, codeLength: generatedCode.length });
             vfsEventBus.emit('ai:apply:start', { source: 'single-file' });
-            onApplyToVFS({ [singleFilePath]: generatedCode }, {
+            const applyOutcome = await applyAIBuilderFiles(onApplyToVFS, { [singleFilePath]: generatedCode }, {
               prompt: userContent,
               model: modelUsed,
               summary: responseMeta?.reviewSummary,
@@ -1954,13 +2112,30 @@ export default function App() {
               requiresApproval: responseMeta?.requiresApproval,
               warnings: responseMeta?.warnings,
             });
-            advancePlanStep(taskPlan, 'refresh_preview', 'done');
-            advancePlanStep(taskPlan, 'validate', 'done');
-            advancePlanStep(taskPlan, 'report', 'done');
-            liveStep('complete', `✅ Applied to ${singleFilePath}`);
-            vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
-            const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
-            toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);
+            void recordRunOutcome(
+              envelopeRunId,
+              applyOutcome.success ? 'applied' : 'failed',
+              {
+                appliedPaths: [singleFilePath],
+                error: applyOutcome.success ? undefined : applyOutcome.errors?.[0],
+                note: 'single-file',
+              },
+            );
+            if (applyOutcome.success) {
+              advancePlanStep(taskPlan, 'refresh_preview', 'done');
+              advancePlanStep(taskPlan, 'validate', 'done');
+              advancePlanStep(taskPlan, 'report', 'done');
+              liveStep('complete', `✅ Applied to ${singleFilePath}`);
+              vfsEventBus.emit('ai:apply:complete', { filesWritten: [singleFilePath], source: 'single-file' });
+              const approvalNote = responseMeta?.requiresApproval ? ' — review recommended' : '';
+              toast.success(isSurgicalEdit ? `✅ Edit applied${approvalNote}` : `✅ Code applied${approvalNote}`);
+            } else {
+              const applyError = applyOutcome.errors?.[0] ?? 'The VFS rejected the generated file.';
+              advancePlanStep(taskPlan, 'refresh_preview', 'failed');
+              liveStep('error', 'AI edit was not applied', applyError);
+              vfsEventBus.emit('ai:apply:error', { message: applyError, source: 'single-file' });
+              toast.error('AI edit was not applied', { description: applyError, duration: 8000 });
+            }
           } else if (onCodeGenerated) {
             onCodeGenerated(generatedCode);
             toast.success(isSurgicalEdit ? '✅ Edit applied to preview' : '✅ Code applied to preview');
@@ -2128,8 +2303,24 @@ export default function App() {
       }
       debugHistory.push({ role: 'user', content: errorPrompt });
 
+      const debugInterpretation = await interpretBuilderRequest(errorPrompt, {
+        vertical: systemType ?? undefined,
+        filePaths: Object.keys(debugVfs),
+        hasExistingTemplate: hasVfsContext,
+      });
+      const { plan: debugTaskPlan } = interpretPrompt(errorPrompt, {
+        provisionedCapabilities: [],
+        existingFiles: Object.keys(debugVfs),
+        existingPages: [],
+        builderMode: 'edit',
+        hasBusinessId: !!systemsBuildContext?.brand?.business_name,
+        installedWorkflows: [],
+      });
+
       const response = await runBuilderTurn<any>({
         messages: debugHistory,
+        requestEnvelope: debugInterpretation.envelope,
+        unisonContext: buildUnisonAIContext(debugTaskPlan),
         mode: 'code',
         currentCode: hasVfsContext ? undefined : currentCode,
         editMode: true,
@@ -2137,7 +2328,9 @@ export default function App() {
         systemType,
         templateName,
         systemsBuildContext: systemsBuildContext ?? undefined,
-        wizardSeed: wizardSeed ?? undefined,
+        wizardSeed: uiFoundation || designIntervention
+          ? { ...(wizardSeed ?? {}), ...(uiFoundation ? { uiFoundation } : {}), ...(designIntervention ? { designIntervention } : {}) }
+          : wizardSeed ?? undefined,
         previewDiagnostics: diagnostics,
         vfsFiles: Object.keys(debugVfs).length > 0 ? debugVfs : undefined,
         gatewayOptions: gatewayConfig ? {
@@ -2235,26 +2428,40 @@ export default function App() {
           for (const [p, c] of Object.entries(fixFiles)) {
             normalized[p.startsWith('/') ? p : `/${p}`] = c;
           }
+          const sanitized = sanitizeGeneratedFiles(normalized);
           vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
-          onApplyToVFS(normalized, {
+          const applyOutcome = await applyAIBuilderFiles(onApplyToVFS, sanitized.files, {
             prompt: `Auto-fix: ${error.message || 'runtime error'}`,
             origin: 'debug-fix',
             summary: fixExplanation,
           });
-          vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(normalized), source: 'debug-fix' });
-          toast.success(`✅ Debug fix applied (${Object.keys(normalized).length} files)`);
+          if (applyOutcome.success) {
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: Object.keys(sanitized.files), source: 'debug-fix' });
+            toast.success(`✅ Debug fix applied (${Object.keys(sanitized.files).length} files)`);
+          } else {
+            const applyError = applyOutcome.errors?.[0] ?? 'The VFS rejected the debug fix.';
+            vfsEventBus.emit('ai:apply:error', { message: applyError, source: 'debug-fix' });
+            toast.error('Debug fix was not applied', { description: applyError, duration: 8000 });
+          }
         } else if (fixCode) {
           const targetPath = error.file
             ? (error.file.startsWith('/') ? error.file : `/${error.file}`)
             : (defaultTargetFile || '/src/App.tsx');
+          fixCode = sanitizeTsxFile(targetPath, fixCode).code || fixCode;
           vfsEventBus.emit('ai:apply:start', { source: 'debug-fix' });
-          onApplyToVFS({ [targetPath]: fixCode }, {
+          const applyOutcome = await applyAIBuilderFiles(onApplyToVFS, { [targetPath]: fixCode }, {
             prompt: `Auto-fix: ${error.message || 'runtime error'}`,
             origin: 'debug-fix',
             summary: fixExplanation,
           });
-          vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
-          toast.success('✅ Debug fix applied');
+          if (applyOutcome.success) {
+            vfsEventBus.emit('ai:apply:complete', { filesWritten: [targetPath], source: 'debug-fix' });
+            toast.success('✅ Debug fix applied');
+          } else {
+            const applyError = applyOutcome.errors?.[0] ?? 'The VFS rejected the debug fix.';
+            vfsEventBus.emit('ai:apply:error', { message: applyError, source: 'debug-fix' });
+            toast.error('Debug fix was not applied', { description: applyError, duration: 8000 });
+          }
         }
       }
 
@@ -2333,8 +2540,8 @@ export default function App() {
       </div>
 
       {/* Tab bar */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'code' | 'debug')} className="flex-1 flex flex-col min-h-0">
-        <TabsList className="w-full grid grid-cols-2 rounded-none h-9 bg-card/30 border-b border-border px-1">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'code' | 'debug' | 'backend')} className="flex-1 flex flex-col min-h-0">
+        <TabsList className="w-full grid grid-cols-3 rounded-none h-9 bg-card/30 border-b border-border px-1">
           <TabsTrigger
             value="code"
             className="text-xs gap-1.5 rounded-lg h-7 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground transition-all"
@@ -2354,6 +2561,13 @@ export default function App() {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger
+            value="backend"
+            className="text-xs gap-1.5 rounded-lg h-7 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground text-muted-foreground transition-all"
+          >
+            <Database className="w-3.5 h-3.5" />
+            Backend
+          </TabsTrigger>
         </TabsList>
 
         {/* Chat Tab */}
@@ -2362,6 +2576,115 @@ export default function App() {
           <ScrollArea className="flex-1" ref={scrollRef}>
             <div className="py-3 px-3">
               <LaunchReadinessCard vfsFiles={vfsFiles} className="-mx-3" />
+              <LayoutSnapshotCard vfsFiles={vfsFiles} />
+              {heldFiles && (
+                <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+                  <div className="font-semibold text-foreground">Changes ready but not applied</div>
+                  <p className="mt-1 text-muted-foreground">{heldFiles.reason}</p>
+                  <p className="mt-1 text-muted-foreground">
+                    {Object.keys(heldFiles.files).join(', ')}
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={!onApplyToVFS}
+                      onClick={async () => {
+                        if (!onApplyToVFS) return;
+                        const pending = heldFiles.files;
+                        setHeldFiles(null);
+                        const outcome = await applyAIBuilderFiles(onApplyToVFS, pending, { origin: 'held-review' });
+                        if (outcome.success) {
+                          toast.success('Held changes applied to your project');
+                        } else {
+                          toast.error('Apply failed', { description: outcome.errors?.[0] });
+                          setHeldFiles({ files: pending, reason: outcome.errors?.[0] ?? 'Apply failed.' });
+                        }
+                      }}
+                    >
+                      Apply anyway
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setHeldFiles(null)}>
+                      Discard
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {pendingCapabilityProposal && (
+                <div className="mb-3 border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+                  <div className="flex items-center gap-2 font-semibold text-foreground">
+                    <Database className="h-4 w-4 text-amber-500" />
+                    Business system change required
+                  </div>
+                  <p className="mt-2 text-muted-foreground">{pendingCapabilityProposal.plan.proposal.summary}</p>
+                  {pendingCapabilityProposal.plan.packs.length > 0 && (
+                    <p className="mt-2 text-muted-foreground">
+                      Packs to install (in order): {pendingCapabilityProposal.plan.packs.map((pack) => pack.name).join(' → ')}
+                    </p>
+                  )}
+                  <p className="mt-2 text-muted-foreground">Data affected: {pendingCapabilityProposal.plan.proposal.dataAffected.join(', ')}</p>
+                  {pendingCapabilityProposal.plan.proposal.settingsRequired.accountFields.length > 0 && (
+                    <p className="mt-1 text-muted-foreground">
+                      Settings needed: {pendingCapabilityProposal.plan.proposal.settingsRequired.accountFields.join(', ')}
+                    </p>
+                  )}
+                  <p className="mt-1 text-muted-foreground">Resolved bindings: {pendingCapabilityProposal.resolution.resolved.map((binding) => `${binding.filePath}#${binding.slot}`).join(', ') || 'none'}</p>
+                  {(() => {
+                    // Exactly what will run on the database if you approve.
+                    const migration = previewCapabilityMigration(pendingCapabilityProposal.plan.packs);
+                    if (migration.statements.length === 0) return null;
+                    return (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-muted-foreground">
+                          Backend changes on approval ({migration.statements.length} across {migration.tables.join(', ')})
+                        </summary>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">
+                          {migration.statements.map((statement) => (
+                            <li key={statement.id}>{statement.description}</li>
+                          ))}
+                        </ul>
+                        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap border border-border/50 bg-muted/40 p-2 text-[10px] text-muted-foreground">
+                          {migration.sql}
+                        </pre>
+                      </details>
+                    );
+                  })()}
+                  {pendingCapabilityProposal.plan.proposal.unsupportedCapabilities.length > 0 && (
+                    <p className="mt-1 text-amber-500">
+                      Not covered by a pack yet: {pendingCapabilityProposal.plan.proposal.unsupportedCapabilities.join(', ')}
+                    </p>
+                  )}
+
+                  {pendingCapabilityProposal.resolution.unresolved.length > 0 && (
+                    <p className="mt-2 text-destructive">Cannot approve until these targets exist: {pendingCapabilityProposal.resolution.unresolved.map((binding) => binding.target).join(', ')}</p>
+                  )}
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={pendingCapabilityProposal.isApplying || pendingCapabilityProposal.resolution.unresolved.length > 0 || !onApproveCapabilityPlan}
+                      onClick={async () => {
+                        if (!onApproveCapabilityPlan) return;
+                        setPendingCapabilityProposal((current) => current ? { ...current, isApplying: true } : current);
+                        const outcome = await onApproveCapabilityPlan(
+                          pendingCapabilityProposal.plan,
+                          pendingCapabilityProposal.resolution,
+                        );
+                        if (outcome.success) {
+                          toast.success('Business capability plan applied');
+                          setPendingCapabilityProposal(null);
+                        } else {
+                          toast.error('Business capability plan was not applied', { description: outcome.error });
+                          setPendingCapabilityProposal((current) => current ? { ...current, isApplying: false } : current);
+                        }
+                      }}
+                    >
+                      {pendingCapabilityProposal.isApplying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Approve and apply'}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={pendingCapabilityProposal.isApplying} onClick={() => setPendingCapabilityProposal(null)}>
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              )}
               {!hasConversation ? (
                 <AIConversationWelcome
                   onSelectPrompt={(prompt) => {
@@ -2406,6 +2729,15 @@ export default function App() {
             onAddFiles={addFiles}
             onRemoveFile={removeFile}
             previewRef={previewRef}
+          />
+        </TabsContent>
+
+        {/* Backend Tab — full-stack proposal review + approval surface */}
+        <TabsContent value="backend" className="flex-1 flex flex-col m-0 min-h-0 data-[state=inactive]:hidden">
+          <MigrationProposalPanel
+            projectId={projectId ?? undefined}
+            businessId={businessId ?? undefined}
+            className="flex-1 min-h-0"
           />
         </TabsContent>
 

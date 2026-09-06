@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { VirtualFile, VirtualNode } from './useVirtualFileSystem';
+import { GENERATED_RUNTIME_PROFILE } from '@/platform/core/generatedRuntimeCapabilities';
 import { getDependenciesForSandpack } from '@/utils/dependencyExtractor';
 
 // Use environment variable for Docker gateway, or Vercel API routes in production
@@ -125,8 +126,8 @@ export default defineConfig({
     // Add package.json — dynamically resolve deps from VFS imports
     if (!files['/package.json']) {
       const baseDeps: Record<string, string> = {
-        react: '^18.3.1',
-        'react-dom': '^18.3.1',
+        react: GENERATED_RUNTIME_PROFILE.react,
+        'react-dom': GENERATED_RUNTIME_PROFILE.reactDom,
       };
       const { dependencies: resolvedDeps } = getDependenciesForSandpack(files, baseDeps);
 
@@ -142,8 +143,8 @@ export default defineConfig({
         },
         dependencies: resolvedDeps,
         devDependencies: {
-          '@types/react': '^18.3.18',
-          '@types/react-dom': '^18.3.5',
+          '@types/react': GENERATED_RUNTIME_PROFILE.reactTypes,
+          '@types/react-dom': GENERATED_RUNTIME_PROFILE.reactDomTypes,
           '@vitejs/plugin-react': '^4.3.4',
           typescript: '^5.7.2',
           vite: '^6.0.7',

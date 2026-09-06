@@ -29,6 +29,7 @@ export type IntentSurface = 'inline' | 'overlay' | 'redirect' | 'client';
 
 export type IntentHandler =
   | 'client'              // Pure client-side (nav, scroll, open drawer)
+  | 'site-runtime'        // Versioned generated-site runtime gateway
   | 'intent-exec'         // Generic backend executor edge fn
   | 'workflow-trigger'    // Triggers a configured automation workflow
   | 'stripe-checkout'     // Creates checkout session, redirects
@@ -401,7 +402,7 @@ export const INTENT_REGISTRY: Record<string, IntentDef> = {
     namespace: 'booking',
     surface: 'overlay',
     overlayId: 'booking',
-    handler: 'intent-exec',
+    handler: 'site-runtime',
     requiredCapabilities: ['booking'],
     status: 'stable',
     aliases: ['calendar.open', 'reservation.submit', 'booking.book', 'booking.start'],

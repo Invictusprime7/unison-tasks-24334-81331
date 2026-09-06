@@ -1,7 +1,9 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "node:path";
+import { readFileSync } from 'node:fs';
 import { visualizer } from 'rollup-plugin-visualizer';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -12,6 +14,49 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react({
       jsxImportSource: undefined, // Use automatic JSX runtime
+    }),
+    ({
+      name: 'sandpack-root-iframe',
+      enforce: 'pre',
+      configureServer(server) {
+        const runnerHtml = readFileSync(
+          path.resolve(__dirname, 'node_modules/@codesandbox/sandpack-client/sandpack/index.html'),
+          'utf8',
+        );
+        server.middlewares.use((request, response, next) => {
+          if (request.url === '/' && request.headers.referer?.includes('/web-builder')) {
+            response.statusCode = 200;
+            response.setHeader('Content-Type', 'text/html; charset=utf-8');
+            response.end(runnerHtml);
+            return;
+          }
+          next();
+        });
+      },
+    }) satisfies Plugin,
+    viteStaticCopy({
+      targets: [
+        {
+          src: 'node_modules/@codesandbox/sandpack-client/sandpack/index.html',
+          dest: 'sandpack',
+          rename: { stripBase: true },
+        },
+        {
+          src: 'node_modules/@codesandbox/sandpack-client/sandpack/static/**/*',
+          dest: 'static',
+          rename: { stripBase: 5 },
+        },
+        {
+          src: 'node_modules/@codesandbox/sandpack-client/sandpack/*.worker.js',
+          dest: '.',
+          rename: { stripBase: true },
+        },
+        {
+          src: 'node_modules/@codesandbox/sandpack-client/sandpack/{sandbox-service-worker.js,service-worker.js,file-manifest.json,version.txt}',
+          dest: '.',
+          rename: { stripBase: true },
+        },
+      ],
     }),
     mode === "analyze" && visualizer({
       filename: "dist/bundle-analysis.html",
@@ -163,6 +208,8 @@ export default defineConfig(({ mode }) => ({
       // Core libraries that should be pre-bundled
       'react',
       'react-dom',
+      'react-dom/client',
+      'react/jsx-dev-runtime',
       'react-router-dom',
       'lucide-react',
       'clsx',

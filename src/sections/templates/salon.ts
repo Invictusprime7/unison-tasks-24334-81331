@@ -48,6 +48,7 @@ export const SALON_COMPOSITIONS: TemplateComposition[] = [
         id: 'salon-premium-nav',
         type: 'navbar',
         props: {
+          layout: 'minimal-dark',
           brand: 'Lumière Studio',
           sticky: true,
           transparent: false,
@@ -237,6 +238,7 @@ export const SALON_COMPOSITIONS: TemplateComposition[] = [
         id: 'salon-premium-contact',
         type: 'contact',
         props: {
+          layout: 'split-card',
           headline: 'Find Us',
           description: 'We\'d love to hear from you. Drop by or reach out any time.',
           submitLabel: 'Send Message',
@@ -256,6 +258,7 @@ export const SALON_COMPOSITIONS: TemplateComposition[] = [
         id: 'salon-premium-footer',
         type: 'footer',
         props: {
+          layout: 'dark-band',
           brand: 'Lumière Studio',
           copyright: '© 2024 Lumière Studio. All rights reserved.',
           newsletter: true,
@@ -339,6 +342,7 @@ export const SALON_COMPOSITIONS: TemplateComposition[] = [
         id: 'salon-minimal-nav',
         type: 'navbar',
         props: {
+          layout: 'centered-logo',
           brand: 'Studio Noir',
           sticky: true,
           transparent: false,
@@ -446,6 +450,7 @@ export const SALON_COMPOSITIONS: TemplateComposition[] = [
         id: 'salon-minimal-footer',
         type: 'footer',
         props: {
+          layout: 'centered-minimal',
           brand: 'Studio Noir',
           copyright: '© 2024 Studio Noir. All rights reserved.',
           newsletter: false,
@@ -503,6 +508,7 @@ export const SALON_COMPOSITIONS: TemplateComposition[] = [
         id: 'salon-organic-nav',
         type: 'navbar',
         props: {
+          layout: 'centered-logo',
           brand: 'Verdant Beauty',
           sticky: true,
           links: [
@@ -578,6 +584,7 @@ export const SALON_COMPOSITIONS: TemplateComposition[] = [
         id: 'salon-organic-contact',
         type: 'contact',
         props: {
+          layout: 'split-card',
           headline: 'Visit the studio',
           description: 'Walk-ins welcome, but reservations are recommended.',
           submitLabel: 'Send Message',
@@ -591,6 +598,7 @@ export const SALON_COMPOSITIONS: TemplateComposition[] = [
         id: 'salon-organic-footer',
         type: 'footer',
         props: {
+          layout: 'dark-band',
           brand: 'Verdant Beauty',
           copyright: '© 2024 Verdant Beauty. Made with care.',
           newsletter: true,

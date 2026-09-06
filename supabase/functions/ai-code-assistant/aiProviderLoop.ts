@@ -3,9 +3,14 @@
  * Returns content, reasoning, and the model that succeeded.
  */
 
-import type { ProviderPlan } from "./providerRouter.ts";
+import { isGeminiExclusiveProviderMode, type ProviderPlan } from "./providerRouter.ts";
 import { extractThinkingTags } from "./responseNormalizer.ts";
-import { createChatCompletion } from "../_shared/ai/providerClient.ts";
+import {
+  createLastResortGatewayChatCompletion,
+  createPlannedChatCompletion,
+} from "../_shared/ai/providerClient.ts";
+import type { ChatCompletionRequest } from "../_shared/ai/providerClient.ts";
+import type { ModelSpec } from './providerRouter.ts';
 
 export interface ProviderEarlyError {
   status: number;
@@ -25,10 +30,44 @@ export interface ProviderCallResult {
   reasoning: string;
   /** Which model produced the successful response */
   modelUsed?: string;
+  /** Direct provider that served the successful response. */
+  providerUsed?: string;
   /** OpenAI-shaped tool_calls returned by the model (chat completions style). */
   toolCalls?: RawToolCall[];
   /** Non-null when we should return an early HTTP error (rate limit, payment required) */
   earlyError?: ProviderEarlyError;
+}
+
+export const PROVIDER_LOOP_TOTAL_BUDGET_MS = 135_000;
+
+export function buildPlannedChatCompletionRequest(opts: {
+  model: ModelSpec;
+  aiMessages: Array<{ role: string; content: unknown }>;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
+  tools?: unknown[];
+  toolChoice?: unknown;
+}): ChatCompletionRequest {
+  const { model, aiMessages, reasoningEffort, tools, toolChoice } = opts;
+  const usesCompletionTokens = model.id.includes('gpt-5');
+  const supportsReasoningEffort = usesCompletionTokens
+    || model.id.startsWith('google/')
+    || model.id.startsWith('gemini-');
+  const request: ChatCompletionRequest = {
+    model: model.id,
+    ...(usesCompletionTokens
+      ? { max_completion_tokens: model.maxTokens }
+      : { max_tokens: model.maxTokens }),
+    messages: aiMessages,
+  };
+
+  if (supportsReasoningEffort && reasoningEffort && reasoningEffort !== 'none') {
+    request.reasoning_effort = reasoningEffort;
+  }
+  if (tools && tools.length > 0) {
+    request.tools = tools;
+    request.tool_choice = toolChoice ?? 'auto';
+  }
+  return request;
 }
 
 export async function runProviderLoop(opts: {
@@ -42,29 +81,83 @@ export async function runProviderLoop(opts: {
   tools?: unknown[];
   /** `tool_choice` forwarded to the provider. Defaults to `"auto"` when tools are present. */
   toolChoice?: "auto" | "none" | "required";
+  /** Cancels provider work when the browser request disconnects or expires. */
+  signal?: AbortSignal;
 }): Promise<ProviderCallResult> {
-  const { aiMessages, providerPlan, reasoningEffort, allowDirectFallbacks = true, tools, toolChoice } = opts;
+  const { aiMessages, providerPlan, reasoningEffort, allowDirectFallbacks = true, tools, toolChoice, signal } = opts;
   const hasTools = Array.isArray(tools) && tools.length > 0;
   const effectiveToolChoice = hasTools ? (toolChoice ?? "auto") : undefined;
   let content = '';
   let lastError = '';
   let reasoning = '';
   let modelUsed: string | undefined;
+  let providerUsed: string | undefined;
   let toolCalls: RawToolCall[] | undefined;
 
-  // Global wall-clock budget so we don't exceed the client's timeout window.
-  // Client global abort fires at 150s; reserve ~15s for response packaging/network.
-  const TOTAL_BUDGET_MS = 135_000;
+  // Hard server deadline. Keep enough headroom for validation, one targeted
+  // repair, persistence and the response trip before the browser deadline.
+  // Provider failover is owned here; providerClient must not nest another
+  // fallback chain inside these attempts.
   const startedAt = Date.now();
-  const budgetRemaining = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
-  const hasDirectOpenAI = allowDirectFallbacks && Boolean(Deno.env.get('OPENAI_API_KEY'));
-  const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY'));
+  const budgetRemaining = () => PROVIDER_LOOP_TOTAL_BUDGET_MS - (Date.now() - startedAt);
+  const geminiExclusive = isGeminiExclusiveProviderMode();
+  const hasDirectOpenAI = allowDirectFallbacks && !geminiExclusive && Boolean(Deno.env.get('OPENAI_API_KEY'));
+  const hasDirectGemini = allowDirectFallbacks && Boolean(Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY'));
+  const hasLastResortGateway = allowDirectFallbacks && !geminiExclusive && Boolean(Deno.env.get('LOVABLE_API_KEY'));
+  // The managed gateway is the final safety net; a 20 s slice is not enough for
+  // a real generation, so reserve a usable window for it.
+  const lastResortReserveMs = hasLastResortGateway ? 35_000 : 0;
   const providerErrors: string[] = [];
   let deferredEarlyError: ProviderEarlyError | undefined;
+  // A 429 whose body says billing/quota is exhausted is not a transient rate
+  // limit: every further call to that provider will fail the same way. Mark the
+  // whole family dead so the remaining budget goes to providers that can answer.
+  let geminiQuotaExhausted = false;
+  const isQuotaExhausted = (detail: string) =>
+    /credits are depleted|prepayment|quota|billing|insufficient|exceeded your current quota/i.test(detail);
+  const isGeminiModelId = (id: string) => id.startsWith('google/') || id.startsWith('gemini-');
+  // Tracks whether any provider failed for a non-rate-limit reason (timeout,
+  // 500, empty response, etc.). When true, a deferred 429 from one provider
+  // must NOT mask the real failure — the client would show "rate limited" even
+  // though the actual cause was a timeout on a different provider.
+  let hadNonRateLimitError = false;
+  // True once any direct provider reports a billing/quota-exhausted 429. Those
+  // keys cannot recover within this request, so the managed gateway becomes the
+  // only path that can answer and must get the whole remaining budget.
+  let directQuotaExhausted = false;
   const recordProviderError = (label: string, detail: string) => {
     const message = `${label}: ${detail}`;
     providerErrors.push(message);
     lastError = message;
+    if (!/429|rate limit|402|payment required/i.test(detail)) {
+      hadNonRateLimitError = true;
+    }
+    if (!/gateway/i.test(label) && isQuotaExhausted(detail)) {
+      directQuotaExhausted = true;
+    }
+  };
+
+
+  const createAttemptSignal = (timeoutMs: number) => {
+    const controller = new AbortController();
+    const onOuterAbort = () => controller.abort(signal?.reason);
+    if (signal) {
+      if (signal.aborted) controller.abort(signal.reason);
+      else signal.addEventListener('abort', onOuterAbort, { once: true });
+    }
+    const timeoutId = setTimeout(() => controller.abort(new DOMException('Provider attempt timed out', 'TimeoutError')), timeoutMs);
+    return {
+      signal: controller.signal,
+      cleanup: () => {
+        clearTimeout(timeoutId);
+        signal?.removeEventListener('abort', onOuterAbort);
+      },
+    };
+  };
+  const throwIfCancelled = () => {
+    if (signal?.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new DOMException('Request aborted', 'AbortError');
+    }
   };
 
   const runDirectOpenAI = async (): Promise<void> => {
@@ -82,18 +175,19 @@ export async function runProviderLoop(opts: {
     const fallbackTokens = providerPlan.fallbackMaxTokens;
     // Model-specific output token limits (max_completion_tokens caps).
     // gpt-4.1 supports 32 768 — enough for a full wizard seed (9+ pages).
-    // gpt-4o and gpt-4o-mini top out at 16 384.
+    // Keep this native fallback list short: planned routing owns normal model
+    // selection, while this branch only covers a provider family omitted from
+    // the plan.
     const openaiModels = [
       ...(configuredOpenAIModel
         ? [{ id: configuredOpenAIModel, maxTokens: Math.min(fallbackTokens, 32768), label: `OpenAI ${configuredOpenAIModel}` }]
         : []),
       // gpt-4.1: faster throughput + 32 k output — primary direct-API choice.
       { id: 'gpt-4.1', maxTokens: Math.min(fallbackTokens, 32768), label: 'OpenAI gpt-4.1' },
-      { id: 'gpt-4o', maxTokens: Math.min(fallbackTokens, 16384), label: 'OpenAI gpt-4o' },
-      { id: 'gpt-4o-mini', maxTokens: Math.min(fallbackTokens, 16384), label: 'OpenAI gpt-4o-mini' },
     ].filter((model, index, models) => models.findIndex(m => m.id === model.id) === index);
     
     for (const model of openaiModels) {
+      throwIfCancelled();
       const remaining = budgetRemaining();
       if (remaining < 8000) {
         console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining OpenAI models`);
@@ -105,8 +199,7 @@ export async function runProviderLoop(opts: {
       const perModelMs = Math.min(providerPlan.perModelTimeoutMs, Math.max(8000, remaining - 2000));
       try {
         console.log(`[AI-Hybrid] Trying ${role} ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+        const attempt = createAttemptSignal(perModelMs);
         
         const requestBody: Record<string, unknown> = {
           model: model.id,
@@ -125,9 +218,9 @@ export async function runProviderLoop(opts: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(requestBody),
-          signal: controller.signal,
+          signal: attempt.signal,
         });
-        clearTimeout(timeoutId);
+        attempt.cleanup();
 
         if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
@@ -137,6 +230,10 @@ export async function runProviderLoop(opts: {
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
           deferredEarlyError ??= earlyError;
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; continuing fallback chain...`);
+          // A 429 is per-model/tier, not terminal for the whole chain: keep
+          // walking the remaining models (including other provider families)
+          // instead of aborting generation on the first rate limit.
+          if (resp.status === 429) continue;
           break;
         }
 
@@ -182,10 +279,12 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
+        providerUsed = 'openai';
         if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
         console.log(`[AI-Hybrid] Success with fallback ${model.label}`);
         break;
       } catch (err) {
+        throwIfCancelled();
         if (err instanceof Error && err.name === 'AbortError') {
           console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
           recordProviderError(model.label, 'timeout');
@@ -202,8 +301,8 @@ export async function runProviderLoop(opts: {
   // gemini-2.5-flash supports 65 536 output tokens — the most capable
   // single-shot provider for large wizard seed generation (9+ pages).
   const runDirectGemini = async (): Promise<void> => {
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY');
-    if (!GEMINI_API_KEY || content) return;
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('UNISONGEMINI_API_KEY');
+    if (!GEMINI_API_KEY || content || geminiQuotaExhausted) return;
 
     const role = 'direct';
     console.log(`[AI-Hybrid] Direct Gemini API configured as ${role} provider`);
@@ -211,10 +310,11 @@ export async function runProviderLoop(opts: {
     const geminiModels = [
       // 65 536 output tokens — ideal for multi-page wizard generation
       { id: 'gemini-2.5-flash', maxTokens: Math.min(providerPlan.fallbackMaxTokens, 65536), label: 'Gemini 2.5 Flash' },
-      { id: 'gemini-2.0-flash', maxTokens: Math.min(providerPlan.fallbackMaxTokens, 8192), label: 'Gemini 2.0 Flash' },
+      { id: 'gemini-2.5-flash-lite', maxTokens: Math.min(providerPlan.fallbackMaxTokens, 8192), label: 'Gemini 2.5 Flash Lite' },
     ];
 
     for (const model of geminiModels) {
+      throwIfCancelled();
       const remaining = budgetRemaining();
       if (remaining < 8000) {
         console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining Gemini models`);
@@ -224,8 +324,7 @@ export async function runProviderLoop(opts: {
       const perModelMs = Math.min(providerPlan.perModelTimeoutMs, Math.max(8000, remaining - 2000));
       try {
         console.log(`[AI-Hybrid] Trying ${role} ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+        const attempt = createAttemptSignal(perModelMs);
 
         const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
           method: 'POST',
@@ -239,20 +338,25 @@ export async function runProviderLoop(opts: {
             max_tokens: model.maxTokens,
             ...(hasTools ? { tools, tool_choice: effectiveToolChoice } : {}),
           }),
-          signal: controller.signal,
+          signal: attempt.signal,
         });
-        clearTimeout(timeoutId);
+        attempt.cleanup();
 
         if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
-          const earlyError: ProviderEarlyError = resp.status === 429
-            ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
-            : { status: 402, error: 'Payment required. Please add credits to your Google AI account.' };
+          const exhausted = isQuotaExhausted(errText) || resp.status === 402;
           recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
-          deferredEarlyError ??= earlyError;
+          if (exhausted) {
+            geminiQuotaExhausted = true;
+            deferredEarlyError ??= { status: 402, error: 'Payment required. Please add credits to your Google AI account.' };
+            console.warn(`[AI-Hybrid] ${model.label} quota/billing exhausted; abandoning Gemini for this turn.`);
+            break;
+          }
+          deferredEarlyError ??= { status: 429, error: 'Rate limit exceeded. Please try again later.' };
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next...`);
-          break;
+          continue;
         }
+
 
         if (!resp.ok) {
           const errText = await resp.text();
@@ -288,10 +392,12 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
+        providerUsed = 'gemini';
         if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
         console.log(`[AI-Hybrid] Success with ${role} ${model.label}`);
         break;
       } catch (err) {
+        throwIfCancelled();
         if (err instanceof Error && err.name === 'AbortError') {
           console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
           recordProviderError(model.label, 'timeout');
@@ -310,60 +416,73 @@ export async function runProviderLoop(opts: {
     const totalChars = aiMessages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
     console.log(`[AI-Hybrid] Total prompt size: ${totalChars} chars across ${aiMessages.length} messages`);
     
-    for (const model of providerPlan.gatewayModels) {
+    for (const [modelIndex, model] of providerPlan.gatewayModels.entries()) {
+      throwIfCancelled();
+      if (geminiQuotaExhausted && isGeminiModelId(model.id)) {
+        console.warn(`[AI-Hybrid] Skipping ${model.label} — Gemini quota exhausted this turn.`);
+        continue;
+      }
       const remaining = budgetRemaining();
+
       if (remaining < 8000) {
         console.warn(`[AI-Hybrid] Budget exhausted (${remaining}ms left), skipping remaining gateway models`);
         lastError = lastError || 'budget exhausted before all models tried';
         break;
       }
-      // Per-model timeout: give the LEAD model the lion's share of the
-      // remaining budget (up to its configured cap) so a single fast model
-      // can actually finish, and only fall back when it truly fails.
-      // Fallback models get whatever is left, floored at 12s so they have
-      // a real chance to respond instead of being preemptively starved.
+      // Most turns reserve room for failover. Wizard generation is different:
+      // a valid 20k+ token Gemini response routinely needs 80–90 seconds. Give
+      // that funded lead path nearly the full turn; auth/rate-limit failures
+      // return quickly and can still fall through to the remaining providers.
       const isLeadModel = model.id === providerPlan.gatewayModels[0]?.id;
       const cap = providerPlan.perModelTimeoutMs;
-      const headroom = Math.max(8000, remaining - 2000);
-      const perModelMs = isLeadModel
-        ? Math.min(cap, headroom)
-        : Math.min(cap, Math.max(12000, headroom));
+      const reserveMs = providerPlan.preferLongLeadAttempt && isLeadModel
+        ? 8_000
+        : lastResortReserveMs;
+      const headroom = Math.max(8000, remaining - 2000 - reserveMs);
+      const leadShare = Math.max(30000, Math.floor(headroom * 0.6));
+      const remainingModels = providerPlan.gatewayModels.length - modelIndex;
+      const balancedAttemptMs = Math.max(12000, Math.floor(cap / remainingModels));
+      const perModelMs = providerPlan.balancedProviderAttempts
+        ? Math.min(cap, headroom, balancedAttemptMs)
+        : isLeadModel
+          ? Math.min(cap, headroom, providerPlan.preferLongLeadAttempt ? headroom : leadShare)
+          : Math.min(cap, Math.max(12000, headroom));
+
 
       try {
         console.log(`[AI-Hybrid] Trying planned direct model ${model.label} (timeout: ${perModelMs / 1000}s, budget left: ${remaining / 1000}s)...`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+        const attempt = createAttemptSignal(perModelMs);
 
-        const usesCompletionTokens = model.id.includes('gpt-5');
-        const reqBody: Record<string, unknown> = {
-          model: model.id,
-          ...(usesCompletionTokens
-            ? { max_completion_tokens: model.maxTokens }
-            : { max_tokens: model.maxTokens }),
-          messages: aiMessages,
-        };
-        // Only send reasoning parameters for supported OpenAI-compatible models.
-        if (reasoningEffort && reasoningEffort !== "none" && model.id.startsWith('openai/')) {
-          reqBody.reasoning = { effort: reasoningEffort };
-        }
-        if (hasTools) {
-          reqBody.tools = tools;
-          reqBody.tool_choice = effectiveToolChoice;
-        }
+        const reqBody = buildPlannedChatCompletionRequest({
+          model,
+          aiMessages,
+          reasoningEffort,
+          tools: hasTools ? tools : undefined,
+          toolChoice: effectiveToolChoice,
+        });
 
-        const resp = await createChatCompletion(reqBody as Parameters<typeof createChatCompletion>[0], controller.signal);
-        clearTimeout(timeoutId);
+        const resp = await createPlannedChatCompletion(reqBody, attempt.signal);
+        attempt.cleanup();
 
         if (resp.status === 429 || resp.status === 402) {
           const errText = await resp.text().catch(() => '');
-          const earlyError: ProviderEarlyError = resp.status === 429
+          const detail = `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`;
+          const exhausted = isQuotaExhausted(errText);
+          const earlyError: ProviderEarlyError = resp.status === 429 && !exhausted
             ? { status: 429, error: 'Rate limit exceeded. Please try again later.' }
             : { status: 402, error: 'Payment required. Please add credits to your workspace.' };
-          recordProviderError(model.label, `${resp.status}${errText ? ` ${errText.substring(0, 200)}` : ''}`);
-          deferredEarlyError ??= earlyError;
+          recordProviderError(model.label, detail);
+          if (exhausted && isGeminiModelId(model.id)) {
+            geminiQuotaExhausted = true;
+            console.warn(`[AI-Hybrid] ${model.label} quota/billing exhausted; skipping all Gemini attempts this turn.`);
+          } else {
+            deferredEarlyError ??= earlyError;
+          }
           console.warn(`[AI-Hybrid] ${model.label} returned ${resp.status}; trying next provider...`);
+          if (resp.status === 429) continue;
           break;
         }
+
 
         if (!resp.ok) {
           const errText = await resp.text();
@@ -414,10 +533,12 @@ export async function runProviderLoop(opts: {
         }
         content = extracted.content;
         modelUsed = model.id;
+        providerUsed = resp.headers.get('X-Unison-AI-Provider') ?? providerUsed;
         if (parsedToolCalls && parsedToolCalls.length > 0) toolCalls = parsedToolCalls;
         console.log(`[AI-Hybrid] Success with planned direct model ${model.label}`);
         break;
       } catch (err) {
+        throwIfCancelled();
         if (err instanceof Error && err.name === 'AbortError') {
           console.warn(`[AI-Hybrid] ${model.label} timed out, trying next...`);
           recordProviderError(model.label, 'timeout');
@@ -430,14 +551,19 @@ export async function runProviderLoop(opts: {
     }
   }
 
-  // ── Phase 2: Direct Gemini API (65k output tokens, fast) ──────────────
-  if (!content && allowDirectFallbacks) {
-    await runDirectGemini();
-  }
-
-  // ── Phase 3: Direct OpenAI API ────────────────────────────────────────
-  if (!content && allowDirectFallbacks) {
-    await runDirectOpenAI();
+  // ── Phase 2–3: Provider-native fallback models ───────────────────────
+  // Planned models already exercise both direct provider families. Repeating
+  // both complete provider-native lists after that used the entire wall-clock
+  // budget during 429/timeout storms and starved the true last-resort path.
+  // Only use the native list for a configured family that had no planned model.
+  const plannedProviders = new Set(providerPlan.gatewayModels.map((model) => (
+    model.id.startsWith('openai/') || model.id.startsWith('gpt-') ? 'openai' :
+    model.id.startsWith('google/') || model.id.startsWith('gemini-') ? 'gemini' :
+    'other'
+  )));
+  if (!content && allowDirectFallbacks && !geminiExclusive) {
+    if (hasDirectOpenAI && !plannedProviders.has('openai')) await runDirectOpenAI();
+    if (!content && hasDirectGemini && !plannedProviders.has('gemini')) await runDirectGemini();
   }
 
   // ── Phase 4: Direct Anthropic API ─────────────────────────────────────
@@ -445,15 +571,15 @@ export async function runProviderLoop(opts: {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (ANTHROPIC_API_KEY) {
       const remaining = budgetRemaining();
-      if (remaining >= 8000) {
-        const perModelMs = Math.min(28000, Math.max(8000, remaining - 2000));
+      const anthropicBudget = remaining - (hasLastResortGateway ? 10_000 : 2_000);
+      if (anthropicBudget >= 8000) {
+        const perModelMs = Math.min(28000, anthropicBudget);
         try {
           const systemMsg = (aiMessages.find((m) => m.role === 'system')?.content as string) || '';
           const userMsgs = aiMessages.filter((m) => m.role !== 'system');
           console.log(`[AI-Hybrid] Trying direct Anthropic claude-sonnet-4-5 (timeout: ${perModelMs / 1000}s)...`);
 
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), perModelMs);
+          const attempt = createAttemptSignal(perModelMs);
           const resp = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
@@ -467,9 +593,9 @@ export async function runProviderLoop(opts: {
               system: systemMsg,
               messages: userMsgs,
             }),
-            signal: controller.signal,
+            signal: attempt.signal,
           });
-          clearTimeout(timeoutId);
+          attempt.cleanup();
 
           if (!resp.ok) {
             const errText = await resp.text();
@@ -484,20 +610,89 @@ export async function runProviderLoop(opts: {
               if (extracted.reasoning) reasoning = extracted.reasoning;
               content = extracted.content;
               modelUsed = 'claude-sonnet-4-5';
+              providerUsed = 'anthropic';
               console.log('[AI-Hybrid] Success with direct Anthropic claude-sonnet-4-5');
             } else {
               recordProviderError('Anthropic claude-sonnet-4-5', 'no content');
             }
           }
         } catch (err) {
+          throwIfCancelled();
           recordProviderError('Anthropic claude-sonnet-4-5', err instanceof Error ? err.message : 'unknown');
         }
       }
     }
   }
 
+  // ── Phase 5: Managed gateway, strictly last resort ───────────────────
+  // This path is intentionally unreachable until all configured direct
+  // provider models (and Anthropic, when present) have failed. It prevents a
+  // temporary direct-provider 429 from blocking the Wizard while preserving
+  // the product rule that the managed gateway is never primary.
+  if (!content && hasLastResortGateway) {
+    const remaining = budgetRemaining();
+    if (remaining >= 8_000) {
+      // The gateway needs ~30 s for large wizard-seed prompts. When the direct
+      // keys are billing-exhausted the gateway is the ONLY provider that can
+      // answer, so it gets the entire remaining budget instead of a 35 s slice.
+      const gatewayCapMs = directQuotaExhausted ? Number.MAX_SAFE_INTEGER : 35_000;
+      const perModelMs = Math.min(gatewayCapMs, Math.max(8_000, remaining - 2_000));
+
+      const gatewayModel: ModelSpec = {
+        id: 'google/gemini-3.6-flash',
+        maxTokens: Math.min(providerPlan.fallbackMaxTokens, 32_000),
+        label: 'Managed gateway fallback',
+      };
+      try {
+        console.log(`[AI-Hybrid] Trying managed gateway as final fallback (timeout: ${perModelMs / 1000}s)...`);
+        const attempt = createAttemptSignal(perModelMs);
+        const resp = await createLastResortGatewayChatCompletion(
+          buildPlannedChatCompletionRequest({
+            model: gatewayModel,
+            aiMessages,
+            reasoningEffort,
+            tools: hasTools ? tools : undefined,
+            toolChoice: effectiveToolChoice,
+          }),
+          attempt.signal,
+        );
+        attempt.cleanup();
+        if (resp.ok) {
+          const data = await resp.json();
+          const message = data.choices?.[0]?.message ?? {};
+          const parsedContent = message.content || '';
+          const parsedToolCalls = Array.isArray(message.tool_calls) ? (message.tool_calls as RawToolCall[]) : undefined;
+          if (parsedContent || (parsedToolCalls && parsedToolCalls.length > 0)) {
+            const extracted = extractThinkingTags(parsedContent);
+            content = extracted.content;
+            reasoning = extracted.reasoning || reasoning;
+            modelUsed = gatewayModel.id;
+            providerUsed = 'lovable';
+            if (parsedToolCalls?.length) toolCalls = parsedToolCalls;
+            console.log('[AI-Hybrid] Success with managed gateway final fallback');
+          }
+        } else {
+          const errText = await resp.text().catch(() => '');
+          recordProviderError(gatewayModel.label, `${resp.status} ${errText.substring(0, 200)}`);
+          if (resp.status === 402) {
+            deferredEarlyError = { status: 402, error: 'AI credits are exhausted. Please add workspace credits and try again.' };
+          }
+        }
+      } catch (err) {
+        throwIfCancelled();
+        recordProviderError(gatewayModel.label, err instanceof Error ? err.message : 'unknown');
+      }
+    }
+  }
+
   if (!content) {
-    if (deferredEarlyError) {
+
+    // Only surface a deferred 429/402 as the early error when every provider
+    // failed for rate-limit / billing reasons. If any provider failed for a
+    // different reason (timeout, 500, empty response), the 429 from one
+    // provider is misleading — fall through to the detailed "all providers
+    // failed" error so the client shows the real failure.
+    if (deferredEarlyError && !hadNonRateLimitError) {
       return { content: '', reasoning: '', modelUsed: undefined, earlyError: deferredEarlyError };
     }
     const configuredProviders = [
@@ -505,8 +700,13 @@ export async function runProviderLoop(opts: {
       hasDirectOpenAI ? 'openai' : '',
     ].filter(Boolean);
     const errorTrail = providerErrors.slice(-10).join(' | ') || lastError || 'no provider attempts completed';
-    throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. Please ensure the managed AI gateway secret is valid and available to backend functions.`);
+    const gatewayStatus = geminiExclusive
+      ? 'Gemini-only provider mode is active; OpenAI and managed fallbacks are disabled.'
+      : hasLastResortGateway
+        ? 'The managed AI gateway fallback was configured but did not recover the request.'
+        : 'No managed AI gateway fallback is configured.';
+    throw new Error(`All AI providers failed. Configured providers: ${configuredProviders.join(', ') || 'none'}. Last errors: ${errorTrail}. ${gatewayStatus}`);
   }
 
-  return { content, reasoning, modelUsed, toolCalls };
+  return { content, reasoning, modelUsed, providerUsed, toolCalls };
 }

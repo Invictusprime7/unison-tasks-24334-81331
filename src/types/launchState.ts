@@ -92,6 +92,7 @@ export interface LaunchState {
 
   // Shared preview/builder handoff metadata
   businessId?: string;
+  siteId?: string;
   projectId?: string;
   manifestId?: string;
   entryPoint?: string;

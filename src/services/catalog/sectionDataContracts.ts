@@ -11,6 +11,12 @@ import {
   getCatalogSurface,
   type CatalogSourceTable,
 } from '@/platform/core/catalogSurfaceRegistry';
+import {
+  rankCatalogSurfaces,
+  type CatalogRankingContext,
+} from '@/services/catalog/catalogCapabilityResolution';
+
+export type { CatalogRankingContext };
 
 export type { CatalogSourceTable };
 
@@ -80,28 +86,24 @@ export function getSectionContract(sectionType: string): SectionDataContract | u
   return SECTION_DATA_CONTRACTS[surface.componentType];
 }
 
-export function contractsForIndustry(industry: string): SectionDataContract[] {
-  const base = [SECTION_DATA_CONTRACTS.Testimonials];
-  switch (industry) {
-    case 'ecommerce':
-      return [SECTION_DATA_CONTRACTS.ProductGrid, SECTION_DATA_CONTRACTS.FeaturedOffers, ...base];
-    case 'restaurant':
-      return [SECTION_DATA_CONTRACTS.MenuSection, SECTION_DATA_CONTRACTS.FeaturedOffers, ...base];
-    case 'local-service':
-    case 'salon':
-    case 'coaching':
-      return [
-        SECTION_DATA_CONTRACTS.ServiceGrid,
-        SECTION_DATA_CONTRACTS.BookingAvailability,
-        SECTION_DATA_CONTRACTS.PortfolioGrid,
-        ...base,
-      ];
-    case 'saas':
-      return [SECTION_DATA_CONTRACTS.PricingTable, ...base];
-    case 'agency':
-    case 'portfolio':
-      return [SECTION_DATA_CONTRACTS.PortfolioGrid, SECTION_DATA_CONTRACTS.ServiceGrid, ...base];
-    default:
-      return [SECTION_DATA_CONTRACTS.ServiceGrid, ...base];
-  }
+/**
+ * Suggests contracts for a site. EVERY catalog surface is available to every
+ * industry — industry is only a ranking hint, selection + capabilities decide.
+ * Ordering comes from `rankCatalogSurfaces`.
+ */
+export function suggestSectionContracts(
+  ctx: CatalogRankingContext = {},
+): SectionDataContract[] {
+  return rankCatalogSurfaces(ctx)
+    .map(({ surface }) => SECTION_DATA_CONTRACTS[surface.componentType])
+    .filter(Boolean);
 }
+
+/**
+ * @deprecated Industry is a hint, not a gate. Prefer `suggestSectionContracts`
+ * with wizard selections + capabilities. Returns all surfaces, industry-ranked.
+ */
+export function contractsForIndustry(industry: string): SectionDataContract[] {
+  return suggestSectionContracts({ industry });
+}
+

@@ -23,6 +23,7 @@ import { compositionToReactFileSet } from '@/sections/compositionToFileSet';
 import { THEME_PRESETS } from '@/components/onboarding/themePresets';
 import { themePresetToThemeTokens } from '@/components/onboarding/themePresetToTokens';
 import { PreviewPipelineError } from '@/services/previewPipelineError';
+import type { WizardDesignIntervention } from '@/services/wizardDesignIntervention';
 
 /**
  * Options shared by the scaffolding entry points.
@@ -40,6 +41,8 @@ import { PreviewPipelineError } from '@/services/previewPipelineError';
 export interface ScaffoldOptions {
   /** @deprecated Strict composition is now the only supported mode. */
   strictWizardComposition?: boolean;
+  /** Canonical, opt-in visual recipes projected into generated page modules. */
+  designIntervention?: Pick<WizardDesignIntervention, 'motionRecipes' | 'sectionVariants' | 'activeVariants'> & Partial<Pick<WizardDesignIntervention, 'industry' | 'themePresetId' | 'layoutRecipe' | 'interactionRecipes'>>;
 }
 
 
@@ -50,18 +53,36 @@ export interface ScaffoldOptions {
 
 const DEFAULT_ROLE_SECTION_POOL: Record<PageRole, SectionType[]> = {
   home:      ['navbar', 'hero', 'services', 'features', 'testimonials', 'cta', 'footer'],
-  services:  ['navbar', 'hero', 'services', 'pricing', 'cta', 'footer'],
-  pricing:   ['navbar', 'hero', 'pricing', 'faq', 'cta', 'footer'],
-  about:     ['navbar', 'hero', 'about', 'team', 'stats', 'footer'],
-  contact:   ['navbar', 'hero', 'contact', 'footer'],
-  gallery:   ['navbar', 'hero', 'gallery', 'cta', 'footer'],
-  faq:       ['navbar', 'hero', 'faq', 'cta', 'footer'],
-  booking:   ['navbar', 'hero', 'services', 'contact', 'footer'],
-  shop:      ['navbar', 'hero', 'services', 'cta', 'footer'],
-  checkout:  ['navbar', 'hero', 'contact', 'footer'],
-  thank_you: ['navbar', 'hero', 'cta', 'footer'],
-  blog:      ['navbar', 'hero', 'blog-preview', 'cta', 'footer'],
-  custom:    ['navbar', 'hero', 'cta', 'footer'],
+  services:  ['navbar', 'hero', 'services', 'features', 'pricing', 'testimonials', 'cta', 'footer'],
+  pricing:   ['navbar', 'hero', 'pricing', 'services', 'faq', 'testimonials', 'cta', 'footer'],
+  about:     ['navbar', 'hero', 'about', 'team', 'stats', 'testimonials', 'cta', 'footer'],
+  contact:   ['navbar', 'hero', 'contact', 'faq', 'testimonials', 'cta', 'footer'],
+  gallery:   ['navbar', 'hero', 'gallery', 'testimonials', 'cta', 'footer'],
+  faq:       ['navbar', 'hero', 'faq', 'services', 'testimonials', 'cta', 'footer'],
+  booking:   ['navbar', 'hero', 'services', 'testimonials', 'contact', 'cta', 'footer'],
+  shop:      ['navbar', 'hero', 'services', 'gallery', 'testimonials', 'cta', 'footer'],
+  checkout:  ['navbar', 'hero', 'services', 'contact', 'faq', 'cta', 'footer'],
+  thank_you: ['navbar', 'hero', 'stats', 'testimonials', 'cta', 'footer'],
+  blog:      ['navbar', 'hero', 'blog-preview', 'testimonials', 'cta', 'footer'],
+  custom:    ['navbar', 'hero', 'services', 'testimonials', 'faq', 'cta', 'footer'],
+};
+
+const MINIMUM_ROUTE_BODY_SECTIONS = 4;
+
+const ROLE_SUPPLEMENT_PRIORITY: Record<PageRole, SectionType[]> = {
+  home: ['services', 'features', 'testimonials', 'cta'],
+  services: ['features', 'pricing', 'testimonials', 'faq', 'cta'],
+  pricing: ['services', 'faq', 'testimonials', 'cta'],
+  about: ['team', 'stats', 'testimonials', 'cta'],
+  contact: ['faq', 'testimonials', 'services', 'cta'],
+  gallery: ['testimonials', 'services', 'cta', 'faq'],
+  faq: ['services', 'testimonials', 'cta', 'contact'],
+  booking: ['services', 'testimonials', 'contact', 'cta'],
+  shop: ['services', 'gallery', 'testimonials', 'cta'],
+  checkout: ['services', 'contact', 'faq', 'cta'],
+  thank_you: ['stats', 'testimonials', 'cta', 'services'],
+  blog: ['blog-preview', 'testimonials', 'services', 'cta'],
+  custom: ['services', 'testimonials', 'faq', 'cta'],
 };
 
 // ============================================================================
@@ -291,13 +312,15 @@ function applyWizardSeedToComposition(
 function buildRoleComposition(
   template: TemplateComposition,
   role: PageRole,
-  page: PageRouteNode
+  page: PageRouteNode,
 ): TemplateComposition | null {
   const poolList: SectionType[] =
     template.sectionPool?.[role as TemplatePageRole] ??
     DEFAULT_ROLE_SECTION_POOL[role] ??
     DEFAULT_ROLE_SECTION_POOL.custom;
   const allowedTypes = new Set<SectionType>(poolList);
+  const alternateMedia = !page.isHome ? collectAlternateHeroMedia(template) : [];
+  const alternateHeroMedia = alternateMedia[stableStringHash(page.id) % Math.max(1, alternateMedia.length)];
 
   // Iterate template sections in source order and keep every section whose
   // type is in the allowed set. Duplicates are preserved with unique ids so
@@ -305,14 +328,50 @@ function buildRoleComposition(
   // (items, cards, products, gallery, layout, props) are passed through.
   const filtered: SectionEntry[] = [];
   const typeCounters = new Map<SectionType, number>();
-  for (const source of template.sections) {
-    if (!allowedTypes.has(source.type)) continue;
+  const selectedSourceIds = new Set<string>();
+  const appendSection = (source: SectionEntry) => {
     const idx = typeCounters.get(source.type) ?? 0;
     typeCounters.set(source.type, idx + 1);
+    const props = { ...(source.props as Record<string, unknown>) };
+    if (source.type === 'hero' && !page.isHome) {
+      const roleLabel = page.title.trim() || page.role.replace(/_/g, ' ');
+      props.headline = roleLabel;
+      props.subheadline = `Explore ${roleLabel.toLowerCase()} from ${template.name}.`;
+      props.badge = roleLabel;
+      if (alternateHeroMedia) {
+        if (typeof props.image === 'string') props.image = alternateHeroMedia;
+        else props.backgroundImage = alternateHeroMedia;
+      }
+    }
     filtered.push({
       ...source,
       id: `${page.id}-${source.type}-${idx}`,
+      sourceSectionId: source.sourceSectionId || source.id,
+      props: props as SectionEntry['props'],
     });
+    selectedSourceIds.add(source.id);
+  };
+  for (const source of template.sections) {
+    if (!allowedTypes.has(source.type)) continue;
+    appendSection(source);
+  }
+
+  if (!page.isHome && filtered.length < MINIMUM_ROUTE_BODY_SECTIONS) {
+    const priority = ROLE_SUPPLEMENT_PRIORITY[role] || ROLE_SUPPLEMENT_PRIORITY.custom;
+    const candidates = template.sections
+      .map((section, index) => ({ section, index, priority: priority.indexOf(section.type) }))
+      .filter(({ section }) => (
+        section.type !== 'navbar' && section.type !== 'footer' && section.type !== 'hero' && !selectedSourceIds.has(section.id)
+      ))
+      .sort((left, right) => {
+        const leftPriority = left.priority === -1 ? Number.MAX_SAFE_INTEGER : left.priority;
+        const rightPriority = right.priority === -1 ? Number.MAX_SAFE_INTEGER : right.priority;
+        return leftPriority - rightPriority || left.index - right.index;
+      });
+    for (const { section } of candidates) {
+      appendSection(section);
+      if (filtered.length >= MINIMUM_ROUTE_BODY_SECTIONS) break;
+    }
   }
 
   if (filtered.length === 0) return null;
@@ -323,6 +382,31 @@ function buildRoleComposition(
     name: `${template.name} · ${page.title}`,
     sections: filtered,
   };
+}
+
+function stableStringHash(value: string): number {
+  let hash = 0;
+  for (const character of value) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return Math.abs(hash);
+}
+
+function collectAlternateHeroMedia(template: TemplateComposition): string[] {
+  const media = new Set<string>();
+  for (const section of template.sections) {
+    if (section.type === 'hero') continue;
+    const props = section.props as Record<string, unknown>;
+    for (const key of ['image', 'backgroundImage']) {
+      if (typeof props[key] === 'string' && props[key]) media.add(props[key]);
+    }
+    if (Array.isArray(props.items)) {
+      for (const item of props.items) {
+        if (item && typeof item === 'object' && typeof (item as Record<string, unknown>).image === 'string') {
+          media.add((item as Record<string, string>).image);
+        }
+      }
+    }
+  }
+  return [...media];
 }
 
 
@@ -353,7 +437,7 @@ export function scaffoldMissingTopologyPages(
 
   const blocked: string[] = [];
   for (const page of missing) {
-    const compositional = tryComposeTopologyPageFiles(page, plan, activeTemplate);
+    const compositional = tryComposeTopologyPageFiles(page, plan, activeTemplate, options);
     if (compositional) {
       Object.assign(out, compositional);
       continue;
@@ -441,8 +525,9 @@ export function generateTopologyPlaceholderFiles(
   page: PageRouteNode,
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null,
+  options?: ScaffoldOptions,
 ): Record<string, string> {
-  const composed = tryComposeTopologyPageFiles(page, plan, template);
+  const composed = tryComposeTopologyPageFiles(page, plan, template, options);
   if (composed) return composed;
   throw new PreviewPipelineError(
     'vfs',
@@ -481,6 +566,7 @@ export function tryComposeTopologyPageFiles(
   page: PageRouteNode,
   plan: GeneratedSitePlan,
   template?: TemplateComposition | null,
+  options?: ScaffoldOptions,
 ): Record<string, string> | null {
   const active = applyPlanThemeToTemplate(template ?? resolveActiveTemplate(plan), plan);
   if (!active) return null;
@@ -488,7 +574,9 @@ export function tryComposeTopologyPageFiles(
   if (!sub) return null;
   const seeded = applyWizardSeedToComposition(sub, plan);
   try {
-    return compositionToReactFileSet(seeded, page.filePath);
+    return compositionToReactFileSet(seeded, page.filePath, {
+      designIntervention: options?.designIntervention,
+    });
   } catch {
     return null;
   }

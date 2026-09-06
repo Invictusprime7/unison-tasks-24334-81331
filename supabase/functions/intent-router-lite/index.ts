@@ -3,7 +3,6 @@
  * 
  * Routes intents to:
  * - intent-action: contact.submit, lead.capture, newsletter.subscribe, quote.request
- * - intent-booking: booking.create, booking.cancel, booking.reschedule
  * - Navigation intents are handled client-side (no backend)
  */
 
@@ -19,7 +18,6 @@ const RATE_LIMIT_CONFIG = { maxRequests: 40, windowSeconds: 300 };
 
 // Intent categories
 const ACTION_INTENTS = ["contact.submit", "lead.capture", "newsletter.subscribe", "quote.request", "cta.primary", "cta.secondary"];
-const BOOKING_INTENTS = ["booking.create", "booking.request", "booking.cancel", "booking.reschedule"];
 const NAV_INTENTS = ["nav.goto", "nav.anchor", "nav.external"];
 
 interface IntentPayload {
@@ -115,6 +113,14 @@ serve(async (req) => {
 
     console.log(`[intent-router-lite] Routing ${intent} for business ${businessId}`);
 
+    if (intent.startsWith("booking.")) {
+      return errorResponse(
+        "Booking actions must use the versioned site-runtime gateway.",
+        410,
+        publicCorsHeaders,
+      );
+    }
+
     // Navigation intents - no backend needed
     if (NAV_INTENTS.some(n => intent.startsWith(n.split('.')[0] + '.'))) {
       return secureJsonResponse({
@@ -126,11 +132,6 @@ serve(async (req) => {
     // Action intents -> intent-action
     if (ACTION_INTENTS.includes(intent)) {
       return await forwardToFunction("intent-action", payload);
-    }
-
-    // Booking intents -> intent-booking
-    if (BOOKING_INTENTS.includes(intent)) {
-      return await forwardToFunction("intent-booking", payload);
     }
 
     // CTA intents map to lead capture

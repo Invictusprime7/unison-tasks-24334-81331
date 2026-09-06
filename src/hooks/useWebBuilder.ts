@@ -148,7 +148,7 @@ export const useWebBuilder = () => {
       a.href = url;
       a.download = `${currentProject.name}.${format === 'react' ? 'jsx' : format}`;
       a.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
 
       toast.success(`Project exported as ${format.toUpperCase()}`);
       return exported;

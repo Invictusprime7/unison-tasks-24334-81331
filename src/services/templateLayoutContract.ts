@@ -273,6 +273,21 @@ export function buildTemplateLayoutPrompt(contract: TemplateLayoutContract): str
       `media=${section.hasMedia ? 'required' : 'none'}`,
       `ctaVariants=${section.ctaVariants.join(',') || 'none'}`,
     ];
+    if (section.implementationId) details.push(`implementationId=${section.implementationId}`);
+    if (section.geometry) {
+      details.push(`geometry=${section.geometry.spacing}/${section.geometry.maxWidth}${section.geometry.heroStyle ? `/${section.geometry.heroStyle}` : ''}`);
+    }
+    if (section.mediaTreatment) {
+      details.push(`mediaTreatment=${section.mediaTreatment.style}/${section.mediaTreatment.aspectRatio}/${section.mediaTreatment.overlay}`);
+    }
+    if (section.surfaceTreatment) {
+      details.push(`surface=${section.surfaceTreatment.shadows}${section.surfaceTreatment.glassmorphism ? '+glass' : ''}${section.surfaceTreatment.gradients ? '+gradient' : ''}/btn:${section.surfaceTreatment.buttonStyle}`);
+    }
+    if (section.motionRecipe) {
+      details.push(`motion=${section.motionRecipe.animations ? 'on' : 'off'}/${section.motionRecipe.hoverEffect}`);
+    }
+    if (section.editableSlots?.length) details.push(`editableSlots=${section.editableSlots.join(',')}`);
+    if (section.intentSlots?.length) details.push(`intentSlots=${section.intentSlots.join(',')}`);
     lines.push(`- ${details.join(' ')}`);
   }
   return lines.join('\n');

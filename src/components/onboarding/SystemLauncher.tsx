@@ -4085,7 +4085,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const generatedFiles: Record<string, string> = {
         ...aiSourcedFiles,
         '/src/index.css': themedIndexCss,
-        '/.unison/template-layout-contract.json': JSON.stringify(templateLayoutContract, null, 2),
+        [TEMPLATE_DESIGN_CONTRACT_PATH]: JSON.stringify(templateLayoutContract, null, 2),
       };
       // Normalize App.tsx key (AI may emit with or without leading slash).
       if (!generatedFiles['/src/App.tsx'] && generatedFiles['src/App.tsx']) {

@@ -70,6 +70,8 @@ import {
   readWizardDesignIntervention,
   type WizardDesignIntervention,
 } from '@/services/wizardDesignIntervention';
+import { designPlanSignature } from '@/utils/designVariation';
+
 import {
   buildWizardGenerationBrief,
   type WizardGenerationBrief,
@@ -186,6 +188,12 @@ export interface SiteBundleSnapshotMeta {
    * regeneration can be explained by a changed seed rather than by chance.
    */
   generationSeed?: string;
+  /**
+   * Stable signature of the normalized design plan the generation seed
+   * produces (see `designPlanSignature`). Lets an audit prove the rendered
+   * visual plan is exactly the seeded one — same seed in, same plan out.
+   */
+  designPlanSignature?: string;
   /**
    * Resolved ThemePreset id from the wizard Style-card. Persisted into the
    * snapshot so recompiles/autosaves can re-emit themed /src/index.css
@@ -748,6 +756,10 @@ function projectToSiteBundleSnapshot(
         (designIntervention || selections.designIntervention)?.artDirectionPackId ?? null,
       wizardSeedId: selections.wizardSeedId ?? undefined,
       generationSeed: (designIntervention || selections.designIntervention)?.seed,
+      designPlanSignature: (() => {
+        const seed = (designIntervention || selections.designIntervention)?.seed;
+        return seed ? designPlanSignature(seed) : undefined;
+      })(),
       interactionManifest: selections.interactionManifest,
       themeInjection: {
         version: '1.0',

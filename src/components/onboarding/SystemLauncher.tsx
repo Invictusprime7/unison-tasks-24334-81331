@@ -1798,9 +1798,18 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const earlyResolvedPreset = selectedStyle;
       const earlyThemeTokens = themePresetToThemeTokens(earlyResolvedPreset);
       const industryTemplateGuidance = buildTemplateGuidance(effectiveTemplate, resolvedIndustry);
+      // Phase 1 — the stable wizard seed id is minted BEFORE any design
+      // decision, so style variation, the design intervention and the sealed
+      // snapshot all derive from one and the same canonical seed. It is
+      // stamped into snapshot.meta.wizardSeedId and /.unison/wizard-seed.json
+      // so recompile/readiness can verify chain-of-custody.
+      const wizardSeedId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : `ws_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
       // Style variation is resolved from the CANONICAL generation seed, never
-      // from Math.random(): the same wizard answers reproduce the same site.
-      const design = generateDesignVariation(deriveGenerationSeed({
+      // from Math.random(): the same wizard answers + same seed reproduce the
+      // same site.
+      const canonicalGenerationSeed = deriveGenerationSeed({
         businessName,
         businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',
         industry: resolvedIndustry,
@@ -1810,16 +1819,12 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
         secondaryGoals: resolvedCustomerNeeds,
         requestedPages: resolvedRequestedPages,
         projectId: plannedBusinessId,
-      }));
+        launchNonce: wizardSeedId,
+      });
+      const design = generateDesignVariation(canonicalGenerationSeed);
 
       // ── Wizard selections → canonical pipeline (deterministic; no AI) ──
       const goalNeeds = GOAL_TO_NEEDS[resolvedPrimaryGoal] || {};
-      // Stable seed id stamped into snapshot.meta.wizardSeedId and the
-      // /.unison/wizard-seed.json file so recompile/readiness can verify
-      // chain-of-custody between the wizard payload and the live snapshot.
-      const wizardSeedId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-        ? crypto.randomUUID()
-        : `ws_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
       const wizardSelections: WizardSelections = {
         businessName: businessName.trim(),
         businessModel: SYSTEM_TO_BUSINESS_MODEL[selectedSystem] || 'general',

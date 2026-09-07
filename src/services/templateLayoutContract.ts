@@ -146,7 +146,7 @@ export function buildTemplateLayoutContract(
       columns,
       hasMedia,
       ctaVariants: collectCtaVariants(props),
-      implementationId: `${section.type}:${variantId || 'generic'}`,
+      implementationId: resolveImplementationId(section.type, variantId),
       geometry: style ? {
         spacing: style.layout.section_spacing,
         maxWidth: style.layout.max_width,

@@ -194,18 +194,22 @@ describe('Phase 0B — zero-bypass certification', () => {
     (commitToPipeline as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
       throw new Error('canonical recompile rejected this mutation');
     });
-    const rejected = await commitMutation({
-      source: 'ai-builder',
-      identity: { ...IDENTITY, revisionId: toolbar.persistedRevisionId! },
-      current: { vfsFiles: toolbar.vfsFiles, siteBundleSnapshot: toolbar.siteBundleSnapshot },
-      patch: legacyFilesToPatchPlan(
-        { ...toolbarFiles, '/src/pages/Home.tsx': 'broken' },
-        'failing ai edit',
-      ),
-    });
-
-    expect(rejected.status).toBe('rejected');
-    expect(rejected.persistedRevisionId).toBeNull();
+    let rejectedThrown = false;
+    try {
+      await commitMutation({
+        source: 'ai-builder',
+        identity: { ...IDENTITY, revisionId: toolbar.persistedRevisionId! },
+        current: { vfsFiles: toolbar.vfsFiles, siteBundleSnapshot: toolbar.siteBundleSnapshot },
+        patch: legacyFilesToPatchPlan(
+          { ...toolbarFiles, '/src/pages/Home.tsx': 'broken' },
+          'failing ai edit',
+        ),
+      });
+    } catch (error) {
+      rejectedThrown = true;
+      expect(String((error as Error).message)).toContain('canonical pipeline threw');
+    }
+    expect(rejectedThrown).toBe(true);
     // Durable projection is unchanged by a rejected mutation.
     expect(draftProjection.at(-1)!.revisionId).toBe(projectionBefore);
     expect(projectionAfterLaunch).not.toBe(projectionBefore);

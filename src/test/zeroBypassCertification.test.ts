@@ -70,7 +70,7 @@ vi.mock('@/integrations/supabase/client', () => {
       functions: { invoke: vi.fn(async () => ({ data: { success: true }, error: null })) },
       rpc: async (fn: string, payload: Record<string, unknown>) => {
         if (fn !== 'commit_canonical_site_revision') return { data: null, error: { message: `unexpected ${fn}` } };
-        const id = `rev-${revisionStore.length + 1}`;
+        const id = `00000000-0000-4000-8000-${String(revisionStore.length + 1).padStart(12, '0')}`;
         const row = { ...payload, id, status: String(payload.p_status) } as RevisionRow;
         row.project_id = payload.p_project_id;
         row.draft_id = payload.p_draft_id;

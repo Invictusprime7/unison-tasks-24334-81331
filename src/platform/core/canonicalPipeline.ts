@@ -237,6 +237,21 @@ export interface SiteBundleSnapshotMeta {
     contractPath: '/.unison/theme-contract.json';
     artDirectionPackId: string;
   };
+  /**
+   * Chain-of-custody for the versioned TemplateDesignContract (V2). The full
+   * contract lives in the VFS sidecar; this stamp records its identity and
+   * signature so recompile/autosave can prove the design plan did not drift.
+   */
+  templateDesignContract?: {
+    version: string;
+    contractPath: string;
+    templateId: string;
+    implementationId?: string;
+    variantId?: string;
+    seed?: string;
+    layoutSignature: string;
+    contractSignature?: string;
+  };
   /** Bounded connected-gateway research and route-specific generation plan. */
   generationBrief?: WizardGenerationBrief;
   /** Deterministic composition, interaction, and motion recipes for this launch. */

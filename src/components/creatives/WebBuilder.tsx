@@ -3001,22 +3001,29 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           const commit = await commitMutation({
             source: 'preview-toolbar',
             identity,
-            current: {
-              vfsFiles: beforeFiles,
-              siteBundleSnapshot: snapshot ?? undefined,
-            },
+            current: buildCanonicalCommitCurrent(beforeFiles, snapshot),
             patch,
             options: {
               requirePreviewPass: false,
               requireReadinessPass: false,
               industry: snapshot?.industry,
+              themePresetId: snapshot?.meta.themePresetId ?? undefined,
+              themeTokens: snapshot?.themeTokens,
             },
           });
+          if (commit.status !== 'committed') {
+            throw new CommitRejectedError('toolbar edit was rejected by the canonical pipeline', commit);
+          }
           if (commit.persistedRevisionId) {
             setCurrentRevisionId(commit.persistedRevisionId);
             console.log('[WebBuilder] preview-toolbar commit persisted:', commit.persistedRevisionId);
           }
         } catch (err) {
+          importBuilderFiles(beforeFiles, {
+            replace: true,
+            preferredPath: activePagePath,
+            entryPoint: launchEntryPoint,
+          });
           if (err instanceof CommitRejectedError) {
             console.warn('[WebBuilder] preview-toolbar commit rejected:', err.message);
           } else {
@@ -3032,7 +3039,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     activePagePath,
     launchEntryPoint,
     effectiveRouteState?.siteBundleSnapshot,
+    buildCanonicalCommitCurrent,
+    importBuilderFiles,
+    resolvedProjectId,
   ]);
+
 
 
 

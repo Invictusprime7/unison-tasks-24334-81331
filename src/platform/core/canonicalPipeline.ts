@@ -66,6 +66,10 @@ import {
   THEME_CONTRACT_VERSION,
 } from './themeContract';
 import {
+  readTemplateDesignContract,
+  TEMPLATE_DESIGN_CONTRACT_PATH,
+} from '@/services/templateLayoutContract';
+import {
   buildWizardDesignIntervention,
   readWizardDesignIntervention,
   type WizardDesignIntervention,

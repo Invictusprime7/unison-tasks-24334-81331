@@ -41,6 +41,9 @@ jobs:
       - name: Lint pipeline bypass (commitToPipeline enforcement)
         run: npm run lint:pipeline-bypass
 
+      - name: Lint - no new direct canonical VFS writers
+        run: npm run lint:canonical-vfs-writes
+
       - name: Lint single source of truth (brainstem import guard)
         run: npm run lint:single-source-of-truth
 

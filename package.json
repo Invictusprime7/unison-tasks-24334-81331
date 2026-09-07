@@ -13,6 +13,7 @@
     "build:analyze": "vite build --mode analyze",
     "lint": "eslint .",
     "lint:pipeline-bypass": "node scripts/lint-pipeline-bypass.mjs",
+    "lint:canonical-vfs-writes": "node scripts/lint-canonical-vfs-writes.mjs",
     "lint:single-source-of-truth": "node scripts/lint-single-source-of-truth.mjs",
     "lint:catalog-contracts": "node scripts/lint-catalog-contracts.mjs",
     "type-check": "tsc --build --noEmit",

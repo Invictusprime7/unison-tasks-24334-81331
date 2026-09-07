@@ -1,0 +1,7 @@
+{
+  "src/components/creatives/WebBuilder.tsx": 33,
+  "src/components/creatives/code-editor/VFSCodeView.tsx": 2,
+  "src/contexts/VFSContext.tsx": 5,
+  "src/services/aiVFSOrchestrator.ts": 1,
+  "src/services/unisonCanonicalRegistry.ts": 1
+}

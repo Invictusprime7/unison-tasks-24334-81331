@@ -2672,6 +2672,25 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     return () => { cancelled = true; };
   }, [hydratedRevision]);
 
+  // ── Phase 0A: complete CanonicalProjectState for every editor mutation ───
+  // Guidebook §2.5 / Phase 0A: editor bridges must not commit with partial
+  // canonical state (missing PlaygroundState causes recompile drift), and a
+  // rejected canonical mutation must never leave its files in working VFS.
+  const buildCanonicalCommitCurrent = useCallback((
+    vfsFiles: Record<string, string>,
+    snapshot: SiteBundleSnapshot | null,
+  ) => ({
+    vfsFiles,
+    siteBundleSnapshot: snapshot ?? undefined,
+    activePagePath,
+    playground: {
+      pageRegistry: creatorPlayground.pageRegistry,
+      creatorData: creatorPlayground.creatorData,
+      calendars: snapshot?.calendars ?? {},
+      popups: snapshot?.popups ?? {},
+    } as never,
+  }), [activePagePath, creatorPlayground.pageRegistry, creatorPlayground.creatorData]);
+
   // ── Move 2: layout fast-path → VFSCommitService bridge ───────────────────
   // Each deterministic layout edit additively chains through commitMutation so
   // the durable site_revisions ledger reflects every state change, not just
@@ -2702,22 +2721,30 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           const commit = await commitMutation({
             source: 'layout-fast-path',
             identity,
-            current: {
-              vfsFiles: beforeFiles,
-              siteBundleSnapshot: snapshot ?? undefined,
-            },
+            current: buildCanonicalCommitCurrent(beforeFiles, snapshot),
             patch,
             options: {
               requirePreviewPass: false,
               requireReadinessPass: false,
               industry: snapshot?.industry,
+              themePresetId: snapshot?.meta.themePresetId ?? undefined,
+              themeTokens: snapshot?.themeTokens,
             },
           });
+          if (commit.status !== 'committed') {
+            throw new CommitRejectedError('layout edit was rejected by the canonical pipeline', commit);
+          }
           if (commit.persistedRevisionId) {
             setCurrentRevisionId(commit.persistedRevisionId);
             console.log('[WebBuilder] layout-fast-path commit persisted:', commit.persistedRevisionId);
           }
         } catch (err) {
+          // Rejected canonical mutations must not survive in working VFS.
+          importBuilderFiles(beforeFiles, {
+            replace: true,
+            preferredPath: activePagePath,
+            entryPoint: launchEntryPoint,
+          });
           if (err instanceof CommitRejectedError) {
             console.warn('[WebBuilder] layout-fast-path commit rejected:', err.message);
           } else {
@@ -2733,7 +2760,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     activePagePath,
     launchEntryPoint,
     effectiveRouteState?.siteBundleSnapshot,
+    buildCanonicalCommitCurrent,
+    importBuilderFiles,
+    resolvedProjectId,
   ]);
+
 
   // Snapshot-owned visual variants must enter the revision ledger before a
   // page is regenerated. Variant selection and section swaps are committed
@@ -2970,22 +3001,29 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
           const commit = await commitMutation({
             source: 'preview-toolbar',
             identity,
-            current: {
-              vfsFiles: beforeFiles,
-              siteBundleSnapshot: snapshot ?? undefined,
-            },
+            current: buildCanonicalCommitCurrent(beforeFiles, snapshot),
             patch,
             options: {
               requirePreviewPass: false,
               requireReadinessPass: false,
               industry: snapshot?.industry,
+              themePresetId: snapshot?.meta.themePresetId ?? undefined,
+              themeTokens: snapshot?.themeTokens,
             },
           });
+          if (commit.status !== 'committed') {
+            throw new CommitRejectedError('toolbar edit was rejected by the canonical pipeline', commit);
+          }
           if (commit.persistedRevisionId) {
             setCurrentRevisionId(commit.persistedRevisionId);
             console.log('[WebBuilder] preview-toolbar commit persisted:', commit.persistedRevisionId);
           }
         } catch (err) {
+          importBuilderFiles(beforeFiles, {
+            replace: true,
+            preferredPath: activePagePath,
+            entryPoint: launchEntryPoint,
+          });
           if (err instanceof CommitRejectedError) {
             console.warn('[WebBuilder] preview-toolbar commit rejected:', err.message);
           } else {
@@ -3001,7 +3039,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
     activePagePath,
     launchEntryPoint,
     effectiveRouteState?.siteBundleSnapshot,
+    buildCanonicalCommitCurrent,
+    importBuilderFiles,
+    resolvedProjectId,
   ]);
+
 
 
 
@@ -4004,11 +4046,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             revisionId: currentRevisionIdRef.current,
             sessionId: `web-builder:${existingDraftId}`,
           },
-          current: {
-            vfsFiles: currentVfsFiles,
-            siteBundleSnapshot: hydratedRevision?.siteBundleSnapshot ?? undefined,
-            activePagePath,
-          },
+          current: buildCanonicalCommitCurrent(
+            currentVfsFiles,
+            (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | undefined) ?? null,
+          ),
+
           patch: legacyFilesToPatchPlan(currentVfsFiles, `Autosave: ${reason}`),
           options: {
             requirePreviewPass: true,

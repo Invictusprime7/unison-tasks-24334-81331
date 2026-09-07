@@ -96,12 +96,21 @@ export function resolveSnapshot(
     readRecord(canonicalPlayground?.wizardSelections),
   );
 
+  // Phase 0A provenance: a snapshot minted for a manual/legacy-import draft
+  // shares the SiteBundleSnapshot shape but must never inherit Wizard
+  // guarantees purely from that shape.
+  const snapshotOrigin =
+    (snapshot?.meta as { snapshotOrigin?: string } | undefined)?.snapshotOrigin ?? null;
+  const isNonWizardOrigin = snapshotOrigin === 'manual' || snapshotOrigin === 'legacy-import';
+
   const isWizardDraft = Boolean(
-    snapshot ||
+    !isNonWizardOrigin &&
+    (snapshot ||
     compactSnapshot ||
     hasWizardSeed ||
-    hasExplicitWizardMetadata,
+    hasExplicitWizardMetadata),
   );
+
 
   const snapshotThemePresetId = snapshot
     ? assertSnapshotThemeSeed(

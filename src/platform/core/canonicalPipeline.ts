@@ -70,6 +70,8 @@ import {
   readWizardDesignIntervention,
   type WizardDesignIntervention,
 } from '@/services/wizardDesignIntervention';
+import { designPlanSignature } from '@/utils/designVariation';
+
 import {
   buildWizardGenerationBrief,
   type WizardGenerationBrief,

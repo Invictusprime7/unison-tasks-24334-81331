@@ -123,6 +123,7 @@ import {
   buildTemplateLayoutContract,
   buildTemplateLayoutPrompt,
   stampTemplateLayoutIdentity,
+  TEMPLATE_DESIGN_CONTRACT_PATH,
 } from "@/services/templateLayoutContract";
 import {
   assessWizardHomePresentation,

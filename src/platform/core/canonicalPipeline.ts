@@ -66,6 +66,10 @@ import {
   THEME_CONTRACT_VERSION,
 } from './themeContract';
 import {
+  readTemplateDesignContract,
+  TEMPLATE_DESIGN_CONTRACT_PATH,
+} from '@/services/templateLayoutContract';
+import {
   buildWizardDesignIntervention,
   readWizardDesignIntervention,
   type WizardDesignIntervention,
@@ -236,6 +240,21 @@ export interface SiteBundleSnapshotMeta {
     version: string;
     contractPath: '/.unison/theme-contract.json';
     artDirectionPackId: string;
+  };
+  /**
+   * Chain-of-custody for the versioned TemplateDesignContract (V2). The full
+   * contract lives in the VFS sidecar; this stamp records its identity and
+   * signature so recompile/autosave can prove the design plan did not drift.
+   */
+  templateDesignContract?: {
+    version: string;
+    contractPath: string;
+    templateId: string;
+    implementationId?: string;
+    variantId?: string;
+    seed?: string;
+    layoutSignature: string;
+    contractSignature?: string;
   };
   /** Bounded connected-gateway research and route-specific generation plan. */
   generationBrief?: WizardGenerationBrief;
@@ -781,6 +800,20 @@ function projectToSiteBundleSnapshot(
             artDirectionPackId: readThemeContract(compileResult.vfsFiles)!.artDirectionPackId,
           }
         : undefined,
+      templateDesignContract: (() => {
+        const contract = readTemplateDesignContract(compileResult.vfsFiles);
+        if (!contract) return undefined;
+        return {
+          version: String(contract.version),
+          contractPath: TEMPLATE_DESIGN_CONTRACT_PATH,
+          templateId: contract.templateId,
+          implementationId: contract.implementationId,
+          variantId: contract.variantId,
+          seed: contract.seed,
+          layoutSignature: contract.signature,
+          contractSignature: contract.contractSignature,
+        };
+      })(),
       generationBrief,
       designIntervention,
     },

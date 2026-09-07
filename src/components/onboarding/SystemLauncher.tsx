@@ -123,6 +123,7 @@ import {
   buildTemplateLayoutContract,
   buildTemplateLayoutPrompt,
   stampTemplateLayoutIdentity,
+  TEMPLATE_DESIGN_CONTRACT_PATH,
 } from "@/services/templateLayoutContract";
 import {
   assessWizardHomePresentation,
@@ -1988,7 +1989,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const resolvedPreset = earlyResolvedPreset;
       const themedTokens = earlyThemeTokens;
       composition = { ...composition, theme: themedTokens };
-      const templateLayoutContract = buildTemplateLayoutContract(composition);
+      // Design Contract V2 — geometry, media/surface treatment, motion recipe
+      // and slots are all resolved from the one canonical generation seed.
+      const templateLayoutContract = buildTemplateLayoutContract(composition, {
+        seed: canonicalGenerationSeed,
+        styleVariation: design,
+        pageRole: 'home',
+      });
       const templateLayoutPrompt = buildTemplateLayoutPrompt(templateLayoutContract);
 
       const themeTrace = {
@@ -4079,7 +4086,7 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const generatedFiles: Record<string, string> = {
         ...aiSourcedFiles,
         '/src/index.css': themedIndexCss,
-        '/.unison/template-layout-contract.json': JSON.stringify(templateLayoutContract, null, 2),
+        [TEMPLATE_DESIGN_CONTRACT_PATH]: JSON.stringify(templateLayoutContract, null, 2),
       };
       // Normalize App.tsx key (AI may emit with or without leading slash).
       if (!generatedFiles['/src/App.tsx'] && generatedFiles['src/App.tsx']) {

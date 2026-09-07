@@ -1,6 +1,7 @@
 import type { TemplateComposition } from '@/sections/types';
 import { getVariantIdForLayout } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';
+import { resolveImplementationId } from '@/services/designImplementationRegistry';
 import { hashSeed } from '@/platform/core/generationSeed';
 import { generateStyleVariation, type StyleVariation } from '@/utils/designVariation';
 

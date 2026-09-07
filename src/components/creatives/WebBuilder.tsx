@@ -4046,11 +4046,11 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             revisionId: currentRevisionIdRef.current,
             sessionId: `web-builder:${existingDraftId}`,
           },
-          current: {
-            vfsFiles: currentVfsFiles,
-            siteBundleSnapshot: hydratedRevision?.siteBundleSnapshot ?? undefined,
-            activePagePath,
-          },
+          current: buildCanonicalCommitCurrent(
+            currentVfsFiles,
+            (hydratedRevision?.siteBundleSnapshot as SiteBundleSnapshot | undefined) ?? null,
+          ),
+
           patch: legacyFilesToPatchPlan(currentVfsFiles, `Autosave: ${reason}`),
           options: {
             requirePreviewPass: true,

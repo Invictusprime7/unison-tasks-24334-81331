@@ -95,6 +95,8 @@ import {
   type CommitMutationResult,
   type LoadedRevision,
 } from "@/services/vfsCommitService";
+import { recordCanonicalVfsAdoption } from "@/services/mutationLedger";
+
 import { repairDraftBusinessLink } from "@/services/draftBusinessLinkRepair";
 import {
   buildProjectRuntimeEnvelope,
@@ -1245,6 +1247,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         preferredPath: preferred,
         entryPoint: entry,
         replace: true,
+        adoption: { source: 'canvas-hydration', exemptReason: 'hydration-only' },
       });
       if (shouldReplayRecovery && recovery) {
         setPreviewCode(recovery.code);
@@ -1760,6 +1763,12 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                         themePresetId: snapshot?.meta.themePresetId ?? undefined,
                         themeTokens: snapshot?.themeTokens,
                       },
+                    });
+                    recordCanonicalVfsAdoption({
+                      source: commit.source,
+                      vfsHash: commit.vfsHash,
+                      revisionId: commit.persistedRevisionId,
+                      draftId: currentDraftId ?? null,
                     });
                     virtualFS.importFiles(commit.vfsFiles);
                     if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
@@ -2430,9 +2439,24 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       entryPoint?: string | null;
       replace?: boolean;
       themePresetId?: string | null;
+      /**
+       * Phase 0B instrumentation. Adoptions of an accepted canonical commit
+       * pass its vfsHash/revisionId; hydration, import and rollback adoptions
+       * pass an explicit exemptReason. Anything else is reported as an
+       * unexplained bypass by the mutation ledger.
+       */
+      adoption?: { source?: string; vfsHash?: string | null; revisionId?: string | null; exemptReason?: string };
     },
   ) => {
+    recordCanonicalVfsAdoption({
+      source: options?.adoption?.source ?? 'webbuilder-import',
+      vfsHash: options?.adoption?.vfsHash ?? null,
+      revisionId: options?.adoption?.revisionId ?? null,
+      draftId: currentDraftId ?? null,
+      exemptReason: options?.adoption?.exemptReason,
+    });
     try {
+
       const normalizedEntryPoint = options?.entryPoint
         ? (options.entryPoint.startsWith('/') ? options.entryPoint : `/${options.entryPoint}`)
         : undefined;
@@ -2494,7 +2518,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
       });
       return null;
     }
-  }, [syncBuilderFromFiles, vfsImportFiles, vfsResetToEmpty, launchEntryPoint, resolvedThemePresetId, effectiveRouteState]);
+  }, [syncBuilderFromFiles, vfsImportFiles, vfsResetToEmpty, launchEntryPoint, resolvedThemePresetId, effectiveRouteState, currentDraftId]);
 
   // ── Move 3: revisionId-first hydration ──
   // When the route state carries a `revisionId` (persisted by VFSCommitService at
@@ -2570,7 +2594,10 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         console.log('[WebBuilder] hydrated from site_revisions:', revision.id, Object.keys(files).length, 'files');
         const currentFiles = virtualFSRef.current.getSandpackFiles();
         if (computeBuilderVfsSignature(currentFiles) !== computeBuilderVfsSignature(files)) {
-          importBuilderFiles(files, { entryPoint: launchEntryPoint });
+          importBuilderFiles(files, {
+            entryPoint: launchEntryPoint,
+            adoption: { source: 'revision-hydration', revisionId: revision.id, exemptReason: 'hydration-only' },
+          });
         }
         setHydratedRevision(revision);
         setCurrentRevisionId(revision.id);
@@ -2744,6 +2771,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             replace: true,
             preferredPath: activePagePath,
             entryPoint: launchEntryPoint,
+            adoption: { source: 'rollback', exemptReason: 'restore-pre-mutation-state' },
           });
           if (err instanceof CommitRejectedError) {
             console.warn('[WebBuilder] layout-fast-path commit rejected:', err.message);
@@ -2836,6 +2864,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         replace: true,
         preferredPath: activePagePath,
         entryPoint: launchEntryPoint,
+        adoption: { source: commit.source, vfsHash: commit.vfsHash, revisionId: commit.persistedRevisionId },
       });
       if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
       return true;
@@ -2948,6 +2977,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
         replace: true,
         preferredPath: activePagePath,
         entryPoint: launchEntryPoint,
+        adoption: { source: commit.source, vfsHash: commit.vfsHash, revisionId: commit.persistedRevisionId },
       });
       if (commit.persistedRevisionId) setCurrentRevisionId(commit.persistedRevisionId);
       toast.success('Theme tokens applied');
@@ -3023,6 +3053,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
             replace: true,
             preferredPath: activePagePath,
             entryPoint: launchEntryPoint,
+            adoption: { source: 'rollback', exemptReason: 'restore-pre-mutation-state' },
           });
           if (err instanceof CommitRejectedError) {
             console.warn('[WebBuilder] preview-toolbar commit rejected:', err.message);
@@ -4260,6 +4291,7 @@ export const WebBuilder = ({ initialHtml, initialCss, onSave }: WebBuilderProps)
                 preferredPath: activePagePath,
                 entryPoint: launchEntryPoint,
                 replace: true,
+                adoption: { source: 'draft-hydration', exemptReason: 'hydration-only' },
               });
             }
             if (draft.code) setPreviewCode(draft.code);

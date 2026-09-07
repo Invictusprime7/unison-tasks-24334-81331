@@ -65,6 +65,8 @@ import {
   type PresentationOp,
 } from '@/types/patchPlan';
 import { getVariantById } from '@/sections/variants';
+import { recordCommitOutcome } from '@/services/mutationLedger';
+
 
 
 
@@ -946,8 +948,17 @@ async function finalize(args: {
         message: 'canonical revision transaction failed',
         detail,
       });
+      recordCommitOutcome({
+        source: input.source,
+        outcome: 'threw',
+        vfsHash,
+        revisionId: null,
+        draftId: input.identity.draftId || null,
+        dryRun,
+      });
       throw new Error(`[VFSCommitService] canonical revision transaction failed: ${detail}`);
     }
+
     persistedRevisionId = data;
 
     // Move F #1 — fire-and-forget commit telemetry. Never block on failure.
@@ -994,7 +1005,19 @@ async function finalize(args: {
     }
   }
 
+  // Phase 0B — instrumentation: every canonical outcome is provably attributed
+  // to a mutation source, so a bypass shows up as an adoption with no commit.
+  recordCommitOutcome({
+    source: input.source,
+    outcome: status === 'committed' ? 'committed' : 'rejected',
+    vfsHash,
+    revisionId: persistedRevisionId,
+    draftId: input.identity.draftId || null,
+    dryRun,
+  });
+
   const result: CommitMutationResult = {
+
     status,
     source: input.source,
     identity: {

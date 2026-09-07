@@ -796,6 +796,20 @@ function projectToSiteBundleSnapshot(
             artDirectionPackId: readThemeContract(compileResult.vfsFiles)!.artDirectionPackId,
           }
         : undefined,
+      templateDesignContract: (() => {
+        const contract = readTemplateDesignContract(compileResult.vfsFiles);
+        if (!contract) return undefined;
+        return {
+          version: String(contract.version),
+          contractPath: TEMPLATE_DESIGN_CONTRACT_PATH,
+          templateId: contract.templateId,
+          implementationId: contract.implementationId,
+          variantId: contract.variantId,
+          seed: contract.seed,
+          layoutSignature: contract.signature,
+          contractSignature: contract.contractSignature,
+        };
+      })(),
       generationBrief,
       designIntervention,
     },

@@ -69,6 +69,7 @@ import {
   readTemplateDesignContract,
   TEMPLATE_DESIGN_CONTRACT_PATH,
 } from '@/services/templateLayoutContract';
+import { designRegistrySignature } from '@/services/designImplementationRegistry';
 import {
   buildWizardDesignIntervention,
   readWizardDesignIntervention,
@@ -255,6 +256,8 @@ export interface SiteBundleSnapshotMeta {
     seed?: string;
     layoutSignature: string;
     contractSignature?: string;
+    /** Fingerprint of the design implementation inventory used to render. */
+    registrySignature?: string;
   };
   /** Bounded connected-gateway research and route-specific generation plan. */
   generationBrief?: WizardGenerationBrief;
@@ -812,6 +815,7 @@ function projectToSiteBundleSnapshot(
           seed: contract.seed,
           layoutSignature: contract.signature,
           contractSignature: contract.contractSignature,
+          registrySignature: designRegistrySignature(),
         };
       })(),
       generationBrief,

@@ -3,8 +3,7 @@
  *
  * One index over every renderable design implementation in the platform.
  * Section families come from the Section Registry, visual variants come from
- * the Variant Registry, and suitability metadata comes from Component
- * Intelligence. Nothing here declares its own list — this module is a derived
+ * the Variant Registry, . Nothing here declares its own list — this module is a derived
  * view, so it can never drift from the registries the compiler renders with.
  *
  * Every downstream authority (design contract, Lane B prompt vocabulary,
@@ -16,7 +15,6 @@ import { getAllSections } from '@/sections/registry';
 import { VARIANT_REGISTRY } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';
 import type { SectionType, SectionRegistryEntry } from '@/sections/types';
-import { getComponentIntelligence } from '@/services/componentIntelligenceRegistry';
 import { hashSeed } from '@/platform/core/generationSeed';
 
 /** Identity used everywhere a design implementation is referenced. */
@@ -51,8 +49,6 @@ function buildIndex(): Map<string, DesignImplementation> {
 
   for (const [type, entry] of Object.entries(sections) as Array<[SectionType, SectionRegistryEntry]>) {
     const variants = VARIANT_REGISTRY[type] ?? [];
-    const intelligence = getComponentIntelligence(type);
-    const familyTags = intelligence?.tags ?? [];
 
     if (variants.length === 0) {
       const implementationId = `${type}:${GENERIC_IMPLEMENTATION_SLUG}` as ImplementationId;
@@ -63,7 +59,7 @@ function buildIndex(): Map<string, DesignImplementation> {
         name: entry.label,
         description: entry.description ?? '',
         category: entry.category,
-        tags: familyTags,
+        tags: [],
         isDefault: true,
         hasVariants: false,
       });
@@ -80,7 +76,7 @@ function buildIndex(): Map<string, DesignImplementation> {
         name: variant.name,
         description: variant.description,
         category: entry.category,
-        tags: [...new Set([...familyTags, ...(variant.tags ?? [])])],
+        tags: variant.tags ?? [],
         isDefault: Boolean(variant.isDefault),
         thumbnail: variant.thumbnail,
         hasVariants: true,

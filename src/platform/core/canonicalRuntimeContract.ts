@@ -229,7 +229,11 @@ export function createMinimalValidSnapshot(input: {
       industry: 'general',
       wizardSeedId: `manual:${now}`,
       generatedAt: now,
+      // Phase 0A provenance stamp: snapshot shape alone must not grant
+      // Wizard-launch guarantees to a manually upgraded draft.
+      snapshotOrigin: 'manual',
     },
+
     pageRegistry: {
       version: 1,
       pages: {

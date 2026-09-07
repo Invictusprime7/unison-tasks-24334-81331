@@ -45,7 +45,7 @@ vi.mock('@/integrations/supabase/client', () => {
               eq: () => ({
                 eq: () => ({
                   maybeSingle: async () => ({
-                    data: { last_revision_id: draftProjection.at(-1)?.revisionId ?? null },
+                    data: { last_revision_id: draftProjection[draftProjection.length - 1]?.revisionId ?? null },
                     error: null,
                   }),
                 }),
@@ -171,7 +171,7 @@ describe('Phase 0B — zero-bypass certification', () => {
 
   it('runs the matrix with AI off, AI failure and canonical rejection without durable drift', async () => {
     const launched = await launch();
-    const projectionAfterLaunch = draftProjection.at(-1)!.revisionId;
+    const projectionAfterLaunch = draftProjection[draftProjection.length - 1]!.revisionId;
 
     // AI off — a deterministic toolbar edit still commits through the writer.
     const toolbarFiles = { ...LAUNCH_FILES, '/src/pages/Home.tsx': 'export default function Home(){return <h1>Toolbar</h1>}' };
@@ -190,7 +190,7 @@ describe('Phase 0B — zero-bypass certification', () => {
     });
 
     // AI failure / canonical recompile rejection — the pipeline throws.
-    const projectionBefore = draftProjection.at(-1)!.revisionId;
+    const projectionBefore = draftProjection[draftProjection.length - 1]!.revisionId;
     (commitToPipeline as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
       throw new Error('canonical recompile rejected this mutation');
     });
@@ -211,7 +211,7 @@ describe('Phase 0B — zero-bypass certification', () => {
     }
     expect(rejectedThrown).toBe(true);
     // Durable projection is unchanged by a rejected mutation.
-    expect(draftProjection.at(-1)!.revisionId).toBe(projectionBefore);
+    expect(draftProjection[draftProjection.length - 1]!.revisionId).toBe(projectionBefore);
     expect(projectionAfterLaunch).not.toBe(projectionBefore);
 
     // Rolling the editor back to pre-mutation state is an exempt adoption.

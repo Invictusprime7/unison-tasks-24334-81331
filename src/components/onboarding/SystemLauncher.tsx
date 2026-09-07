@@ -1988,7 +1988,13 @@ export const SystemLauncher = ({ open, onOpenChange, prefill }: SystemLauncherPr
       const resolvedPreset = earlyResolvedPreset;
       const themedTokens = earlyThemeTokens;
       composition = { ...composition, theme: themedTokens };
-      const templateLayoutContract = buildTemplateLayoutContract(composition);
+      // Design Contract V2 — geometry, media/surface treatment, motion recipe
+      // and slots are all resolved from the one canonical generation seed.
+      const templateLayoutContract = buildTemplateLayoutContract(composition, {
+        seed: canonicalGenerationSeed,
+        styleVariation: design,
+        pageRole: 'home',
+      });
       const templateLayoutPrompt = buildTemplateLayoutPrompt(templateLayoutContract);
 
       const themeTrace = {

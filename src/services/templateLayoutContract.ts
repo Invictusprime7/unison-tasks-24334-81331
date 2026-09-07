@@ -1,6 +1,7 @@
 import type { TemplateComposition } from '@/sections/types';
 import { getVariantIdForLayout } from '@/sections/variants';
 import type { VariantId } from '@/sections/variants';
+import { resolveImplementationId } from '@/services/designImplementationRegistry';
 import { hashSeed } from '@/platform/core/generationSeed';
 import { generateStyleVariation, type StyleVariation } from '@/utils/designVariation';
 
@@ -146,7 +147,7 @@ export function buildTemplateLayoutContract(
       columns,
       hasMedia,
       ctaVariants: collectCtaVariants(props),
-      implementationId: `${section.type}:${variantId || 'generic'}`,
+      implementationId: resolveImplementationId(section.type, variantId),
       geometry: style ? {
         spacing: style.layout.section_spacing,
         maxWidth: style.layout.max_width,

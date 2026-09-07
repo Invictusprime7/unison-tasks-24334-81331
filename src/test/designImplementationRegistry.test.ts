@@ -40,7 +40,8 @@ describe('canonical design implementation registry', () => {
 
   it('resolves identities only through registered entries', () => {
     expect(resolveImplementationId('hero', 'hero:split-image')).toBe('hero:split-image');
-    expect(resolveImplementationId('hero', 'hero:not-real')).toBe('hero:generic');
+    expect(resolveImplementationId('hero', 'hero:not-real')).toBe('hero:centered');
+    expect(resolveImplementationId('faq', undefined)).toBe('faq:generic');
     expect(isRegisteredImplementation('hero:not-real')).toBe(false);
   });
 

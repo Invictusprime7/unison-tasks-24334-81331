@@ -126,7 +126,9 @@ export function resolveImplementationId(
   if (variantId && index().has(variantId)) return variantId as ImplementationId;
   const generic = `${sectionType}:${GENERIC_IMPLEMENTATION_SLUG}` as ImplementationId;
   if (index().has(generic)) return generic;
-  return (variantId as ImplementationId | undefined) ?? generic;
+  const family = listImplementationsForSection(sectionType as SectionType);
+  const fallback = family.find((impl) => impl.isDefault) ?? family[0];
+  return fallback?.implementationId ?? generic;
 }
 
 /**
